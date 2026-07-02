@@ -35,12 +35,12 @@
 
 #### 🔒 Внутренняя (только для менеджеров)
 
-*   **Статусы:** `active`, `star`, `blacklisted`.
+*   **Статусы:** `active`, `blacklisted`.
 *   **Комментарии:** Внутренние заметки менеджеров .
 *   **Исключения:** Список требований, которым волонтер не соответствует (`user_requirement_exceptions`) + причины.
 *   **Детальная аналитика:** Конверсия заявок, динамика активности.
 *   **текущие отклики:** Находится ли сейчас с заявками на какие-либо меро и их статус 
-*   чарн - подал заявку и не пришел без предупреждения, слился меньше чем за t часов до меро (мы не знаем насколько специально он слился, поэтмоу можно сделать там формулку доверия с коэфом. при достижении суммы чарна n, чел в блек лист до следующего сезона/учебного года)
+*   чарн (`users.churn_score`, FLOAT) — коэффициент недобросовестности. Начисление `+churn_no_show_penalty` за неявку без предупреждения (`absent_unexcused`); списание за активность `−churn_activity_base / e^(меро за последний месяц + 1)`. При `churn_score ≥ churn_blacklist_threshold` — в блэклист до следующего сезона/учебного года. Все пороги — в таблице `const`. Точная формула и carryover по сезонам — бизнес-правило 9 в `db.md`.
 
 ---
 
@@ -181,13 +181,13 @@
 
 | Поле | Откуда / как считается |
 |------|------------------------|
-| Никнейм (telegram_username) | `volunteer.telegram_username` |
-| Общее количество часов | `volunteer.total_hours` — кэш, SUM(`participations.hours`) где `status = 'attended'` |
-| Общее количество мероприятий | `volunteer.total_event_count` — кэш, COUNT(`participations`) где `status = 'attended'` |
-| Часы за текущий сезон | `volunteer.season_hours` — то же, но с фильтром по `seasons.start_season … end_season` |
-| Мероприятий за текущий сезон | `volunteer.season_event_count` — аналогично с фильтром сезона |
+| Никнейм (telegram_username) | `users.telegram_username` |
+| Общее количество часов | `users.total_hours` — кэш, SUM(`participations.hours`) где `status = 'attended'` |
+| Общее количество мероприятий | `users.total_event_count` — кэш, COUNT(`participations`) где `status = 'attended'` |
+| Часы за текущий сезон | `users.season_hours` — то же, но с фильтром по `seasons.start_season … end_season` |
+| Мероприятий за текущий сезон | `users.season_event_count` — аналогично с фильтром сезона |
 | Список прошедших мероприятий | JOIN `participations` → `event_days` → `events`: название, дата (`event_days.day`), часы (`participations.hours`), только `status = 'attended'` |
-| Статус «Звёздочка» ⭐ | — выдаётся  автоматически при закрытии ПГАС |
+| Статус «Звёздочка» ⭐ | производный признак: выдаётся автоматически, когда `users.season_hours ≥ const.pgas_hours_threshold` (закрытие ПГАС за сезон). Отдельной таблицы достижений нет |
 
 ---
 
@@ -195,15 +195,15 @@
 
 | Поле | Откуда / как считается |
 |------|------------------------|
-| ФИО | `volunteer.first_name`, `volunteer.last_name` |
-| Телефон | `volunteer.phone` |
-| Email | `volunteer.email` |
-| Telegram username | `volunteer.telegram_username` |
-| VK | `volunteer.VK_username` |
-| Дата рождения / возраст | `volunteer.birthday`; возраст — вычисляется на лету: `CURRENT_DATE - birthday` |
-| Пол | `volunteer.gender` |
+| ФИО | `users.first_name`, `users.last_name` |
+| Телефон | `users.phone` |
+| Email | `users.email` |
+| Telegram username | `users.telegram_username` |
+| VK | `users.VK_username` |
+| Дата рождения / возраст | `users.birthday`; возраст — вычисляется на лету: `CURRENT_DATE - birthday` |
+| Пол | `users.gender` (`male` / `female`) |
 | Полная история заявок | `applications` WHERE `user_id = ?`: мероприятие, дата подачи, статус (`new` / `approved` / `rejected`) |
-| Пул благодарственных писем | `event_thank_you_letters` JOIN `thank_you_letter_templates`: все письма, выданные данному волонтёру, с кнопкой «Скачать» (имя подставляется в шаблон на лету) |
+| Пул благодарственных писем | мероприятия волонтёра (`participations` → `events`), где у меро задан `events.letter_id`. Само письмо не хранится — при нажатии «Скачать» генерируется на лету подстановкой ФИО в `thank_you_letter_templates.pattern_link` |
 | Любимые категории | Топ-3 категорий из `event_category_map` JOIN `participations` — по частоте посещения |
 
 ---
@@ -212,15 +212,15 @@
 
 | Поле | Откуда / как считается |
 |------|------------------------|
-| Статус | `volunteer.status`: `active` / `inactive` / `blacklisted` |
-| Внутренний комментарий | `volunteer.comment` — свободный текст, пишет менеджер |
-| Дата регистрации | `volunteer.created_at` |
-| Дата последнего участия | `volunteer.last_event_at` |
+| Статус | `users.status`: `active` / `inactive` / `blacklisted` |
+| Внутренний комментарий | `users.comment` — свободный текст, пишет менеджер |
+| Дата регистрации | `users.created_at` |
+| Дата последнего участия | `users.last_event_at` |
 | Исключения из требований | `user_requirement_exceptions`: название требования (`event_requirements.title`), причина (`reason`), дата (`created_at`) |
 | Текущие активные заявки | `applications` WHERE `user_id = ? AND status = 'new'` или `'approved'`: меро, дата подачи, статус |
 | Конверсия заявок | approved / total по `applications` для данного `user_id`, в % |
-| Churn score | `volunteer.churn_score` — накопительный балл; пересчитывается при каждом новом `churn_events` |
-| История churn-событий | `churn_events`: тип (`no_show` / `late_cancel`), мероприятие, дата, дельта к скору |
+| Churn score (текущий) | `users.churn_score` (FLOAT) — коэффициент недобросовестности на текущий момент (см. бизнес-правило 9 в `db.md`) |
+| История churn по сезонам | `churn_history`: сезон (`season_id`), значение чарна на закрытие сезона (`churn_score`), дата |
 | Динамика активности | Количество `participations` по месяцам — строится по `event_days.day` с группировкой по месяцу |
 
 ---
@@ -237,11 +237,8 @@
 | Количество мероприятий как тим-лидер (сезон) | `team_leaders.season_events` — то же с фильтром текущего сезона |
 | Дата назначения на роль тим-лидера | `team_leaders.assigned_at` (последняя активная запись, где `revoked_at IS NULL`) |
 
-### 🔒 Дополнительно во внутреннем профиле (только менеджеры)
+> У тим-лидера **нет** отдельного внутреннего профиля: все данные, которые отличают его от обычного волонтёра (кол-во меро как ТЛ, дата назначения), находятся в открытом доступе. В остальном действует внутренний профиль волонтёра.
 
-| Поле | Откуда / как считается |
-|------|------------------------|
-???? 
 ---
 
 ## 3. Менеджер
@@ -250,7 +247,7 @@
 
 | Поле | Откуда / как считается |
 |------|------------------------|
-| ФИО | `volunteer.first_name`, `volunteer.last_name` (через `managers.user_id`) |
+| ФИО | `users.first_name`, `users.last_name` (через `managers.user_id`) |
 
 ---
 
@@ -258,12 +255,12 @@
 
 | Поле | Откуда / как считается |
 |------|------------------------|
-| Контакты | `volunteer.phone`, `email`, `telegram_username`, `VK_username` |
+| Контакты | `users.phone`, `email`, `telegram_username`, `VK_username` |
 | Дата назначения | `managers.assigned_at` |
 | Кто назначил | `managers.assigned_by` → ФИО |
 | Обработано заявок (всего) | COUNT(`applications`) WHERE `assigned_by = ?` |
 | Обработано заявок (сезон) | То же с фильтром `applications.created_at` в диапазоне текущего сезона |
-| Среднее время обработки заявки | AVG(`applications.reviewed_at - applications.created_at`) — только по заявкам, где `assigned_by = ?` |
+| Среднее время обработки заявки | AVG(`applications.assigned_at - applications.created_at`) — только по заявкам, где `assigned_by = ?` |
 | Текущие меро под управлением | `event_staff` WHERE `user_id = ? AND staff_role = 'manager'` JOIN `events` WHERE `event_status != 'finished'` |
 | Меро под управлением (всего) | `managers.total_events` |
 | Меро под управлением (сезон) | `managers.season_events` |
@@ -281,13 +278,13 @@
 | Описание | `events.description` |
 | Даты проведения | `event_days.day` — список всех дней; MIN/MAX для диапазона |
 | Время начала / конца | `event_days.start_time`, `event_days.end_time` |
-| Локация | `locations.name` через `event_days.location` (может быть разной по дням) |
+| Локация | `locations.name` через `event_days.location_id` (может быть разной по дням) |
 | Организация | `organizations.name` через `events.organization_id` |
 | Категории / тематики | `event_categories.name` через `event_category_map` |
-| Статус набора | `events.recruit_status`: `open` / `closed` — автоматически: `closed` когда SUM(`participations` подтверждённых) >= SUM(`event_days.volunteer_needed`) |
+| Статус набора | `events.recruit_status`: `open` / `closed` — автоматически: `closed` когда COUNT(`applications` со `status='approved'`) ≥ `const.recruit_close_ratio` × SUM(`event_days.volunteer_needed`). Фактическая явка — отдельная метрика |
 | Статус мероприятия | `events.event_status`: `upcoming` / `ongoing` / `finished` — по текущему времени vs `start_time` / `end_time` |
 | Требования к волонтёрам | `event_requirements.title` через `event_requirement_map` |
-| Тим-лидер | `volunteer.first_name / last_name / telegram_username` через `event_staff` WHERE `staff_role = 'team_lead'` |
+| Тим-лидер | `users.first_name / last_name / telegram_username` через `event_staff` WHERE `staff_role = 'team_lead'` |
 | Ссылка на пост в канале | `events.post_in_chanel_link` |
 | Количество людей, которым помогли | `events.people_helped` — вводится тим-лидом или менеджером при закрытии смены (поле обязательное) |
 
@@ -299,8 +296,8 @@
 |------|------------------------|
 | Количество волонтёров на меро | COUNT(DISTINCT `participations.user_id`) WHERE `event_day_id` принадлежит данному меро |
 | Ссылка на чат мероприятия | `events.chat_link` |
-| Благодарственное письмо | `event_thank_you_letters` WHERE `event_id = ?` AND `user_id = ?` — скачать PDF с именем волонтёра |
-| Ссылка на Добро.ру | `events.dobro_ru_url` |
+| Благодарственное письмо | если у меро задан `events.letter_id` — сгенерировать на лету из `thank_you_letter_templates` с подстановкой ФИО волонтёра (PDF не хранится) |
+| Ссылка на Добро.ру | `events.dobro_ru_link` |
 | Рейтинг мероприятия (средний) | AVG(`event_feedbacks.rating`) WHERE `event_id = ?` — показывается после завершения |
 | CTA — оставить оценку | Если `event_feedbacks` WHERE `event_id = ? AND author_id = ?` не существует — показать форму оценки |
 
@@ -314,16 +311,16 @@
 | Подтверждено участий | COUNT(`participations`) WHERE `event_day_id` IN (дни меро) AND `status = 'attended'` ИЛИ не проставлено ещё |
 | Подано заявок | COUNT(`applications`) WHERE `event_id = ?` |
 | Осталось набрать | SUM(needed) − COUNT(подтверждённых) |
-| Контакты менеджера | `volunteer.phone / telegram_username` через `event_staff` WHERE `staff_role = 'manager'` |
+| Контакты менеджера | `users.phone / telegram_username` через `event_staff` WHERE `staff_role = 'manager'` |
 | Контакты тим-лидов | Аналогично WHERE `staff_role = 'team_lead'` |
 | Контакты организатора | `organizers.phone / email / telegram_username / VK_username` через `events.organizer_id` |
 | Список заявок | `applications`: ФИО, телефон, telegram, статус, дата подачи, функция, смена — с фильтрами |
 | Проставлены ли часы на Добро.ру | `events.dobro_ru_hours_logged BOOLEAN`, `events.dobro_ru_logged_by` → ФИО |
-| Тип ссылки на Добро.ру | `events.dobro_ru_link_type` (напр. `event` / `organization` / `project`) |
-| Ссылка на Добро.ру | `events.dobro_ru_url` |
+| Тип ссылки на Добро.ру | `events.dobro_ru_link_type` (`event` / `organization` / `project`) |
+| Ссылка на Добро.ру | `events.dobro_ru_link` |
 | Средний рейтинг (внутренний) | AVG(`event_feedbacks.rating`), количество отзывов |
 | Внутренние комментарии | `events.internal_comment` — заметки по организации |
-| Выбранный шаблон письма | `event_thank_you_letters.template_id` → `thank_you_letter_templates.title`; если NULL — будет выбран случайный из пула |
+| Выбранный шаблон письма | `events.letter_id` → `thank_you_letter_templates.title` |
 
 ---
 
@@ -344,8 +341,8 @@
 | Список мероприятий | `events` WHERE `organization_id = ?`: название, дата, статус |
 | Категории / тематики | `event_categories.name` через `event_category_map` JOIN `events` WHERE `organization_id = ?` — уникальные |
 | Контактные лица (организаторы) | `organizers` через `organizer_organization_link` WHERE `organization_id = ?`: ФИО, телефон, telegram |
-| Внутренняя оценка | `organizations.internal_rating SMALLINT` — выставляется менеджером |
-| Внутренние комментарии | `organizations.comment TEXT` — заметки менеджеров и тим-лидов |
+| Внутренняя оценка | `organizations.internal_rating` — ставят менеджеры (в любой момент) и тим-лидеры (только после проведённого ими мероприятия этой организации). Видно менеджерам и тим-лидерам |
+| Внутренние комментарии | `organizations.comment` — заметки менеджеров и тим-лидеров |
 | Дата добавления в базу | `organizations.created_at` |
 
 ---
@@ -382,7 +379,7 @@
 | Всего мероприятий | COUNT(DISTINCT `events.id`) через `event_days` за период |
 | Уникальных волонтёров | COUNT(DISTINCT `participations.user_id`) за период |
 | Закрытых смен | COUNT(`participations`) WHERE `status = 'attended'` за период |
-| Новых волонтёров | COUNT(`volunteer`) WHERE `created_at` IN период |
+| Новых волонтёров | COUNT(`users`) WHERE `created_at` IN период |
 | Людей, получивших помощь | SUM(`events.people_helped`) по меро за период |
 | Топ волонтёров по часам | Никнейм + часы: SUM(`participations.hours`) GROUP BY `user_id` ORDER BY DESC, TOP-10 |
 | Топ категорий | COUNT(`participations`) GROUP BY `event_categories.name` за период |
@@ -418,7 +415,7 @@
 |------------|------------------------|
 | Меро на менеджера (период) | COUNT(`event_staff`) WHERE `staff_role = 'manager'` GROUP BY `user_id` за период |
 | Заявок обработано менеджером | COUNT(`applications`) WHERE `assigned_by = ?` за период |
-| Среднее время обработки заявки | AVG(`applications.reviewed_at - applications.created_at`) GROUP BY `assigned_by` за период |
+| Среднее время обработки заявки | AVG(`applications.assigned_at - applications.created_at`) GROUP BY `assigned_by` за период |
 | Меро на тим-лидера (период) | COUNT(`event_staff`) WHERE `staff_role = 'team_lead'` GROUP BY `user_id` за период |
 
 ---
@@ -428,8 +425,8 @@
 | Показатель | Откуда / как считается |
 |------------|------------------------|
 | % возврата волонтёров | COUNT(волонтёров, у которых есть `participations` и в прошлом периоде, и в текущем) / COUNT всех активных в прошлом периоде × 100% |
-| Churn rate | COUNT(волонтёров с `churn_score >= порог`) / COUNT всех активных, в % |
-| Новых попаданий в blacklist | COUNT(`volunteer`) WHERE `status = 'blacklisted'` AND обновлено в период |
+| Churn rate | COUNT(волонтёров с `users.churn_score >= const.churn_blacklist_threshold`) / COUNT всех активных, в % |
+| Новых попаданий в blacklist | COUNT(`users`) WHERE `status = 'blacklisted'` AND обновлено в период |
 
 ---
 
@@ -440,7 +437,7 @@
 | Меро с низким рейтингом | `events` WHERE AVG(`event_feedbacks.rating`) < 6 за период — название, рейтинг, количество отзывов |
 | Меро с высоким % отказов | `events` WHERE (rejected / total_applications) > 0.5 за период |
 | Меро с недобором | attended / needed < 0.8 (дублирует эффективность, но в отдельном блоке с деталями) |
-| Волонтёры на грани blacklist | `volunteer` WHERE `churn_score >= (порог × 0.8)` — список с текущим скором |
+| Волонтёры на грани blacklist | `users` WHERE `churn_score >= (const.churn_blacklist_threshold × 0.8)` — список с текущим скором |
 
 ---
 

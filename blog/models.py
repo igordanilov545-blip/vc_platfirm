@@ -42,6 +42,10 @@ class User(AbstractBaseUser):
         ('inactive', 'Неактивен'),
         ('blacklisted', 'В блэклисте'),
     ]
+    REGISTRATION_STATUS_CHOICES = [
+        ('guest', 'Гость (первое касание)'),
+        ('registered', 'Зарегистрирован'),
+    ]
 
     id = models.AutoField(primary_key=True)
     system_username = models.CharField(max_length=50, blank=True, null=True, db_index=True)
@@ -58,6 +62,12 @@ class User(AbstractBaseUser):
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     comment = models.TextField(blank=True, null=True)
+
+    # Прогресс онбординга в TG-боте (tg-bot.md §3.4). Не путать с `status` выше:
+    # это про заполненность анкеты, а не про допуск к участию.
+    registration_status = models.CharField(
+        max_length=20, choices=REGISTRATION_STATUS_CHOICES, default='guest'
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     last_event_at = models.DateTimeField(blank=True, null=True)
@@ -103,6 +113,9 @@ class User(AbstractBaseUser):
 
     def is_active_team_leader(self):
         return self.team_leader_roles.filter(revoked_at__isnull=True).exists()
+
+    def is_registered(self):
+        return self.registration_status == 'registered'
 
 
 class Manager(models.Model):
@@ -459,6 +472,10 @@ class Participation(models.Model):
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='attended')
     hours = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # Отметка, что запрос "оцени мероприятие" уже отправлен (tg-bot.md §4.6) —
+    # чтобы фоновая задача не слала его повторно при каждом проходе.
+    feedback_requested_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         db_table = 'participations'

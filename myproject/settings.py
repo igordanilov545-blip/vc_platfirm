@@ -16,6 +16,8 @@ SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=[])
 
+TG_BOT_TOKEN = env('TG_BOT_TOKEN', default='')
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',

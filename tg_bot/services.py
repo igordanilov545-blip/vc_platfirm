@@ -1,66 +1,93 @@
-"""Сервис-слой бота: синхронные функции над Django ORM.
+"""Сервис-слой бота: синхронные функции над `data_base.data_controller`.
 
 Хендлеры aiogram (async) вызывают их через `asgiref.sync.sync_to_async`.
 Вся бизнес-логика — здесь, хендлеры только разговаривают с пользователем.
+Работа с БД идёт исключительно через `data_controller` (tg-bot.md §9), не через
+прямые ORM-запросы из этого файла.
 """
 import re
+from datetime import timedelta
 
 from django.contrib.sessions.models import Session
 from django.db import close_old_connections
 from django.utils import timezone
 
-from blog.models import Application, BotOutbox, Event, User
+from data_base import data_controller as dc
+from blog.models import BotOutbox
+from blog.services import roles as roles_service
+from blog.services.applications import process_application
 from blog.services.notifications import notify_application_submitted
 from blog.services.stats import is_pgas_star
 
 
 # ---------------------------------------------------------------------------
-# Пользователи
+# Пользователи: первое касание, регистрация, профиль
 # ---------------------------------------------------------------------------
 
 def get_or_create_user(telegram_id: int, telegram_username: str = None):
-    """Идентификация по telegram_id (architecture.md 2.1). Возвращает (user, created)."""
+    """Первое касание (tg-bot.md §3.1) — не регистрация. Возвращает (user, created)."""
     close_old_connections()
-    user, created = User.objects.get_or_create(
-        telegram_id=str(telegram_id),
-        defaults={'telegram_username': telegram_username},
-    )
-    if not created and telegram_username and user.telegram_username != telegram_username:
-        user.telegram_username = telegram_username
-        user.save(update_fields=['telegram_username'])
-    return user, created
+    return dc.get_or_create_user_by_telegram_id(telegram_id, telegram_username)
+
+
+def get_user(user_id: int):
+    close_old_connections()
+    from blog.models import User
+    return User.objects.get(pk=user_id)
+
+
+def is_guest(user) -> bool:
+    return user.registration_status != 'registered'
+
+
+def complete_registration(user_id: int, first_name: str, last_name: str = None, phone: str = None):
+    """Завершает регистрацию (tg-bot.md §3.2): имя обязательно, телефон опционален."""
+    close_old_connections()
+    user = get_user(user_id)
+    fields = {
+        'first_name': first_name.strip()[:100],
+        'registration_status': 'registered',
+    }
+    if last_name:
+        fields['last_name'] = last_name.strip()[:100]
+    if phone:
+        fields['phone'] = phone.strip()[:20]
+    return dc.update_user_fields(user, **fields)
 
 
 def update_profile(user_id: int, first_name: str = None, last_name: str = None, phone: str = None):
     close_old_connections()
-    user = User.objects.get(pk=user_id)
-    update_fields = []
+    user = get_user(user_id)
+    fields = {}
     if first_name:
-        user.first_name = first_name.strip()[:100]
-        update_fields.append('first_name')
+        fields['first_name'] = first_name.strip()[:100]
     if last_name:
-        user.last_name = last_name.strip()[:100]
-        update_fields.append('last_name')
+        fields['last_name'] = last_name.strip()[:100]
     if phone:
-        user.phone = phone.strip()[:20]
-        update_fields.append('phone')
-    if update_fields:
-        user.save(update_fields=update_fields)
-    return user
-
-
-def refresh(user_id: int) -> User:
-    close_old_connections()
-    return User.objects.get(pk=user_id)
+        fields['phone'] = phone.strip()[:20]
+    return dc.update_user_fields(user, **fields) if fields else user
 
 
 def toggle_subscription(user_id: int) -> bool:
     """Переключает подписку на уведомления о новых меро. Возвращает новое значение."""
     close_old_connections()
-    user = User.objects.get(pk=user_id)
-    user.notify_new_events = not user.notify_new_events
-    user.save(update_fields=['notify_new_events'])
-    return user.notify_new_events
+    user = get_user(user_id)
+    new_value = not user.notify_new_events
+    dc.update_user_fields(user, notify_new_events=new_value)
+    return new_value
+
+
+def user_role_label(user) -> str:
+    """Роль называем пользователю (не путать с внутренним `status`, см. tg-bot.md §2)."""
+    return roles_service.role_label(user)
+
+
+def user_is_team_leader(user) -> bool:
+    return roles_service.is_team_leader(user)
+
+
+def user_is_manager(user) -> bool:
+    return roles_service.is_manager(user)
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +100,7 @@ LOGIN_RE = re.compile(r'^[a-zA-Z0-9_.-]{3,50}$')
 def validate_login(login: str, user_id: int):
     """None, если логин свободен и валиден; иначе — текст ошибки."""
     close_old_connections()
+    from blog.models import User
     login = login.strip()
     if not LOGIN_RE.match(login):
         return 'Логин: 3–50 символов, латиница, цифры, точки, дефисы и подчёркивания.'
@@ -84,13 +112,12 @@ def validate_login(login: str, user_id: int):
 def set_web_credentials(user_id: int, login: str, password: str):
     """Первичная установка или сброс веб-кредов + инвалидация активных веб-сессий."""
     close_old_connections()
-    user = User.objects.get(pk=user_id)
+    user = get_user(user_id)
     user.login = login.strip()
     user.set_password(password)
     user.web_credentials_set_at = timezone.now()
     user.save(update_fields=['login', 'password', 'web_credentials_set_at'])
 
-    # Инвалидация активных веб-сессий пользователя (architecture.md 2.2).
     for session in Session.objects.filter(expire_date__gte=timezone.now()):
         if session.get_decoded().get('_auth_user_id') == str(user.id):
             session.delete()
@@ -98,37 +125,27 @@ def set_web_credentials(user_id: int, login: str, password: str):
 
 
 # ---------------------------------------------------------------------------
-# Статистика и мероприятия
+# Статистика и мероприятия (волонтёр)
 # ---------------------------------------------------------------------------
 
 def user_stats(user_id: int) -> dict:
     close_old_connections()
-    user = User.objects.get(pk=user_id)
+    user = get_user(user_id)
     return {
         'total_hours': user.total_hours,
         'season_hours': user.season_hours,
         'total_events': user.total_event_count,
         'season_events': user.season_event_count,
         'is_star': is_pgas_star(user),
-        'status': user.get_status_display(),
         'blacklisted': user.status == 'blacklisted',
     }
 
 
 def open_events(limit: int = 7) -> list:
-    """Ближайшие опубликованные мероприятия с открытым набором."""
+    """Ближайшие опубликованные мероприятия с открытым набором (tg-bot.md §4.1)."""
     close_old_connections()
     today = timezone.now().date()
-    events = (
-        Event.objects.filter(
-            recruit_status='open',
-            event_status__in=['upcoming', 'ongoing'],
-            published_at__isnull=False,
-        )
-        .select_related('location')
-        .prefetch_related('days')
-        .order_by('created_at')
-    )
+    events = dc.get_open_events()
     result = []
     for event in events:
         days = sorted(d.day for d in event.days.all())
@@ -145,26 +162,25 @@ def open_events(limit: int = 7) -> list:
 
 
 def apply_to_event(user_id: int, event_id: int):
-    """Подача заявки из бота. Возвращает (application|None, текст ошибки|None)."""
+    """Подача заявки из бота (tg-bot.md §4.2–4.3). Каждый вызов — независимая заявка
+    на конкретное меро; несколько заявок на разные меро подаются отдельными вызовами.
+    Возвращает (application|None, код ошибки|None)."""
     close_old_connections()
-    user = User.objects.get(pk=user_id)
-    event = Event.objects.filter(pk=event_id).first()
+    user = get_user(user_id)
+    event = next((e for e in dc.get_events() if e.id == event_id), None)
     if not event:
-        return None, 'Мероприятие не найдено.'
+        return None, 'not_found'
     if event.recruit_status != 'open':
-        return None, 'Набор на это мероприятие уже закрыт.'
+        return None, 'closed'
     if user.status == 'blacklisted':
-        return None, 'Ваш аккаунт заблокирован — обратитесь к менеджеру центра.'
-    existing = Application.objects.filter(
-        user=user, event=event, status__in=['new', 'approved']
-    ).first()
+        return None, 'blacklisted'
+    if is_guest(user):
+        return None, 'need_registration'
+    existing = dc.get_user_application_for_event(user_id, event_id)
     if existing:
-        return None, 'У вас уже есть активная заявка на это мероприятие.'
-    if not user.first_name:
-        return None, 'need_profile'
+        return None, 'already_applied'
 
-    # Заявка через бота: submitted_at = created_at (implementation-plan Этап 4.2).
-    application = Application.objects.create(
+    application = dc.create_application(
         event=event,
         user=user,
         first_name=user.first_name or '',
@@ -178,13 +194,10 @@ def apply_to_event(user_id: int, event_id: int):
     return application, None
 
 
-def my_applications(user_id: int, limit: int = 10) -> list:
+def my_active_applications(user_id: int) -> list:
+    """Только активные заявки волонтёра (new/approved) — tg-bot.md §4.4."""
     close_old_connections()
-    apps = (
-        Application.objects.filter(user_id=user_id)
-        .select_related('event')
-        .order_by('-created_at')[:limit]
-    )
+    apps = dc.get_user_active_applications(user_id)
     return [
         {
             'event_title': a.event.title,
@@ -196,19 +209,146 @@ def my_applications(user_id: int, limit: int = 10) -> list:
     ]
 
 
-def my_letters(user_id: int) -> list:
-    """Мероприятия, за которые волонтёру доступно благодарственное письмо."""
+def submit_feedback(user_id: int, event_id: int, rating: int, comment: str = None):
+    """Оценка мероприятия после участия (tg-bot.md §4.6)."""
     close_old_connections()
-    events = (
-        Event.objects.filter(
-            days__participations__user_id=user_id,
-            days__participations__status='attended',
-            letter__isnull=False,
-        )
-        .distinct()
-        .order_by('-created_at')
-    )
-    return [{'id': e.id, 'title': e.title} for e in events]
+    user = get_user(user_id)
+    event = next((e for e in dc.get_events() if e.id == event_id), None)
+    if not event:
+        return None, 'not_found'
+    if dc.has_feedback(user_id, event_id):
+        return None, 'already_rated'
+    feedback = dc.create_feedback(author=user, event=event, rating=rating, comment=comment)
+    return feedback, None
+
+
+# ---------------------------------------------------------------------------
+# Функции тим-лидера (контекстные — только свои мероприятия)
+# ---------------------------------------------------------------------------
+
+def team_leader_events(user_id: int) -> list:
+    """Мероприятия, где пользователь назначен тим-лидером, с числом новых заявок."""
+    close_old_connections()
+    assignments = dc.get_event_staff(user_id=user_id)
+    result = []
+    for a in assignments:
+        if a.staff_role != 'team_lead':
+            continue
+        new_count = len(dc.get_applications(status_filter='new', event_id=a.event_id))
+        result.append({'id': a.event.id, 'title': a.event.title, 'new_applications': new_count})
+    return result
+
+
+def event_pending_applications(user_id: int, event_id: int):
+    """Заявки на рассмотрении по конкретному меро — с проверкой контекстных прав."""
+    close_old_connections()
+    user = get_user(user_id)
+    if not roles_service.can_process_applications(user, event_id):
+        return None, 'forbidden'
+    apps = dc.get_applications(status_filter='new', event_id=event_id)
+    return apps, None
+
+
+def process_application_decision(user_id: int, application_id: int, approve: bool):
+    """Одобрить/резерв заявки (tg-bot.md §5.2). Права: ТЛ — свои меро, менеджер — все."""
+    close_old_connections()
+    from blog.models import Application
+    user = get_user(user_id)
+    application = Application.objects.select_related('event').filter(pk=application_id).first()
+    if not application:
+        return None, 'not_found'
+    if not roles_service.can_process_applications(user, application.event_id):
+        return None, 'forbidden'
+
+    new_status = 'approved' if approve else 'rejected'
+    process_application(application, new_status, processed_by=user)
+    return application, None
+
+
+def event_participants_for_attendance(user_id: int, event_id: int):
+    """Список участников меро для простановки явки (tg-bot.md §5.3)."""
+    close_old_connections()
+    user = get_user(user_id)
+    if not roles_service.can_process_applications(user, event_id):
+        return None, 'forbidden'
+    participations = dc.get_participations(event_id=event_id)
+    return participations, None
+
+
+def set_attendance(user_id: int, participation_id: int, status: str, hours: int = None):
+    """Проставляет явку и пересчитывает агрегаты/churn волонтёра (tg-bot.md §5.3)."""
+    close_old_connections()
+    from blog.models import Participation
+    from blog.services.stats import recalc_user_aggregates, apply_churn_no_show, apply_churn_activity_decay
+
+    user = get_user(user_id)
+    participation = Participation.objects.select_related('event_day__event', 'user').filter(pk=participation_id).first()
+    if not participation:
+        return None, 'not_found'
+    event_id = participation.event_day.event_id
+    if not roles_service.can_process_applications(user, event_id):
+        return None, 'forbidden'
+
+    dc.update_participation_status(participation, status, hours=hours)
+    recalc_user_aggregates(participation.user)
+    if status == 'absent_unexcused':
+        apply_churn_no_show(participation.user)
+    elif status == 'attended':
+        apply_churn_activity_decay(participation.user)
+    return participation, None
+
+
+def add_user_comment(user_id: int, target_user_id: int, text: str, event_id: int = None):
+    """Внутренний комментарий волонтёру (tg-bot.md §5.4) — только по контексту правила 5."""
+    close_old_connections()
+    from blog.models import User, Event
+    author = get_user(user_id)
+    target = User.objects.filter(pk=target_user_id).first()
+    if not target:
+        return None, 'not_found'
+    if not roles_service.has_extended_access_to_profile(author, target):
+        return None, 'forbidden'
+    event = Event.objects.filter(pk=event_id).first() if event_id else None
+    comment = dc.create_user_comment(target_user=target, author=author, text=text, event=event)
+    return comment, None
+
+
+# ---------------------------------------------------------------------------
+# Функции менеджера
+# ---------------------------------------------------------------------------
+
+def all_applications(user_id: int, limit: int = 20):
+    """Все заявки по всем мероприятиям (tg-bot.md §6.1) — только для менеджера."""
+    close_old_connections()
+    user = get_user(user_id)
+    if not roles_service.is_manager(user):
+        return None, 'forbidden'
+    apps = dc.get_applications()[:limit]
+    return apps, None
+
+
+def active_events_with_organizers(user_id: int):
+    """Активные мероприятия с контактами организатора (tg-bot.md §6.2) — только менеджер."""
+    close_old_connections()
+    user = get_user(user_id)
+    if not roles_service.is_manager(user):
+        return None, 'forbidden'
+    return dc.get_active_events(), None
+
+
+def pending_feedback_requests(delay_hours: float = 3.0) -> list:
+    """Участники, кому пора отправить запрос на оценку мероприятия (tg-bot.md §4.6)."""
+    close_old_connections()
+    cutoff = timezone.now() - timedelta(hours=delay_hours)
+    return dc.get_participations_pending_feedback(cutoff)
+
+
+def mark_feedback_requested(participation_id: int):
+    close_old_connections()
+    from blog.models import Participation
+    participation = Participation.objects.filter(pk=participation_id).first()
+    if participation:
+        dc.mark_feedback_requested(participation)
 
 
 # ---------------------------------------------------------------------------

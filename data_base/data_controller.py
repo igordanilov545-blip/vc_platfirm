@@ -11,6 +11,7 @@ from blog.models import (
 
 __all__ = [
     'create_user', 'get_users',
+    'get_user_by_telegram_id', 'get_or_create_user_by_telegram_id', 'update_user_fields',
     'create_manager', 'get_managers',
     'create_team_leader', 'get_team_leaders',
     'create_organization', 'get_organizations',
@@ -19,15 +20,17 @@ __all__ = [
     'create_organizer_interaction', 'get_organizer_interactions',
     'create_location', 'get_locations',
     'create_event_category', 'get_event_categories',
-    'create_event', 'get_events',
+    'create_event', 'get_events', 'get_open_events', 'get_active_events',
     'add_category_to_event', 'get_event_categories_map',
     'create_event_day', 'get_event_days',
     'assign_staff_to_event', 'get_event_staff',
-    'create_application', 'get_applications',
-    'create_participation', 'get_participations',
+    'create_application', 'get_applications', 'get_user_active_applications',
+    'get_user_application_for_event', 'update_application_status',
+    'create_participation', 'get_participations', 'update_participation_status',
+    'get_participations_pending_feedback', 'mark_feedback_requested',
     'create_churn_history', 'get_churn_history',
     'create_user_comment', 'get_user_comments',
-    'create_feedback', 'get_feedbacks',
+    'create_feedback', 'get_feedbacks', 'has_feedback',
     'create_requirement', 'get_requirements',
     'add_requirement_to_event', 'get_event_requirements_map',
     'create_user_exception', 'get_user_exceptions',
@@ -67,6 +70,33 @@ def create_user(
         status=status,
         comment=comment
     )
+
+def get_user_by_telegram_id(telegram_id: str) -> Optional[User]:
+    return User.objects.filter(telegram_id=str(telegram_id)).first()
+
+
+def get_or_create_user_by_telegram_id(telegram_id: str, telegram_username: Optional[str] = None):
+    """Первое касание бота (tg-bot.md §3.1): создаёт пользователя-гостя, если его ещё нет.
+    Возвращает (user, created)."""
+    user, created = User.objects.get_or_create(
+        telegram_id=str(telegram_id),
+        defaults={'telegram_username': telegram_username, 'registration_status': 'guest'},
+    )
+    if not created and telegram_username and user.telegram_username != telegram_username:
+        user.telegram_username = telegram_username
+        user.save(update_fields=['telegram_username'])
+    return user, created
+
+
+def update_user_fields(user: User, **fields) -> User:
+    """Точечное обновление полей пользователя (например, при регистрации в боте)."""
+    allowed = set(fields) & {f.name for f in User._meta.get_fields()}
+    for name in allowed:
+        setattr(user, name, fields[name])
+    if allowed:
+        user.save(update_fields=list(allowed))
+    return user
+
 
 def create_manager(
     user: User,
@@ -336,6 +366,30 @@ def get_events(title_filter: Optional[str] = None) -> List[Event]:
         qs = qs.filter(title__icontains=title_filter)
     return list(qs)
 
+# --- EVENTS (доп. выборки для бота) ---
+def get_open_events(limit: Optional[int] = None) -> List[Event]:
+    """Опубликованные меро с открытым набором (tg-bot.md §4.1)."""
+    qs = (
+        Event.objects.filter(
+            recruit_status='open',
+            event_status__in=['upcoming', 'ongoing'],
+            published_at__isnull=False,
+        )
+        .select_related('location')
+        .prefetch_related('days')
+        .order_by('created_at')
+    )
+    return list(qs[:limit]) if limit else list(qs)
+
+
+def get_active_events() -> List[Event]:
+    """Не завершённые меро (для карточек с контактами организатора у менеджера)."""
+    return list(
+        Event.objects.filter(event_status__in=['upcoming', 'ongoing'])
+        .select_related('location', 'organization', 'organizer')
+    )
+
+
 # --- CATEGORY MAP ---
 def get_event_categories_map(event_id: Optional[int] = None) -> List[EventCategoryMap]:
     qs = EventCategoryMap.objects.all()
@@ -360,22 +414,83 @@ def get_event_staff(event_id: Optional[int] = None, user_id: Optional[int] = Non
     return list(qs)
 
 # --- APPLICATIONS ---
-def get_applications(status_filter: Optional[str] = None, applicant_name: Optional[str] = None) -> List[Application]:
-    qs = Application.objects.all()
+def get_applications(
+    status_filter: Optional[str] = None,
+    applicant_name: Optional[str] = None,
+    event_id: Optional[int] = None,
+) -> List[Application]:
+    qs = Application.objects.select_related('event', 'user').order_by('-created_at')
     if status_filter:
         qs = qs.filter(status=status_filter)
     if applicant_name:
         qs = qs.filter(first_name__icontains=applicant_name) | qs.filter(last_name__icontains=applicant_name)
+    if event_id:
+        qs = qs.filter(event_id=event_id)
     return list(qs)
 
+def get_user_active_applications(user_id: int) -> List[Application]:
+    """Активные заявки волонтёра — только new/approved (tg-bot.md §4.4)."""
+    return list(
+        Application.objects.filter(user_id=user_id, status__in=['new', 'approved'])
+        .select_related('event')
+        .order_by('-created_at')
+    )
+
+
+def get_user_application_for_event(user_id: int, event_id: int) -> Optional[Application]:
+    return Application.objects.filter(
+        user_id=user_id, event_id=event_id, status__in=['new', 'approved']
+    ).first()
+
+
+def update_application_status(application: Application, status: str, assigned_by: Optional[User] = None) -> Application:
+    application.status = status
+    application.assigned_at = timezone.now()
+    if assigned_by:
+        application.assigned_by = assigned_by
+    application.save(update_fields=['status', 'assigned_at', 'assigned_by'])
+    return application
+
+
 # --- PARTICIPATIONS ---
-def get_participations(status_filter: Optional[str] = None, volunteer_name: Optional[str] = None) -> List[Participation]:
+def get_participations(
+    status_filter: Optional[str] = None,
+    volunteer_name: Optional[str] = None,
+    event_id: Optional[int] = None,
+) -> List[Participation]:
     qs = Participation.objects.select_related('user', 'event_day')
     if status_filter:
         qs = qs.filter(status=status_filter)
     if volunteer_name:
         qs = qs.filter(Q(user__first_name__icontains=volunteer_name) | Q(user__last_name__icontains=volunteer_name))
+    if event_id:
+        qs = qs.filter(event_day__event_id=event_id)
     return list(qs)
+
+
+def get_participations_pending_feedback(before) -> List[Participation]:
+    """Присутствовавшие участники завершённых дней меро старше `before`, кому ещё
+    не отправляли запрос "оцени мероприятие" (tg-bot.md §4.6)."""
+    return list(
+        Participation.objects.filter(
+            status='attended',
+            feedback_requested_at__isnull=True,
+            event_day__end_time__lte=before,
+        ).select_related('user', 'event_day__event')
+    )
+
+
+def mark_feedback_requested(participation: Participation) -> None:
+    participation.feedback_requested_at = timezone.now()
+    participation.save(update_fields=['feedback_requested_at'])
+
+
+def update_participation_status(participation: Participation, status: str, hours: Optional[int] = None) -> Participation:
+    participation.status = status
+    if hours is not None:
+        participation.hours = hours
+    participation.save(update_fields=['status', 'hours'])
+    return participation
 
 # --- FEEDBACKS ---
 def get_feedbacks(event_id: Optional[int] = None, author_id: Optional[int] = None) -> List[EventFeedback]:
@@ -385,6 +500,10 @@ def get_feedbacks(event_id: Optional[int] = None, author_id: Optional[int] = Non
     if author_id:
         qs = qs.filter(author_id=author_id)
     return list(qs)
+
+def has_feedback(author_id: int, event_id: int) -> bool:
+    return EventFeedback.objects.filter(author_id=author_id, event_id=event_id).exists()
+
 
 # --- REQUIREMENTS ---
 def get_requirements(title_filter: Optional[str] = None) -> List[EventRequirement]:

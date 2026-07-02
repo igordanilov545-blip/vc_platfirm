@@ -68,6 +68,16 @@ def notify_application_status(application):
     notify_user(application.user, text)
 
 
+def notify_feedback_request(user: User, event):
+    """Просьба оценить мероприятие после участия (tg-bot.md §4.6)."""
+    text = (
+        f'🙏 Спасибо, что был(а) на «{event.title}»!\n\n'
+        'Оцени мероприятие от 1 до 10 и, если хочешь, оставь комментарий — это помогает '
+        'организаторам стать лучше.'
+    )
+    notify_user(user, text)
+
+
 def broadcast_new_event(event):
     """Новое опубликованное мероприятие → всем подписанным активным волонтёрам."""
     first_day = event.days.order_by('day').first()

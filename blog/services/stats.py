@@ -99,7 +99,9 @@ def recruit_status_for_event(event):
 
 
 def close_season(season):
-    """Снимок ненулевого churn в churn_history, затем carryover (правило 9/11)."""
+    """Закрытие сезона (правила 9/11): снимок ненулевого churn в churn_history,
+    carryover, обнуление season_*; авто-создание бессрочного сезона, если
+    следующий не задан. Возвращает созданный сезон или None."""
     from blog.models import User
     min_seasons = _const('churn_carryover_min_seasons', 2)
     for user in User.objects.filter(churn_score__gt=0):
@@ -112,3 +114,15 @@ def close_season(season):
         user.save(update_fields=['churn_score'])
 
     User.objects.update(season_hours=0, season_event_count=0)
+
+    today = timezone.now().date()
+    if not season.end_season or season.end_season > today:
+        season.end_season = today
+        season.save(update_fields=['end_season'])
+
+    next_start = season.end_season + timedelta(days=1)
+    has_next = Season.objects.filter(start_season__gte=next_start).exists()
+    if not has_next:
+        # Бессрочный сезон: end_season=NULL — плашка «нужно задать дату конца».
+        return Season.objects.create(start_season=next_start, end_season=None)
+    return None

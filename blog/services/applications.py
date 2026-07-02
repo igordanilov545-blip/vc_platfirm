@@ -43,4 +43,7 @@ def process_application(application: Application, new_status: str, processed_by:
     application.event.recruit_status = recruit_status_for_event(application.event)
     application.event.save(update_fields=['recruit_status'])
 
+    from blog.services.notifications import notify_application_status
+    notify_application_status(application)
+
     return application

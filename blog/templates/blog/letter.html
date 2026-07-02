@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Благодарственное письмо — {{ target.full_name }}</title>
+    <style>
+        /* Брендбук: "Глубокий фиолетовый" (documentation/brand_book.md). Страница под печать A4. */
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #F0EDFF;
+            color: #252038;
+        }
+        .toolbar {
+            display: flex; justify-content: center; gap: 1rem; padding: 1rem;
+        }
+        .toolbar button, .toolbar a {
+            background: #7C5DC7; color: #fff; border: none; border-radius: 8px;
+            padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer;
+            text-decoration: none;
+        }
+        .sheet {
+            width: 210mm; min-height: 280mm; margin: 0 auto 2rem;
+            background: #fff; padding: 25mm 20mm;
+            border: 10px solid #7C5DC7; border-radius: 4px;
+            display: flex; flex-direction: column; text-align: center;
+        }
+        .sheet .org { font-size: 14px; letter-spacing: 0.2em; text-transform: uppercase; color: #7C5DC7; }
+        .sheet h1 { font-size: 42px; color: #7C5DC7; margin: 2.5rem 0 0.5rem; }
+        .sheet .subtitle { font-size: 18px; opacity: 0.7; margin-bottom: 3rem; }
+        .sheet .name { font-size: 32px; font-weight: 700; margin: 1rem 0; }
+        .sheet .body-text { font-size: 17px; line-height: 1.8; max-width: 150mm; margin: 0 auto; }
+        .sheet .meta { margin-top: auto; padding-top: 3rem; font-size: 14px; opacity: 0.75; display: flex; justify-content: space-between; }
+        @media print {
+            body { background: #fff; }
+            .toolbar { display: none; }
+            .sheet { margin: 0; border-width: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button onclick="window.print()">🖨 Печать / сохранить в PDF</button>
+        <a href="{% url 'profile_detail' target.id %}">← Назад к профилю</a>
+    </div>
+    <div class="sheet">
+        <div class="org">Волонтёрский центр</div>
+        <h1>Благодарственное письмо</h1>
+        <div class="subtitle">{{ letter.title }}</div>
+        <div class="body-text">Выражаем искреннюю благодарность</div>
+        <div class="name">{{ target.first_name }} {{ target.last_name }}</div>
+        <div class="body-text">
+            {% if letter.description %}{{ letter.description }}{% else %}
+            за активное участие в мероприятии «{{ event.title }}»
+            {% if event.organization %}(организатор — {{ event.organization.name }}){% endif %}
+            и вклад в развитие волонтёрского движения.
+            {% endif %}
+            <br><br>Отработано часов: <b>{{ hours }}</b>.
+        </div>
+        <div class="meta">
+            <span>{{ last_day|date:"d.m.Y" }}</span>
+            <span>Волонтёрский центр</span>
+        </div>
+    </div>
+</body>
+</html>

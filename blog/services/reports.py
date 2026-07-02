@@ -124,6 +124,35 @@ def period_report_basic(date_from, date_to):
     }
 
 
+def weekly_dynamics(date_from, date_to):
+    """Динамика по неделям: часы и закрытые смены на каждую неделю периода.
+    Используется для графика в отчёте за период."""
+    from datetime import timedelta
+
+    weeks = []
+    max_hours = 0
+    cursor = date_from
+    while cursor <= date_to:
+        week_end = min(cursor + timedelta(days=6), date_to)
+        attended = Participation.objects.filter(
+            event_day__day__gte=cursor, event_day__day__lte=week_end, status='attended'
+        )
+        hours = attended.aggregate(s=Sum('hours'))['s'] or 0
+        shifts = attended.count()
+        max_hours = max(max_hours, hours)
+        weeks.append({
+            'from': cursor,
+            'to': week_end,
+            'hours': hours,
+            'shifts': shifts,
+        })
+        cursor = week_end + timedelta(days=1)
+
+    for week in weeks:
+        week['pct'] = round(week['hours'] / max_hours * 100) if max_hours else 0
+    return weeks
+
+
 def recruitment_efficiency(date_from, date_to):
     """% закрытия слотов по каждому меро, недокомплект (reports.md)."""
     events = Event.objects.filter(days__day__gte=date_from, days__day__lte=date_to).distinct()

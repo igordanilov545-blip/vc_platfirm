@@ -74,6 +74,9 @@ class User(AbstractBaseUser):
     login = models.CharField(max_length=50, unique=True, blank=True, null=True)
     web_credentials_set_at = models.DateTimeField(blank=True, null=True)
 
+    # Подписка на уведомления бота о новых мероприятиях (Этап 8).
+    notify_new_events = models.BooleanField(default=True)
+
     objects = UserManager()
 
     USERNAME_FIELD = 'telegram_id'
@@ -539,6 +542,36 @@ class EventRequirementMap(models.Model):
         unique_together = ('event', 'requirement')
         verbose_name = 'Требование мероприятия (связь)'
         verbose_name_plural = 'Требования мероприятий (связи)'
+
+
+class BotOutbox(models.Model):
+    """Очередь исходящих сообщений в Telegram (диспетчер уведомлений, Этап 8).
+
+    Сообщения кладутся сюда из веб-приложения/сервисов и отправляются процессом
+    бота (management command `run_bot`) с ретраями при сбоях Telegram API.
+    """
+    STATUS_CHOICES = [
+        ('pending', 'Ожидает отправки'),
+        ('sent', 'Отправлено'),
+        ('failed', 'Ошибка (исчерпаны попытки)'),
+    ]
+
+    id = models.AutoField(primary_key=True)
+    chat_id = models.CharField(max_length=50, db_index=True)
+    text = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    attempts = models.IntegerField(default=0)
+    last_error = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'bot_outbox'
+        verbose_name = 'Исходящее сообщение бота'
+        verbose_name_plural = 'Исходящие сообщения бота'
+        indexes = [
+            models.Index(fields=['status', 'created_at']),
+        ]
 
 
 class UserRequirementException(models.Model):

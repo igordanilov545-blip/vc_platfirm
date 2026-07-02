@@ -40,13 +40,26 @@
 
 <div class="card">
     <h3>Сезоны</h3>
+    <p style="opacity:0.7; font-size:0.85rem;">Закрытие сезона фиксирует churn в истории (carryover), обнуляет сезонные счётчики и создаёт новый бессрочный сезон, если следующий не задан.</p>
     <table>
-        <thead><tr><th>Начало</th><th>Конец</th><th>Создан</th></tr></thead>
+        <thead><tr><th>Начало</th><th>Конец</th><th>Создан</th><th></th></tr></thead>
         <tbody>
         {% for season in seasons %}
-            <tr><td>{{ season.start_season }}</td><td>{{ season.end_season|default:"— (бессрочный)" }}</td><td>{{ season.created_at }}</td></tr>
+            <tr>
+                <td>{{ season.start_season }}</td>
+                <td>{% if season.end_season %}{{ season.end_season }}{% else %}<span class="badge warn">Бессрочный — задайте дату конца</span>{% endif %}</td>
+                <td>{{ season.created_at }}</td>
+                <td>
+                    <form method="post" class="inline" onsubmit="return confirm('Закрыть сезон? Churn будет зафиксирован, сезонные счётчики обнулены.');">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="close_season">
+                        <input type="hidden" name="season_id" value="{{ season.id }}">
+                        <button type="submit" class="btn danger" style="padding:0.25rem 0.6rem;">Закрыть сезон</button>
+                    </form>
+                </td>
+            </tr>
         {% empty %}
-            <tr><td colspan="3">Сезонов пока нет.</td></tr>
+            <tr><td colspan="4">Сезонов пока нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>

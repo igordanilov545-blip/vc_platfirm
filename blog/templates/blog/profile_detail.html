@@ -11,6 +11,19 @@
     <div class="stat-tile"><div class="value">{{ target.season_event_count }}</div><div class="label">Мероприятий за сезон</div></div>
 </div>
 
+{% if tl_role or mgr_role %}
+<div class="card">
+    <h3>Роль в центре</h3>
+    {% if mgr_role %}
+        <p><span class="badge">Менеджер</span> с {{ mgr_role.assigned_at|date:"d.m.Y" }}</p>
+    {% endif %}
+    {% if tl_role %}
+        <p><span class="badge">Тим-лидер</span> с {{ tl_role.assigned_at|date:"d.m.Y" }} ·
+           мероприятий как тим-лидер: {{ tl_event_count }}</p>
+    {% endif %}
+</div>
+{% endif %}
+
 <div class="card">
     <h3>Прошедшие мероприятия</h3>
     <table>
@@ -48,6 +61,15 @@
         {% endfor %}
         </tbody>
     </table>
+</div>
+
+<div class="card">
+    <h3>Благодарственные письма</h3>
+    {% for e in letters_pool %}
+        <p>«{{ e.title }}» — <a href="{% url 'letter_view' target.id e.id %}">открыть письмо</a></p>
+    {% empty %}
+        <p>Писем пока нет: они появляются после явки на мероприятие, у которого задан шаблон письма.</p>
+    {% endfor %}
 </div>
 {% endif %}
 

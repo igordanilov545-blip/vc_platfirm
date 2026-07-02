@@ -3,7 +3,17 @@
 {% block content %}
 <div style="display:flex; justify-content:space-between; align-items:center;">
     <h1>{{ event.title }}</h1>
-    {% if is_manager %}<a href="{% url 'event_edit' event.id %}" class="btn secondary">Редактировать</a>{% endif %}
+    {% if is_manager %}
+    <div style="display:flex; gap:0.5rem; align-items:center;">
+        {% if not event.published_at %}
+        <form method="post" action="{% url 'event_publish' event.id %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="btn">📣 Опубликовать</button>
+        </form>
+        {% endif %}
+        <a href="{% url 'event_edit' event.id %}" class="btn secondary">Редактировать</a>
+    </div>
+    {% endif %}
 </div>
 
 <div class="card">
@@ -11,6 +21,9 @@
     <p><span class="badge">{{ event.get_event_status_display }}</span>
        {% if event.recruit_status == 'open' %}<span class="badge">Набор открыт</span>{% else %}<span class="badge warn">Набор закрыт</span>{% endif %}</p>
     <p>Локация: {{ event.location.name|default:"—" }} · Организация: {{ event.organization.name|default:"—" }}</p>
+    {% if is_manager %}
+        <p>{% if event.published_at %}Опубликовано: {{ event.published_at }}{% else %}<span class="badge warn">Не опубликовано</span> — волонтёры ещё не получили уведомление в боте{% endif %}</p>
+    {% endif %}
     {% if event.people_helped is not None %}<p>Людям помогли: {{ event.people_helped }}</p>{% endif %}
 </div>
 

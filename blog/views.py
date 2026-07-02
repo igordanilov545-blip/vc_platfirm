@@ -22,6 +22,7 @@ from blog.models import (
     Organizer, Participation, Season, TeamLeader, User,
 )
 from blog.services import import_applications as import_service
+from blog.services import notifications as notifications_service
 from blog.services import reports as reports_service
 from blog.services.applications import process_application
 from blog.services.roles import (
@@ -186,6 +187,22 @@ def event_edit(request, event_id):
 
 
 @manager_required
+def event_publish(request, event_id):
+    """Публикация мероприятия: проставляет published_at и рассылает уведомление
+    подписанным волонтёрам через бота (architecture.md, сценарий 4.4)."""
+    event = get_object_or_404(Event, pk=event_id)
+    if request.method == 'POST':
+        if event.published_at:
+            messages.error(request, 'Мероприятие уже опубликовано.')
+        else:
+            event.published_at = timezone.now()
+            event.save(update_fields=['published_at'])
+            notifications_service.broadcast_new_event(event)
+            messages.success(request, 'Мероприятие опубликовано, уведомления волонтёрам поставлены в очередь.')
+    return redirect('event_detail', event_id=event.id)
+
+
+@manager_required
 def event_day_add(request, event_id):
     event = get_object_or_404(Event, pk=event_id)
     form = EventDayForm(request.POST or None)
@@ -260,6 +277,7 @@ def application_create(request):
         if request.user.is_authenticated:
             application.user = request.user
         application.save()
+        notifications_service.notify_application_submitted(application)
         messages.success(request, 'Заявка отправлена.')
         return redirect('dashboard')
     return render(request, 'blog/application_form.html', {'form': form})
@@ -344,8 +362,30 @@ def profile_detail(request, user_id):
         'past_participations': target.participations.filter(status='attended').select_related('event_day__event').order_by('-event_day__day')[:50],
     }
 
+    # Публичный блок ТЛ/менеджера (reports.md: кол-во меро как ТЛ, дата назначения).
+    tl_role = target.team_leader_roles.filter(revoked_at__isnull=True).first()
+    if tl_role:
+        context['tl_role'] = tl_role
+        context['tl_event_count'] = EventStaff.objects.filter(
+            user=target, staff_role='team_lead'
+        ).count()
+    mgr_role = target.manager_roles.filter(revoked_at__isnull=True).first()
+    if mgr_role:
+        context['mgr_role'] = mgr_role
+
     if has_extended:
         context['applications'] = target.applications.select_related('event').order_by('-created_at')
+        # Пул благодарственных писем: мероприятия с явкой и заданным шаблоном.
+        context['letters_pool'] = (
+            Event.objects.filter(
+                days__participations__user=target,
+                days__participations__status='attended',
+                letter__isnull=False,
+            )
+            .distinct()
+            .select_related('letter')
+            .order_by('-created_at')
+        )
 
     if is_mgr:
         context['churn_history'] = target.churn_history.select_related('season').order_by('-created_at')
@@ -361,6 +401,39 @@ def profile_detail(request, user_id):
         context['comment_form'] = UserCommentForm(event_queryset=event_queryset)
 
     return render(request, 'blog/profile_detail.html', context)
+
+
+@login_required
+def letter_view(request, user_id, event_id):
+    """Благодарственное письмо — генерируется на лету, PDF не хранится
+    (implementation-plan Этап 6.4). Страница свёрстана под печать/сохранение в PDF.
+
+    Доступ: сам волонтёр, менеджер или ТЛ с расширенным доступом к профилю.
+    """
+    target = get_object_or_404(User, pk=user_id)
+    event = get_object_or_404(Event.objects.select_related('letter', 'organization'), pk=event_id)
+
+    if not has_extended_access_to_profile(request.user, target):
+        raise PermissionDenied('Нет доступа к письмам этого волонтёра.')
+    if not event.letter:
+        raise PermissionDenied('У мероприятия не задан шаблон благодарственного письма.')
+
+    attended = Participation.objects.filter(
+        user=target, event_day__event=event, status='attended'
+    ).select_related('event_day')
+    if not attended.exists():
+        raise PermissionDenied('Волонтёр не участвовал в этом мероприятии.')
+
+    hours = sum(p.hours for p in attended)
+    last_day = max(p.event_day.day for p in attended)
+
+    return render(request, 'blog/letter.html', {
+        'target': target,
+        'event': event,
+        'letter': event.letter,
+        'hours': hours,
+        'last_day': last_day,
+    })
 
 
 @manager_required
@@ -405,8 +478,7 @@ def profile_comment_add(request, user_id):
 # Отчёты (Этап 5, reports.md раздел 7)
 # ---------------------------------------------------------------------------
 
-@manager_required
-def report_period(request):
+def _report_period_range(request):
     today = timezone.now().date()
     period = request.GET.get('period', 'month')
 
@@ -416,7 +488,12 @@ def report_period(request):
         date_from = today - datetime.timedelta(days=120)
     else:
         date_from = today - datetime.timedelta(days=30)
-    date_to = today
+    return period, date_from, today
+
+
+@manager_required
+def report_period(request):
+    period, date_from, date_to = _report_period_range(request)
 
     span = (date_to - date_from).days
     prev_to = date_from - datetime.timedelta(days=1)
@@ -425,6 +502,7 @@ def report_period(request):
     data = reports_service.period_report(date_from, date_to, prev_from, prev_to)
     efficiency = reports_service.recruitment_efficiency(date_from, date_to)
     staff = reports_service.staff_load(date_from, date_to)
+    weekly = reports_service.weekly_dynamics(date_from, date_to)
 
     context = {
         'period': period,
@@ -433,8 +511,62 @@ def report_period(request):
         'report': data,
         'efficiency': efficiency,
         'staff': staff,
+        'weekly': weekly,
     }
     return render(request, 'blog/report_period.html', context)
+
+
+@manager_required
+def report_period_export(request):
+    """Экспорт отчёта за период в CSV (Этап 5.4). Разделитель `;` и BOM —
+    чтобы файл корректно открывался в русском Excel."""
+    import csv
+    from django.http import HttpResponse
+
+    period, date_from, date_to = _report_period_range(request)
+    data = reports_service.period_report(date_from, date_to)
+    efficiency = reports_service.recruitment_efficiency(date_from, date_to)
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = (
+        f'attachment; filename="report_{date_from}_{date_to}.csv"'
+    )
+    response.write('﻿')  # BOM для Excel
+    writer = csv.writer(response, delimiter=';')
+
+    writer.writerow(['Отчёт за период', f'{date_from} — {date_to}'])
+    writer.writerow([])
+    writer.writerow(['Показатель', 'Значение'])
+    writer.writerow(['Часов за период', data['total_hours']])
+    writer.writerow(['Мероприятий', data['total_events']])
+    writer.writerow(['Уникальных волонтёров', data['unique_volunteers']])
+    writer.writerow(['Закрытых смен', data['closed_shifts']])
+    writer.writerow(['Новых волонтёров', data['new_volunteers']])
+    writer.writerow(['Людей получили помощь', data['people_helped']])
+    writer.writerow([])
+    writer.writerow(['Воронка набора'])
+    writer.writerow(['Подано', data['funnel']['submitted']])
+    writer.writerow(['Одобрено', data['funnel']['approved']])
+    writer.writerow(['Отклонено/резерв', data['funnel']['rejected']])
+    writer.writerow(['Явка', data['funnel']['attended']])
+    writer.writerow(['Не пришли без предупреждения', data['funnel']['unexcused']])
+    writer.writerow(['Конверсия подал → явка, %', data['funnel']['conversion_pct']])
+    writer.writerow([])
+    writer.writerow(['Топ волонтёров по часам'])
+    writer.writerow(['Волонтёр', 'Telegram', 'Часы'])
+    for v in data['top_volunteers']:
+        writer.writerow([
+            f"{v['user__first_name'] or ''} {v['user__last_name'] or ''}".strip(),
+            v['user__telegram_username'] or '',
+            v['hours'],
+        ])
+    writer.writerow([])
+    writer.writerow(['Эффективность набора по мероприятиям'])
+    writer.writerow(['Мероприятие', 'Нужно', 'Явилось', '% закрытия'])
+    for e in efficiency:
+        writer.writerow([e['title'], e['needed'], e['attended'], e['pct_closed']])
+
+    return response
 
 
 @manager_required
@@ -553,6 +685,16 @@ def settings_view(request):
             return redirect('settings')
     else:
         season_form = SeasonForm()
+
+    if request.method == 'POST' and request.POST.get('action') == 'close_season':
+        from blog.services.stats import close_season
+        season = get_object_or_404(Season, pk=request.POST.get('season_id'))
+        next_season = close_season(season)
+        msg = 'Сезон закрыт: churn зафиксирован в истории, сезонные счётчики обнулены.'
+        if next_season:
+            msg += ' Создан новый бессрочный сезон — задайте дату его окончания.'
+        messages.success(request, msg)
+        return redirect('settings')
 
     captcha_question = _new_captcha(request)
 

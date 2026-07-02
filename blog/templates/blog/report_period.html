@@ -8,7 +8,24 @@
     <a href="?period=month" class="{% if period == 'month' %}active{% endif %}">Месяц</a>
     <a href="?period=season" class="{% if period == 'season' %}active{% endif %}">Сезон</a>
 </div>
-<p class="badge">{{ date_from }} — {{ date_to }}</p>
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+    <p class="badge" style="margin:0;">{{ date_from }} — {{ date_to }}</p>
+    <a href="{% url 'report_period_export' %}?period={{ period }}" class="btn secondary">⬇ Экспорт в CSV</a>
+</div>
+
+<style>
+    /* Графики отчёта: одна серия — бренд-цвет, подписи — текстовыми токенами. */
+    .hbar-row { display: grid; grid-template-columns: 160px 1fr 70px; align-items: center; gap: 0.6rem; margin-bottom: 6px; }
+    .hbar-track { background: color-mix(in srgb, var(--secondary) 35%, transparent); border-radius: 4px; height: 22px; }
+    .hbar-fill { background: var(--primary); border-radius: 4px; height: 100%; min-width: 2px; }
+    .hbar-label { font-size: 0.85rem; text-align: right; opacity: 0.85; }
+    .hbar-value { font-size: 0.85rem; font-weight: 600; }
+    .cols { display: flex; align-items: flex-end; gap: 6px; height: 160px; padding-top: 0.5rem; }
+    .col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
+    .col .bar { width: 100%; max-width: 48px; background: var(--primary); border-radius: 4px 4px 0 0; min-height: 2px; }
+    .col .val { font-size: 0.78rem; font-weight: 600; margin-bottom: 2px; }
+    .col .lbl { font-size: 0.72rem; opacity: 0.7; margin-top: 4px; text-align: center; white-space: nowrap; }
+</style>
 
 <div class="stat-grid">
     <div class="stat-tile"><div class="value">{{ report.total_hours }}</div><div class="label">Часов за период</div></div>
@@ -45,8 +62,52 @@
 
 <div class="card">
     <h3>Воронка набора</h3>
-    <p>Подано: {{ report.funnel.submitted }} → Одобрено: {{ report.funnel.approved }} → Явка: {{ report.funnel.attended }} → Не пришли: {{ report.funnel.unexcused }}</p>
-    <p>Конверсия подал → явка: {{ report.funnel.conversion_pct }}%</p>
+    {% widthratio report.funnel.approved report.funnel.submitted|default:1 100 as approved_pct %}
+    {% widthratio report.funnel.attended report.funnel.submitted|default:1 100 as attended_pct %}
+    {% widthratio report.funnel.unexcused report.funnel.submitted|default:1 100 as unexcused_pct %}
+    <div class="hbar-row">
+        <span class="hbar-label">Подано</span>
+        <div class="hbar-track"><div class="hbar-fill" style="width:{% if report.funnel.submitted %}100{% else %}0{% endif %}%;"></div></div>
+        <span class="hbar-value">{{ report.funnel.submitted }}</span>
+    </div>
+    <div class="hbar-row">
+        <span class="hbar-label">Одобрено</span>
+        <div class="hbar-track"><div class="hbar-fill" style="width:{{ approved_pct }}%;"></div></div>
+        <span class="hbar-value">{{ report.funnel.approved }}</span>
+    </div>
+    <div class="hbar-row">
+        <span class="hbar-label">Явка</span>
+        <div class="hbar-track"><div class="hbar-fill" style="width:{{ attended_pct }}%;"></div></div>
+        <span class="hbar-value">{{ report.funnel.attended }}</span>
+    </div>
+    <div class="hbar-row">
+        <span class="hbar-label">Не пришли (без пред.)</span>
+        <div class="hbar-track"><div class="hbar-fill" style="width:{{ unexcused_pct }}%;"></div></div>
+        <span class="hbar-value">{{ report.funnel.unexcused }}</span>
+    </div>
+    <p style="margin-top:0.75rem;">Конверсия подал → явка: <b>{{ report.funnel.conversion_pct }}%</b></p>
+</div>
+
+<div class="card">
+    <h3>Динамика по неделям</h3>
+    <p style="opacity:0.7; font-size:0.85rem;">Часы (высота столбца) и закрытые смены по неделям периода.</p>
+    <div class="cols">
+        {% for w in weekly %}
+        <div class="col" title="{{ w.from|date:'d.m' }} – {{ w.to|date:'d.m' }}: {{ w.hours }} ч, {{ w.shifts }} смен">
+            <span class="val">{{ w.hours }}</span>
+            <div class="bar" style="height:{{ w.pct }}%;"></div>
+            <span class="lbl">{{ w.from|date:"d.m" }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    <table style="margin-top:1rem;">
+        <thead><tr><th>Неделя</th><th>Часы</th><th>Закрытые смены</th></tr></thead>
+        <tbody>
+        {% for w in weekly %}
+            <tr><td>{{ w.from|date:"d.m.Y" }} — {{ w.to|date:"d.m.Y" }}</td><td>{{ w.hours }}</td><td>{{ w.shifts }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
 </div>
 
 <div class="card">

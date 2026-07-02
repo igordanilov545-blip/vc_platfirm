@@ -1,0 +1,127 @@
+{% extends 'blog/base.html' %}
+{% block title %}Отчёт за период{% endblock %}
+{% block content %}
+<h1>Отчёт за период</h1>
+
+<div class="tabs">
+    <a href="?period=week" class="{% if period == 'week' %}active{% endif %}">Неделя</a>
+    <a href="?period=month" class="{% if period == 'month' %}active{% endif %}">Месяц</a>
+    <a href="?period=season" class="{% if period == 'season' %}active{% endif %}">Сезон</a>
+</div>
+<p class="badge">{{ date_from }} — {{ date_to }}</p>
+
+<div class="stat-grid">
+    <div class="stat-tile"><div class="value">{{ report.total_hours }}</div><div class="label">Часов за период</div></div>
+    <div class="stat-tile"><div class="value">{{ report.total_events }}</div><div class="label">Мероприятий</div></div>
+    <div class="stat-tile"><div class="value">{{ report.unique_volunteers }}</div><div class="label">Уникальных волонтёров</div></div>
+    <div class="stat-tile"><div class="value">{{ report.closed_shifts }}</div><div class="label">Закрытых смен</div></div>
+    <div class="stat-tile"><div class="value">{{ report.new_volunteers }}</div><div class="label">Новых волонтёров</div></div>
+    <div class="stat-tile"><div class="value">{{ report.people_helped }}</div><div class="label">Людей получили помощь</div></div>
+</div>
+
+{% if report.comparison %}
+<div class="card">
+    <h3>Сравнение с прошлым периодом</h3>
+    <p>Δ часов: {{ report.comparison.hours_delta }}</p>
+    <p>Δ мероприятий: {{ report.comparison.events_delta }}</p>
+    <p>Δ волонтёров: {{ report.comparison.volunteers_delta }}</p>
+    <p>Δ новых волонтёров: {{ report.comparison.new_volunteers_delta }}</p>
+</div>
+{% endif %}
+
+<div class="card">
+    <h3>Топ волонтёров по часам</h3>
+    <table>
+        <thead><tr><th>Волонтёр</th><th>Часы</th></tr></thead>
+        <tbody>
+        {% for v in report.top_volunteers %}
+            <tr data-href="{% url 'profile_detail' v.user__id %}"><td>{{ v.user__first_name }} {{ v.user__last_name }} ({{ v.user__telegram_username|default:"—" }})</td><td>{{ v.hours }}</td></tr>
+        {% empty %}
+            <tr><td colspan="2">Нет данных.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h3>Воронка набора</h3>
+    <p>Подано: {{ report.funnel.submitted }} → Одобрено: {{ report.funnel.approved }} → Явка: {{ report.funnel.attended }} → Не пришли: {{ report.funnel.unexcused }}</p>
+    <p>Конверсия подал → явка: {{ report.funnel.conversion_pct }}%</p>
+</div>
+
+<div class="card">
+    <h3>Эффективность набора по мероприятиям</h3>
+    <table>
+        <thead><tr><th>Мероприятие</th><th>Нужно</th><th>Явилось</th><th>% закрытия</th></tr></thead>
+        <tbody>
+        {% for e in efficiency %}
+            <tr data-href="{% url 'event_detail' e.event_id %}">
+                <td>{{ e.title }}</td><td>{{ e.needed }}</td><td>{{ e.attended }}</td>
+                <td>{{ e.pct_closed }}% {% if e.understaffed %}<span class="badge warn">Недобор</span>{% endif %}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="4">Нет данных.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h3>Retention и churn</h3>
+    <p>Churn rate: {{ report.retention.churn_rate_pct }}%</p>
+    <p>Новых в блэклисте за период: {{ report.retention.new_blacklisted }}</p>
+</div>
+
+<div class="card">
+    <h3>Проблемные зоны</h3>
+    <h4>Мероприятия с низким рейтингом</h4>
+    <table>
+        <thead><tr><th>Мероприятие</th><th>Рейтинг</th><th>Отзывов</th></tr></thead>
+        <tbody>
+        {% for e in report.problem_zones.low_rated_events %}
+            <tr data-href="{% url 'event_detail' e.id %}"><td>{{ e.title }}</td><td>{{ e.avg_rating|floatformat:1 }}</td><td>{{ e.fb_count }}</td></tr>
+        {% empty %}
+            <tr><td colspan="3">Нет данных.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <h4>Волонтёры на грани блэклиста</h4>
+    <table>
+        <thead><tr><th>Волонтёр</th><th>Churn</th></tr></thead>
+        <tbody>
+        {% for u in report.problem_zones.at_risk_users %}
+            <tr data-href="{% url 'profile_detail' u.id %}"><td>{{ u.first_name }} {{ u.last_name }} ({{ u.telegram_username|default:"—" }})</td><td>{{ u.churn_score|floatformat:2 }}</td></tr>
+        {% empty %}
+            <tr><td colspan="2">Нет данных.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h3>Нагрузка персонала</h3>
+    <h4>Менеджеры</h4>
+    <table>
+        <thead><tr><th>Менеджер</th><th>Мероприятий</th></tr></thead>
+        <tbody>
+        {% for m in staff.managers %}
+            <tr data-href="{% url 'profile_detail' m.user__id %}"><td>{{ m.user__first_name }} {{ m.user__last_name }}</td><td>{{ m.event_count }}</td></tr>
+        {% empty %}
+            <tr><td colspan="2">Нет данных.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <h4>Тим-лидеры</h4>
+    <table>
+        <thead><tr><th>Тим-лидер</th><th>Мероприятий</th></tr></thead>
+        <tbody>
+        {% for t in staff.team_leads %}
+            <tr data-href="{% url 'profile_detail' t.user__id %}"><td>{{ t.user__first_name }} {{ t.user__last_name }}</td><td>{{ t.event_count }}</td></tr>
+        {% empty %}
+            <tr><td colspan="2">Нет данных.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

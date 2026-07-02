@@ -1,0 +1,25 @@
+{% extends 'blog/base.html' %}
+{% block title %}Организации{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center;">
+    <h1>Организации</h1>
+    <a href="{% url 'organization_create' %}" class="btn">+ Новая организация</a>
+</div>
+<div class="card">
+    <table>
+        <thead><tr><th>Название</th><th>Мероприятий</th><th>Волонтёров</th><th>Рейтинг</th></tr></thead>
+        <tbody>
+        {% for org in organizations %}
+            <tr data-href="{% url 'organization_detail' org.id %}">
+                <td><a href="{% url 'organization_detail' org.id %}">{{ org.name }}</a></td>
+                <td>{{ org.events_count }}</td>
+                <td>{{ org.volunteers_count }}</td>
+                <td>{{ org.internal_rating|default:"—" }}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="4">Организаций пока нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

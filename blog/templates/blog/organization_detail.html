@@ -1,0 +1,39 @@
+{% extends 'blog/base.html' %}
+{% block title %}{{ organization.name }}{% endblock %}
+{% block content %}
+<h1>{{ organization.name }}</h1>
+<div class="card">
+    <p>{{ organization.description|default:"Без описания" }}</p>
+    <p>Мероприятий: {{ organization.events_count }} · Волонтёров: {{ organization.volunteers_count }} · Смен: {{ organization.shifts_count }}</p>
+    <p>Рейтинг: {{ organization.internal_rating|default:"—" }}</p>
+    <p>Комментарий: {{ organization.comment|default:"—" }}</p>
+</div>
+
+<div class="card">
+    <h3>Мероприятия</h3>
+    <table>
+        <thead><tr><th>Название</th><th>Статус</th></tr></thead>
+        <tbody>
+        {% for event in events %}
+            <tr data-href="{% url 'event_detail' event.id %}"><td><a href="{% url 'event_detail' event.id %}">{{ event.title }}</a></td><td>{{ event.get_event_status_display }}</td></tr>
+        {% empty %}
+            <tr><td colspan="2">Мероприятий нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h3>Контактные лица</h3>
+    <table>
+        <thead><tr><th>ФИО</th><th>Телефон</th></tr></thead>
+        <tbody>
+        {% for organizer in organizers %}
+            <tr data-href="{% url 'organizer_detail' organizer.id %}"><td>{{ organizer.first_name }} {{ organizer.last_name }}</td><td>{{ organizer.phone|default:"—" }}</td></tr>
+        {% empty %}
+            <tr><td colspan="2">Контактные лица не указаны.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

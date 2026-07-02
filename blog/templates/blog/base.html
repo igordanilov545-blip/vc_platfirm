@@ -1,517 +1,366 @@
-<!DOCTYPE html>
+{% load static %}<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Volunteer System{% endblock %}</title>
+    <title>{% block title %}Волонтёрский центр{% endblock %}</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        /* Брендбук: "Глубокий фиолетовый" (documentation/brand_book.md) */
+        :root, [data-theme="light"] {
+            --bg: #F0EDFF;
+            --surface: #FFFFFF;
+            --primary: #7C5DC7;
+            --primary-contrast: #FFFFFF;
+            --secondary: #C9B8F0;
+            --text: #252038;
+            --success: #A895E8;
+            --danger: #C0392B;
+            --border: rgba(124, 93, 199, 0.2);
+            --sidebar-width: 260px;
+            --sidebar-width-collapsed: 68px;
         }
-
+        [data-theme="dark"] {
+            --bg: #151228;
+            --surface: #262040;
+            --primary: #9B7FE8;
+            --primary-contrast: #151228;
+            --secondary: #352D50;
+            --text: #E5DCF5;
+            --success: #8570C5;
+            --border: rgba(155, 127, 232, 0.3);
+        }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg: #151228;
+                --surface: #262040;
+                --primary: #9B7FE8;
+                --primary-contrast: #151228;
+                --secondary: #352D50;
+                --text: #E5DCF5;
+                --success: #8570C5;
+                --border: rgba(155, 127, 232, 0.3);
+            }
+        }
+        * { box-sizing: border-box; }
         body {
+            margin: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            overflow-x: hidden;
+            font-size: 16px;
+            line-height: 1.6;
+            background: var(--bg);
+            color: var(--text);
         }
+        a { color: inherit; }
 
-        /* Оверлей */
-        .overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 999;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .overlay.active {
-            display: block;
-            opacity: 1;
-        }
-
-        /* Боковая панель */
+        /* Сайдбар */
         .sidebar {
             position: fixed;
-            left: -300px;
-            top: 0;
-            width: 300px;
-            max-width: 85vw;
-            height: 100vh;
-            background: linear-gradient(180deg, #2d1b4e 0%, #1a0f2e 100%);
-            transition: left 0.3s ease;
-            z-index: 1000;
-            box-shadow: 4px 0 20px rgba(0, 0, 0, 0.4);
-            overflow-y: auto;
-        }
-
-        .sidebar.active {
-            left: 0;
-        }
-
-        .sidebar-header {
-            padding: 25px 20px;
-            background: rgba(255, 255, 255, 0.05);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .sidebar-header h2 {
-            color: #fff;
-            font-size: 22px;
-            font-weight: 600;
-        }
-
-        .sidebar-header p {
-            color: #b8a5d4;
-            font-size: 13px;
-            margin-top: 5px;
-        }
-
-        .sidebar-menu {
-            padding: 15px 0;
-        }
-
-        .sidebar-menu a {
-            display: flex;
-            align-items: center;
-            padding: 15px 25px;
-            color: #d4c5e8;
-            text-decoration: none;
-            transition: all 0.3s ease;
-            border-left: 3px solid transparent;
-            font-size: 15px;
-        }
-
-        .sidebar-menu a:hover {
-            background: rgba(255, 255, 255, 0.08);
-            color: #fff;
-            border-left-color: #9b59b6;
-        }
-
-        .sidebar-menu a.active {
-            background: rgba(155, 89, 182, 0.2);
-            color: #fff;
-            border-left-color: #9b59b6;
-        }
-
-        .sidebar-divider {
-            height: 1px;
-            background: rgba(255, 255, 255, 0.1);
-            margin: 10px 20px;
-        }
-
-        /* Кнопка меню */
-        .menu-toggle {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            z-index: 1001;
-            background: rgba(255, 255, 255, 0.95);
-            border: none;
-            width: 50px;
-            height: 50px;
-            border-radius: 12px;
-            cursor: pointer;
+            top: 0; left: 0; bottom: 0;
+            width: var(--sidebar-width);
+            background: var(--surface);
+            border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            padding: 1.25rem 1rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+            transition: width 0.2s ease;
+            z-index: 10;
+        }
+        body.sidebar-collapsed .sidebar { width: var(--sidebar-width-collapsed); padding-left: 0.6rem; padding-right: 0.6rem; }
+        body.sidebar-collapsed .page-wrapper { margin-left: var(--sidebar-width-collapsed); }
+        body.sidebar-collapsed .nav-label,
+        body.sidebar-collapsed .nav-section-title,
+        body.sidebar-collapsed .sidebar-account .username,
+        body.sidebar-collapsed .sidebar-account .role,
+        body.sidebar-collapsed .theme-toggle .theme-label { display: none; }
+        body.sidebar-collapsed .sidebar-account { align-items: center; }
+        body.sidebar-collapsed .nav-link { justify-content: center; }
+
+        .sidebar-account {
+            display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 5px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-            transition: all 0.3s ease;
+            text-align: center;
+            text-decoration: none;
+            padding-bottom: 1.25rem;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
         }
-
-        .menu-toggle:hover {
-            background: #fff;
-            transform: scale(1.05);
+        .avatar-placeholder {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: var(--secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+            flex-shrink: 0;
         }
-
-        .menu-toggle span {
-            display: block;
-            width: 25px;
-            height: 3px;
-            background: #764ba2;
-            border-radius: 3px;
-            transition: all 0.3s ease;
-        }
-
-        .menu-toggle.active span:nth-child(1) {
-            transform: rotate(45deg) translate(5px, 5px);
-        }
-
-        .menu-toggle.active span:nth-child(2) {
-            opacity: 0;
-        }
-
-        .menu-toggle.active span:nth-child(3) {
-            transform: rotate(-45deg) translate(7px, -6px);
-        }
-
-        /* Основной контент */
-        .main-content {
-            padding: 90px 20px 20px;
-            max-width: 1400px;
-            margin: 0 auto;
-            transition: margin-left 0.3s ease;
-        }
-
-        /* Сообщения */
-        .messages {
-            margin-bottom: 20px;
-        }
-
-        .message {
-            padding: 15px 20px;
-            border-radius: 10px;
-            margin-bottom: 10px;
-            background: rgba(255, 255, 255, 0.95);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            animation: slideIn 0.3s ease;
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .message.success {
-            border-left: 4px solid #27ae60;
-            color: #27ae60;
-        }
-
-        .message.error {
-            border-left: 4px solid #e74c3c;
-            color: #e74c3c;
-        }
-
-        /* Карточки контента */
-        .content-card {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 15px;
-            padding: 30px;
-            margin-bottom: 25px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-            backdrop-filter: blur(10px);
-        }
-
-        .content-card h1 {
-            color: #2d1b4e;
-            font-size: 28px;
-            margin-bottom: 20px;
+        .sidebar-account .username {
+            font-size: 0.88rem;
             font-weight: 600;
+            color: var(--text);
         }
-
-        .content-card h2 {
-            color: #764ba2;
-            font-size: 22px;
-            margin-bottom: 15px;
-            font-weight: 600;
+        .sidebar-account .role {
+            font-size: 0.76rem;
+            color: var(--primary);
         }
-
-        /* Таблицы */
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-            background: #fff;
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-        }
-
-        thead {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-
-        th {
-            color: #fff;
-            padding: 15px 12px;
-            text-align: left;
-            font-weight: 600;
-            font-size: 14px;
+        .nav-section-title {
+            font-size: 0.72rem;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.04em;
+            color: var(--text);
+            opacity: 0.55;
+            margin: 1rem 0 0.4rem;
+            padding: 0 0.5rem;
+            white-space: nowrap;
         }
-
-        td {
-            padding: 12px;
-            border-bottom: 1px solid #f0e6f6;
-            color: #2d1b4e;
-            font-size: 14px;
-        }
-
-        tbody tr:hover {
-            background: #f8f4fc;
-        }
-
-        tbody tr:last-child td {
-            border-bottom: none;
-        }
-
-        /* Формы */
-        form {
-            background: #fff;
-            padding: 25px;
-            border-radius: 12px;
-            margin: 20px 0;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-        }
-
-        form p {
-            margin-bottom: 15px;
-        }
-
-        label {
-            display: block;
-            color: #2d1b4e;
-            font-weight: 600;
-            margin-bottom: 5px;
-            font-size: 14px;
-        }
-
-        input[type="text"],
-        input[type="email"],
-        input[type="number"],
-        input[type="date"],
-        input[type="datetime-local"],
-        input[type="time"],
-        input[type="file"],
-        textarea,
-        select {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e0d4ec;
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.55rem 0.6rem;
             border-radius: 8px;
-            font-size: 14px;
-            transition: all 0.3s ease;
-            font-family: inherit;
+            text-decoration: none;
+            color: var(--text);
+            font-size: 0.92rem;
+            margin-bottom: 0.15rem;
+            white-space: nowrap;
         }
+        .nav-link .icon { width: 1.2em; text-align: center; flex-shrink: 0; }
+        .nav-link:hover { background: color-mix(in srgb, var(--secondary) 50%, transparent); }
+        .nav-link.active { background: var(--primary); color: var(--primary-contrast); font-weight: 600; }
+        .sidebar-footer { margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border); }
 
-        input:focus,
-        textarea:focus,
-        select:focus {
-            outline: none;
-            border-color: #9b59b6;
-            box-shadow: 0 0 0 3px rgba(155, 89, 182, 0.1);
+        .sidebar-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.6rem;
+            width: 100%;
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            padding: 0.5rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
         }
+        .sidebar-toggle:hover { background: color-mix(in srgb, var(--secondary) 50%, transparent); }
 
-        textarea {
-            resize: vertical;
-            min-height: 100px;
+        .theme-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+            background: none;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            padding: 0.5rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
         }
+        .theme-toggle:hover { background: color-mix(in srgb, var(--secondary) 50%, transparent); }
 
-        /* Кнопки */
-        button,
+        /* Контент */
+        .page-wrapper { margin-left: var(--sidebar-width); min-height: 100vh; transition: margin-left 0.2s ease; }
+        main { max-width: 1100px; margin: 0 auto; padding: 1.75rem 1.5rem; }
+
+        h1 { font-size: 28px; font-weight: 700; color: var(--primary); margin-top: 0; }
+        h2, h3 { font-weight: 600; color: var(--primary); }
+        h3 { font-size: 20px; margin-top: 0; }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            padding: 25px;
+            margin-bottom: 1rem;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid var(--border); font-size: 0.92rem; }
+        th { background: var(--secondary); color: var(--text); font-weight: 700; }
+        tbody tr[data-href] { cursor: pointer; }
+        tbody tr[data-href]:hover { background: color-mix(in srgb, var(--secondary) 50%, transparent); }
+
         .btn {
             display: inline-block;
-            padding: 12px 24px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #fff;
-            border: none;
+            background: var(--primary);
+            color: var(--primary-contrast);
+            padding: 10px 20px;
             border-radius: 8px;
+            border: none;
+            text-decoration: none;
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            text-align: center;
         }
-
-        button:hover,
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(118, 75, 162, 0.4);
+        .btn:hover { opacity: 0.9; }
+        .btn:active { transform: scale(0.98); }
+        .btn.secondary {
+            background: transparent;
+            color: var(--primary);
+            border: 2px solid var(--primary);
+            padding: 8px 18px;
         }
+        .btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 
-        button:active,
-        .btn:active {
-            transform: translateY(0);
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            background: var(--secondary);
+            color: var(--primary);
         }
+        .badge.warn { background: #fdf2e5; color: #b06a00; }
+        .badge.danger { background: #fbeaea; color: var(--danger); }
 
-        .delete-btn {
-            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-            padding: 8px 16px;
-            font-size: 13px;
+        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; }
+        .stat-tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
+        .stat-tile .value { font-size: 1.6rem; font-weight: 700; color: var(--primary); }
+        .stat-tile .label { color: var(--text); opacity: 0.8; font-size: 14px; }
+
+        form.inline { display: inline; }
+        input, select, textarea {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.92rem;
+            margin-bottom: 0.75rem;
+            background: var(--surface);
+            color: var(--text);
         }
+        label { font-weight: 600; font-size: 0.88rem; display: block; margin-bottom: 0.2rem; }
 
-        .delete-btn:hover {
-            box-shadow: 0 6px 20px rgba(231, 76, 60, 0.4);
-        }
+        .messages { list-style: none; padding: 0; }
+        .messages li { padding: 0.6rem 1rem; border-radius: 6px; margin-bottom: 0.5rem; }
+        .messages .success { background: #e8f5e9; color: #1b5e20; }
+        .messages .error { background: #fdecea; color: var(--danger); }
 
-        /* Адаптивность */
-        @media (max-width: 768px) {
-            .main-content {
-                padding: 80px 15px 15px;
-            }
-
-            .content-card {
-                padding: 20px;
-            }
-
-            .content-card h1 {
-                font-size: 24px;
-            }
-
-            .content-card h2 {
-                font-size: 18px;
-            }
-
-            table {
-                font-size: 13px;
-            }
-
-            th, td {
-                padding: 10px 8px;
-            }
-
-            .menu-toggle {
-                width: 45px;
-                height: 45px;
-                top: 15px;
-                left: 15px;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .sidebar {
-                width: 100%;
-                max-width: 100vw;
-            }
-
-            th, td {
-                padding: 8px 6px;
-                font-size: 12px;
-            }
-
-            form {
-                padding: 15px;
-            }
-
-            button,
-            .btn {
-                padding: 10px 18px;
-                font-size: 13px;
-            }
-        }
-
-        /* Скроллбар для сайдбара */
-        .sidebar::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .sidebar::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .sidebar::-webkit-scrollbar-thumb {
-            background: rgba(155, 89, 182, 0.5);
-            border-radius: 3px;
-        }
-
-        .sidebar::-webkit-scrollbar-thumb:hover {
-            background: rgba(155, 89, 182, 0.8);
-        }
+        .tabs { display: flex; gap: 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+        .tabs a { padding-bottom: 0.5rem; text-decoration: none; color: var(--text); }
+        .tabs a.active { border-bottom: 2px solid var(--primary); color: var(--primary); }
     </style>
-</head>
-<body>
-    <!-- Оверлей -->
-    <div class="overlay" id="overlay"></div>
-
-    <!-- Кнопка меню -->
-    <button class="menu-toggle" id="menuToggle">
-        <span></span>
-        <span></span>
-        <span></span>
-    </button>
-
-    <!-- Боковая панель -->
-    <nav class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <h2>🎯 Volunteer</h2>
-            <p>Система управления</p>
-        </div>
-        <div class="sidebar-menu">
-            <a href="{% url 'tables' %}" class="{% if request.resolver_match.url_name == 'tables' %}active{% endif %}">
-                📊 Таблицы
-            </a>
-            <div class="sidebar-divider"></div>
-            <a href="{% url 'users_list' %}" class="{% if request.resolver_match.url_name == 'users_list' %}active{% endif %}">
-                👥 Пользователи
-            </a>
-            <a href="{% url 'events_list' %}" class="{% if request.resolver_match.url_name == 'events_list' %}active{% endif %}">
-                📅 Мероприятия
-            </a>
-            <a href="{% url 'participations_list' %}" class="{% if request.resolver_match.url_name == 'participations_list' %}active{% endif %}">
-                ✅ Участия
-            </a>
-            <a href="{% url 'achievements_list' %}" class="{% if request.resolver_match.url_name == 'achievements_list' %}active{% endif %}">
-                🏆 Достижения
-            </a>
-            <div class="sidebar-divider"></div>
-            <a href="{% url 'import_excel' %}" class="{% if request.resolver_match.url_name == 'import_excel' %}active{% endif %}">
-                📁 Импорт Excel
-            </a>
-            <a href="/admin/" target="_blank">
-                ⚙️ Админка
-            </a>
-            <a href="{% url 'records_list' %}" class="{% if request.resolver_match.url_name == 'records_list' %}active{% endif %}">
-                📋 Записи
-            </a>
-            <a href="{% url 'import_legacy' %}" class="{% if request.resolver_match.url_name == 'import_legacy' %}active{% endif %}">
-                📦 Импорт Legacy
-            </a>
-        </div>
-    </nav>
-
-    <!-- Основной контент -->
-    <div class="main-content">
-        {% if messages %}
-        <div class="messages">
-            {% for message in messages %}
-                <div class="message {{ message.tags }}">
-                    {{ message }}
-                </div>
-            {% endfor %}
-        </div>
-        {% endif %}
-
-        {% block content %}{% endblock %}
-    </div>
-
     <script>
-        // Управление боковой панелью
-        const menuToggle = document.getElementById('menuToggle');
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('overlay');
-
-        function toggleSidebar() {
-            sidebar.classList.toggle('active');
-            overlay.classList.toggle('active');
-            menuToggle.classList.toggle('active');
-        }
-
-        menuToggle.addEventListener('click', toggleSidebar);
-        overlay.addEventListener('click', toggleSidebar);
-
-        // Закрыть при изменении размера окна
-        window.addEventListener('resize', () => {
-            if (window.innerWidth > 768 && sidebar.classList.contains('active')) {
-                toggleSidebar();
+        // Тема применяется до отрисовки, чтобы избежать "мигания" не той темой.
+        (function () {
+            var theme = localStorage.getItem('theme');
+            if (theme) {
+                document.documentElement.setAttribute('data-theme', theme);
             }
-        });
+        })();
     </script>
+</head>
+<body class="{% if request.COOKIES.sidebar_collapsed == '1' %}sidebar-collapsed{% endif %}">
+{% if user.is_authenticated %}
+<aside class="sidebar">
+    <a href="{% url 'profile_detail' user.id %}" class="sidebar-account">
+        <div class="avatar-placeholder">{{ user.full_name|slice:":1"|upper }}</div>
+        <div class="username">{{ user.full_name }}</div>
+        <div class="role">{{ role_label }}</div>
+    </a>
+
+    <div class="nav-section-title">Основное</div>
+    <a href="{% url 'dashboard' %}" class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" title="Главная"><span class="icon">🏠</span><span class="nav-label"> Главная</span></a>
+    <a href="{% url 'event_list' %}" class="nav-link {% if request.resolver_match.url_name in 'event_list,event_detail' %}active{% endif %}" title="Мероприятия"><span class="icon">📅</span><span class="nav-label"> Мероприятия</span></a>
+    <a href="{% url 'application_create' %}" class="nav-link {% if request.resolver_match.url_name == 'application_create' %}active{% endif %}" title="Подать заявку"><span class="icon">📝</span><span class="nav-label"> Подать заявку</span></a>
+
+    {% if is_manager %}
+    <div class="nav-section-title">Управление</div>
+    <a href="{% url 'pending_applications' %}" class="nav-link {% if request.resolver_match.url_name == 'pending_applications' %}active{% endif %}" title="Необработанные заявки"><span class="icon">🕓</span><span class="nav-label"> Необработанные заявки</span></a>
+    <a href="{% url 'import_preview' %}" class="nav-link {% if request.resolver_match.url_name in 'import_preview,import_commit' %}active{% endif %}" title="Импорт заявок"><span class="icon">📥</span><span class="nav-label"> Импорт заявок</span></a>
+    <a href="{% url 'user_list' %}" class="nav-link {% if request.resolver_match.url_name == 'user_list' %}active{% endif %}" title="Пользователи"><span class="icon">👥</span><span class="nav-label"> Пользователи</span></a>
+    <a href="{% url 'organizations_list' %}" class="nav-link {% if request.resolver_match.url_name in 'organizations_list,organization_detail,organization_create' %}active{% endif %}" title="Организации"><span class="icon">🏢</span><span class="nav-label"> Организации</span></a>
+    <a href="{% url 'organizer_list' %}" class="nav-link {% if request.resolver_match.url_name in 'organizer_list,organizer_detail,organizer_create' %}active{% endif %}" title="Организаторы"><span class="icon">🤝</span><span class="nav-label"> Организаторы</span></a>
+    <a href="{% url 'report_period' %}" class="nav-link {% if request.resolver_match.url_name == 'report_period' %}active{% endif %}" title="Отчёты"><span class="icon">📊</span><span class="nav-label"> Отчёты</span></a>
+    {% endif %}
+
+    <div class="sidebar-footer">
+        <button type="button" class="theme-toggle" id="theme-toggle" title="Тема">
+            <span class="icon" id="theme-icon">🌙</span><span class="theme-label" id="theme-label"> Тёмная тема</span>
+        </button>
+        <button type="button" class="sidebar-toggle" id="sidebar-toggle" title="Свернуть панель">
+            <span class="icon" id="sidebar-toggle-icon">⬅️</span><span class="nav-label" id="sidebar-toggle-label"> Свернуть</span>
+        </button>
+        <a href="{% url 'settings' %}" class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" title="Настройки"><span class="icon">⚙️</span><span class="nav-label"> Настройки</span></a>
+        <a href="{% url 'logout' %}" class="nav-link" title="Выйти"><span class="icon">🚪</span><span class="nav-label"> Выйти</span></a>
+    </div>
+</aside>
+{% endif %}
+
+<div class="page-wrapper" style="{% if not user.is_authenticated %}margin-left:0;{% endif %}">
+    <main>
+        {% if messages %}
+        <ul class="messages">
+            {% for message in messages %}
+                <li class="{{ message.tags }}">{{ message }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% block content %}{% endblock %}
+    </main>
+</div>
+
+<script>
+    // Double-click по строке таблицы с data-href → переход на страницу деталей/профиля.
+    document.addEventListener('dblclick', function (event) {
+        var row = event.target.closest('tr[data-href]');
+        if (row) {
+            window.location.href = row.getAttribute('data-href');
+        }
+    });
+
+    // Сворачивание сайдбара — состояние в cookie (переживает переход между страницами).
+    var sidebarToggle = document.getElementById('sidebar-toggle');
+    if (sidebarToggle) {
+        var collapsed = document.body.classList.contains('sidebar-collapsed');
+        var updateToggleLabel = function () {
+            var icon = document.getElementById('sidebar-toggle-icon');
+            var label = document.getElementById('sidebar-toggle-label');
+            icon.textContent = collapsed ? '➡️' : '⬅️';
+            label.textContent = collapsed ? ' Развернуть' : ' Свернуть';
+        };
+        updateToggleLabel();
+        sidebarToggle.addEventListener('click', function () {
+            collapsed = !collapsed;
+            document.body.classList.toggle('sidebar-collapsed', collapsed);
+            document.cookie = 'sidebar_collapsed=' + (collapsed ? '1' : '0') + ';path=/;max-age=31536000';
+            updateToggleLabel();
+        });
+    }
+
+    // Переключатель светлой/тёмной темы — состояние в localStorage.
+    var themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+        var systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var currentTheme = localStorage.getItem('theme') || (systemPrefersDark ? 'dark' : 'light');
+        var updateThemeLabel = function () {
+            var icon = document.getElementById('theme-icon');
+            var label = document.getElementById('theme-label');
+            icon.textContent = currentTheme === 'dark' ? '☀️' : '🌙';
+            label.textContent = currentTheme === 'dark' ? ' Светлая тема' : ' Тёмная тема';
+        };
+        document.documentElement.setAttribute('data-theme', currentTheme);
+        updateThemeLabel();
+        themeToggle.addEventListener('click', function () {
+            currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', currentTheme);
+            localStorage.setItem('theme', currentTheme);
+            updateThemeLabel();
+        });
+    }
+</script>
 </body>
 </html>

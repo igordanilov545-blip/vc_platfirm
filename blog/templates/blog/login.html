@@ -1,0 +1,15 @@
+{% extends 'blog/base.html' %}
+{% block title %}Вход{% endblock %}
+{% block content %}
+<div class="card" style="max-width:360px; margin: 3rem auto;">
+    <h2>Вход в систему</h2>
+    <form method="post">
+        {% csrf_token %}
+        <label for="id_login">Логин</label>
+        {{ form.login }}
+        <label for="id_password">Пароль</label>
+        {{ form.password }}
+        <button type="submit" class="btn">Войти</button>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,61 @@
+{% extends 'blog/base.html' %}
+{% block title %}Настройки{% endblock %}
+{% block content %}
+<h1>Настройки</h1>
+
+<div class="card">
+    <h3>Константы системы</h3>
+    <p style="opacity:0.7; font-size:0.85rem;">Изменение константы требует решения простого примера (защита от случайного изменения).</p>
+    <table>
+        <thead><tr><th>Название</th><th>Значение</th><th>Описание</th><th>Изменить</th></tr></thead>
+        <tbody>
+        {% for const in consts %}
+            <tr>
+                <td>{{ const.name }}</td>
+                <td>{{ const.value }}</td>
+                <td style="opacity:0.8; font-size:0.85rem;">{{ const.description|default:"—" }}</td>
+                <td>
+                    <form method="post" style="display:flex; gap:0.5rem; align-items:flex-end; flex-wrap:wrap; margin-bottom:0;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="update_const">
+                        <input type="hidden" name="const_id" value="{{ const.id }}">
+                        <div style="min-width:120px;">
+                            <label>Новое значение</label>
+                            <input type="number" step="any" name="value" value="{{ const.value }}" required style="margin-bottom:0;">
+                        </div>
+                        <div style="min-width:160px;">
+                            <label>{{ captcha_question }} =</label>
+                            <input type="number" name="answer" required style="margin-bottom:0;">
+                        </div>
+                        <button type="submit" class="btn secondary" style="height:38px;">Сохранить</button>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="4">Константы не заданы.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h3>Сезоны</h3>
+    <table>
+        <thead><tr><th>Начало</th><th>Конец</th><th>Создан</th></tr></thead>
+        <tbody>
+        {% for season in seasons %}
+            <tr><td>{{ season.start_season }}</td><td>{{ season.end_season|default:"— (бессрочный)" }}</td><td>{{ season.created_at }}</td></tr>
+        {% empty %}
+            <tr><td colspan="3">Сезонов пока нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <form method="post" style="margin-top:1rem; max-width:400px;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="add_season">
+        {{ season_form.as_p }}
+        <button type="submit" class="btn secondary">Добавить сезон</button>
+    </form>
+</div>
+{% endblock %}

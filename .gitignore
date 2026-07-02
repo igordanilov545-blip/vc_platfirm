@@ -1,3 +1,6 @@
+# Локальные тестовые учётные данные — не коммитить
+documentation/dev_credentials.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

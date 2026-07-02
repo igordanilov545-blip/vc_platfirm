@@ -8,25 +8,43 @@ class UserManager(BaseUserManager):
         if not telegram_id:
             raise ValueError('Users must have a telegram_id')
         user = self.model(telegram_id=telegram_id, **extra_fields)
-        user.set_unusable_password()  # Так как вход через Telegram
+        user.set_unusable_password()  # вход через Telegram по умолчанию
+        user.save(using=self._db)
+        return user
+
+    def create_web_manager(self, login, password, first_name, last_name, **extra_fields):
+        """Служебный путь создания менеджера с веб-входом (management command)."""
+        if not login:
+            raise ValueError('Manager must have a login')
+        telegram_id = extra_fields.pop('telegram_id', None) or f'web:{login}'
+        user = self.model(
+            telegram_id=telegram_id,
+            login=login,
+            first_name=first_name,
+            last_name=last_name,
+            **extra_fields,
+        )
+        user.set_password(password)
+        user.web_credentials_set_at = timezone.now()
         user.save(using=self._db)
         return user
 
 
 class User(AbstractBaseUser):
-    """
-    Центральная сущность системы (volunteer).
-    Наследуется от AbstractBaseUser для интеграции с системой аутентификации Django,
-    но логика входа кастомная (через Telegram ID).
-    """
+    """Центральная сущность системы (волонтёр/тим-лидер/менеджер)."""
+
+    GENDER_CHOICES = [
+        ('male', 'Мужской'),
+        ('female', 'Женский'),
+    ]
     STATUS_CHOICES = [
-        ('active', 'Active'),
-        ('inactive', 'Inactive'),
-        ('blacklisted', 'Blacklisted'),
+        ('active', 'Активен'),
+        ('inactive', 'Неактивен'),
+        ('blacklisted', 'В блэклисте'),
     ]
 
     id = models.AutoField(primary_key=True)
-    system_username = models.CharField(max_length=50, db_index=True)
+    system_username = models.CharField(max_length=50, blank=True, null=True, db_index=True)
     telegram_id = models.CharField(max_length=50, unique=True, db_index=True)
     telegram_username = models.CharField(max_length=100, blank=True, null=True)
     VK_username = models.CharField(max_length=100, blank=True, null=True)
@@ -36,20 +54,25 @@ class User(AbstractBaseUser):
     phone = models.CharField(max_length=20, blank=True, null=True)
     birthday = models.DateField(blank=True, null=True)
     about = models.TextField(blank=True, null=True)
-    gender = models.BooleanField()
+    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True, null=True)
 
-    
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     comment = models.TextField(blank=True, null=True)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
     last_event_at = models.DateTimeField(blank=True, null=True)
-    
+
     # Кэшированная статистика
     total_event_count = models.IntegerField(default=0)
     season_event_count = models.IntegerField(default=0)
     total_hours = models.IntegerField(default=0)
     season_hours = models.IntegerField(default=0)
+    churn_score = models.FloatField(default=0)
+
+    # Веб-аутентификация (доп. канал входа).
+    # Хеш пароля хранится в унаследованном от AbstractBaseUser поле `password`.
+    login = models.CharField(max_length=50, unique=True, blank=True, null=True)
+    web_credentials_set_at = models.DateTimeField(blank=True, null=True)
 
     objects = UserManager()
 
@@ -64,15 +87,29 @@ class User(AbstractBaseUser):
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.telegram_id})"
 
+    @property
+    def full_name(self):
+        return f"{self.first_name or ''} {self.last_name or ''}".strip() or self.telegram_username or self.telegram_id
+
+    @property
+    def is_active(self):
+        return self.status != 'blacklisted'
+
+    def is_active_manager(self):
+        return self.manager_roles.filter(revoked_at__isnull=True).exists()
+
+    def is_active_team_leader(self):
+        return self.team_leader_roles.filter(revoked_at__isnull=True).exists()
+
 
 class Manager(models.Model):
-    """История выдачи и отзыва ролей менеджеров"""
+    """История выдачи и отзыва ролей менеджеров."""
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='manager_roles')
     assigned_at = models.DateTimeField(auto_now_add=True)
     revoked_at = models.DateTimeField(blank=True, null=True)
     assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_managers')
-    
+
     total_events = models.IntegerField(default=0)
     season_events = models.IntegerField(default=0)
 
@@ -83,13 +120,13 @@ class Manager(models.Model):
 
 
 class TeamLeader(models.Model):
-    """История выдачи и отзыва ролей тим-лидеров"""
+    """История выдачи и отзыва ролей тим-лидеров."""
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='team_leader_roles')
     assigned_at = models.DateTimeField(auto_now_add=True)
     revoked_at = models.DateTimeField(blank=True, null=True)
     assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_team_leaders')
-    
+
     total_events = models.IntegerField(default=0)
     season_events = models.IntegerField(default=0)
 
@@ -100,15 +137,17 @@ class TeamLeader(models.Model):
 
 
 class Organization(models.Model):
-    """Юридические лица или структурные подразделения"""
+    """Юридические лица или структурные подразделения."""
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     events_count = models.IntegerField(default=0)
     volunteers_count = models.IntegerField(default=0)
     shifts_count = models.IntegerField(default=0)
+    internal_rating = models.SmallIntegerField(blank=True, null=True)
+    comment = models.TextField(blank=True, null=True)
 
     class Meta:
         db_table = 'organizations'
@@ -120,7 +159,7 @@ class Organization(models.Model):
 
 
 class Organizer(models.Model):
-    """Контактные лица организаций"""
+    """Контактные лица организаций."""
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='organizer_profile')
     first_name = models.CharField(max_length=100)
@@ -129,6 +168,7 @@ class Organizer(models.Model):
     email = models.EmailField(blank=True, null=True)
     telegram_username = models.CharField(max_length=100, blank=True, null=True)
     VK_username = models.CharField(max_length=100, blank=True, null=True)
+    whatsapp = models.CharField(max_length=50, blank=True, null=True)
     comments = models.TextField(blank=True, null=True)
 
     class Meta:
@@ -141,7 +181,7 @@ class Organizer(models.Model):
 
 
 class OrganizerOrganizationLink(models.Model):
-    """Связь организатор-организация (Many-to-Many)"""
+    """Связь организатор-организация (Many-to-Many)."""
     id = models.AutoField(primary_key=True)
     organizer = models.ForeignKey(Organizer, on_delete=models.CASCADE, related_name='organization_links')
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name='organizer_links')
@@ -154,8 +194,29 @@ class OrganizerOrganizationLink(models.Model):
         verbose_name_plural = 'Связи организаторов и организаций'
 
 
+class OrganizerInteractionLog(models.Model):
+    """История контактов менеджеров с организатором."""
+    CONTACT_CHOICES = [
+        ('call', 'Звонок'),
+        ('message', 'Сообщение'),
+        ('meeting', 'Встреча'),
+    ]
+
+    id = models.AutoField(primary_key=True)
+    organizer = models.ForeignKey(Organizer, on_delete=models.CASCADE, related_name='interaction_log')
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='organizer_interactions')
+    contact_type = models.CharField(max_length=20, choices=CONTACT_CHOICES)
+    note = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'organizer_interaction_log'
+        verbose_name = 'Лог взаимодействия с организатором'
+        verbose_name_plural = 'Логи взаимодействия с организаторами'
+
+
 class Location(models.Model):
-    """Справочник локаций"""
+    """Справочник локаций."""
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=255, unique=True)
 
@@ -169,7 +230,7 @@ class Location(models.Model):
 
 
 class EventCategory(models.Model):
-    """Справочник категорий мероприятий"""
+    """Справочник категорий мероприятий."""
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100, unique=True)
 
@@ -182,29 +243,71 @@ class EventCategory(models.Model):
         return self.name
 
 
-class Letters(models.Model):
+class ThankYouLetterTemplate(models.Model):
+    """Шаблоны благодарственных писем."""
     id = models.AutoField(primary_key=True)
+    title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-    path_to_pattern = models.TextField()
+    pattern_link = models.TextField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'thank_you_letter_templates'
+        verbose_name = 'Шаблон благодарственного письма'
+        verbose_name_plural = 'Шаблоны благодарственных писем'
+
+    def __str__(self):
+        return self.title
 
 
-class CONST(models.Model):
+class Const(models.Model):
+    """Key-value справочник настраиваемых бизнес-параметров."""
     id = models.AutoField(primary_key=True)
-    name = models.TextField(blank=True, null=True)
-    value = models.IntegerField()
-    created_at = models.DateField()
+    name = models.CharField(max_length=100, unique=True)
+    value = models.FloatField()
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'const'
+        verbose_name = 'Константа'
+        verbose_name_plural = 'Константы'
+
+    def __str__(self):
+        return f"{self.name} = {self.value}"
+
+
+class Season(models.Model):
+    """Периоды проведения ПГАС."""
+    id = models.AutoField(primary_key=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    start_season = models.DateField()
+    end_season = models.DateField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'seasons'
+        verbose_name = 'Сезон'
+        verbose_name_plural = 'Сезоны'
+
+    def __str__(self):
+        return f"Season: {self.start_season} - {self.end_season or '...'}"
 
 
 class Event(models.Model):
-    """Основная сущность события"""
+    """Основная сущность события."""
     STATUS_CHOICES = [
-        ('upcoming', 'Upcoming'),
-        ('ongoing', 'Ongoing'),
-        ('finished', 'Finished'),
+        ('upcoming', 'Предстоит'),
+        ('ongoing', 'Идёт'),
+        ('finished', 'Завершено'),
     ]
     RECRUIT_STATUS_CHOICES = [
-        ('open', 'Open'),
-        ('closed', 'Closed'),
+        ('open', 'Открыт'),
+        ('closed', 'Закрыт'),
+    ]
+    DOBRO_LINK_TYPE_CHOICES = [
+        ('event', 'Мероприятие'),
+        ('organization', 'Организация'),
+        ('project', 'Проект'),
     ]
 
     id = models.AutoField(primary_key=True)
@@ -214,18 +317,22 @@ class Event(models.Model):
     chat_link = models.URLField(blank=True, null=True)
     post_in_chanel_link = models.URLField(blank=True, null=True)
     dobro_ru_link = models.URLField(blank=True, null=True)
-    
+    dobro_ru_link_type = models.CharField(max_length=20, choices=DOBRO_LINK_TYPE_CHOICES, blank=True, null=True)
+    dobro_ru_hours_logged = models.BooleanField(default=False)
+    dobro_ru_logged_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='dobro_ru_logged_events')
+
     event_status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='upcoming')
     recruit_status = models.CharField(max_length=20, choices=RECRUIT_STATUS_CHOICES, default='open')
-    
+
     organization = models.ForeignKey(Organization, on_delete=models.SET_NULL, null=True, blank=True, related_name='events')
     organizer = models.ForeignKey(Organizer, on_delete=models.SET_NULL, null=True, blank=True, related_name='managed_events')
-    
-    created_at = models.DateTimeField(auto_now_add=True)
-    people_helped = models.IntegerField(default=0)
-    event_mark = models.SmallIntegerField()
 
-    letter = models.ForeignKey(Letters, on_delete=models.SET_NULL, null=True, blank=True,)
+    created_at = models.DateTimeField(auto_now_add=True)
+    published_at = models.DateTimeField(blank=True, null=True)
+    people_helped = models.IntegerField(blank=True, null=True)
+    internal_comment = models.TextField(blank=True, null=True)
+
+    letter = models.ForeignKey(ThankYouLetterTemplate, on_delete=models.SET_NULL, null=True, blank=True, related_name='events')
 
     class Meta:
         db_table = 'events'
@@ -237,7 +344,7 @@ class Event(models.Model):
 
 
 class EventCategoryMap(models.Model):
-    """Связь мероприятий с категориями (Many-to-Many)"""
+    """Связь мероприятий с категориями (Many-to-Many)."""
     id = models.AutoField(primary_key=True)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='category_map')
     category = models.ForeignKey(EventCategory, on_delete=models.CASCADE, related_name='event_map')
@@ -250,7 +357,7 @@ class EventCategoryMap(models.Model):
 
 
 class EventDay(models.Model):
-    """Разбивка мероприятия на конкретные даты и временные слоты"""
+    """Разбивка мероприятия на конкретные даты и временные слоты."""
     id = models.AutoField(primary_key=True)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='days')
     day = models.DateField()
@@ -263,16 +370,19 @@ class EventDay(models.Model):
         db_table = 'event_days'
         verbose_name = 'День мероприятия'
         verbose_name_plural = 'Дни мероприятий'
+        indexes = [
+            models.Index(fields=['event']),
+        ]
 
     def __str__(self):
         return f"{self.event.title} - {self.day}"
 
 
 class EventStaff(models.Model):
-    """Назначение менеджеров и тим-лидеров на конкретные события"""
+    """Назначение менеджеров и тим-лидеров на конкретные события."""
     ROLE_CHOICES = [
-        ('manager', 'Manager'),
-        ('team_lead', 'Team Lead'),
+        ('manager', 'Менеджер'),
+        ('team_lead', 'Тим-лидер'),
     ]
 
     id = models.AutoField(primary_key=True)
@@ -280,79 +390,64 @@ class EventStaff(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='staff_assignments')
     staff_role = models.CharField(max_length=20, choices=ROLE_CHOICES)
     assigned_at = models.DateTimeField(auto_now_add=True)
-    churn_rate = models.SmallIntegerField(auto_created=0)
 
     class Meta:
         db_table = 'event_staff'
         verbose_name = 'Персонал мероприятия'
         verbose_name_plural = 'Персонал мероприятий'
+        indexes = [
+            models.Index(fields=['event', 'staff_role']),
+        ]
 
 
 class Application(models.Model):
     """Входящие запросы на участие. Могут быть от незарегистрированных пользователей."""
-    
+
     STATUS_CHOICES = [
-        ('new', 'New'),
-        ('approved', 'Approved'),
-        ('rejected', 'Rejected'),
+        ('new', 'Новая'),
+        ('approved', 'Одобрена'),
+        ('rejected', 'Отклонена/резерв'),
     ]
 
     id = models.AutoField(primary_key=True)
-    event = models.ForeignKey(
-        Event, 
-        on_delete=models.CASCADE, 
-        related_name='applications'
-    )
-    # Связь с пользователем необязательна (null=True), так как заявка может быть от незарегистрированного человека
-    user = models.ForeignKey(
-        User, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
-        related_name='applications'
-    )
-    
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='applications')
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='applications')
+
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100, blank=True, null=True)
     telegram_username = models.CharField(max_length=100, blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
-    
-    # Дополнительные поля из обновленного ТЗ
-    functions = models.CharField(max_length=255, blank=True, null=True, help_text="Функция из формы заявки")
-    shifts = models.CharField(max_length=255, blank=True, null=True, help_text="Смена из формы заявки")
-    role_in_event = models.CharField(max_length=255, blank=True, null=True, help_text="Роль из формы заявки")
-    user_status = models.CharField(max_length=100, blank=True, null=True, help_text="Статус обращающегося")
-    
-    created_in_hse_at = models.DateTimeField()
+
+    functions = models.CharField(max_length=255, blank=True, null=True)
+    shifts = models.CharField(max_length=255, blank=True, null=True)
+    role_in_event = models.CharField(max_length=255, blank=True, null=True)
+    user_status = models.CharField(max_length=100, blank=True, null=True)
+
+    submitted_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    assigned_at = models.DateTimeField()
+    assigned_at = models.DateTimeField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
-    
-    assigned_by = models.ForeignKey(
-        User, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
-        related_name='processed_applications',
-        help_text="Кто обработал заявку"
-    )
+
+    assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='processed_applications')
 
     class Meta:
         db_table = 'applications'
         verbose_name = 'Заявка'
         verbose_name_plural = 'Заявки'
+        indexes = [
+            models.Index(fields=['event', 'status']),
+        ]
 
     def __str__(self):
         return f"Application #{self.id} for {self.event.title}"
 
 
-
 class Participation(models.Model):
-    """Подтвержденные участия"""
+    """Подтвержденные участия."""
     STATUS_CHOICES = [
-        ('attended', 'Attended'),
-        ('absent_excused', 'Absent Excused'),
-        ('absent_unexcused', 'Absent Unexcused'),
+        ('attended', 'Присутствовал'),
+        ('absent_excused', 'Отсутствовал (уважительно)'),
+        ('absent_unexcused', 'Отсутствовал (без предупреждения)'),
     ]
 
     id = models.AutoField(primary_key=True)
@@ -366,10 +461,45 @@ class Participation(models.Model):
         db_table = 'participations'
         verbose_name = 'Участие'
         verbose_name_plural = 'Участия'
+        indexes = [
+            models.Index(fields=['user', 'event_day']),
+        ]
+
+
+class ChurnHistory(models.Model):
+    """Снимок churn_score на момент завершения сезона."""
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='churn_history')
+    season = models.ForeignKey(Season, on_delete=models.CASCADE, related_name='churn_history')
+    churn_score = models.FloatField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'churn_history'
+        verbose_name = 'История чарна'
+        verbose_name_plural = 'История чарна'
+        indexes = [
+            models.Index(fields=['user', 'season']),
+        ]
+
+
+class UserComment(models.Model):
+    """Внутренние комментарии к волонтёрам от менеджеров/тим-лидеров."""
+    id = models.AutoField(primary_key=True)
+    target_user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_comments')
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='authored_comments')
+    event = models.ForeignKey(Event, on_delete=models.SET_NULL, null=True, blank=True, related_name='user_comments')
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'user_comments'
+        verbose_name = 'Комментарий к волонтёру'
+        verbose_name_plural = 'Комментарии к волонтёрам'
 
 
 class EventFeedback(models.Model):
-    """Отзывы о мероприятии"""
+    """Отзывы о мероприятии."""
     id = models.AutoField(primary_key=True)
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='feedbacks')
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='feedbacks')
@@ -384,7 +514,7 @@ class EventFeedback(models.Model):
 
 
 class EventRequirement(models.Model):
-    """Справочник требований к волонтерам"""
+    """Справочник требований к волонтерам."""
     id = models.AutoField(primary_key=True)
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
@@ -399,7 +529,7 @@ class EventRequirement(models.Model):
 
 
 class EventRequirementMap(models.Model):
-    """Связь требований с мероприятиями"""
+    """Связь требований с мероприятиями."""
     id = models.AutoField(primary_key=True)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='requirement_map')
     requirement = models.ForeignKey(EventRequirement, on_delete=models.CASCADE, related_name='event_map')
@@ -412,7 +542,7 @@ class EventRequirementMap(models.Model):
 
 
 class UserRequirementException(models.Model):
-    """Исключения для волонтеров по требованиям"""
+    """Исключения для волонтеров по требованиям."""
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='requirement_exceptions')
     requirement = models.ForeignKey(EventRequirement, on_delete=models.CASCADE, related_name='user_exceptions')
@@ -424,21 +554,3 @@ class UserRequirementException(models.Model):
         unique_together = ('user', 'requirement')
         verbose_name = 'Исключение пользователя'
         verbose_name_plural = 'Исключения пользователей'
-
-
-class Season(models.Model):
-    """Периоды проведения ПГАС"""
-    id = models.AutoField(primary_key=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    start_season = models.DateField()
-    end_season = models.DateField()
-
-    class Meta:
-        db_table = 'seasons'
-        verbose_name = 'Сезон'
-        verbose_name_plural = 'Сезоны'
-
-    def __str__(self):
-        return f"Season: {self.start_season} - {self.end_season}"
-    
-

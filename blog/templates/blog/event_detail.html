@@ -1,134 +1,112 @@
-{% extends "blog/base.html" %}
-{% load custom_tags %}
-
+{% extends 'blog/base.html' %}
 {% block title %}{{ event.title }}{% endblock %}
-
 {% block content %}
-<div class="content-card">
-    <a href="{% url 'tables' %}" style="color: #764ba2; text-decoration: none; margin-bottom: 15px; display: inline-block;">
-        ← Назад к таблицам
-    </a>
+<div style="display:flex; justify-content:space-between; align-items:center;">
+    <h1>{{ event.title }}</h1>
+    {% if is_manager %}<a href="{% url 'event_edit' event.id %}" class="btn secondary">Редактировать</a>{% endif %}
+</div>
 
-    <h1>📅 {{ event.title }}</h1>
+<div class="card">
+    <p>{{ event.description|default:"Без описания" }}</p>
+    <p><span class="badge">{{ event.get_event_status_display }}</span>
+       {% if event.recruit_status == 'open' %}<span class="badge">Набор открыт</span>{% else %}<span class="badge warn">Набор закрыт</span>{% endif %}</p>
+    <p>Локация: {{ event.location.name|default:"—" }} · Организация: {{ event.organization.name|default:"—" }}</p>
+    {% if event.people_helped is not None %}<p>Людям помогли: {{ event.people_helped }}</p>{% endif %}
+</div>
 
-    <!-- Информация о мероприятии -->
-    <div style="background: linear-gradient(135deg, #f8f4fc 0%, #ede4f5 100%); padding: 20px; border-radius: 12px; margin-bottom: 25px;">
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
-            <div>
-                <strong style="color: #764ba2;">📍 Локация:</strong>
-                <p>{{ event.location|default:"Не указана" }}</p>
-            </div>
-            <div>
-                <strong style="color: #764ba2;">📆 Начало:</strong>
-                <p>{{ event.start_date|date:"d.m.Y H:i" }}</p>
-            </div>
-            <div>
-                <strong style="color: #764ba2;">📆 Конец:</strong>
-                <p>{{ event.end_date|date:"d.m.Y H:i" }}</p>
-            </div>
-            <div>
-                <strong style="color: #764ba2;">👥 Волонтеры:</strong>
-                <p>{{ confirmed_count }} / {{ total_volunteers_needed }}</p>
-            </div>
-            <div>
-                <strong style="color: #764ba2;">👤 Менеджер:</strong>
-                <p>{{ event.manager.full_name|default:"Не назначен" }}</p>
-            </div>
-            <div>
-                <strong style="color: #764ba2;">⭐ Тим-лидер:</strong>
-                <p>{{ event.team_leader.full_name|default:"Не назначен" }}</p>
-            </div>
-        </div>
-
-        {% if event.description %}
-        <div style="margin-top: 15px;">
-            <strong style="color: #764ba2;">📝 Описание:</strong>
-            <p style="margin-top: 5px;">{{ event.description }}</p>
-        </div>
-        {% endif %}
-    </div>
-
-    <!-- Дни мероприятия -->
-    {% if event_days %}
-    <h2 style="margin-top: 30px;">📅 Дни мероприятия</h2>
+<div class="card">
+    <h3>Дни мероприятия</h3>
     <table>
-        <thead>
-            <tr>
-                <th>Дата</th>
-                <th>Начало</th>
-                <th>Конец</th>
-            </tr>
-        </thead>
+        <thead><tr><th>Дата</th><th>Начало</th><th>Окончание</th><th>Нужно волонтёров</th></tr></thead>
         <tbody>
-            {% for day in event_days %}
-            <tr>
-                <td>{{ day.date|date:"d.m.Y" }}</td>
-                <td>{{ day.start_time }}</td>
-                <td>{{ day.end_time }}</td>
-            </tr>
-            {% endfor %}
+        {% for day in days %}
+            <tr><td>{{ day.day }}</td><td>{{ day.start_time }}</td><td>{{ day.end_time }}</td><td>{{ day.volunteer_needed }}</td></tr>
+        {% empty %}
+            <tr><td colspan="4">Дни не заданы.</td></tr>
+        {% endfor %}
         </tbody>
     </table>
-    {% endif %}
-
-    <!-- Заявки -->
-    <h2 style="margin-top: 30px;">✅ Заявки ({{ participations.count }})</h2>
-
-    {% if participations %}
-    <table>
-        <thead>
-            <tr>
-                <th>ФИО</th>
-                <th>Telegram</th>
-                <th>Время заявки</th>
-                <th>Статус</th>
-                <th>Часы</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for part in participations %}
-            <tr>
-                <td>
-                    <a href="{% url 'user_detail' part.user.id %}" style="color: #764ba2; text-decoration: none;">
-                        {{ part.user.full_name }}
-                    </a>
-                </td>
-                <td>
-                    {% if part.user.telegram_id %}
-                    <a href="https://t.me/{{ part.user.telegram_id }}" target="_blank" style="color: #0088cc;">
-                        @{{ part.user.telegram_id }}
-                    </a>
-                    {% else %}
-                    -
-                    {% endif %}
-                </td>
-                <td>{{ part.participated_at|date:"d.m.Y H:i" }}</td>
-                <td>
-                    {% if part.status == 'confirmed' %}
-                    <span style="background: #27ae60; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px;">
-                        Принято
-                    </span>
-                    {% elif part.status == 'pending' %}
-                    <span style="background: #f39c12; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px;">
-                        На рассмотрении
-                    </span>
-                    {% elif part.status == 'cancelled' %}
-                    <span style="background: #e74c3c; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px;">
-                        Отказ
-                    </span>
-                    {% else %}
-                    <span style="background: #95a5a6; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px;">
-                        {{ part.get_status_display }}
-                    </span>
-                    {% endif %}
-                </td>
-                <td>{{ part.hours_total }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <p style="color: #666; margin-top: 15px;">Пока нет заявок</p>
+    {% if is_manager %}
+        <a href="{% url 'event_day_add' event.id %}" class="btn secondary" style="margin-top:0.75rem;">+ Добавить день</a>
     {% endif %}
 </div>
+
+<div class="card">
+    <h3>Тим-лидеры</h3>
+    {% for staff in team_leads %}
+        <span class="badge">{{ staff.user.full_name }}</span>
+    {% empty %}
+        <p>Тим-лидер не назначен.</p>
+    {% endfor %}
+    {% if is_manager %}
+    <form method="post" action="{% url 'event_assign_staff' event.id %}" style="margin-top:0.75rem; max-width:300px;">
+        {% csrf_token %}
+        {{ staff_assign_form.as_p }}
+        <button type="submit" class="btn secondary">Назначить</button>
+    </form>
+    {% endif %}
+</div>
+
+{% if is_participant %}
+<div class="card">
+    <h3>👥 Для участников мероприятия</h3>
+    <p>Волонтёров участвовало: {{ volunteers_count }}</p>
+    {% if event.chat_link %}<p>Ссылка на чат: <a href="{{ event.chat_link }}">{{ event.chat_link }}</a></p>{% endif %}
+    {% if event.dobro_ru_link %}<p>Добро.ру: <a href="{{ event.dobro_ru_link }}">{{ event.dobro_ru_link }}</a></p>{% endif %}
+    {% if avg_rating %}
+        <p>Средний рейтинг мероприятия: {{ avg_rating|floatformat:1 }} ({{ feedback_count }} отзывов)</p>
+    {% else %}
+        <p>Отзывов пока нет.</p>
+    {% endif %}
+
+    {% if my_feedback %}
+        <p>Ваша оценка: {{ my_feedback.rating }}/10 — {{ my_feedback.comment|default:"без комментария" }}</p>
+    {% elif feedback_form %}
+        <form method="post" action="{% url 'event_feedback_add' event.id %}" style="max-width:400px;">
+            {% csrf_token %}
+            {{ feedback_form.as_p }}
+            <button type="submit" class="btn secondary">Оставить оценку</button>
+        </form>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if can_manage_applications %}
+<div class="card" id="applications">
+    <h3>Набор: {{ approved_count }} из {{ needed }} (осталось {{ remaining }})</h3>
+    <h4>Заявки</h4>
+    <table>
+        <thead><tr><th>ФИО</th><th>Telegram</th><th>Телефон</th><th>Статус</th><th>Подано</th><th></th></tr></thead>
+        <tbody>
+        {% for application in applications %}
+            <tr {% if application.user_id %}data-href="{% url 'profile_detail' application.user_id %}"{% endif %}>
+                <td>{{ application.first_name }} {{ application.last_name }}</td>
+                <td>{{ application.telegram_username|default:"—" }}</td>
+                <td>{{ application.phone|default:"—" }}</td>
+                <td>
+                    {% if application.status == 'approved' %}<span class="badge">Одобрена</span>
+                    {% elif application.status == 'rejected' %}<span class="badge warn">Резерв/отклонена</span>
+                    {% else %}<span class="badge danger">Новая</span>{% endif %}
+                </td>
+                <td>{{ application.submitted_at|default:application.created_at }}</td>
+                <td>
+                    <form method="post" action="{% url 'application_process' application.id %}" class="inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="status" value="approved">
+                        <button type="submit" class="btn" style="padding:0.25rem 0.6rem;">Принять</button>
+                    </form>
+                    <form method="post" action="{% url 'application_process' application.id %}" class="inline">
+                        {% csrf_token %}
+                        <input type="hidden" name="status" value="rejected">
+                        <button type="submit" class="btn danger" style="padding:0.25rem 0.6rem;">Отклонить</button>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="6">Заявок пока нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
 {% endblock %}

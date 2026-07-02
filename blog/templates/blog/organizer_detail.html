@@ -1,0 +1,47 @@
+{% extends 'blog/base.html' %}
+{% block title %}{{ organizer.first_name }} {{ organizer.last_name }}{% endblock %}
+{% block content %}
+<h1>{{ organizer.first_name }} {{ organizer.last_name }}</h1>
+
+<div class="card">
+    <h3>Контакты</h3>
+    <p>Телефон: {{ organizer.phone|default:"—" }}</p>
+    <p>Email: {{ organizer.email|default:"—" }}</p>
+    <p>Telegram: {{ organizer.telegram_username|default:"—" }}</p>
+    <p>VK: {{ organizer.VK_username|default:"—" }}</p>
+    <p>WhatsApp: {{ organizer.whatsapp|default:"—" }}</p>
+    <p>Комментарии: {{ organizer.comments|default:"—" }}</p>
+</div>
+
+<div class="card">
+    <h3>Организации</h3>
+    {% for org in organizations %}
+        <p><a href="{% url 'organization_detail' org.id %}">{{ org.name }}</a></p>
+    {% empty %}
+        <p>Не привязан ни к одной организации.</p>
+    {% endfor %}
+</div>
+
+<div class="card">
+    <h3>Мероприятия (контактное лицо)</h3>
+    <table>
+        <thead><tr><th>Название</th><th>Статус</th></tr></thead>
+        <tbody>
+        {% for event in events %}
+            <tr data-href="{% url 'event_detail' event.id %}"><td>{{ event.title }}</td><td>{{ event.get_event_status_display }}</td></tr>
+        {% empty %}
+            <tr><td colspan="2">Мероприятий нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h3>История взаимодействия</h3>
+    {% for log in interactions %}
+        <p>{{ log.created_at }} — {{ log.get_contact_type_display }} ({{ log.author.full_name }}): {{ log.note|default:"без заметки" }}</p>
+    {% empty %}
+        <p>Записей о взаимодействии пока нет.</p>
+    {% endfor %}
+</div>
+{% endblock %}

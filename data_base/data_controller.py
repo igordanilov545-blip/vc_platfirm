@@ -1,11 +1,12 @@
 from typing import Optional, List, Dict, Any
 from django.db.models import Q
+from django.utils import timezone
 from blog.models import (
-    User, Manager, TeamLeader, Organization, Organizer, 
-    OrganizerOrganizationLink, Location, EventCategory, Event, 
-    EventCategoryMap, EventDay, EventStaff, Application, 
-    Participation, EventFeedback, EventRequirement, 
-    EventRequirementMap, UserRequirementException, Season
+    User, Manager, TeamLeader, Organization, Organizer,
+    OrganizerOrganizationLink, OrganizerInteractionLog, Location, EventCategory, Event,
+    EventCategoryMap, EventDay, EventStaff, Application,
+    Participation, ChurnHistory, UserComment, EventFeedback, EventRequirement,
+    EventRequirementMap, UserRequirementException, Season, ThankYouLetterTemplate, Const
 )
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     'create_organization', 'get_organizations',
     'create_organizer', 'get_organizers',
     'link_organizer_to_organization', 'get_organizer_links',
+    'create_organizer_interaction', 'get_organizer_interactions',
     'create_location', 'get_locations',
     'create_event_category', 'get_event_categories',
     'create_event', 'get_events',
@@ -23,11 +25,14 @@ __all__ = [
     'assign_staff_to_event', 'get_event_staff',
     'create_application', 'get_applications',
     'create_participation', 'get_participations',
+    'create_churn_history', 'get_churn_history',
+    'create_user_comment', 'get_user_comments',
     'create_feedback', 'get_feedbacks',
     'create_requirement', 'get_requirements',
     'add_requirement_to_event', 'get_event_requirements_map',
     'create_user_exception', 'get_user_exceptions',
     'create_season', 'get_seasons',
+    'get_const', 'get_all_consts',
     'get_full_table', 'create_record_generic'
 ]
 
@@ -118,6 +123,16 @@ def create_organizer(
 def link_organizer_to_organization(organizer: Organizer, organization: Organization) -> OrganizerOrganizationLink:
     return OrganizerOrganizationLink.objects.create(organizer=organizer, organization=organization)
 
+def create_organizer_interaction(
+    organizer: Organizer,
+    author: Optional[User],
+    contact_type: str,
+    note: Optional[str] = None
+) -> OrganizerInteractionLog:
+    return OrganizerInteractionLog.objects.create(
+        organizer=organizer, author=author, contact_type=contact_type, note=note
+    )
+
 def create_location(name: str) -> Location:
     return Location.objects.create(name=name)
 
@@ -183,6 +198,7 @@ def create_application(
     shifts: Optional[str] = None,
     role_in_event: Optional[str] = None,
     user_status: Optional[str] = None,
+    submitted_at=None,
     status: str = 'new'
 ) -> Application:
     return Application.objects.create(
@@ -196,6 +212,7 @@ def create_application(
         shifts=shifts,
         role_in_event=role_in_event,
         user_status=user_status,
+        submitted_at=submitted_at or timezone.now(),
         status=status
     )
 
@@ -206,6 +223,12 @@ def create_participation(
     hours: int = 0
 ) -> Participation:
     return Participation.objects.create(user=user, event_day=event_day, status=status, hours=hours)
+
+def create_churn_history(user: User, season: Season, churn_score: float) -> ChurnHistory:
+    return ChurnHistory.objects.create(user=user, season=season, churn_score=churn_score)
+
+def create_user_comment(target_user: User, author: Optional[User], text: str, event: Optional[Event] = None) -> UserComment:
+    return UserComment.objects.create(target_user=target_user, author=author, event=event, text=text)
 
 def create_feedback(author: User, event: Event, rating: int, comment: Optional[str] = None) -> EventFeedback:
     return EventFeedback.objects.create(author=author, event=event, rating=rating, comment=comment)
@@ -284,6 +307,12 @@ def get_organizer_links(organizer_id: Optional[int] = None, organization_id: Opt
         qs = qs.filter(organizer_id=organizer_id)
     if organization_id:
         qs = qs.filter(organization_id=organization_id)
+    return list(qs)
+
+def get_organizer_interactions(organizer_id: Optional[int] = None) -> List[OrganizerInteractionLog]:
+    qs = OrganizerInteractionLog.objects.select_related('author').order_by('-created_at')
+    if organizer_id:
+        qs = qs.filter(organizer_id=organizer_id)
     return list(qs)
 
 # --- LOCATIONS ---
@@ -381,6 +410,34 @@ def get_user_exceptions(user_id: Optional[int] = None) -> List[UserRequirementEx
 def get_seasons() -> List[Season]:
     return list(Season.objects.all().order_by('-start_season'))
 
+# --- CHURN HISTORY ---
+def get_churn_history(user_id: Optional[int] = None, season_id: Optional[int] = None) -> List[ChurnHistory]:
+    qs = ChurnHistory.objects.select_related('season')
+    if user_id:
+        qs = qs.filter(user_id=user_id)
+    if season_id:
+        qs = qs.filter(season_id=season_id)
+    return list(qs.order_by('-created_at'))
+
+# --- USER COMMENTS ---
+def get_user_comments(target_user_id: Optional[int] = None) -> List[UserComment]:
+    qs = UserComment.objects.select_related('author', 'event')
+    if target_user_id:
+        qs = qs.filter(target_user_id=target_user_id)
+    return list(qs.order_by('-created_at'))
+
+# --- CONST ---
+def get_const(name: str, default: Optional[float] = None) -> float:
+    try:
+        return Const.objects.get(name=name).value
+    except Const.DoesNotExist:
+        if default is not None:
+            return default
+        raise
+
+def get_all_consts() -> List[Const]:
+    return list(Const.objects.all().order_by('name'))
+
 
 # ==============================================================================
 # ЧАСТЬ 3: ОБЩИЕ ФУНКЦИИ (GENERIC)
@@ -393,6 +450,7 @@ TABLE_MODEL_MAP: Dict[str, Any] = {
     'organizations': Organization,
     'organizers': Organizer,
     'organizer_organization_link': OrganizerOrganizationLink,
+    'organizer_interaction_log': OrganizerInteractionLog,
     'locations': Location,
     'event_categories': EventCategory,
     'events': Event,
@@ -401,11 +459,15 @@ TABLE_MODEL_MAP: Dict[str, Any] = {
     'event_staff': EventStaff,
     'applications': Application,
     'participations': Participation,
+    'churn_history': ChurnHistory,
+    'user_comments': UserComment,
     'event_feedbacks': EventFeedback,
     'event_requirements': EventRequirement,
     'event_requirement_map': EventRequirementMap,
     'user_requirement_exceptions': UserRequirementException,
     'seasons': Season,
+    'thank_you_letter_templates': ThankYouLetterTemplate,
+    'const': Const,
 }
 
 def get_full_table(table_name: str) -> List[Dict[str, Any]]:

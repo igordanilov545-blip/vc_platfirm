@@ -1,0 +1,40 @@
+{% extends 'blog/base.html' %}
+{% block title %}Мероприятия{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center;">
+    <h1>Мероприятия</h1>
+    {% if is_manager %}<a href="{% url 'event_create' %}" class="btn">+ Новое мероприятие</a>{% endif %}
+</div>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr><th>Название</th><th>Локация</th><th>Статус</th><th>Набор</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for event in page_obj %}
+            <tr data-href="{% url 'event_detail' event.id %}">
+                <td><a href="{% url 'event_detail' event.id %}">{{ event.title }}</a></td>
+                <td>{{ event.location.name|default:"—" }}</td>
+                <td><span class="badge">{{ event.get_event_status_display }}</span></td>
+                <td>
+                    {% if event.recruit_status == 'open' %}
+                        <span class="badge">Открыт</span>
+                    {% else %}
+                        <span class="badge warn">Закрыт</span>
+                    {% endif %}
+                </td>
+                <td><a href="{% url 'event_detail' event.id %}">Подробнее →</a></td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="5">Мероприятий пока нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div>
+    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">← Назад</a>{% endif %}
+    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Вперёд →</a>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,92 @@
+{% extends 'blog/base.html' %}
+{% block title %}Профиль{% endblock %}
+{% block content %}
+<h1>{{ target.full_name }}</h1>
+<p class="badge">{{ target.telegram_username|default:"без ника" }}</p>
+
+<div class="stat-grid">
+    <div class="stat-tile"><div class="value">{{ target.total_hours }}</div><div class="label">Часов всего</div></div>
+    <div class="stat-tile"><div class="value">{{ target.season_hours }}</div><div class="label">Часов за сезон</div></div>
+    <div class="stat-tile"><div class="value">{{ target.total_event_count }}</div><div class="label">Мероприятий всего</div></div>
+    <div class="stat-tile"><div class="value">{{ target.season_event_count }}</div><div class="label">Мероприятий за сезон</div></div>
+</div>
+
+<div class="card">
+    <h3>Прошедшие мероприятия</h3>
+    <table>
+        <thead><tr><th>Мероприятие</th><th>Дата</th><th>Часы</th></tr></thead>
+        <tbody>
+        {% for p in past_participations %}
+            <tr data-href="{% url 'event_detail' p.event_day.event.id %}"><td>{{ p.event_day.event.title }}</td><td>{{ p.event_day.day }}</td><td>{{ p.hours }}</td></tr>
+        {% empty %}
+            <tr><td colspan="3">Пока нет прошедших мероприятий.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if has_extended_access %}
+<div class="card">
+    <h3>👤 ФИО и контакты</h3>
+    <p>ФИО: {{ target.first_name }} {{ target.last_name }}</p>
+    <p>Телефон: {{ target.phone|default:"—" }}</p>
+    <p>Email: {{ target.email|default:"—" }}</p>
+    <p>VK: {{ target.VK_username|default:"—" }}</p>
+    <p>Дата рождения: {{ target.birthday|default:"—" }}</p>
+    <p>Пол: {{ target.get_gender_display|default:"—" }}</p>
+</div>
+
+<div class="card">
+    <h3>История заявок</h3>
+    <table>
+        <thead><tr><th>Мероприятие</th><th>Подана</th><th>Статус</th></tr></thead>
+        <tbody>
+        {% for a in applications %}
+            <tr data-href="{% url 'event_detail' a.event.id %}"><td>{{ a.event.title }}</td><td>{{ a.submitted_at|default:a.created_at }}</td><td>{{ a.get_status_display }}</td></tr>
+        {% empty %}
+            <tr><td colspan="3">Заявок нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if is_manager %}
+<div class="card">
+    <h3>🔒 Внутреннее: статус и чарн</h3>
+    <p>Статус: <span class="badge {% if target.status == 'blacklisted' %}danger{% endif %}">{{ target.get_status_display }}</span></p>
+    <p>Churn score: {{ target.churn_score|floatformat:2 }}</p>
+    <p>Комментарий менеджера: {{ target.comment|default:"—" }}</p>
+
+    <h4>История чарна по сезонам</h4>
+    <table>
+        <thead><tr><th>Сезон</th><th>Значение</th><th>Дата</th></tr></thead>
+        <tbody>
+        {% for ch in churn_history %}
+            <tr><td>{{ ch.season }}</td><td>{{ ch.churn_score }}</td><td>{{ ch.created_at }}</td></tr>
+        {% empty %}
+            <tr><td colspan="3">Истории нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if can_see_comments %}
+<div class="card">
+    <h3>🔒 Комментарии к волонтёру</h3>
+    <p style="opacity:0.7; font-size:0.85rem;">Сам волонтёр эти комментарии не видит.</p>
+    {% for c in comments %}
+        <p>{{ c.created_at }} — {{ c.author.full_name }}{% if c.event %} ({{ c.event.title }}){% endif %}: {{ c.text }}</p>
+    {% empty %}
+        <p>Комментариев нет.</p>
+    {% endfor %}
+
+    <form method="post" action="{% url 'profile_comment_add' target.id %}" style="margin-top:1rem; max-width:500px;">
+        {% csrf_token %}
+        {{ comment_form.as_p }}
+        <button type="submit" class="btn secondary">Добавить комментарий</button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}

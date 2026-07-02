@@ -1,0 +1,58 @@
+{% extends "blog/base.html" %}
+{% load custom_tags %}
+
+{% block content %}
+<h1>Все таблицы</h1>
+
+{% for table_name, data in tables.items %}
+<div style="margin-bottom: 30px;">
+    <h2>{{ table_name|title }} ({{ data.total_count }})</h2>
+    {% if data.objects %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                {% for field in data.fields %}
+                    <th>{{ field|title }}</th>
+                {% endfor %}
+                <th>Действия</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for obj in data.objects %}
+            <tr>
+                <td>{{ obj.id }}</td>
+                {% for field in data.fields %}
+                    <td>
+                        {% if table_name == 'events' and field == 'title' %}
+                            <a href="{% url 'event_detail' obj.id %}"
+                               style="color: #764ba2; text-decoration: none;"
+                               ondblclick="window.location.href='{% url 'event_detail' obj.id %}'">
+                                {{ obj|getattribute:field|truncatechars:50 }}
+                            </a>
+                        {% elif table_name == 'users' and field == 'full_name' %}
+                            <a href="{% url 'user_detail' obj.id %}"
+                               style="color: #764ba2; text-decoration: none;"
+                               ondblclick="window.location.href='{% url 'user_detail' obj.id %}'">
+                                {{ obj|getattribute:field|truncatechars:50 }}
+                            </a>
+                        {% else %}
+                            {{ obj|getattribute:field|truncatechars:50 }}
+                        {% endif %}
+                    </td>
+                {% endfor %}
+                <td>
+                    <a href="{% url 'delete_record' obj.id %}?table={{ table_name }}"
+                       class="delete-btn"
+                       onclick="return confirm('Удалить?')">Удалить</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>Нет данных</p>
+    {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

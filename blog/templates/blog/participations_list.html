@@ -1,0 +1,40 @@
+{% extends "blog/base.html" %}
+
+{% block content %}
+<h1>Участия</h1>
+
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Добавить участие</button>
+</form>
+
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Пользователь</th>
+            <th>День мероприятия</th>
+            <th>Часы</th>
+            <th>Статус</th>
+            <th>Действия</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for part in participations %}
+        <tr>
+            <td>{{ part.id }}</td>
+            <td>{{ part.user.full_name }}</td>
+            <td>{{ part.event_day }}</td>
+            <td>{{ part.hours_total }}</td>
+            <td>{{ part.get_status_display }}</td>
+            <td>
+                <a href="{% url 'delete_record' part.id %}?table=participations"
+                   class="delete-btn"
+                   onclick="return confirm('Удалить?')">Удалить</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,134 @@
+{% extends "blog/base.html" %}
+{% load custom_tags %}
+
+{% block title %}{{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="content-card">
+    <a href="{% url 'tables' %}" style="color: #764ba2; text-decoration: none; margin-bottom: 15px; display: inline-block;">
+        ← Назад к таблицам
+    </a>
+
+    <h1>📅 {{ event.title }}</h1>
+
+    <!-- Информация о мероприятии -->
+    <div style="background: linear-gradient(135deg, #f8f4fc 0%, #ede4f5 100%); padding: 20px; border-radius: 12px; margin-bottom: 25px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+            <div>
+                <strong style="color: #764ba2;">📍 Локация:</strong>
+                <p>{{ event.location|default:"Не указана" }}</p>
+            </div>
+            <div>
+                <strong style="color: #764ba2;">📆 Начало:</strong>
+                <p>{{ event.start_date|date:"d.m.Y H:i" }}</p>
+            </div>
+            <div>
+                <strong style="color: #764ba2;">📆 Конец:</strong>
+                <p>{{ event.end_date|date:"d.m.Y H:i" }}</p>
+            </div>
+            <div>
+                <strong style="color: #764ba2;">👥 Волонтеры:</strong>
+                <p>{{ confirmed_count }} / {{ total_volunteers_needed }}</p>
+            </div>
+            <div>
+                <strong style="color: #764ba2;">👤 Менеджер:</strong>
+                <p>{{ event.manager.full_name|default:"Не назначен" }}</p>
+            </div>
+            <div>
+                <strong style="color: #764ba2;">⭐ Тим-лидер:</strong>
+                <p>{{ event.team_leader.full_name|default:"Не назначен" }}</p>
+            </div>
+        </div>
+
+        {% if event.description %}
+        <div style="margin-top: 15px;">
+            <strong style="color: #764ba2;">📝 Описание:</strong>
+            <p style="margin-top: 5px;">{{ event.description }}</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Дни мероприятия -->
+    {% if event_days %}
+    <h2 style="margin-top: 30px;">📅 Дни мероприятия</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Дата</th>
+                <th>Начало</th>
+                <th>Конец</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for day in event_days %}
+            <tr>
+                <td>{{ day.date|date:"d.m.Y" }}</td>
+                <td>{{ day.start_time }}</td>
+                <td>{{ day.end_time }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <!-- Заявки -->
+    <h2 style="margin-top: 30px;">✅ Заявки ({{ participations.count }})</h2>
+
+    {% if participations %}
+    <table>
+        <thead>
+            <tr>
+                <th>ФИО</th>
+                <th>Telegram</th>
+                <th>Время заявки</th>
+                <th>Статус</th>
+                <th>Часы</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for part in participations %}
+            <tr>
+                <td>
+                    <a href="{% url 'user_detail' part.user.id %}" style="color: #764ba2; text-decoration: none;">
+                        {{ part.user.full_name }}
+                    </a>
+                </td>
+                <td>
+                    {% if part.user.telegram_id %}
+                    <a href="https://t.me/{{ part.user.telegram_id }}" target="_blank" style="color: #0088cc;">
+                        @{{ part.user.telegram_id }}
+                    </a>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>{{ part.participated_at|date:"d.m.Y H:i" }}</td>
+                <td>
+                    {% if part.status == 'confirmed' %}
+                    <span style="background: #27ae60; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px;">
+                        Принято
+                    </span>
+                    {% elif part.status == 'pending' %}
+                    <span style="background: #f39c12; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px;">
+                        На рассмотрении
+                    </span>
+                    {% elif part.status == 'cancelled' %}
+                    <span style="background: #e74c3c; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px;">
+                        Отказ
+                    </span>
+                    {% else %}
+                    <span style="background: #95a5a6; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px;">
+                        {{ part.get_status_display }}
+                    </span>
+                    {% endif %}
+                </td>
+                <td>{{ part.hours_total }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #666; margin-top: 15px;">Пока нет заявок</p>
+    {% endif %}
+</div>
+{% endblock %}

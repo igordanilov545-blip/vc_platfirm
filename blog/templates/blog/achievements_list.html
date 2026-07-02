@@ -1,0 +1,36 @@
+{% extends "blog/base.html" %}
+
+{% block content %}
+<h1>Достижения</h1>
+
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Добавить достижение</button>
+</form>
+
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Название</th>
+            <th>Описание</th>
+            <th>Действия</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for achievement in achievements %}
+        <tr>
+            <td>{{ achievement.id }}</td>
+            <td>{{ achievement.title }}</td>
+            <td>{{ achievement.description|truncatechars:50 }}</td>
+            <td>
+                <a href="{% url 'delete_record' achievement.id %}?table=achievements"
+                   class="delete-btn"
+                   onclick="return confirm('Удалить?')">Удалить</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

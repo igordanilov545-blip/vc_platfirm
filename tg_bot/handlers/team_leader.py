@@ -31,6 +31,7 @@ async def cmd_myevents(message: Message):
     await message.answer('\n'.join(lines))
 
     for e in events:
+        await message.answer(f"«{e['title']}»", reply_markup=kb.event_actions(e['id']))
         if e['new_applications']:
             await _send_pending_applications(message, user.id, e['id'])
 
@@ -79,7 +80,7 @@ async def _decide(callback: CallbackQuery, approve: bool):
     if approve:
         name = f'{application.first_name} {application.last_name or ""}'.strip()
         await callback.message.answer(f'✅ Заявка {name} одобрена. Волонтёр получил уведомление.')
-        if application.event.recruit_status == 'closed':
+        if not application.event.shifts.filter(recruit_status='open').exists():
             await callback.message.answer(
                 f'ℹ️ Набор на «{application.event.title}» закрыт — одобренных заявок достаточно.'
             )
@@ -120,7 +121,75 @@ async def cb_profile(callback: CallbackQuery):
         f'✉ {target.email}' if target.email else '',
         f'@{target.telegram_username}' if target.telegram_username else '',
     ]
-    await callback.message.answer('\n'.join(line for line in lines if line))
+    await callback.message.answer(
+        '\n'.join(line for line in lines if line),
+        reply_markup=kb.profile_comment_button(target.id),
+    )
+
+
+@router.callback_query(F.data.startswith('event_apps_approve_all:'))
+async def cb_approve_all(callback: CallbackQuery):
+    """Одобрить все заявки на рассмотрении по меро одним действием (tg-bot.md §5.2, TL4)."""
+    event_id = int(callback.data.split(':', 1)[1])
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        callback.from_user.id, callback.from_user.username
+    )
+    approved, error = await sync_to_async(services.process_all_applications)(user.id, event_id)
+    await callback.answer()
+    if error == 'forbidden':
+        await callback.message.answer('⛔ Ты не тим-лидер этого мероприятия.')
+        return
+    if not approved:
+        await callback.message.answer('📋 Заявок на рассмотрении нет.')
+        return
+    await callback.message.answer(f'✅ Одобрено заявок: {len(approved)}. Волонтёры получили уведомления.')
+
+
+@router.callback_query(F.data.startswith('event_apps:'))
+async def cb_event_apps(callback: CallbackQuery):
+    """Показать все заявки на рассмотрении по меро (tg-bot.md §5.2, TL4)."""
+    event_id = int(callback.data.split(':', 1)[1])
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        callback.from_user.id, callback.from_user.username
+    )
+    await callback.answer()
+    apps, error = await sync_to_async(services.event_pending_applications)(user.id, event_id)
+    if error == 'forbidden':
+        await callback.message.answer('⛔ Ты не тим-лидер этого мероприятия.')
+        return
+    if not apps:
+        await callback.message.answer('📋 Заявок на рассмотрении нет.')
+        return
+    await _send_pending_applications(callback.message, user.id, event_id)
+
+
+@router.callback_query(F.data.startswith('event_attendance:'))
+async def cb_event_attendance(callback: CallbackQuery):
+    """Экран явки по меро (tg-bot.md §5.3) — список участников с кнопками Был/Уваж./Неявка."""
+    event_id = int(callback.data.split(':', 1)[1])
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        callback.from_user.id, callback.from_user.username
+    )
+    await callback.answer()
+    participations, error = await sync_to_async(services.event_participants_for_attendance)(
+        user.id, event_id
+    )
+    if error == 'forbidden':
+        await callback.message.answer('⛔ Ты не тим-лидер этого мероприятия.')
+        return
+    if not participations:
+        await callback.message.answer('📋 Участников с подтверждённой явкой пока нет.')
+        return
+
+    by_day = {}
+    for p in participations:
+        by_day.setdefault(p.event_day, []).append(p)
+
+    for shift, rows in sorted(by_day.items(), key=lambda kv: kv[0].day):
+        await callback.message.answer(f'📋 Явка — {shift.day.strftime("%d.%m.%Y")}')
+        for p in rows:
+            name = p.user.full_name
+            await callback.message.answer(name, reply_markup=kb.attendance_row(p.id))
 
 
 @router.callback_query(F.data.startswith('att:'))

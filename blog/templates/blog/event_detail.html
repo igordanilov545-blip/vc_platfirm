@@ -1,63 +1,141 @@
 {% extends 'blog/base.html' %}
+{% load custom_tags %}
 {% block title %}{{ event.title }}{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content:space-between; align-items:center;">
+<div class="page-header">
     <h1>{{ event.title }}</h1>
     {% if is_manager %}
-    <div style="display:flex; gap:0.5rem; align-items:center;">
+    <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
         {% if not event.published_at %}
         <form method="post" action="{% url 'event_publish' event.id %}" class="inline">
             {% csrf_token %}
             <button type="submit" class="btn">📣 Опубликовать</button>
         </form>
         {% endif %}
-        <a href="{% url 'event_edit' event.id %}" class="btn secondary">Редактировать</a>
+        {% if event.event_status != 'finished' %}
+        <a href="{% url 'event_edit' event.id %}" class="btn secondary" data-modal data-modal-title="Редактировать: {{ event.title }}">Редактировать</a>
+        {% endif %}
+        {% if closing_checklist %}
+        <a href="{% url 'event_close' event.id %}" class="btn {% if closing_checklist.ready %}danger{% else %}secondary{% endif %}">
+            {% if closing_checklist.ready %}✅ Завершить мероприятие{% else %}Завершить мероприятие{% endif %}
+        </a>
+        {% endif %}
     </div>
     {% endif %}
 </div>
 
 <div class="card">
     <p>{{ event.description|default:"Без описания" }}</p>
-    <p><span class="badge">{{ event.get_event_status_display }}</span>
-       {% if event.recruit_status == 'open' %}<span class="badge">Набор открыт</span>{% else %}<span class="badge warn">Набор закрыт</span>{% endif %}</p>
+    <p style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+       {% event_status_pill event %}
+    </p>
     <p>Локация: {{ event.location.name|default:"—" }} · Организация: {{ event.organization.name|default:"—" }}</p>
+    <div class="cat-chips-row" style="margin-top:6px;">
+        <span style="color:var(--text-secondary); font-size:13px;">Категории:</span>
+        {% for category in categories %}
+            <span class="cat-chip {{ category.id|chip_color }}"><span class="cat-chip-label">{{ category.name }}</span></span>
+        {% empty %}
+            <span style="color:var(--text-secondary); font-size:13px;">не указаны</span>
+        {% endfor %}
+    </div>
     {% if is_manager %}
-        <p>{% if event.published_at %}Опубликовано: {{ event.published_at }}{% else %}<span class="badge warn">Не опубликовано</span> — волонтёры ещё не получили уведомление в боте{% endif %}</p>
+        <p>{% if event.published_at %}Опубликовано: {{ event.published_at }}{% else %}<span class="pill warning"><span class="dot"></span>Не опубликовано</span> — волонтёры ещё не получили уведомление в боте{% endif %}</p>
     {% endif %}
     {% if event.people_helped is not None %}<p>Людям помогли: {{ event.people_helped }}</p>{% endif %}
 </div>
 
-<div class="card">
-    <h3>Дни мероприятия</h3>
-    <table>
-        <thead><tr><th>Дата</th><th>Начало</th><th>Окончание</th><th>Нужно волонтёров</th></tr></thead>
+<div class="card" style="padding:0; overflow:hidden;">
+    <h3 style="padding:20px 20px 0;">Смены мероприятия</h3>
+    <p style="padding:0 20px; color:var(--text-secondary); font-size:13px;">Ближайшая/идущая смена — сверху, прошедшие уходят в конец списка.</p>
+    <table class="responsive-table shift-table">
+        <thead>
+            <tr>
+                <th>Дата</th><th>Начало</th><th>Окончание</th><th>Локация</th><th>Нужно волонтёров</th><th>Набор</th>
+                {% if is_manager and event.event_status != 'finished' %}<th></th>{% endif %}
+            </tr>
+        </thead>
         <tbody>
-        {% for day in days %}
-            <tr><td>{{ day.day }}</td><td>{{ day.start_time }}</td><td>{{ day.end_time }}</td><td>{{ day.volunteer_needed }}</td></tr>
+        {% for shift in shifts %}
+            {% with shift_status=shift.compute_status %}
+            <tr class="shift-row shift-row--{{ shift_status }}">
+                <td data-label="Дата" class="mono">{{ shift.day }}</td>
+                <td data-label="Начало" class="mono">{{ shift.start_time|time:"H:i" }}</td>
+                <td data-label="Окончание" class="mono">{{ shift.end_time|time:"H:i" }}</td>
+                <td data-label="Локация">{{ shift.location.name|default:"—" }}</td>
+                <td data-label="Нужно волонтёров" class="num mono">{{ shift.volunteer_needed }}</td>
+                <td data-label="Набор">
+                    {% if shift.recruit_status == 'open' %}<span class="pill success"><span class="dot"></span>Открыт</span>
+                    {% else %}<span class="pill neutral"><span class="dot"></span>Закрыт</span>{% endif %}
+                    {% if can_manage_applications %}
+                    <form method="post" action="{% url 'shift_toggle_recruit' event.id shift.id %}" class="inline" style="margin-top:4px;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn secondary btn-sm">
+                            {% if shift.recruit_status == 'open' %}Закрыть{% else %}Открыть{% endif %}
+                        </button>
+                    </form>
+                    {% endif %}
+                </td>
+                {% if is_manager and event.event_status != 'finished' %}
+                <td data-label="" class="row-actions" style="white-space:nowrap;">
+                    <a href="{% url 'event_shift_edit' event.id shift.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Редактировать смену: {{ event.title }}">Изменить</a>
+                    <form method="post" action="{% url 'event_shift_delete' event.id shift.id %}" class="inline" onsubmit="return confirm('Удалить эту смену мероприятия?');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn danger btn-sm">Удалить</button>
+                    </form>
+                </td>
+                {% endif %}
+            </tr>
+            {% endwith %}
         {% empty %}
-            <tr><td colspan="4">Дни не заданы.</td></tr>
+            <tr><td colspan="{% if is_manager %}7{% else %}6{% endif %}">Смены не заданы.</td></tr>
         {% endfor %}
         </tbody>
     </table>
-    {% if is_manager %}
-        <a href="{% url 'event_day_add' event.id %}" class="btn secondary" style="margin-top:0.75rem;">+ Добавить день</a>
+    {% if is_manager and event.event_status != 'finished' %}
+        <div style="padding:16px 20px;"><a href="{% url 'event_shift_add' event.id %}" class="btn secondary" data-modal data-modal-title="Новая смена: {{ event.title }}">+ Добавить смену</a></div>
     {% endif %}
 </div>
+
+{% if can_manage_applications and shifts_with_participations %}
+<div class="card" style="padding:0; overflow:hidden;">
+    <h3 style="padding:20px 20px 0;">Явка</h3>
+    <p style="padding:0 20px; color:var(--text-secondary); font-size:13px;">Все, кто подал заявку, по умолчанию считаются пришедшими. Отметьте, если было иначе — часы и статус обновятся сразу.</p>
+    {% for entry in shifts_with_participations %}
+        <p style="padding:0 20px; color:var(--text-secondary); font-size:13px;">{{ entry.shift.day }} ({{ entry.shift.start_time|time:"H:i" }}–{{ entry.shift.end_time|time:"H:i" }})</p>
+        <table class="responsive-table" style="margin-bottom:16px;">
+            <thead><tr><th>Волонтёр</th><th style="width:70px;">Явка</th><th class="num">Часы</th><th>Статус</th></tr></thead>
+            <tbody>
+            {% for p in entry.participations %}
+                <tr data-participation-row="{{ p.id }}">
+                    <td data-label="Волонтёр"><a href="{% url 'profile_detail' p.user_id %}">{{ p.user.full_name }}</a></td>
+                    <td data-label="Явка">
+                        <input type="checkbox" data-attendance-checkbox data-participation-id="{{ p.id }}" {% if p.status == 'attended' %}checked{% endif %} style="width:18px; height:18px; margin:0;">
+                    </td>
+                    <td data-label="Часы" class="num mono" data-hours-cell>{{ p.hours }}</td>
+                    <td data-label="Статус">
+                        <select data-attendance-status data-participation-id="{{ p.id }}" class="attendance-status-select">
+                            <option value="attended" {% if p.status == 'attended' %}selected{% endif %}>Был</option>
+                            <option value="absent_excused" {% if p.status == 'absent_excused' %}selected{% endif %}>Отсутствовал уважительно</option>
+                            <option value="absent_unexcused" {% if p.status == 'absent_unexcused' %}selected{% endif %}>Отсутствовал без предупреждения</option>
+                        </select>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="4">Нет одобренных участников на эту смену.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    {% endfor %}
+</div>
+{% endif %}
 
 <div class="card">
     <h3>Тим-лидеры</h3>
     {% for staff in team_leads %}
-        <span class="badge">{{ staff.user.full_name }}</span>
+        <span class="pill info"><span class="dot"></span>{{ staff.user.full_name }}</span>
     {% empty %}
-        <p>Тим-лидер не назначен.</p>
+        <p>Тим-лидер не назначен.{% if is_manager %} Назначьте через «Редактировать».{% endif %}</p>
     {% endfor %}
-    {% if is_manager %}
-    <form method="post" action="{% url 'event_assign_staff' event.id %}" style="margin-top:0.75rem; max-width:300px;">
-        {% csrf_token %}
-        {{ staff_assign_form.as_p }}
-        <button type="submit" class="btn secondary">Назначить</button>
-    </form>
-    {% endif %}
 </div>
 
 {% if is_participant %}
@@ -85,33 +163,43 @@
 {% endif %}
 
 {% if can_manage_applications %}
-<div class="card" id="applications">
-    <h3>Набор: {{ approved_count }} из {{ needed }} (осталось {{ remaining }})</h3>
-    <h4>Заявки</h4>
-    <table>
+<div class="card" id="applications" style="padding:0; overflow:hidden;">
+    <div style="padding:20px 20px 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <h3 style="padding:0; margin:0;">Набор: {{ approved_count }} из {{ needed }} (осталось {{ remaining }})</h3>
+        {% if pending_count %}
+        <div style="display:flex; align-items:center; gap:10px;">
+            <span class="pill warning"><span class="dot"></span>Осталось обработать: {{ pending_count }}</span>
+            <form method="post" action="{% url 'event_application_process_all' event.id %}" class="inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm">Принять всех</button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+    <table class="responsive-table">
         <thead><tr><th>ФИО</th><th>Telegram</th><th>Телефон</th><th>Статус</th><th>Подано</th><th></th></tr></thead>
         <tbody>
         {% for application in applications %}
             <tr {% if application.user_id %}data-href="{% url 'profile_detail' application.user_id %}"{% endif %}>
-                <td>{{ application.first_name }} {{ application.last_name }}</td>
-                <td>{{ application.telegram_username|default:"—" }}</td>
-                <td>{{ application.phone|default:"—" }}</td>
-                <td>
-                    {% if application.status == 'approved' %}<span class="badge">Одобрена</span>
-                    {% elif application.status == 'rejected' %}<span class="badge warn">Резерв/отклонена</span>
-                    {% else %}<span class="badge danger">Новая</span>{% endif %}
+                <td data-label="ФИО">{{ application.first_name }}{% if application.last_name %} {{ application.last_name }}{% endif %}</td>
+                <td data-label="Telegram">{{ application.telegram_username|default:"—" }}</td>
+                <td data-label="Телефон" class="mono">{{ application.phone|default:"—" }}</td>
+                <td data-label="Статус">
+                    {% if application.status == 'approved' %}<span class="pill success"><span class="dot"></span>Одобрена</span>
+                    {% elif application.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>Резерв/отклонена</span>
+                    {% else %}<span class="pill warning"><span class="dot"></span>Новая</span>{% endif %}
                 </td>
-                <td>{{ application.submitted_at|default:application.created_at }}</td>
-                <td>
+                <td data-label="Подано" class="mono">{{ application.submitted_at|default:application.created_at }}</td>
+                <td data-label="">
                     <form method="post" action="{% url 'application_process' application.id %}" class="inline">
                         {% csrf_token %}
                         <input type="hidden" name="status" value="approved">
-                        <button type="submit" class="btn" style="padding:0.25rem 0.6rem;">Принять</button>
+                        <button type="submit" class="btn" style="padding:6px 12px;">Принять</button>
                     </form>
                     <form method="post" action="{% url 'application_process' application.id %}" class="inline">
                         {% csrf_token %}
                         <input type="hidden" name="status" value="rejected">
-                        <button type="submit" class="btn danger" style="padding:0.25rem 0.6rem;">Отклонить</button>
+                        <button type="submit" class="btn danger" style="padding:6px 12px;">Отклонить</button>
                     </form>
                 </td>
             </tr>

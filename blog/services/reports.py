@@ -5,14 +5,17 @@ from blog.models import Application, Event, Participation, User
 
 
 def period_report(date_from, date_to, prev_from=None, prev_to=None):
+    # Отчёт по мероприятиям считается только по завершённым (event_status='finished') —
+    # ещё идущие/будущие меро не должны попадать в статистику периода задним числом.
     participations = Participation.objects.filter(
-        event_day__day__gte=date_from, event_day__day__lte=date_to
+        event_day__day__gte=date_from, event_day__day__lte=date_to,
+        event_day__event__event_status='finished',
     )
     attended = participations.filter(status='attended')
 
     total_hours = attended.aggregate(s=Sum('hours'))['s'] or 0
     total_events = Event.objects.filter(
-        days__day__gte=date_from, days__day__lte=date_to
+        shifts__day__gte=date_from, shifts__day__lte=date_to, event_status='finished',
     ).distinct().count()
     unique_volunteers = attended.values('user').distinct().count()
     closed_shifts = attended.count()
@@ -20,7 +23,7 @@ def period_report(date_from, date_to, prev_from=None, prev_to=None):
         created_at__date__gte=date_from, created_at__date__lte=date_to
     ).count()
     people_helped = Event.objects.filter(
-        days__day__gte=date_from, days__day__lte=date_to
+        shifts__day__gte=date_from, shifts__day__lte=date_to, event_status='finished',
     ).distinct().aggregate(s=Sum('people_helped'))['s'] or 0
 
     top_volunteers = list(
@@ -110,12 +113,13 @@ def period_report(date_from, date_to, prev_from=None, prev_to=None):
 def period_report_basic(date_from, date_to):
     """Облегчённая версия для сравнения с предыдущим периодом (без рекурсии)."""
     attended = Participation.objects.filter(
-        event_day__day__gte=date_from, event_day__day__lte=date_to, status='attended'
+        event_day__day__gte=date_from, event_day__day__lte=date_to, status='attended',
+        event_day__event__event_status='finished',
     )
     return {
         'total_hours': attended.aggregate(s=Sum('hours'))['s'] or 0,
         'total_events': Event.objects.filter(
-            days__day__gte=date_from, days__day__lte=date_to
+            shifts__day__gte=date_from, shifts__day__lte=date_to, event_status='finished',
         ).distinct().count(),
         'unique_volunteers': attended.values('user').distinct().count(),
         'new_volunteers': User.objects.filter(
@@ -135,7 +139,8 @@ def weekly_dynamics(date_from, date_to):
     while cursor <= date_to:
         week_end = min(cursor + timedelta(days=6), date_to)
         attended = Participation.objects.filter(
-            event_day__day__gte=cursor, event_day__day__lte=week_end, status='attended'
+            event_day__day__gte=cursor, event_day__day__lte=week_end, status='attended',
+            event_day__event__event_status='finished',
         )
         hours = attended.aggregate(s=Sum('hours'))['s'] or 0
         shifts = attended.count()
@@ -154,11 +159,14 @@ def weekly_dynamics(date_from, date_to):
 
 
 def recruitment_efficiency(date_from, date_to):
-    """% закрытия слотов по каждому меро, недокомплект (reports.md)."""
-    events = Event.objects.filter(days__day__gte=date_from, days__day__lte=date_to).distinct()
+    """% закрытия слотов по каждому меро, недокомплект (reports.md) — только по
+    завершённым мероприятиям, у идущих/будущих ещё нет окончательной явки."""
+    events = Event.objects.filter(
+        shifts__day__gte=date_from, shifts__day__lte=date_to, event_status='finished',
+    ).distinct()
     result = []
     for event in events:
-        needed = event.days.aggregate(s=Sum('volunteer_needed'))['s'] or 0
+        needed = event.shifts.aggregate(s=Sum('volunteer_needed'))['s'] or 0
         attended = Participation.objects.filter(event_day__event=event, status='attended').count()
         pct = (attended / needed * 100) if needed else 0
         result.append({
@@ -173,17 +181,20 @@ def recruitment_efficiency(date_from, date_to):
 
 
 def staff_load(date_from, date_to):
-    """Нагрузка персонала: меро/заявки на менеджера и тим-лидера за период."""
+    """Нагрузка персонала: меро/заявки на менеджера и тим-лидера за период —
+    по мероприятиям считаем только завершённые (не будущую/текущую нагрузку)."""
     from blog.models import EventStaff
 
     managers = list(
         EventStaff.objects.filter(
-            staff_role='manager', event__days__day__gte=date_from, event__days__day__lte=date_to
+            staff_role='manager', event__shifts__day__gte=date_from, event__shifts__day__lte=date_to,
+            event__event_status='finished',
         ).values('user__id', 'user__first_name', 'user__last_name').annotate(event_count=Count('event', distinct=True))
     )
     team_leads = list(
         EventStaff.objects.filter(
-            staff_role='team_lead', event__days__day__gte=date_from, event__days__day__lte=date_to
+            staff_role='team_lead', event__shifts__day__gte=date_from, event__shifts__day__lte=date_to,
+            event__event_status='finished',
         ).values('user__id', 'user__first_name', 'user__last_name').annotate(event_count=Count('event', distinct=True))
     )
     apps_by_manager = list(

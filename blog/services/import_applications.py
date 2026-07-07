@@ -7,7 +7,11 @@
 Если мероприятие с таким названием не найдено — строка помечается как
 "мероприятие отсутствует" и на превью менеджеру предлагается создать его
 (по умолчанию с сегодняшней датой; если указан период дат — на каждый день
-периода создаётся отдельный EventDay).
+периода создаётся отдельная смена EventShift).
+
+Колонка "Смена" (functions/shifts из Excel) — если пустая, считаем, что у
+мероприятия одна смена; если задана, пока заглушка: волонтёр допускается на
+все смены (выбор конкретной смены по названию из Excel ещё не реализован).
 """
 import datetime
 import uuid
@@ -16,7 +20,7 @@ import openpyxl
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
-from blog.models import Event, EventDay
+from blog.models import Event, EventShift
 from blog.services.applications import find_matching_user
 
 COLUMN_MAP = {
@@ -140,7 +144,8 @@ def parse_excel(file) -> dict:
 
 
 def _create_event_with_days(row: dict) -> Event:
-    """Создаёт мероприятие с EventDay на каждый день периода (или один день — сегодня по умолчанию)."""
+    """Создаёт мероприятие со сменой (EventShift) на каждый день периода (или одна смена
+    на сегодня по умолчанию)."""
     event = Event.objects.create(title=row['event_title'])
 
     start = row['event_start_date']
@@ -152,7 +157,7 @@ def _create_event_with_days(row: dict) -> Event:
 
     day = start
     while day <= end:
-        EventDay.objects.create(
+        EventShift.objects.create(
             event=event,
             day=day,
             start_time=timezone.make_aware(datetime.datetime.combine(day, datetime.time(0, 0))),
@@ -196,16 +201,80 @@ def _user_match_key(row: dict):
     return None
 
 
-def commit_import(rows: list) -> int:
-    """Создаёт мероприятия (если отсутствуют), Application и User из превью-строк."""
+def _norm(value):
+    return (value or '').strip().lower()
+
+
+# Поля, по которым сравнивается ПОЛНОЕ содержимое заявки (db.md правило 3: дубли с
+# ИЗМЕНЁННЫМИ данными — это законная новая заявка, правило 7d; но точный повтор той же
+# заявки — например, повторная выгрузка того же Excel-файла на то же меро — не нужен).
+_DEDUP_FIELDS = ('first_name', 'last_name', 'telegram_username', 'phone', 'functions', 'shifts', 'role_in_event')
+
+
+def _application_dedup_key(event, row: dict):
+    """Ключ ПОЛНОГО совпадения заявки: мероприятие + все значимые поля. Используется,
+    чтобы точно идентичные заявки (та же строка дважды в файле, повторная загрузка
+    того же Excel) не создавали дубли — статус существующей заявки не имеет значения."""
+    return (event.id,) + tuple(_norm(row.get(f)) for f in _DEDUP_FIELDS)
+
+
+def _existing_application_is_duplicate(event, row: dict) -> bool:
+    """True, если в БД уже есть заявка на это же меро с ПОЛНОСТЬЮ совпадающими
+    значимыми полями (статус не важен — db.md уточнение по этой задаче)."""
+    from blog.models import Application
+
+    candidates = Application.objects.filter(event=event)
+    telegram_username = row.get('telegram_username')
+    phone = row.get('phone')
+    if telegram_username:
+        candidates = candidates.filter(telegram_username__iexact=telegram_username.lstrip('@'))
+    elif phone:
+        candidates = candidates.filter(phone=phone)
+    else:
+        candidates = candidates.filter(
+            first_name__iexact=(row.get('first_name') or '').strip(),
+            last_name__iexact=(row.get('last_name') or '').strip(),
+        )
+
+    for existing in candidates:
+        if all(
+            _norm(getattr(existing, f)) == _norm(row.get(f))
+            for f in _DEDUP_FIELDS
+        ):
+            return True
+    return False
+
+
+def commit_import(rows: list) -> dict:
+    """Создаёт мероприятия (если отсутствуют), Application и User из превью-строк.
+
+    Возвращает {'created': N, 'skipped': M} — заявки, полностью идентичные уже
+    существующим (дубль внутри файла или повторная выгрузка того же Excel), пропускаются
+    без создания новой записи. Статус существующей заявки значения не имеет.
+    """
     from blog.models import Application, User
 
     events_cache = {}
     new_users_cache = {}
+    seen_keys = set()
     created = 0
+    skipped = 0
 
     for row in rows:
         event = _get_or_create_event(row, events_cache)
+
+        # Дубль внутри самого файла (та же строка выгружена дважды в одном импорте).
+        dedup_key = _application_dedup_key(event, row)
+        if dedup_key in seen_keys:
+            skipped += 1
+            continue
+        seen_keys.add(dedup_key)
+
+        # Дубль относительно уже существующих в БД заявок на это меро — статус
+        # (new/approved/rejected) не имеет значения, сравниваем по полному содержимому.
+        if _existing_application_is_duplicate(event, row):
+            skipped += 1
+            continue
 
         user = None
         if row.get('matched_user_id'):
@@ -240,4 +309,4 @@ def commit_import(rows: list) -> int:
             status='new',
         )
         created += 1
-    return created
+    return {'created': created, 'skipped': skipped}

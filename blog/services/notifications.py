@@ -23,15 +23,17 @@ def notify_user(user: User, text: str):
 
 
 def notify_event_staff(event, text: str):
-    """Новая заявка → тим-лидерам мероприятия и всем активным менеджерам."""
+    """Новая заявка → тим-лидерам мероприятия и всем активным менеджерам,
+    у кого не выключен тумблер `notify_applications` (db.md, правило 7c)."""
     recipients = {}
     staff_users = User.objects.filter(
-        staff_assignments__event=event, staff_assignments__staff_role='team_lead'
+        staff_assignments__event=event, staff_assignments__staff_role='team_lead',
+        notify_applications=True,
     )
     for user in staff_users:
         recipients[user.id] = user
     manager_users = User.objects.filter(
-        manager_roles__revoked_at__isnull=True
+        manager_roles__revoked_at__isnull=True, notify_applications=True,
     ).distinct()
     for user in manager_users:
         recipients[user.id] = user
@@ -80,8 +82,8 @@ def notify_feedback_request(user: User, event):
 
 def broadcast_new_event(event):
     """Новое опубликованное мероприятие → всем подписанным активным волонтёрам."""
-    first_day = event.days.order_by('day').first()
-    when = f'\n📆 Ближайший день: {first_day.day.strftime("%d.%m.%Y")}' if first_day else ''
+    first_shift = event.shifts.order_by('day').first()
+    when = f'\n📆 Ближайший день: {first_shift.day.strftime("%d.%m.%Y")}' if first_shift else ''
     where = f'\n📍 {event.location.name}' if event.location else ''
     text = (
         f'🆕 <b>Новое мероприятие: {event.title}</b>{when}{where}\n\n'

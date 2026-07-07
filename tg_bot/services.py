@@ -148,7 +148,7 @@ def open_events(limit: int = 7) -> list:
     events = dc.get_open_events()
     result = []
     for event in events:
-        days = sorted(d.day for d in event.days.all())
+        days = sorted(s.day for s in event.shifts.all())
         first_day = next((d for d in days if d >= today), days[0] if days else None)
         result.append({
             'id': event.id,
@@ -170,7 +170,7 @@ def apply_to_event(user_id: int, event_id: int):
     event = next((e for e in dc.get_events() if e.id == event_id), None)
     if not event:
         return None, 'not_found'
-    if event.recruit_status != 'open':
+    if not event.shifts.filter(recruit_status='open').exists():
         return None, 'closed'
     if user.status == 'blacklisted':
         return None, 'blacklisted'
@@ -263,6 +263,21 @@ def process_application_decision(user_id: int, application_id: int, approve: boo
     new_status = 'approved' if approve else 'rejected'
     process_application(application, new_status, processed_by=user)
     return application, None
+
+
+def process_all_applications(user_id: int, event_id: int):
+    """Одобрить все заявки на рассмотрении по меро одним действием (tg-bot.md §5.2, TL4).
+    Права те же, что и для одиночного решения. Возвращает (список одобренных заявок, ошибка)."""
+    close_old_connections()
+    user = get_user(user_id)
+    if not roles_service.can_process_applications(user, event_id):
+        return None, 'forbidden'
+    apps = dc.get_applications(status_filter='new', event_id=event_id)
+    approved = []
+    for application in apps:
+        process_application(application, 'approved', processed_by=user)
+        approved.append(application)
+    return approved, None
 
 
 def event_participants_for_attendance(user_id: int, event_id: int):

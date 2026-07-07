@@ -1,9 +1,19 @@
 """Клавиатуры бота. Меню перестраивается по фактическим правам (tg-bot.md §2)."""
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
-    InlineKeyboardMarkup, InlineKeyboardButton,
+    InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo,
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+
+from django.conf import settings
+
+
+def _add_webapp_button(builder: ReplyKeyboardBuilder):
+    """Кнопка запуска Mini App (implementation-plan.md, Этап 4.4.5) — только если
+    задан публичный HTTPS-адрес (`WEBAPP_URL`); Telegram не примет http:// или пустой URL."""
+    if not settings.WEBAPP_URL:
+        return
+    builder.button(text='🖥 Личный кабинет', web_app=WebAppInfo(url=settings.WEBAPP_URL.rstrip('/') + '/webapp/'))
 
 
 # ---------------------------------------------------------------------------
@@ -14,6 +24,7 @@ def guest_menu() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.button(text='📅 Мероприятия')
     builder.button(text='📝 Зарегистрироваться')
+    _add_webapp_button(builder)
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
@@ -29,6 +40,7 @@ def main_menu(is_team_leader: bool = False, is_manager: bool = False) -> ReplyKe
         builder.button(text='👥 Мои мероприятия (ТЛ)')
     if is_manager:
         builder.button(text='⚙️ Управление')
+    _add_webapp_button(builder)
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
@@ -83,6 +95,24 @@ def application_decision(application_id: int) -> InlineKeyboardMarkup:
     builder.button(text='💤 В резерв', callback_data=f'app_reject:{application_id}')
     builder.button(text='👤 Профиль', callback_data=f'app_profile:{application_id}')
     builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def event_actions(event_id: int) -> InlineKeyboardMarkup:
+    """Кнопки под мероприятием в списке `/myevents` (tg-bot.md §5.2, TL4):
+    открыть все заявки на рассмотрении или одобрить их одним действием."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text='📋 Все заявки', callback_data=f'event_apps:{event_id}')
+    builder.button(text='✅ Одобрить все заявки', callback_data=f'event_apps_approve_all:{event_id}')
+    builder.button(text='📝 Явка', callback_data=f'event_attendance:{event_id}')
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def profile_comment_button(target_user_id: int) -> InlineKeyboardMarkup:
+    """Кнопка оставить внутренний комментарий волонтёру (tg-bot.md §5.4)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text='📝 Комментарий волонтёру', callback_data=f'comment:{target_user_id}')
     return builder.as_markup()
 
 

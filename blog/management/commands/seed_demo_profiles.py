@@ -2,7 +2,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from blog.models import (
-    Event, EventDay, EventStaff, Organization, Organizer,
+    Event, EventShift, EventStaff, Organization, Organizer,
     OrganizerOrganizationLink, TeamLeader, User,
 )
 
@@ -46,17 +46,17 @@ class Command(BaseCommand):
                 'organization': organization,
                 'organizer': organizer,
                 'event_status': 'upcoming',
-                'recruit_status': 'open',
                 'published_at': timezone.now(),
             },
         )
         if event_created:
-            EventDay.objects.create(
+            EventShift.objects.create(
                 event=event,
                 day=timezone.now().date(),
                 start_time=timezone.now(),
                 end_time=timezone.now() + timezone.timedelta(hours=3),
                 volunteer_needed=10,
+                recruit_status='open',
             )
 
         EventStaff.objects.get_or_create(event=event, user=team_leader_user, staff_role='team_lead')

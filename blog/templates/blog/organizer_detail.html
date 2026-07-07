@@ -1,7 +1,11 @@
 {% extends 'blog/base.html' %}
+{% load custom_tags %}
 {% block title %}{{ organizer.first_name }} {{ organizer.last_name }}{% endblock %}
 {% block content %}
-<h1>{{ organizer.first_name }} {{ organizer.last_name }}</h1>
+<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+    <h1 style="margin:0;">{{ organizer.first_name }} {{ organizer.last_name }}</h1>
+    <a href="{% url 'organizer_edit' organizer.id %}" class="btn secondary" data-modal data-modal-title="Редактировать: {{ organizer.first_name }} {{ organizer.last_name }}">Редактировать</a>
+</div>
 
 <div class="card">
     <h3>Контакты</h3>
@@ -22,13 +26,16 @@
     {% endfor %}
 </div>
 
-<div class="card">
-    <h3>Мероприятия (контактное лицо)</h3>
-    <table>
+<div class="card" style="padding:0; overflow:hidden;">
+    <h3 style="padding:20px 20px 0;">Мероприятия (контактное лицо)</h3>
+    <table class="responsive-table">
         <thead><tr><th>Название</th><th>Статус</th></tr></thead>
         <tbody>
         {% for event in events %}
-            <tr data-href="{% url 'event_detail' event.id %}"><td>{{ event.title }}</td><td>{{ event.get_event_status_display }}</td></tr>
+            <tr data-href="{% url 'event_detail' event.id %}">
+                <td data-label="Название">{{ event.title }}</td>
+                <td data-label="Статус">{% event_status_pill event %}</td>
+            </tr>
         {% empty %}
             <tr><td colspan="2">Мероприятий нет.</td></tr>
         {% endfor %}

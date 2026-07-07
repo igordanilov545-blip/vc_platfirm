@@ -12,18 +12,18 @@
 </div>
 {% endif %}
 
-<div class="card">
-    <h3>Будет создано заявок: {{ rows|length }}</h3>
-    <table>
+<div class="card" style="padding:0; overflow:hidden;">
+    <h3 style="padding:20px 20px 0;">Будет создано заявок: {{ rows|length }}</h3>
+    <table class="responsive-table">
         <thead><tr><th>Мероприятие</th><th>ФИО</th><th>Telegram</th><th>Телефон</th><th>Профиль</th></tr></thead>
         <tbody>
         {% for row in rows %}
             <tr>
-                <td>
+                <td data-label="Мероприятие">
                     {{ row.event_title }}
                     {% if row.event_missing %}
-                        <br><span class="badge warn">Мероприятие будет создано автоматически</span>
-                        <div style="opacity:0.7; font-size:0.82rem; margin-top:0.25rem;">
+                        <br><span class="pill warning"><span class="dot"></span>Мероприятие будет создано автоматически</span>
+                        <div style="color:var(--text-secondary); font-size:0.82rem; margin-top:0.25rem;">
                             {% if row.event_start_date == row.event_end_date %}
                                 Дата: {{ row.event_start_date }}
                             {% else %}
@@ -33,10 +33,10 @@
                         </div>
                     {% endif %}
                 </td>
-                <td>{{ row.first_name }} {{ row.last_name }}</td>
-                <td>{{ row.telegram_username|default:"—" }}</td>
-                <td>{{ row.phone|default:"—" }}</td>
-                <td>{{ row.matched_user_label }}</td>
+                <td data-label="ФИО">{{ row.first_name }}{% if row.last_name %} {{ row.last_name }}{% endif %}</td>
+                <td data-label="Telegram">{{ row.telegram_username|default:"—" }}</td>
+                <td data-label="Телефон" class="mono">{{ row.phone|default:"—" }}</td>
+                <td data-label="Профиль">{{ row.matched_user_label }}</td>
             </tr>
         {% empty %}
             <tr><td colspan="5">Нет строк для импорта.</td></tr>
@@ -44,10 +44,12 @@
         </tbody>
     </table>
     {% if rows %}
-    <form method="post" action="{% url 'import_commit' %}" style="margin-top:1rem;">
+    <div style="padding:16px 20px;">
+    <form method="post" action="{% url 'import_commit' %}">
         {% csrf_token %}
         <button type="submit" class="btn">Подтвердить импорт</button>
     </form>
+    </div>
     {% endif %}
 </div>
 {% endblock %}

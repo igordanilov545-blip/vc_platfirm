@@ -21,3 +21,19 @@ class WebLoginBackend(BaseBackend):
             return User.objects.get(pk=user_id)
         except User.DoesNotExist:
             return None
+
+
+class TelegramWebAppBackend(BaseBackend):
+    """Вход в TG Mini App по проверенному Telegram `initData` (architecture.md §2.1) —
+    без пароля. Сам `authenticate()` не вызывается напрямую (пользователь уже найден/создан
+    в `views.webapp_auth` через `data_controller`); backend нужен только для `django.contrib.auth.login`,
+    чтобы указать явный `backend=` и для последующего `get_user` по сессии."""
+
+    def authenticate(self, request, **kwargs):
+        return None
+
+    def get_user(self, user_id):
+        try:
+            return User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            return None

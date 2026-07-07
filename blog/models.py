@@ -87,6 +87,10 @@ class User(AbstractBaseUser):
     # Подписка на уведомления бота о новых мероприятиях (Этап 8).
     notify_new_events = models.BooleanField(default=True)
 
+    # Подписка ТЛ/менеджера на уведомления о новых заявках (db.md, правило 7c).
+    # При false карточка новой заявки не приходит, но заявка остаётся видна в разделах меро/«Все заявки».
+    notify_applications = models.BooleanField(default=True)
+
     objects = UserManager()
 
     USERNAME_FIELD = 'telegram_id'
@@ -259,6 +263,32 @@ class EventCategory(models.Model):
         return self.name
 
 
+class DobroRuSharedLink(models.Model):
+    """Общая ссылка на Добро.ру для нескольких мелких мероприятий сразу
+    (db.md §dobro_ru_shared_links) — чтобы не заводить отдельную ссылку на каждое."""
+    LINK_TYPE_CHOICES = [
+        ('event', 'Мероприятие'),
+        ('organization', 'Организация'),
+        ('project', 'Проект'),
+    ]
+
+    id = models.AutoField(primary_key=True)
+    title = models.CharField(max_length=255)
+    url = models.URLField()
+    link_type = models.CharField(max_length=20, choices=LINK_TYPE_CHOICES)
+    period_hint = models.CharField(max_length=100, blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'dobro_ru_shared_links'
+        verbose_name = 'Общая ссылка Добро.ру'
+        verbose_name_plural = 'Общие ссылки Добро.ру'
+
+    def __str__(self):
+        return self.title
+
+
 class ThankYouLetterTemplate(models.Model):
     """Шаблоны благодарственных писем."""
     id = models.AutoField(primary_key=True)
@@ -310,20 +340,22 @@ class Season(models.Model):
 
 
 class Event(models.Model):
-    """Основная сущность события."""
+    """Основная сущность события.
+
+    Набор заявок (recruit_status) и нужное количество волонтёров (volunteer_needed)
+    живут на уровне смены (EventShift), а не мероприятия — у мероприятия из нескольких
+    смен каждая смена сама решает, открыт у неё набор или нет. На Event остаётся только
+    общий event_status жизненного цикла (upcoming/ongoing/passed/finished)."""
     STATUS_CHOICES = [
         ('upcoming', 'Предстоит'),
         ('ongoing', 'Идёт'),
+        ('passed', 'Прошло'),
         ('finished', 'Завершено'),
     ]
-    RECRUIT_STATUS_CHOICES = [
-        ('open', 'Открыт'),
-        ('closed', 'Закрыт'),
-    ]
-    DOBRO_LINK_TYPE_CHOICES = [
-        ('event', 'Мероприятие'),
-        ('organization', 'Организация'),
-        ('project', 'Проект'),
+    DOBRO_LINK_KIND_CHOICES = [
+        ('none', 'Нет ссылки'),
+        ('shared', 'Общая ссылка'),
+        ('unique', 'Уникальная ссылка'),
     ]
 
     id = models.AutoField(primary_key=True)
@@ -332,13 +364,18 @@ class Event(models.Model):
     location = models.ForeignKey(Location, on_delete=models.SET_NULL, null=True, blank=True, related_name='events')
     chat_link = models.URLField(blank=True, null=True)
     post_in_chanel_link = models.URLField(blank=True, null=True)
+
+    # Учёт часов на Добро.ру (db.md, правило 7e): none — не ведётся, unique — своя ссылка,
+    # shared — общая ссылка на несколько мелких меро (DobroRuSharedLink).
+    dobro_ru_link_kind = models.CharField(max_length=20, choices=DOBRO_LINK_KIND_CHOICES, default='none')
     dobro_ru_link = models.URLField(blank=True, null=True)
-    dobro_ru_link_type = models.CharField(max_length=20, choices=DOBRO_LINK_TYPE_CHOICES, blank=True, null=True)
+    dobro_ru_shared_link = models.ForeignKey(
+        DobroRuSharedLink, on_delete=models.SET_NULL, null=True, blank=True, related_name='events'
+    )
     dobro_ru_hours_logged = models.BooleanField(default=False)
     dobro_ru_logged_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='dobro_ru_logged_events')
 
     event_status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='upcoming')
-    recruit_status = models.CharField(max_length=20, choices=RECRUIT_STATUS_CHOICES, default='open')
 
     organization = models.ForeignKey(Organization, on_delete=models.SET_NULL, null=True, blank=True, related_name='events')
     organizer = models.ForeignKey(Organizer, on_delete=models.SET_NULL, null=True, blank=True, related_name='managed_events')
@@ -358,6 +395,53 @@ class Event(models.Model):
     def __str__(self):
         return self.title
 
+    def compute_status(self):
+        """Статус мероприятия по датам смен (`shifts`), а не по хранимому полю:
+
+        - «Завершено» — только если мероприятие явно закрыто менеджером кнопкой «Завершить»
+          (event_status='finished', см. views.event_close). Это единственное ручное
+          состояние — автоматика по датам его не выставляет и не может отменить.
+        - «Идёт» — хотя бы одна смена мероприятия приходится на сегодняшнюю дату.
+        - «Прошло» — последняя смена раньше сегодняшней даты, но менеджер ещё не закрыл
+          мероприятие явно (даты кончились, а чеклист закрытия не пройден).
+        - «Предстоит» — первая смена позже сегодняшней даты.
+        - Если у мероприятия ещё нет смен — используем хранимое `event_status` как есть
+          (обычно 'upcoming' сразу после создания).
+        """
+        if self.event_status == 'finished':
+            return 'finished'
+
+        shifts = list(self.shifts.all()) if self.pk else []
+        if not shifts:
+            return self.event_status
+
+        today = timezone.now().date()
+        shift_dates = [s.day for s in shifts]
+        first_day, last_day = min(shift_dates), max(shift_dates)
+
+        if today in shift_dates:
+            return 'ongoing'
+        if last_day < today:
+            return 'passed'
+        if first_day > today:
+            return 'upcoming'
+        # Между первой и последней сменой, но сегодняшней даты среди смен нет
+        # (напр. многодневное меро с "окном" без активности сегодня) — считаем идущим.
+        return 'ongoing'
+
+    def compute_status_display(self):
+        return dict(self.STATUS_CHOICES).get(self.compute_status(), self.compute_status())
+
+    def close_recruit_if_passed(self):
+        """Автоматически закрывает набор на все ещё открытые смены, если мероприятие уже
+        прошло/завершено — подать заявку на прошедшее меро бессмысленно. Вызывается лениво
+        в местах просмотра/выбора мероприятия (нет отдельного планировщика задач).
+        Возвращает True, если хотя бы одна смена была закрыта."""
+        if self.compute_status() not in ('passed', 'finished'):
+            return False
+        updated = self.shifts.filter(recruit_status='open').update(recruit_status='closed')
+        return updated > 0
+
 
 class EventCategoryMap(models.Model):
     """Связь мероприятий с категориями (Many-to-Many)."""
@@ -372,26 +456,46 @@ class EventCategoryMap(models.Model):
         verbose_name_plural = 'Категории мероприятий (связи)'
 
 
-class EventDay(models.Model):
-    """Разбивка мероприятия на конкретные даты и временные слоты."""
+class EventShift(models.Model):
+    """Смена мероприятия: конкретная дата и временной слот со своим набором заявок.
+
+    Мероприятие может состоять из нескольких смен (в один день или в разные дни) —
+    у каждой смены свой recruit_status/volunteer_needed, но тим-лидеры, менеджеры,
+    организаторы и т.д. полностью наследуются от мероприятия целиком."""
+    RECRUIT_STATUS_CHOICES = [
+        ('open', 'Открыт'),
+        ('closed', 'Закрыт'),
+    ]
+
     id = models.AutoField(primary_key=True)
-    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='days')
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='shifts')
     day = models.DateField()
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
     volunteer_needed = models.IntegerField(default=0)
-    location = models.ForeignKey(Location, on_delete=models.SET_NULL, null=True, blank=True, related_name='event_days')
+    recruit_status = models.CharField(max_length=20, choices=RECRUIT_STATUS_CHOICES, default='open')
+    location = models.ForeignKey(Location, on_delete=models.SET_NULL, null=True, blank=True, related_name='event_shifts')
 
     class Meta:
-        db_table = 'event_days'
-        verbose_name = 'День мероприятия'
-        verbose_name_plural = 'Дни мероприятий'
+        db_table = 'event_shifts'
+        verbose_name = 'Смена мероприятия'
+        verbose_name_plural = 'Смены мероприятий'
         indexes = [
             models.Index(fields=['event']),
         ]
 
     def __str__(self):
         return f"{self.event.title} - {self.day}"
+
+    def compute_status(self):
+        """Статус смены по датам (независимо от общего статуса мероприятия):
+        idёт/предстоит/прошла — используется для подсветки строк в таблицах смен."""
+        today = timezone.now().date()
+        if self.day == today:
+            return 'ongoing'
+        if self.day < today:
+            return 'passed'
+        return 'upcoming'
 
 
 class EventStaff(models.Model):
@@ -435,7 +539,13 @@ class Application(models.Model):
     phone = models.CharField(max_length=20, blank=True, null=True)
 
     functions = models.CharField(max_length=255, blank=True, null=True)
+    # Человекочитаемая сводка смен — как раньше, для совместимости с Excel-импортом
+    # (db.md: колонка "Смена"), заполняется автоматически из selected_shifts при подаче с сайта.
     shifts = models.CharField(max_length=255, blank=True, null=True)
+    # Реальная связь с конкретными сменами меро (выбор чипами на веб-форме подачи заявки) —
+    # используется при approve, чтобы создать participations только по выбранным сменам,
+    # а не по всем сменам меро. Пусто у заявок из Excel-импорта (там только текст в `shifts`).
+    selected_shifts = models.ManyToManyField(EventShift, blank=True, related_name='applications')
     role_in_event = models.CharField(max_length=255, blank=True, null=True)
     user_status = models.CharField(max_length=100, blank=True, null=True)
 
@@ -468,14 +578,24 @@ class Participation(models.Model):
 
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='participations')
-    event_day = models.ForeignKey(EventDay, on_delete=models.CASCADE, related_name='participations')
+    event_day = models.ForeignKey(EventShift, on_delete=models.CASCADE, related_name='participations')
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='attended')
+    # Отработал ли волонтёр полную смену (db.md, правило 7a) — не влияет на часы,
+    # отдельная отметка добросовестного участия, проставляется тим-лидером вместе со статусом.
+    full_shift = models.BooleanField(default=False)
     hours = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Отметка, что запрос "оцени мероприятие" уже отправлен (tg-bot.md §4.6) —
     # чтобы фоновая задача не слала его повторно при каждом проходе.
     feedback_requested_at = models.DateTimeField(blank=True, null=True)
+
+    # Ручная простановка часов на Добро.ру менеджером (db.md, правило 7e) — построчно по волонтёру.
+    dobro_ru_logged = models.BooleanField(default=False)
+    dobro_ru_logged_at = models.DateTimeField(blank=True, null=True)
+    dobro_ru_logged_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='dobro_ru_logged_participations'
+    )
 
     class Meta:
         db_table = 'participations'

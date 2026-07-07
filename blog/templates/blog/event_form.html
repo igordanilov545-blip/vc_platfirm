@@ -3,10 +3,6 @@
 {% block content %}
 <h1>{{ title }}</h1>
 <div class="card" style="max-width:600px;">
-    <form method="post">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <button type="submit" class="btn">Сохранить</button>
-    </form>
+    {% include 'blog/partials/_event_form_body.html' %}
 </div>
 {% endblock %}

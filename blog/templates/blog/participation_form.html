@@ -1,12 +1,8 @@
 {% extends 'blog/base.html' %}
-{% block title %}Явка{% endblock %}
+{% block title %}{{ title|default:'Явка' }}{% endblock %}
 {% block content %}
-<h1>Явка: {{ participation.user.full_name }} — {{ participation.event_day }}</h1>
+<h1>{{ title|default:'Явка' }}</h1>
 <div class="card" style="max-width:400px;">
-    <form method="post">
-        {% csrf_token %}
-        {{ form.as_p }}
-        <button type="submit" class="btn">Сохранить</button>
-    </form>
+    {% include 'blog/partials/_modal_form.html' %}
 </div>
 {% endblock %}

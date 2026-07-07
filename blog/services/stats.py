@@ -87,12 +87,16 @@ def is_pgas_star(user) -> bool:
     return (user.season_hours or 0) >= threshold
 
 
-def recruit_status_for_event(event):
-    """closed, когда approved >= recruit_close_ratio * SUM(volunteer_needed) (правило 10)."""
+def recruit_status_for_shift(shift):
+    """closed, когда approved >= recruit_close_ratio * volunteer_needed смены (правило 10).
+
+    Заявка сейчас подаётся на мероприятие целиком (выбор конкретных смен ещё не
+    реализован — см. ApplicationForm), поэтому одобренные заявки считаются общими
+    по всему мероприятию и сравниваются с потребностью именно этой смены."""
     from blog.models import Application
     ratio = _const('recruit_close_ratio', 1.2)
-    needed = event.days.aggregate(total=Sum('volunteer_needed'))['total'] or 0
-    approved = Application.objects.filter(event=event, status='approved').count()
+    needed = shift.volunteer_needed or 0
+    approved = Application.objects.filter(event=shift.event, status='approved').count()
     if needed and approved >= ratio * needed:
         return 'closed'
     return 'open'

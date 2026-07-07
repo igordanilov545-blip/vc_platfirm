@@ -5,7 +5,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from tg_bot import services
+from tg_bot import services, keyboards as kb
 
 router = Router(name='manager')
 
@@ -60,5 +60,7 @@ async def _send_active_events_with_organizers(message: Message, user_id: int):
                 lines.append(f'✉ {org.email}')
             if org.telegram_username:
                 lines.append(f'✈ @{org.telegram_username.lstrip("@")}')
-        if len(lines) > 1:
-            await message.answer('\n'.join(lines))
+        # Менеджер обрабатывает заявки/явку на любом меро (tg-bot.md §6, M2) — те же
+        # кнопки, что у тим-лидера на своих меро (event_apps/event_apps_approve_all/event_attendance
+        # проверяют права через can_process_applications, который пропускает менеджера везде).
+        await message.answer('\n'.join(lines), reply_markup=kb.event_actions(e.id))

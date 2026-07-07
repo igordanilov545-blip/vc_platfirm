@@ -4,9 +4,10 @@ from django.utils import timezone
 from blog.models import (
     User, Manager, TeamLeader, Organization, Organizer,
     OrganizerOrganizationLink, OrganizerInteractionLog, Location, EventCategory, Event,
-    EventCategoryMap, EventDay, EventStaff, Application,
+    EventCategoryMap, EventShift, EventStaff, Application,
     Participation, ChurnHistory, UserComment, EventFeedback, EventRequirement,
-    EventRequirementMap, UserRequirementException, Season, ThankYouLetterTemplate, Const
+    EventRequirementMap, UserRequirementException, Season, ThankYouLetterTemplate, Const,
+    DobroRuSharedLink,
 )
 
 __all__ = [
@@ -21,12 +22,14 @@ __all__ = [
     'create_location', 'get_locations',
     'create_event_category', 'get_event_categories',
     'create_event', 'get_events', 'get_open_events', 'get_active_events',
+    'create_dobro_ru_shared_link',
     'add_category_to_event', 'get_event_categories_map',
-    'create_event_day', 'get_event_days',
+    'create_event_shift', 'get_event_shifts',
     'assign_staff_to_event', 'get_event_staff',
     'create_application', 'get_applications', 'get_user_active_applications',
     'get_user_application_for_event', 'update_application_status',
     'create_participation', 'get_participations', 'update_participation_status',
+    'mark_dobro_ru_logged',
     'get_participations_pending_feedback', 'mark_feedback_requested',
     'create_churn_history', 'get_churn_history',
     'create_user_comment', 'get_user_comments',
@@ -178,8 +181,10 @@ def create_event(
     chat_link: Optional[str] = None,
     post_in_chanel_link: Optional[str] = None,
     event_status: str = 'upcoming',
-    recruit_status: str = 'open',
-    people_helped: int = 0
+    people_helped: int = 0,
+    dobro_ru_link_kind: str = 'none',
+    dobro_ru_link: Optional[str] = None,
+    dobro_ru_shared_link: Optional[DobroRuSharedLink] = None,
 ) -> Event:
     return Event.objects.create(
         title=title,
@@ -190,22 +195,36 @@ def create_event(
         chat_link=chat_link,
         post_in_chanel_link=post_in_chanel_link,
         event_status=event_status,
-        recruit_status=recruit_status,
-        people_helped=people_helped
+        people_helped=people_helped,
+        dobro_ru_link_kind=dobro_ru_link_kind,
+        dobro_ru_link=dobro_ru_link,
+        dobro_ru_shared_link=dobro_ru_shared_link,
+    )
+
+
+def create_dobro_ru_shared_link(
+    title: str,
+    url: str,
+    link_type: str,
+    period_hint: Optional[str] = None,
+    is_active: bool = True,
+) -> DobroRuSharedLink:
+    return DobroRuSharedLink.objects.create(
+        title=title, url=url, link_type=link_type, period_hint=period_hint, is_active=is_active,
     )
 
 def add_category_to_event(event: Event, category: EventCategory) -> EventCategoryMap:
     return EventCategoryMap.objects.create(event=event, category=category)
 
-def create_event_day(
+def create_event_shift(
     event: Event,
     day: str,
     start_time: str,
     end_time: str,
     volunteer_needed: int = 0,
     location: Optional[Location] = None
-) -> EventDay:
-    return EventDay.objects.create(
+) -> EventShift:
+    return EventShift.objects.create(
         event=event,
         day=day,
         start_time=start_time,
@@ -248,11 +267,14 @@ def create_application(
 
 def create_participation(
     user: User,
-    event_day: EventDay,
+    event_day: EventShift,
     status: str = 'attended',
-    hours: int = 0
+    hours: int = 0,
+    full_shift: bool = False,
 ) -> Participation:
-    return Participation.objects.create(user=user, event_day=event_day, status=status, hours=hours)
+    return Participation.objects.create(
+        user=user, event_day=event_day, status=status, hours=hours, full_shift=full_shift,
+    )
 
 def create_churn_history(user: User, season: Season, churn_score: float) -> ChurnHistory:
     return ChurnHistory.objects.create(user=user, season=season, churn_score=churn_score)
@@ -368,15 +390,16 @@ def get_events(title_filter: Optional[str] = None) -> List[Event]:
 
 # --- EVENTS (доп. выборки для бота) ---
 def get_open_events(limit: Optional[int] = None) -> List[Event]:
-    """Опубликованные меро с открытым набором (tg-bot.md §4.1)."""
+    """Опубликованные меро хотя бы с одной сменой с открытым набором (tg-bot.md §4.1)."""
     qs = (
         Event.objects.filter(
-            recruit_status='open',
+            shifts__recruit_status='open',
             event_status__in=['upcoming', 'ongoing'],
             published_at__isnull=False,
         )
         .select_related('location')
-        .prefetch_related('days')
+        .prefetch_related('shifts')
+        .distinct()
         .order_by('created_at')
     )
     return list(qs[:limit]) if limit else list(qs)
@@ -397,9 +420,9 @@ def get_event_categories_map(event_id: Optional[int] = None) -> List[EventCatego
         qs = qs.filter(event_id=event_id)
     return list(qs)
 
-# --- EVENT DAYS ---
-def get_event_days(event_id: Optional[int] = None) -> List[EventDay]:
-    qs = EventDay.objects.all()
+# --- EVENT SHIFTS ---
+def get_event_shifts(event_id: Optional[int] = None) -> List[EventShift]:
+    qs = EventShift.objects.all()
     if event_id:
         qs = qs.filter(event_id=event_id)
     return list(qs)
@@ -485,11 +508,30 @@ def mark_feedback_requested(participation: Participation) -> None:
     participation.save(update_fields=['feedback_requested_at'])
 
 
-def update_participation_status(participation: Participation, status: str, hours: Optional[int] = None) -> Participation:
+def update_participation_status(
+    participation: Participation,
+    status: str,
+    hours: Optional[int] = None,
+    full_shift: Optional[bool] = None,
+) -> Participation:
+    update_fields = ['status']
     participation.status = status
     if hours is not None:
         participation.hours = hours
-    participation.save(update_fields=['status', 'hours'])
+        update_fields.append('hours')
+    if full_shift is not None:
+        participation.full_shift = full_shift
+        update_fields.append('full_shift')
+    participation.save(update_fields=update_fields)
+    return participation
+
+
+def mark_dobro_ru_logged(participation: Participation, logged_by: Optional[User] = None) -> Participation:
+    """Ручная простановка часов на Добро.ру по участию волонтёра (db.md, правило 7e)."""
+    participation.dobro_ru_logged = True
+    participation.dobro_ru_logged_at = timezone.now()
+    participation.dobro_ru_logged_by = logged_by
+    participation.save(update_fields=['dobro_ru_logged', 'dobro_ru_logged_at', 'dobro_ru_logged_by'])
     return participation
 
 # --- FEEDBACKS ---
@@ -574,7 +616,7 @@ TABLE_MODEL_MAP: Dict[str, Any] = {
     'event_categories': EventCategory,
     'events': Event,
     'event_category_map': EventCategoryMap,
-    'event_days': EventDay,
+    'event_shifts': EventShift,
     'event_staff': EventStaff,
     'applications': Application,
     'participations': Participation,
@@ -586,6 +628,7 @@ TABLE_MODEL_MAP: Dict[str, Any] = {
     'user_requirement_exceptions': UserRequirementException,
     'seasons': Season,
     'thank_you_letter_templates': ThankYouLetterTemplate,
+    'dobro_ru_shared_links': DobroRuSharedLink,
     'const': Const,
 }
 

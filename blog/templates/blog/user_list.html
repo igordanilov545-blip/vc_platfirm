@@ -3,27 +3,27 @@
 {% block content %}
 <h1>Пользователи</h1>
 
-<div class="card">
-    <table>
+<div class="card" style="padding:0; overflow:hidden;">
+    <table class="responsive-table">
         <thead>
-            <tr><th>Имя</th><th>Telegram</th><th>Роль</th><th>Статус</th><th>Часов всего</th></tr>
+            <tr><th>Имя</th><th>Telegram</th><th>Роль</th><th>Статус</th><th class="num">Часов всего</th></tr>
         </thead>
         <tbody>
         {% for u in page_obj %}
             <tr data-href="{% url 'profile_detail' u.id %}">
-                <td>{{ u.full_name }}</td>
-                <td>{{ u.telegram_username|default:"—" }}</td>
-                <td>
-                    {% if u.id in manager_ids %}<span class="badge">Менеджер</span>
-                    {% elif u.id in team_leader_ids %}<span class="badge">Тим-лидер</span>
-                    {% else %}<span class="badge" style="background:transparent; border:1px solid var(--border);">Волонтёр</span>{% endif %}
+                <td data-label="Имя">{{ u.full_name }}</td>
+                <td data-label="Telegram">{{ u.telegram_username|default:"—" }}</td>
+                <td data-label="Роль">
+                    {% if u.id in manager_ids %}<span class="pill info"><span class="dot"></span>Менеджер</span>
+                    {% elif u.id in team_leader_ids %}<span class="pill info"><span class="dot"></span>Тим-лидер</span>
+                    {% else %}<span class="pill neutral"><span class="dot"></span>Волонтёр</span>{% endif %}
                 </td>
-                <td>
-                    {% if u.status == 'blacklisted' %}<span class="badge danger">В блэклисте</span>
-                    {% elif u.status == 'inactive' %}<span class="badge warn">Неактивен</span>
-                    {% else %}<span class="badge">Активен</span>{% endif %}
+                <td data-label="Статус">
+                    {% if u.status == 'blacklisted' %}<span class="pill danger"><span class="dot"></span>В блэклисте</span>
+                    {% elif u.status == 'inactive' %}<span class="pill warning"><span class="dot"></span>Неактивен</span>
+                    {% else %}<span class="pill success"><span class="dot"></span>Активен</span>{% endif %}
                 </td>
-                <td>{{ u.total_hours }}</td>
+                <td data-label="Часов всего" class="num mono">{{ u.total_hours }}</td>
             </tr>
         {% empty %}
             <tr><td colspan="5">Пользователей пока нет.</td></tr>

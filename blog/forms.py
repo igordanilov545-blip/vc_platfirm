@@ -1,7 +1,11 @@
+from datetime import datetime, time
+
 from django import forms
+from django.utils import timezone
 from .models import (
-    Event, EventDay, Participation, Application, UserComment, EventFeedback,
-    Const, Season, Organization, Organizer, User, EventStaff,
+    Event, EventShift, Participation, Application, UserComment, EventFeedback,
+    Const, Season, Organization, Organizer, User, EventStaff, Location,
+    EventCategory, EventCategoryMap, TeamLeader,
 )
 
 
@@ -10,26 +14,83 @@ class LoginForm(forms.Form):
     password = forms.CharField(label='Пароль', widget=forms.PasswordInput)
 
 
-class UserModelChoiceField(forms.ModelChoiceField):
+class QuickLocationForm(forms.ModelForm):
+    """Мини-форма быстрого создания локации прямо из формы мероприятия (без ухода со страницы)."""
+    class Meta:
+        model = Location
+        fields = ['name']
+        labels = {'name': 'Название локации'}
+
+
+class QuickOrganizationForm(forms.ModelForm):
+    """Мини-форма быстрого создания организации прямо из формы мероприятия."""
+    class Meta:
+        model = Organization
+        fields = ['name', 'description']
+        labels = {'name': 'Название организации', 'description': 'Описание'}
+        widgets = {'description': forms.Textarea(attrs={'rows': 2})}
+
+
+class QuickOrganizerForm(forms.ModelForm):
+    """Мини-форма быстрого создания контактного лица прямо из формы мероприятия."""
+    class Meta:
+        model = Organizer
+        fields = ['first_name', 'last_name', 'phone', 'telegram_username']
+        labels = {
+            'first_name': 'Имя', 'last_name': 'Фамилия',
+            'phone': 'Телефон', 'telegram_username': 'Telegram',
+        }
+
+
+class QuickCategoryForm(forms.ModelForm):
+    """Мини-форма быстрого создания категории мероприятия прямо из формы мероприятия."""
+    class Meta:
+        model = EventCategory
+        fields = ['name']
+        labels = {'name': 'Название категории'}
+
+
+class TeamLeadChoiceField(forms.ModelMultipleChoiceField):
+    """Выбор тим-лидеров: показываем только «Фамилия Имя», без telegram."""
     def label_from_instance(self, obj):
-        suffix = f' (@{obj.telegram_username})' if obj.telegram_username else ''
-        return f'{obj.full_name}{suffix}'
-
-
-class EventStaffAssignForm(forms.Form):
-    user = UserModelChoiceField(
-        queryset=User.objects.order_by('first_name', 'last_name'),
-        label='Пользователь',
-    )
-    staff_role = forms.ChoiceField(choices=EventStaff.ROLE_CHOICES, label='Роль')
+        name = f'{obj.last_name or ""} {obj.first_name or ""}'.strip()
+        return name or (obj.telegram_username or str(obj.telegram_id))
 
 
 class EventForm(forms.ModelForm):
+    """Форма создания/редактирования мероприятия.
+
+    На этапе создания (cjm-event-lifecycle.md, этап 2) заполняются только: название, описание,
+    локация, организация/организатор, категории, ссылки и тип учёта Добро.ру. Поля закрытия/
+    пост-меро (`people_helped`, `internal_comment`, `letter`) появляются только при редактировании
+    уже существующего меро (`show_closing_fields`), чтобы не засорять форму создания.
+    """
+    categories = forms.ModelMultipleChoiceField(
+        queryset=EventCategory.objects.order_by('name'),
+        required=False,
+        label='Категории',
+        widget=forms.SelectMultiple,
+    )
+    team_leads = TeamLeadChoiceField(
+        # Только пользователи с активной ролью тим-лидера (таблица team_leaders, revoked_at IS NULL).
+        # ВАЖНО: filter(team_leader_roles__revoked_at__isnull=True) через LEFT JOIN даёт
+        # ложные совпадения — у пользователей БЕЗ единой записи в team_leaders revoked_at
+        # тоже NULL из-за LEFT JOIN, и "IS NULL" совпадает. Поэтому фильтруем по id из
+        # TeamLeader напрямую.
+        queryset=User.objects.filter(
+            id__in=TeamLeader.objects.filter(revoked_at__isnull=True).values('user_id')
+        ).order_by('last_name', 'first_name'),
+        required=False,
+        label='Тим-лидеры',
+        widget=forms.SelectMultiple,
+    )
+
     class Meta:
         model = Event
         fields = [
-            'title', 'description', 'location', 'chat_link', 'post_in_chanel_link',
-            'dobro_ru_link', 'dobro_ru_link_type', 'organization', 'organizer',
+            'title', 'description',
+            'organization', 'organizer', 'location',
+            'chat_link', 'post_in_chanel_link', 'dobro_ru_link',
             'people_helped', 'internal_comment', 'letter',
         ]
         labels = {
@@ -39,7 +100,6 @@ class EventForm(forms.ModelForm):
             'chat_link': 'Ссылка на чат',
             'post_in_chanel_link': 'Ссылка на пост в канале',
             'dobro_ru_link': 'Ссылка на Добро.ру',
-            'dobro_ru_link_type': 'Тип ссылки на Добро.ру',
             'organization': 'Организация',
             'organizer': 'Контактное лицо',
             'people_helped': 'Людей получили помощь',
@@ -47,57 +107,212 @@ class EventForm(forms.ModelForm):
             'letter': 'Шаблон благодарственного письма',
         }
         widgets = {
-            'description': forms.Textarea(attrs={'rows': 3}),
+            'title': forms.TextInput(attrs={'maxlength': 255, 'placeholder': 'Название мероприятия'}),
+            'description': forms.Textarea(attrs={'rows': 3, 'maxlength': 250, 'placeholder': 'Кратко опишите мероприятие (до 250 символов)'}),
             'internal_comment': forms.Textarea(attrs={'rows': 3}),
+            'chat_link': forms.URLInput(attrs={'placeholder': 'https://t.me/…'}),
+            'post_in_chanel_link': forms.URLInput(attrs={'placeholder': 'https://t.me/…'}),
+            'dobro_ru_link': forms.URLInput(attrs={'placeholder': 'https://dobro.ru/…'}),
         }
 
+    # Поля, относящиеся к закрытию/пост-меро — не показываются при создании.
+    CLOSING_FIELDS = ('people_helped', 'internal_comment', 'letter')
 
-class EventDayForm(forms.ModelForm):
+    def __init__(self, *args, show_closing_fields=False, assigned_by=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.show_closing_fields = show_closing_fields
+        self.assigned_by = assigned_by
+
+        # Пустой вариант "—" для необязательных FK-справочников (иначе Django берёт первый).
+        for name in ('organization', 'organizer', 'location', 'letter'):
+            if name in self.fields:
+                self.fields[name].empty_label = '— не выбрано —'
+                self.fields[name].required = False
+
+        # Ранжирование справочников по дате добавления (новые сверху) — чтобы только что
+        # созданная через "＋" запись была вверху списка.
+        if 'organization' in self.fields:
+            self.fields['organization'].queryset = Organization.objects.order_by('-created_at')
+        if 'organizer' in self.fields:
+            self.fields['organizer'].queryset = Organizer.objects.order_by('-id')
+        if 'location' in self.fields:
+            self.fields['location'].queryset = Location.objects.order_by('-id')
+
+        if not show_closing_fields:
+            for name in self.CLOSING_FIELDS:
+                self.fields.pop(name, None)
+
+        if self.instance.pk:
+            self.fields['categories'].initial = EventCategory.objects.filter(
+                event_map__event=self.instance
+            )
+            self.fields['team_leads'].initial = User.objects.filter(
+                staff_assignments__event=self.instance,
+                staff_assignments__staff_role='team_lead',
+            )
+
+    def save(self, commit=True):
+        event = super().save(commit=False)
+        # Упрощённая модель: менеджер просто вставляет ссылку на Добро.ру (или оставляет
+        # пустой) — kind проставляется автоматически, без выбора shared/unique (db.md 7e
+        # по-прежнему хранит это поле, но UI его больше не показывает).
+        event.dobro_ru_link_kind = 'unique' if event.dobro_ru_link else 'none'
+        if commit:
+            event.save()
+            self._save_categories(event)
+            self._save_team_leads(event)
+        return event
+
+    def _save_categories(self, event):
+        selected = self.cleaned_data.get('categories', EventCategory.objects.none())
+        EventCategoryMap.objects.filter(event=event).exclude(category__in=selected).delete()
+        for category in selected:
+            EventCategoryMap.objects.get_or_create(event=event, category=category)
+
+    def _save_team_leads(self, event):
+        """Приводит назначения тим-лидеров к ровно выбранному набору пользователей."""
+        selected = self.cleaned_data.get('team_leads', User.objects.none())
+        selected_ids = {u.id for u in selected}
+        event.staff.filter(staff_role='team_lead').exclude(user_id__in=selected_ids).delete()
+        for user in selected:
+            EventStaff.objects.get_or_create(event=event, user=user, staff_role='team_lead')
+            if not TeamLeader.objects.filter(user=user, revoked_at__isnull=True).exists():
+                TeamLeader.objects.create(user=user, assigned_by=self.assigned_by)
+
+
+class EventShiftForm(forms.ModelForm):
+    """Смена мероприятия: одна дата + время начала и окончания (без дат внутри времени).
+
+    Модель хранит start_time/end_time как DateTimeField, но пользователю мы показываем
+    отдельную дату и два поля времени, а склеиваем их в datetime уже при сохранении.
+    """
+    day = forms.DateField(
+        label='Дата',
+        widget=forms.DateInput(attrs={'type': 'text', 'data-datepicker': '', 'autocomplete': 'off'}, format='%Y-%m-%d'),
+    )
+    start_time = forms.TimeField(
+        label='Время начала',
+        widget=forms.TimeInput(attrs={'type': 'text', 'data-timepicker': '', 'autocomplete': 'off'}, format='%H:%M'),
+    )
+    end_time = forms.TimeField(
+        label='Время окончания',
+        widget=forms.TimeInput(attrs={'type': 'text', 'data-timepicker': '', 'autocomplete': 'off'}, format='%H:%M'),
+    )
+
     class Meta:
-        model = EventDay
-        fields = ['day', 'start_time', 'end_time', 'volunteer_needed', 'location']
+        model = EventShift
+        # start_time/end_time НЕ включаем в model-поля: в модели это DateTimeField, а на форме —
+        # объявленные выше TimeField. Если оставить их в Meta.fields, ModelForm при _post_clean
+        # присвоит объект time в DateTimeField и упадёт на to_python. Склеиваем в save().
+        fields = ['day', 'volunteer_needed', 'recruit_status', 'location']
         labels = {
-            'day': 'Дата',
-            'start_time': 'Время начала',
-            'end_time': 'Время окончания',
             'volunteer_needed': 'Нужно волонтёров',
+            'recruit_status': 'Набор на смену',
             'location': 'Локация',
         }
-        widgets = {
-            'day': forms.DateInput(attrs={'type': 'date'}),
-            'start_time': forms.DateTimeInput(attrs={'type': 'datetime-local'}),
-            'end_time': forms.DateTimeInput(attrs={'type': 'datetime-local'}),
-        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['location'].queryset = Location.objects.order_by('-id')
+        if self.instance and self.instance.pk:
+            # При редактировании существующего дня разложить datetime обратно на дату и время.
+            if self.instance.start_time:
+                start = timezone.localtime(self.instance.start_time)
+                self.initial.setdefault('day', start.date())
+                self.initial.setdefault('start_time', start.time())
+            if self.instance.end_time:
+                self.initial.setdefault('end_time', timezone.localtime(self.instance.end_time).time())
+        else:
+            # Новая смена — типовые часы мероприятия по умолчанию (10:00-18:00),
+            # чтобы не заполнять вручную каждый раз.
+            self.initial.setdefault('start_time', time(10, 0))
+            self.initial.setdefault('end_time', time(18, 0))
+
+    def clean(self):
+        cleaned = super().clean()
+        start = cleaned.get('start_time')
+        end = cleaned.get('end_time')
+        if start and end and end <= start:
+            self.add_error('end_time', 'Время окончания должно быть позже времени начала.')
+        return cleaned
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        day = self.cleaned_data['day']
+        tz = timezone.get_current_timezone()
+        instance.day = day
+        instance.start_time = timezone.make_aware(
+            datetime.combine(day, self.cleaned_data['start_time']), tz
+        )
+        instance.end_time = timezone.make_aware(
+            datetime.combine(day, self.cleaned_data['end_time']), tz
+        )
+        if commit:
+            instance.save()
+        return instance
 
 
 class ParticipationForm(forms.ModelForm):
     class Meta:
         model = Participation
-        fields = ['status', 'hours']
+        fields = ['status', 'hours', 'full_shift']
         labels = {
             'status': 'Статус явки',
             'hours': 'Часы',
+            'full_shift': 'Полная смена',
         }
 
 
 class ApplicationForm(forms.ModelForm):
+    """Заявка на участие через веб (в отличие от Excel-импорта): ФИО/Telegram/телефон
+    система уже знает из профиля авторизованного пользователя, поэтому их не спрашивает —
+    остаётся выбрать мероприятие и смены.
+
+    Выбор смен — множественный (чипы, как категории у мероприятия): пул вариантов —
+    смены, привязанные к выбранному мероприятию с открытым набором. Если у меро всего
+    одна смена — выбирать нечего, подаём сразу на неё.
+    """
+    selected_shifts = forms.ModelMultipleChoiceField(
+        queryset=EventShift.objects.none(),
+        required=False,
+        label='Смены',
+        widget=forms.SelectMultiple,
+    )
+
     class Meta:
         model = Application
-        fields = [
-            'event', 'first_name', 'last_name', 'telegram_username', 'phone',
-            'functions', 'shifts', 'role_in_event', 'user_status',
-        ]
+        fields = ['event', 'functions', 'role_in_event']
         labels = {
             'event': 'Мероприятие',
-            'first_name': 'Имя',
-            'last_name': 'Фамилия',
-            'telegram_username': 'Telegram',
-            'phone': 'Телефон',
             'functions': 'Функция',
-            'shifts': 'Смена',
             'role_in_event': 'Роль',
-            'user_status': 'Статус обращающегося',
         }
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.applicant = user
+        # Прошедшие мероприятия с ещё открытыми сменами закрываем лениво прямо тут —
+        # это самое надёжное место: форма подачи заявки открывается чаще всего и должна
+        # гарантированно не предлагать прошедшие меро (нет отдельного планировщика задач).
+        for event in Event.objects.filter(shifts__recruit_status='open').distinct():
+            event.close_recruit_if_passed()
+        # Подать заявку можно только на меро хотя бы с одной сменой с открытым набором —
+        # меро, где все смены закрыты (вручную или автоматически), пропадают из выбора.
+        self.fields['event'].queryset = Event.objects.filter(
+            shifts__recruit_status='open'
+        ).distinct().order_by('-created_at')
+
+        # Пул смен для чипов — только смены уже выбранного меро с открытым набором.
+        event = self.instance.event if self.instance and self.instance.pk else None
+        if 'event' in self.data:
+            try:
+                event = Event.objects.get(pk=self.data.get('event'))
+            except (Event.DoesNotExist, ValueError, TypeError):
+                event = None
+        if event:
+            self.fields['selected_shifts'].queryset = event.shifts.filter(recruit_status='open').order_by('day')
+        if self.instance and self.instance.pk:
+            self.initial.setdefault('selected_shifts', self.instance.selected_shifts.all())
 
 
 class ExcelImportForm(forms.Form):
@@ -147,6 +362,16 @@ class CaptchaForm(forms.Form):
             self.fields['answer'].label = f'Решите пример: {question} = ?'
 
 
+class RoleUsersForm(forms.Form):
+    """Выбор пользователей для назначения/снятия роли (настройки, chip-select с поиском)."""
+    users = TeamLeadChoiceField(queryset=User.objects.none(), required=True, label='Волонтёры')
+
+    def __init__(self, *args, queryset=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if queryset is not None:
+            self.fields['users'].queryset = queryset
+
+
 class ConstForm(forms.ModelForm):
     class Meta:
         model = Const
@@ -163,8 +388,8 @@ class SeasonForm(forms.ModelForm):
             'end_season': 'Конец сезона (необязательно)',
         }
         widgets = {
-            'start_season': forms.DateInput(attrs={'type': 'date'}),
-            'end_season': forms.DateInput(attrs={'type': 'date'}),
+            'start_season': forms.DateInput(attrs={'type': 'text', 'data-datepicker': '', 'autocomplete': 'off'}, format='%Y-%m-%d'),
+            'end_season': forms.DateInput(attrs={'type': 'text', 'data-datepicker': '', 'autocomplete': 'off'}, format='%Y-%m-%d'),
         }
 
     def __init__(self, *args, **kwargs):

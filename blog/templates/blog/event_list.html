@@ -1,30 +1,31 @@
 {% extends 'blog/base.html' %}
+{% load custom_tags %}
 {% block title %}Мероприятия{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content:space-between; align-items:center;">
+<div class="page-header">
     <h1>Мероприятия</h1>
-    {% if is_manager %}<a href="{% url 'event_create' %}" class="btn">+ Новое мероприятие</a>{% endif %}
+    {% if is_manager %}<a href="{% url 'event_create' %}" class="btn" data-modal data-modal-title="Новое мероприятие">+ Новое мероприятие</a>{% endif %}
 </div>
 
-<div class="card">
-    <table>
+<div class="card" style="padding:0; overflow:hidden;">
+    <table class="responsive-table">
         <thead>
             <tr><th>Название</th><th>Локация</th><th>Статус</th><th>Набор</th><th></th></tr>
         </thead>
         <tbody>
         {% for event in page_obj %}
             <tr data-href="{% url 'event_detail' event.id %}">
-                <td><a href="{% url 'event_detail' event.id %}">{{ event.title }}</a></td>
-                <td>{{ event.location.name|default:"—" }}</td>
-                <td><span class="badge">{{ event.get_event_status_display }}</span></td>
-                <td>
-                    {% if event.recruit_status == 'open' %}
-                        <span class="badge">Открыт</span>
+                <td data-label="Название"><a href="{% url 'event_detail' event.id %}">{{ event.title }}</a></td>
+                <td data-label="Локация">{{ event.location.name|default:"—" }}</td>
+                <td data-label="Статус">{% event_status_pill event %}</td>
+                <td data-label="Набор">
+                    {% if event.shifts.all|has_open_shift %}
+                        <span class="pill success"><span class="dot"></span>Открыт</span>
                     {% else %}
-                        <span class="badge warn">Закрыт</span>
+                        <span class="pill neutral"><span class="dot"></span>Закрыт</span>
                     {% endif %}
                 </td>
-                <td><a href="{% url 'event_detail' event.id %}">Подробнее →</a></td>
+                <td data-label=""><a href="{% url 'event_detail' event.id %}">Подробнее →</a></td>
             </tr>
         {% empty %}
             <tr><td colspan="5">Мероприятий пока нет.</td></tr>

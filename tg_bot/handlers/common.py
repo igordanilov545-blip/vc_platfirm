@@ -103,7 +103,7 @@ async def start_registration(message_or_cb, state: FSMContext):
 @router.message(Command('register'))
 @router.message(F.text == '📝 Зарегистрироваться')
 async def cmd_register(message: Message, state: FSMContext):
-    await _start_registration(message, state)
+    await start_registration(message, state)
 
 
 @router.callback_query(F.data == 'register')

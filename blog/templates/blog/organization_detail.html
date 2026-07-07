@@ -1,7 +1,11 @@
 {% extends 'blog/base.html' %}
+{% load custom_tags %}
 {% block title %}{{ organization.name }}{% endblock %}
 {% block content %}
-<h1>{{ organization.name }}</h1>
+<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+    <h1 style="margin:0;">{{ organization.name }}</h1>
+    <a href="{% url 'organization_edit' organization.id %}" class="btn secondary" data-modal data-modal-title="Редактировать: {{ organization.name }}">Редактировать</a>
+</div>
 <div class="card">
     <p>{{ organization.description|default:"Без описания" }}</p>
     <p>Мероприятий: {{ organization.events_count }} · Волонтёров: {{ organization.volunteers_count }} · Смен: {{ organization.shifts_count }}</p>
@@ -9,13 +13,16 @@
     <p>Комментарий: {{ organization.comment|default:"—" }}</p>
 </div>
 
-<div class="card">
-    <h3>Мероприятия</h3>
-    <table>
+<div class="card" style="padding:0; overflow:hidden;">
+    <h3 style="padding:20px 20px 0;">Мероприятия</h3>
+    <table class="responsive-table">
         <thead><tr><th>Название</th><th>Статус</th></tr></thead>
         <tbody>
         {% for event in events %}
-            <tr data-href="{% url 'event_detail' event.id %}"><td><a href="{% url 'event_detail' event.id %}">{{ event.title }}</a></td><td>{{ event.get_event_status_display }}</td></tr>
+            <tr data-href="{% url 'event_detail' event.id %}">
+                <td data-label="Название"><a href="{% url 'event_detail' event.id %}">{{ event.title }}</a></td>
+                <td data-label="Статус">{% event_status_pill event %}</td>
+            </tr>
         {% empty %}
             <tr><td colspan="2">Мероприятий нет.</td></tr>
         {% endfor %}
@@ -23,13 +30,16 @@
     </table>
 </div>
 
-<div class="card">
-    <h3>Контактные лица</h3>
-    <table>
+<div class="card" style="padding:0; overflow:hidden;">
+    <h3 style="padding:20px 20px 0;">Контактные лица</h3>
+    <table class="responsive-table">
         <thead><tr><th>ФИО</th><th>Телефон</th></tr></thead>
         <tbody>
         {% for organizer in organizers %}
-            <tr data-href="{% url 'organizer_detail' organizer.id %}"><td>{{ organizer.first_name }} {{ organizer.last_name }}</td><td>{{ organizer.phone|default:"—" }}</td></tr>
+            <tr data-href="{% url 'organizer_detail' organizer.id %}">
+                <td data-label="ФИО">{{ organizer.first_name }} {{ organizer.last_name }}</td>
+                <td data-label="Телефон" class="mono">{{ organizer.phone|default:"—" }}</td>
+            </tr>
         {% empty %}
             <tr><td colspan="2">Контактные лица не указаны.</td></tr>
         {% endfor %}

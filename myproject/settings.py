@@ -17,6 +17,9 @@ DEBUG = env('DEBUG')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=[])
 
 TG_BOT_TOKEN = env('TG_BOT_TOKEN', default='')
+# Публичный HTTPS-адрес сайта — нужен для кнопки запуска Mini App из бота
+# (Telegram требует HTTPS; для локальной разработки — туннель вроде ngrok/cloudflared).
+WEBAPP_URL = env('WEBAPP_URL', default='')
 
 
 INSTALLED_APPS = [
@@ -37,6 +40,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'blog.middleware.TelegramWebAppFrameMiddleware',
 ]
 
 ROOT_URLCONF = 'myproject.urls'
@@ -87,6 +91,7 @@ AUTH_USER_MODEL = 'blog.User'
 
 AUTHENTICATION_BACKENDS = [
     'blog.auth_backends.WebLoginBackend',
+    'blog.auth_backends.TelegramWebAppBackend',
 ]
 
 # Password validation

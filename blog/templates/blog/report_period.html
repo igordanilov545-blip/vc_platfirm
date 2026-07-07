@@ -3,28 +3,76 @@
 {% block content %}
 <h1>Отчёт за период</h1>
 
-<div class="tabs">
-    <a href="?period=week" class="{% if period == 'week' %}active{% endif %}">Неделя</a>
-    <a href="?period=month" class="{% if period == 'month' %}active{% endif %}">Месяц</a>
-    <a href="?period=season" class="{% if period == 'season' %}active{% endif %}">Сезон</a>
-</div>
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-    <p class="badge" style="margin:0;">{{ date_from }} — {{ date_to }}</p>
-    <a href="{% url 'report_period_export' %}?period={{ period }}" class="btn secondary">⬇ Экспорт в CSV</a>
+<div class="card daterange-card">
+    <div class="daterange-layout">
+        <div class="daterange-presets">
+            <button type="button" class="daterange-preset {% if period == 'yesterday' %}active{% endif %}" data-preset="yesterday">Вчера</button>
+            <button type="button" class="daterange-preset {% if period == 'today' %}active{% endif %}" data-preset="today">Сегодня</button>
+            <button type="button" class="daterange-preset {% if period == 'week' %}active{% endif %}" data-preset="week">Неделя</button>
+            <button type="button" class="daterange-preset {% if period == 'month' %}active{% endif %}" data-preset="month">Месяц</button>
+            <button type="button" class="daterange-preset {% if period == 'season' %}active{% endif %}" data-preset="season">Этот сезон</button>
+            <button type="button" class="daterange-preset {% if period == 'last_season' %}active{% endif %}" data-preset="last_season">Прошлый сезон</button>
+        </div>
+        <div class="daterange-main">
+            <div class="daterange-summary">
+                <span class="pill neutral"><span class="dot"></span><span class="mono" id="daterange-label">{{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }}</span></span>
+                <div class="daterange-buttons">
+                    <a href="{% url 'report_period_export' %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}" class="btn secondary">⬇ Экспорт в CSV</a>
+                    <button type="button" class="btn" id="daterange-apply">Применить</button>
+                </div>
+            </div>
+            <div class="daterange-calendars" id="daterange-calendars"></div>
+        </div>
+    </div>
 </div>
 
 <style>
-    /* Графики отчёта: одна серия — бренд-цвет, подписи — текстовыми токенами. */
+    /* Date Range Picker (brandbook §6.3, стиль Booking.com) — календарь виден постоянно,
+       не сворачивается сам по себе; закрывается только применение диапазона.
+       Общие стили самого календаря (.cal/.cal-grid/.day) — в nexus.css, переиспользуются
+       и одиночным date-picker'ом (data-datepicker) для полей даты в формах. */
+    .daterange-card { padding: 0; overflow: visible; }
+    .daterange-layout { display: flex; gap: 0; }
+    .daterange-presets {
+        display: flex; flex-direction: column; gap: 4px; min-width: 160px; flex-shrink: 0;
+        padding: 16px 12px; border-right: 1px solid var(--border-subtle);
+    }
+    .daterange-preset {
+        text-align: left; background: transparent; border: none; border-radius: var(--radius-sm);
+        color: var(--text-primary); padding: 9px 12px; font-family: inherit; font-size: 13px; cursor: pointer;
+    }
+    .daterange-preset:hover { background: var(--bg-card-hover); }
+    .daterange-preset.active { background: var(--accent); color: var(--accent-text-on); font-weight: 600; }
+    .daterange-main { flex: 1; padding: 16px 20px; min-width: 0; }
+    .daterange-summary { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+    .daterange-buttons { display: flex; gap: 8px; }
+    .daterange-calendars { display: flex; gap: 24px; flex-wrap: wrap; }
+
+    @media (max-width: 900px) {
+        .daterange-layout { flex-direction: column; }
+        .daterange-presets {
+            flex-direction: row; overflow-x: auto; border-right: none;
+            border-bottom: 1px solid var(--border-subtle); min-width: 0;
+        }
+        .daterange-preset { flex-shrink: 0; white-space: nowrap; }
+    }
+    @media (max-width: 720px) {
+        .daterange-calendars { flex-direction: column; }
+    }
+</style>
+
+<style>
+    /* Графики отчёта: десатурированная палитра линий, отдельная от UI-акцента (brandbook §6.5). */
     .hbar-row { display: grid; grid-template-columns: 160px 1fr 70px; align-items: center; gap: 0.6rem; margin-bottom: 6px; }
-    .hbar-track { background: color-mix(in srgb, var(--secondary) 35%, transparent); border-radius: 4px; height: 22px; }
-    .hbar-fill { background: var(--primary); border-radius: 4px; height: 100%; min-width: 2px; }
-    .hbar-label { font-size: 0.85rem; text-align: right; opacity: 0.85; }
-    .hbar-value { font-size: 0.85rem; font-weight: 600; }
+    .hbar-track { background: var(--bg-card-hover); border-radius: 4px; height: 22px; }
+    .hbar-fill { background: var(--text-tertiary); border-radius: 4px; height: 100%; min-width: 2px; }
+    .hbar-label { font-size: 0.85rem; text-align: right; color: var(--text-secondary); }
+    .hbar-value { font-size: 0.85rem; font-weight: 600; font-family: var(--font-mono); }
     .cols { display: flex; align-items: flex-end; gap: 6px; height: 160px; padding-top: 0.5rem; }
     .col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
-    .col .bar { width: 100%; max-width: 48px; background: var(--primary); border-radius: 4px 4px 0 0; min-height: 2px; }
-    .col .val { font-size: 0.78rem; font-weight: 600; margin-bottom: 2px; }
-    .col .lbl { font-size: 0.72rem; opacity: 0.7; margin-top: 4px; text-align: center; white-space: nowrap; }
+    .col .bar { width: 100%; max-width: 48px; background: var(--text-tertiary); border-radius: 4px 4px 0 0; min-height: 2px; }
+    .col .val { font-size: 0.78rem; font-weight: 600; margin-bottom: 2px; font-family: var(--font-mono); }
+    .col .lbl { font-size: 0.72rem; color: var(--text-tertiary); margin-top: 4px; text-align: center; white-space: nowrap; }
 </style>
 
 <div class="stat-grid">
@@ -46,13 +94,16 @@
 </div>
 {% endif %}
 
-<div class="card">
-    <h3>Топ волонтёров по часам</h3>
-    <table>
-        <thead><tr><th>Волонтёр</th><th>Часы</th></tr></thead>
+<div class="card" style="padding:0; overflow:hidden;">
+    <h3 style="padding:20px 20px 0;">Топ волонтёров по часам</h3>
+    <table class="responsive-table">
+        <thead><tr><th>Волонтёр</th><th class="num">Часы</th></tr></thead>
         <tbody>
         {% for v in report.top_volunteers %}
-            <tr data-href="{% url 'profile_detail' v.user__id %}"><td>{{ v.user__first_name }} {{ v.user__last_name }} ({{ v.user__telegram_username|default:"—" }})</td><td>{{ v.hours }}</td></tr>
+            <tr data-href="{% url 'profile_detail' v.user__id %}">
+                <td data-label="Волонтёр">{{ v.user__first_name }} {{ v.user__last_name }} ({{ v.user__telegram_username|default:"—" }})</td>
+                <td data-label="Часы" class="num mono">{{ v.hours }}</td>
+            </tr>
         {% empty %}
             <tr><td colspan="2">Нет данных.</td></tr>
         {% endfor %}
@@ -100,25 +151,31 @@
         </div>
         {% endfor %}
     </div>
-    <table style="margin-top:1rem;">
-        <thead><tr><th>Неделя</th><th>Часы</th><th>Закрытые смены</th></tr></thead>
+    <table class="responsive-table" style="margin-top:1rem;">
+        <thead><tr><th>Неделя</th><th class="num">Часы</th><th class="num">Закрытые смены</th></tr></thead>
         <tbody>
         {% for w in weekly %}
-            <tr><td>{{ w.from|date:"d.m.Y" }} — {{ w.to|date:"d.m.Y" }}</td><td>{{ w.hours }}</td><td>{{ w.shifts }}</td></tr>
+            <tr>
+                <td data-label="Неделя" class="mono">{{ w.from|date:"d.m.Y" }} — {{ w.to|date:"d.m.Y" }}</td>
+                <td data-label="Часы" class="num mono">{{ w.hours }}</td>
+                <td data-label="Закрытые смены" class="num mono">{{ w.shifts }}</td>
+            </tr>
         {% endfor %}
         </tbody>
     </table>
 </div>
 
-<div class="card">
-    <h3>Эффективность набора по мероприятиям</h3>
-    <table>
-        <thead><tr><th>Мероприятие</th><th>Нужно</th><th>Явилось</th><th>% закрытия</th></tr></thead>
+<div class="card" style="padding:0; overflow:hidden;">
+    <h3 style="padding:20px 20px 0;">Эффективность набора по мероприятиям</h3>
+    <table class="responsive-table">
+        <thead><tr><th>Мероприятие</th><th class="num">Нужно</th><th class="num">Явилось</th><th>% закрытия</th></tr></thead>
         <tbody>
         {% for e in efficiency %}
             <tr data-href="{% url 'event_detail' e.event_id %}">
-                <td>{{ e.title }}</td><td>{{ e.needed }}</td><td>{{ e.attended }}</td>
-                <td>{{ e.pct_closed }}% {% if e.understaffed %}<span class="badge warn">Недобор</span>{% endif %}</td>
+                <td data-label="Мероприятие">{{ e.title }}</td>
+                <td data-label="Нужно" class="num mono">{{ e.needed }}</td>
+                <td data-label="Явилось" class="num mono">{{ e.attended }}</td>
+                <td data-label="% закрытия"><span class="mono">{{ e.pct_closed }}%</span> {% if e.understaffed %}<span class="pill warning"><span class="dot"></span>Недобор</span>{% endif %}</td>
             </tr>
         {% empty %}
             <tr><td colspan="4">Нет данных.</td></tr>
@@ -136,11 +193,15 @@
 <div class="card">
     <h3>Проблемные зоны</h3>
     <h4>Мероприятия с низким рейтингом</h4>
-    <table>
-        <thead><tr><th>Мероприятие</th><th>Рейтинг</th><th>Отзывов</th></tr></thead>
+    <table class="responsive-table">
+        <thead><tr><th>Мероприятие</th><th class="num">Рейтинг</th><th class="num">Отзывов</th></tr></thead>
         <tbody>
         {% for e in report.problem_zones.low_rated_events %}
-            <tr data-href="{% url 'event_detail' e.id %}"><td>{{ e.title }}</td><td>{{ e.avg_rating|floatformat:1 }}</td><td>{{ e.fb_count }}</td></tr>
+            <tr data-href="{% url 'event_detail' e.id %}">
+                <td data-label="Мероприятие">{{ e.title }}</td>
+                <td data-label="Рейтинг" class="num mono">{{ e.avg_rating|floatformat:1 }}</td>
+                <td data-label="Отзывов" class="num mono">{{ e.fb_count }}</td>
+            </tr>
         {% empty %}
             <tr><td colspan="3">Нет данных.</td></tr>
         {% endfor %}
@@ -148,11 +209,14 @@
     </table>
 
     <h4>Волонтёры на грани блэклиста</h4>
-    <table>
-        <thead><tr><th>Волонтёр</th><th>Churn</th></tr></thead>
+    <table class="responsive-table">
+        <thead><tr><th>Волонтёр</th><th class="num">Churn</th></tr></thead>
         <tbody>
         {% for u in report.problem_zones.at_risk_users %}
-            <tr data-href="{% url 'profile_detail' u.id %}"><td>{{ u.first_name }} {{ u.last_name }} ({{ u.telegram_username|default:"—" }})</td><td>{{ u.churn_score|floatformat:2 }}</td></tr>
+            <tr data-href="{% url 'profile_detail' u.id %}">
+                <td data-label="Волонтёр">{{ u.first_name }} {{ u.last_name }} ({{ u.telegram_username|default:"—" }})</td>
+                <td data-label="Churn" class="num mono">{{ u.churn_score|floatformat:2 }}</td>
+            </tr>
         {% empty %}
             <tr><td colspan="2">Нет данных.</td></tr>
         {% endfor %}
@@ -163,26 +227,163 @@
 <div class="card">
     <h3>Нагрузка персонала</h3>
     <h4>Менеджеры</h4>
-    <table>
-        <thead><tr><th>Менеджер</th><th>Мероприятий</th></tr></thead>
+    <table class="responsive-table">
+        <thead><tr><th>Менеджер</th><th class="num">Мероприятий</th></tr></thead>
         <tbody>
         {% for m in staff.managers %}
-            <tr data-href="{% url 'profile_detail' m.user__id %}"><td>{{ m.user__first_name }} {{ m.user__last_name }}</td><td>{{ m.event_count }}</td></tr>
+            <tr data-href="{% url 'profile_detail' m.user__id %}">
+                <td data-label="Менеджер">{{ m.user__first_name }} {{ m.user__last_name }}</td>
+                <td data-label="Мероприятий" class="num mono">{{ m.event_count }}</td>
+            </tr>
         {% empty %}
             <tr><td colspan="2">Нет данных.</td></tr>
         {% endfor %}
         </tbody>
     </table>
     <h4>Тим-лидеры</h4>
-    <table>
-        <thead><tr><th>Тим-лидер</th><th>Мероприятий</th></tr></thead>
+    <table class="responsive-table">
+        <thead><tr><th>Тим-лидер</th><th class="num">Мероприятий</th></tr></thead>
         <tbody>
         {% for t in staff.team_leads %}
-            <tr data-href="{% url 'profile_detail' t.user__id %}"><td>{{ t.user__first_name }} {{ t.user__last_name }}</td><td>{{ t.event_count }}</td></tr>
+            <tr data-href="{% url 'profile_detail' t.user__id %}">
+                <td data-label="Тим-лидер">{{ t.user__first_name }} {{ t.user__last_name }}</td>
+                <td data-label="Мероприятий" class="num mono">{{ t.event_count }}</td>
+            </tr>
         {% empty %}
             <tr><td colspan="2">Нет данных.</td></tr>
         {% endfor %}
         </tbody>
     </table>
 </div>
+
+<script>
+(function () {
+    var calendarsRoot = document.getElementById('daterange-calendars');
+    var applyBtn = document.getElementById('daterange-apply');
+    var label = document.getElementById('daterange-label');
+    var presetButtons = document.querySelectorAll('[data-preset]');
+
+    var MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+    var DOW = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+
+    var initialFrom = '{{ date_from|date:"Y-m-d" }}';
+    var initialTo = '{{ date_to|date:"Y-m-d" }}';
+    var initialPeriod = '{{ period }}';
+
+    function parseISO(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+    function toISO(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+    function fmt(d) { return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear(); }
+    function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+
+    var today = new Date();
+    var rangeStart = parseISO(initialFrom);
+    var rangeEnd = parseISO(initialTo);
+    // Незавершённый выбор: пользователь кликнул первую дату, вторая ещё не выбрана.
+    var pendingStart = null;
+    // Активный пресет — снимается при ручном изменении диапазона по клику на календарь.
+    var activePreset = initialPeriod !== 'custom' ? initialPeriod : null;
+    // Левый календарь показывает месяц начала диапазона, правый — месяц конца (если
+    // диапазон умещается в одном месяце, правый календарь просто показывает следующий,
+    // чтобы не дублировать один и тот же месяц дважды).
+    var viewMonthLeft = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
+    var viewMonthRight = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1);
+    if (viewMonthRight.getTime() <= viewMonthLeft.getTime()) {
+        viewMonthRight = new Date(viewMonthLeft.getFullYear(), viewMonthLeft.getMonth() + 1, 1);
+    }
+
+    function updatePresetHighlight() {
+        presetButtons.forEach(function (btn) {
+            btn.classList.toggle('active', activePreset === btn.getAttribute('data-preset'));
+        });
+    }
+
+    function renderMonth(monthDate) {
+        var year = monthDate.getFullYear(), month = monthDate.getMonth();
+        var firstDay = new Date(year, month, 1);
+        var startOffset = (firstDay.getDay() + 6) % 7; // понедельник = 0
+        var daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        var html = '<div class="cal-head"><button type="button" data-nav="-1">‹</button><span>' + MONTHS[month] + ' ' + year + '</span><button type="button" data-nav="1">›</button></div>';
+        html += '<div class="cal-grid">';
+        DOW.forEach(function (d) { html += '<div class="dow">' + d + '</div>'; });
+        for (var i = 0; i < startOffset; i++) html += '<div class="day empty"></div>';
+        for (var day = 1; day <= daysInMonth; day++) {
+            var d = new Date(year, month, day);
+            var classes = ['day'];
+            var cmpStart = pendingStart || rangeStart;
+            var cmpEnd = pendingStart ? null : rangeEnd;
+            var dow = (d.getDay() + 6) % 7;
+            if (cmpEnd && d >= cmpStart && d <= cmpEnd) {
+                classes.push('in-range');
+                if (dow === 0 || day === 1) classes.push('row-start');
+                if (dow === 6 || day === daysInMonth) classes.push('row-end');
+            }
+            if (sameDay(d, today)) classes.push('today');
+            if (d.getTime() === cmpStart.getTime()) classes.push('range-start');
+            if (cmpEnd && d.getTime() === cmpEnd.getTime()) classes.push('range-end');
+            html += '<div class="' + classes.join(' ') + '" data-date="' + toISO(d) + '">' + day + '</div>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    function render() {
+        var isMobile = window.innerWidth <= 720;
+        calendarsRoot.innerHTML = isMobile
+            ? '<div class="cal" data-cal="0">' + renderMonth(viewMonthLeft) + '</div>'
+            : '<div class="cal" data-cal="0">' + renderMonth(viewMonthLeft) + '</div><div class="cal" data-cal="1">' + renderMonth(viewMonthRight) + '</div>';
+
+        calendarsRoot.querySelectorAll('[data-nav]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var delta = parseInt(btn.getAttribute('data-nav'), 10);
+                var calIndex = parseInt(btn.closest('.cal').getAttribute('data-cal'), 10);
+                if (calIndex === 0) {
+                    viewMonthLeft = new Date(viewMonthLeft.getFullYear(), viewMonthLeft.getMonth() + delta, 1);
+                } else {
+                    viewMonthRight = new Date(viewMonthRight.getFullYear(), viewMonthRight.getMonth() + delta, 1);
+                }
+                render();
+            });
+        });
+        calendarsRoot.querySelectorAll('.day:not(.empty)').forEach(function (cell) {
+            cell.addEventListener('click', function () {
+                var d = parseISO(cell.getAttribute('data-date'));
+                if (!pendingStart) {
+                    // Первый клик произвольного выбора — начинаем новый диапазон с этой даты.
+                    pendingStart = d;
+                    rangeStart = d;
+                    rangeEnd = d;
+                } else {
+                    if (d < pendingStart) {
+                        rangeStart = d; rangeEnd = pendingStart;
+                    } else {
+                        rangeStart = pendingStart; rangeEnd = d;
+                    }
+                    pendingStart = null;
+                }
+                // Ручное изменение диапазона — активный пресет больше не соответствует выбору.
+                activePreset = null;
+                updatePresetHighlight();
+                render();
+            });
+        });
+    }
+
+    render();
+    updatePresetHighlight();
+
+    presetButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            window.location.search = '?period=' + btn.getAttribute('data-preset');
+        });
+    });
+
+    applyBtn.addEventListener('click', function () {
+        label.textContent = fmt(rangeStart) + ' — ' + fmt(rangeEnd);
+        window.location.search = '?date_from=' + toISO(rangeStart) + '&date_to=' + toISO(rangeEnd);
+    });
+
+    window.addEventListener('resize', render);
+})();
+</script>
 {% endblock %}

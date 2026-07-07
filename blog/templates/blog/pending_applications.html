@@ -1,31 +1,42 @@
 {% extends 'blog/base.html' %}
 {% block title %}Необработанные заявки{% endblock %}
 {% block content %}
-<h1>Необработанные заявки</h1>
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+    <h1>Необработанные заявки</h1>
+    {% if pending_count %}
+    <div style="display:flex; align-items:center; gap:10px;">
+        <span class="pill warning"><span class="dot"></span>Осталось обработать: {{ pending_count }}</span>
+        <form method="post" action="{% url 'application_process_all' %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="btn">Обработать все заявки</button>
+        </form>
+    </div>
+    {% endif %}
+</div>
 
-<div class="card">
-    <table>
+<div class="card" style="padding:0; overflow:hidden;">
+    <table class="responsive-table">
         <thead><tr><th>Мероприятие</th><th>ФИО</th><th>Telegram</th><th>Телефон</th><th>Подано</th><th></th></tr></thead>
         <tbody>
         {% for application in page_obj %}
             <tr data-href="{% url 'event_detail' application.event_id %}#applications">
-                <td>{{ application.event.title }}</td>
-                <td>{{ application.first_name }} {{ application.last_name }}</td>
-                <td>{{ application.telegram_username|default:"—" }}</td>
-                <td>{{ application.phone|default:"—" }}</td>
-                <td>{{ application.submitted_at|default:application.created_at }}</td>
-                <td>
+                <td data-label="Мероприятие">{{ application.event.title }}</td>
+                <td data-label="ФИО">{{ application.first_name }}{% if application.last_name %} {{ application.last_name }}{% endif %}</td>
+                <td data-label="Telegram">{{ application.telegram_username|default:"—" }}</td>
+                <td data-label="Телефон" class="mono">{{ application.phone|default:"—" }}</td>
+                <td data-label="Подано" class="mono">{{ application.submitted_at|default:application.created_at }}</td>
+                <td data-label="">
                     <form method="post" action="{% url 'application_process' application.id %}" class="inline">
                         {% csrf_token %}
                         <input type="hidden" name="status" value="approved">
                         <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                        <button type="submit" class="btn" style="padding:0.25rem 0.6rem;">Принять</button>
+                        <button type="submit" class="btn" style="padding:6px 12px;">Принять</button>
                     </form>
                     <form method="post" action="{% url 'application_process' application.id %}" class="inline">
                         {% csrf_token %}
                         <input type="hidden" name="status" value="rejected">
                         <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                        <button type="submit" class="btn danger" style="padding:0.25rem 0.6rem;">Отклонить</button>
+                        <button type="submit" class="btn danger" style="padding:6px 12px;">Отклонить</button>
                     </form>
                 </td>
             </tr>

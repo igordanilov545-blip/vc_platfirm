@@ -77,6 +77,31 @@ def toggle_subscription(user_id: int) -> bool:
     return new_value
 
 
+def toggle_application_notifications(user_id: int) -> bool:
+    """Переключает тумблер уведомлений о новых заявках (`notify_applications`,
+    db.md правило 7c) для ТЛ/менеджера. Возвращает новое значение. При False карточки
+    новых заявок этому пользователю не приходят (см. `notify_event_staff`), но сами
+    заявки остаются видны в разделах меро / «Все заявки»."""
+    close_old_connections()
+    user = get_user(user_id)
+    new_value = not user.notify_applications
+    dc.update_user_fields(user, notify_applications=new_value)
+    return new_value
+
+
+def issue_web_login_link(user_id: int) -> str:
+    """Одноразовая ссылка входа в веб через бота (deep-link `?start=weblogin`).
+    Возвращает абсолютный URL `/auth/tg/<token>/`, действующий 5 минут."""
+    close_old_connections()
+    from django.conf import settings
+    from blog.services.web_auth import issue_auth_token
+
+    user = get_user(user_id)
+    token = issue_auth_token(user)
+    base = (settings.WEBAPP_URL or '').rstrip('/')
+    return f'{base}/auth/tg/{token.token}/'
+
+
 def user_role_label(user) -> str:
     """Роль называем пользователю (не путать с внутренним `status`, см. tg-bot.md §2)."""
     return roles_service.role_label(user)
@@ -164,7 +189,9 @@ def open_events(limit: int = 7) -> list:
 def apply_to_event(user_id: int, event_id: int):
     """Подача заявки из бота (tg-bot.md §4.2–4.3). Каждый вызов — независимая заявка
     на конкретное меро; несколько заявок на разные меро подаются отдельными вызовами.
-    Возвращает (application|None, код ошибки|None)."""
+    Возвращает (application|None, код ошибки|None). При `already_applied` объект
+    существующей заявки кладётся в `application`, чтобы хендлер мог сразу предложить
+    посмотреть/изменить/отменить её (db.md правило 7d), не делая второй запрос."""
     close_old_connections()
     user = get_user(user_id)
     event = next((e for e in dc.get_events() if e.id == event_id), None)
@@ -178,7 +205,7 @@ def apply_to_event(user_id: int, event_id: int):
         return None, 'need_registration'
     existing = dc.get_user_application_for_event(user_id, event_id)
     if existing:
-        return None, 'already_applied'
+        return existing, 'already_applied'
 
     application = dc.create_application(
         event=event,
@@ -195,11 +222,14 @@ def apply_to_event(user_id: int, event_id: int):
 
 
 def my_active_applications(user_id: int) -> list:
-    """Только активные заявки волонтёра (new/approved) — tg-bot.md §4.4."""
+    """Только активные заявки волонтёра на ещё актуальные меро (new/approved,
+    tg-bot.md §4.4) — заявки на уже прошедшие мероприятия сюда не попадают
+    (фильтр внутри `get_user_active_applications`)."""
     close_old_connections()
     apps = dc.get_user_active_applications(user_id)
     return [
         {
+            'id': a.id,
             'event_title': a.event.title,
             'status': a.status,
             'status_display': a.get_status_display(),
@@ -207,6 +237,71 @@ def my_active_applications(user_id: int) -> list:
         }
         for a in apps
     ]
+
+
+def get_own_application(user_id: int, application_id: int):
+    """Заявка пользователя по id, только если она принадлежит ему — используется в
+    хендлерах редактирования/отмены (tg-bot.md §4.3.2–4.3.3), чтобы не дать подделать
+    callback_data и подействовать на чужую заявку."""
+    close_old_connections()
+    from blog.models import Application
+    return Application.objects.select_related('event').filter(
+        pk=application_id, user_id=user_id
+    ).first()
+
+
+def application_cancel_eligibility(user_id: int, application_id: int):
+    """(можно_отменить, причина_отказа|None, late_cancel_hours) — обёртка над общим
+    правилом `blog.services.applications.can_cancel_application` с проверкой владения."""
+    from blog.services.applications import can_cancel_application
+    close_old_connections()
+    application = get_own_application(user_id, application_id)
+    if not application:
+        return False, 'not_found', None
+    return can_cancel_application(application)
+
+
+def cancel_own_application(user_id: int, application_id: int, reason: str):
+    """Отмена своей заявки с обязательной причиной (tg-bot.md §4.3.3). Возвращает
+    (application|None, код_ошибки|None). Права/срок повторно проверяются здесь —
+    хендлер не должен полагаться только на состояние экрана, вызванное раньше."""
+    from blog.services.applications import can_cancel_application, cancel_application
+    close_old_connections()
+    application = get_own_application(user_id, application_id)
+    if not application:
+        return None, 'not_found'
+    can_cancel, reason_code, _ = can_cancel_application(application)
+    if not can_cancel:
+        return None, reason_code
+    cancel_application(application, reason)
+    return application, None
+
+
+def edit_own_application(user_id: int, application_id: int, functions: str = None, role_in_event: str = None):
+    """Изменение данных активной заявки (tg-bot.md §4.3.2, db.md правило 7d): создаёт
+    НОВУЮ запись `applications` с обновлёнными функцией/ролью и статусом `new` — старая
+    заявка остаётся в истории без изменений (дубли разрешены, см. правило 3). Возвращает
+    (новая_заявка|None, код_ошибки|None)."""
+    close_old_connections()
+    old = get_own_application(user_id, application_id)
+    if not old or old.status not in ('new', 'approved'):
+        return None, 'not_found'
+    user = get_user(user_id)
+
+    new_application = dc.create_application(
+        event=old.event,
+        user=user,
+        first_name=old.first_name,
+        last_name=old.last_name,
+        telegram_username=old.telegram_username,
+        phone=old.phone,
+        functions=functions if functions is not None else old.functions,
+        role_in_event=role_in_event if role_in_event is not None else old.role_in_event,
+        submitted_at=timezone.now(),
+        status='new',
+    )
+    notify_application_submitted(new_application)
+    return new_application, None
 
 
 def submit_feedback(user_id: int, event_id: int, rating: int, comment: str = None):
@@ -369,6 +464,39 @@ def mark_feedback_requested(participation_id: int):
 # ---------------------------------------------------------------------------
 # Очередь исходящих (диспетчер уведомлений)
 # ---------------------------------------------------------------------------
+
+BUTTON_TTL_SECONDS = 300  # 5 минут — inline-кнопки "остывают" (tg-bot.md §0.2)
+
+
+def schedule_button_removal(chat_id, message_id: int):
+    """Ставит в очередь снятие inline-клавиатуры сообщения через `BUTTON_TTL_SECONDS`.
+    Вызывается сразу после отправки любого сообщения с inline-кнопками, срок жизни
+    которых ограничен (подать заявку, одобрить/резерв, оценка меро и т.п.) — чтобы
+    пользователь не мог нажать на кнопку многомесячной давности с уже неактуальным
+    состоянием. Обходчик — `tg_bot/notifier.py::_process_button_removals`."""
+    close_old_connections()
+    from blog.models import PendingButtonRemoval
+    PendingButtonRemoval.objects.create(
+        chat_id=str(chat_id),
+        message_id=message_id,
+        remove_at=timezone.now() + timedelta(seconds=BUTTON_TTL_SECONDS),
+    )
+
+
+def fetch_due_button_removals(batch: int = 50) -> list:
+    close_old_connections()
+    from blog.models import PendingButtonRemoval
+    return list(
+        PendingButtonRemoval.objects.filter(remove_at__lte=timezone.now())
+        .order_by('remove_at')[:batch]
+    )
+
+
+def delete_button_removal(removal_id: int):
+    close_old_connections()
+    from blog.models import PendingButtonRemoval
+    PendingButtonRemoval.objects.filter(pk=removal_id).delete()
+
 
 MAX_ATTEMPTS = 5
 

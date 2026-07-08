@@ -3,9 +3,9 @@ from datetime import datetime, time
 from django import forms
 from django.utils import timezone
 from .models import (
-    Event, EventShift, Participation, Application, UserComment, EventFeedback,
+    Event, EventComment, EventShift, Participation, Application, UserComment, EventFeedback,
     Const, Season, Organization, Organizer, User, EventStaff, Location,
-    EventCategory, EventCategoryMap, TeamLeader,
+    EventCategory, EventCategoryMap, TeamLeader, ExternalExperience,
 )
 
 
@@ -18,8 +18,20 @@ class QuickLocationForm(forms.ModelForm):
     """Мини-форма быстрого создания локации прямо из формы мероприятия (без ухода со страницы)."""
     class Meta:
         model = Location
-        fields = ['name']
-        labels = {'name': 'Название локации'}
+        fields = ['name', 'map_link']
+        labels = {'name': 'Название локации', 'map_link': 'Ссылка на карту'}
+
+
+class LocationForm(forms.ModelForm):
+    """Полноценное редактирование локации (список локаций)."""
+    class Meta:
+        model = Location
+        fields = ['name', 'map_link', 'description']
+        labels = {'name': 'Название локации', 'map_link': 'Ссылка на карту', 'description': 'Описание'}
+        widgets = {
+            'map_link': forms.URLInput(attrs={'placeholder': 'https://yandex.ru/maps/…'}),
+            'description': forms.Textarea(attrs={'rows': 3}),
+        }
 
 
 class QuickOrganizationForm(forms.ModelForm):
@@ -113,6 +125,7 @@ class EventForm(forms.ModelForm):
             'chat_link': forms.URLInput(attrs={'placeholder': 'https://t.me/…'}),
             'post_in_chanel_link': forms.URLInput(attrs={'placeholder': 'https://t.me/…'}),
             'dobro_ru_link': forms.URLInput(attrs={'placeholder': 'https://dobro.ru/…'}),
+            'people_helped': forms.NumberInput(attrs={'min': 0}),
         }
 
     # Поля, относящиеся к закрытию/пост-меро — не показываются при создании.
@@ -122,6 +135,14 @@ class EventForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.show_closing_fields = show_closing_fields
         self.assigned_by = assigned_by
+        # Смены просят только при создании нового меро (правило "нет меро без смен") —
+        # при редактировании существующего смены управляются отдельно на event_detail.
+        # Несколько смен добавляются прямо в форме создания (chip-виджет на клиенте,
+        # см. _event_form_body.html) — JSON-массив приходит в скрытом поле shifts_json,
+        # каждый элемент валидируется как отдельная EventShiftForm.
+        self.require_shift = not self.instance.pk
+        if self.require_shift:
+            self.shift_forms = self._build_shift_forms()
 
         # Пустой вариант "—" для необязательных FK-справочников (иначе Django берёт первый).
         for name in ('organization', 'organizer', 'location', 'letter'):
@@ -151,6 +172,42 @@ class EventForm(forms.ModelForm):
                 staff_assignments__staff_role='team_lead',
             )
 
+    def _build_shift_forms(self):
+        """Разбирает JSON-массив смен из скрытого поля `shifts_json` (собирается на
+        клиенте chip-виджетом, см. _event_form_body.html) в список EventShiftForm —
+        каждая смена валидируется отдельно теми же правилами, что и в event_shift_add."""
+        import json
+        raw = (self.data.get('shifts_json') if self.data else None) or '[]'
+        try:
+            rows = json.loads(raw)
+        except (ValueError, TypeError):
+            rows = []
+        forms_list = []
+        for i, row in enumerate(rows if isinstance(rows, list) else []):
+            data = {
+                f'shift-{i}-day': row.get('day', ''),
+                f'shift-{i}-start_time': row.get('start_time', ''),
+                f'shift-{i}-end_time': row.get('end_time', ''),
+                f'shift-{i}-volunteer_needed': row.get('volunteer_needed') or 0,
+                f'shift-{i}-recruit_status': 'open',
+                f'shift-{i}-location': '',
+            }
+            forms_list.append(EventShiftForm(data, prefix=f'shift-{i}'))
+        return forms_list
+
+    def is_valid(self):
+        valid = super().is_valid()
+        if self.require_shift:
+            # Хотя бы одна смена обязательна (аналогично обязательному title); каждая
+            # добавленная смена дополнительно валидируется своей формой.
+            if not self.shift_forms:
+                self.add_error(None, 'Добавьте хотя бы одну смену мероприятия.')
+                valid = False
+            for shift_form in self.shift_forms:
+                if not shift_form.is_valid():
+                    valid = False
+        return valid
+
     def save(self, commit=True):
         event = super().save(commit=False)
         # Упрощённая модель: менеджер просто вставляет ссылку на Добро.ру (или оставляет
@@ -161,6 +218,11 @@ class EventForm(forms.ModelForm):
             event.save()
             self._save_categories(event)
             self._save_team_leads(event)
+            if self.require_shift:
+                for shift_form in self.shift_forms:
+                    shift = shift_form.save(commit=False)
+                    shift.event = event
+                    shift.save()
         return event
 
     def _save_categories(self, event):
@@ -170,8 +232,15 @@ class EventForm(forms.ModelForm):
             EventCategoryMap.objects.get_or_create(event=event, category=category)
 
     def _save_team_leads(self, event):
-        """Приводит назначения тим-лидеров к ровно выбранному набору пользователей."""
-        selected = self.cleaned_data.get('team_leads', User.objects.none())
+        """Приводит назначения тим-лидеров к ровно выбранному набору пользователей.
+
+        Мероприятие без явно назначенного тим-лидера получает тим-лидером по
+        умолчанию самого создающего менеджера (правило "нет меро без ТЛ") — только
+        при создании; при редактировании пустой выбор просто снимает всех ТЛ, как раньше.
+        """
+        selected = list(self.cleaned_data.get('team_leads', User.objects.none()))
+        if not selected and self.require_shift and self.assigned_by:
+            selected = [self.assigned_by]
         selected_ids = {u.id for u in selected}
         event.staff.filter(staff_role='team_lead').exclude(user_id__in=selected_ids).delete()
         for user in selected:
@@ -210,6 +279,9 @@ class EventShiftForm(forms.ModelForm):
             'recruit_status': 'Набор на смену',
             'location': 'Локация',
         }
+        widgets = {
+            'volunteer_needed': forms.NumberInput(attrs={'min': 0}),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -223,8 +295,10 @@ class EventShiftForm(forms.ModelForm):
             if self.instance.end_time:
                 self.initial.setdefault('end_time', timezone.localtime(self.instance.end_time).time())
         else:
-            # Новая смена — типовые часы мероприятия по умолчанию (10:00-18:00),
-            # чтобы не заполнять вручную каждый раз.
+            # Новая смена — типовые часы мероприятия по умолчанию (10:00-18:00) и
+            # сегодняшняя дата, чтобы не заполнять вручную каждый раз (календарь и
+            # так визуально показывает сегодня как выбранный день).
+            self.initial.setdefault('day', timezone.localdate())
             self.initial.setdefault('start_time', time(10, 0))
             self.initial.setdefault('end_time', time(18, 0))
 
@@ -260,6 +334,9 @@ class ParticipationForm(forms.ModelForm):
             'status': 'Статус явки',
             'hours': 'Часы',
             'full_shift': 'Полная смена',
+        }
+        widgets = {
+            'hours': forms.NumberInput(attrs={'min': 0}),
         }
 
 
@@ -313,6 +390,30 @@ class ApplicationForm(forms.ModelForm):
             self.fields['selected_shifts'].queryset = event.shifts.filter(recruit_status='open').order_by('day')
         if self.instance and self.instance.pk:
             self.initial.setdefault('selected_shifts', self.instance.selected_shifts.all())
+            # При редактировании существующей заявки мероприятие не меняем — только
+            # смены/функцию/роль (иначе теряется смысл "отредактировать свою заявку").
+            self.fields['event'].disabled = True
+
+
+class ApplicationCancelForm(forms.Form):
+    """Отмена заявки волонтёром — причина обязательна (доступно только пока до
+    мероприятия осталось больше const.late_cancel_hours, проверяется во view)."""
+    reason = forms.CharField(
+        label='Причина отмены', widget=forms.Textarea(attrs={'rows': 3}),
+    )
+
+
+class ExternalExperienceForm(forms.ModelForm):
+    """Внешнее волонтёрское мероприятие (раздел «Мой опыт») — хранится как текст в
+    профиле и не влияет на статистику."""
+    class Meta:
+        model = ExternalExperience
+        fields = ['title', 'date']
+        widgets = {
+            'title': forms.TextInput(attrs={'placeholder': 'Например: Городской субботник'}),
+            'date': forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d'),
+        }
+        labels = {'title': 'Название', 'date': 'Дата'}
 
 
 class ExcelImportForm(forms.Form):
@@ -336,6 +437,16 @@ class UserCommentForm(forms.ModelForm):
         self.fields['event'].required = False
         if event_queryset is not None:
             self.fields['event'].queryset = event_queryset
+
+
+class EventCommentForm(forms.ModelForm):
+    """Комментарий к мероприятию (менеджеры/тим-лидеры) — в UI показывается
+    без подписи автора, только текст и дата."""
+    class Meta:
+        model = EventComment
+        fields = ['text']
+        labels = {'text': 'Комментарий'}
+        widgets = {'text': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Заметка по мероприятию…'})}
 
 
 class EventFeedbackForm(forms.ModelForm):
@@ -417,6 +528,7 @@ class OrganizationForm(forms.ModelForm):
         widgets = {
             'description': forms.Textarea(attrs={'rows': 3}),
             'comment': forms.Textarea(attrs={'rows': 3}),
+            'internal_rating': forms.NumberInput(attrs={'min': 0, 'max': 10}),
         }
 
     def __init__(self, *args, **kwargs):

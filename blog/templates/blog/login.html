@@ -1,15 +1,45 @@
 {% extends 'blog/base.html' %}
 {% block title %}Вход{% endblock %}
 {% block content %}
-<div class="card" style="max-width:360px; margin: 3rem auto;">
+<div class="card" style="max-width:380px; margin: 3rem auto;">
     <h2>Вход в систему</h2>
     <form method="post">
         {% csrf_token %}
+        {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
         <label for="id_login">Логин</label>
         {{ form.login }}
         <label for="id_password">Пароль</label>
         {{ form.password }}
         <button type="submit" class="btn">Войти</button>
     </form>
+
+    <div style="margin-top:1.5rem; border-top:1px solid var(--border, #e5e7eb); padding-top:1.25rem;">
+        <p style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:0.75rem;">
+            Или авторизуйтесь через Telegram:
+        </p>
+
+        {% if tg_bot_username %}
+        <script async src="https://telegram.org/js/telegram-widget.js?22"
+                data-telegram-login="{{ tg_bot_username }}"
+                data-size="large"
+                data-auth-url="{{ tg_widget_auth_url }}{% if next %}?next={{ next|urlencode }}{% endif %}"
+                data-request-access="write"></script>
+
+        <div style="margin-top:1rem;">
+            <a class="btn btn-secondary" style="display:inline-flex; align-items:center; gap:0.4rem;"
+               href="https://t.me/{{ tg_bot_username }}?start=weblogin" target="_blank" rel="noopener">
+                <span>✈️</span> Войти через бота
+            </a>
+            <p style="color:var(--text-secondary); font-size:0.82rem; margin-top:0.5rem;">
+                Откройте бота — он пришлёт одноразовую ссылку для входа (действует 5 минут).
+                Если вы ещё не зарегистрированы, аккаунт создастся автоматически.
+            </p>
+        </div>
+        {% else %}
+        <p style="color:var(--text-secondary); font-size:0.85rem;">
+            Вход через Telegram временно недоступен (не настроен бот).
+        </p>
+        {% endif %}
+    </div>
 </div>
 {% endblock %}

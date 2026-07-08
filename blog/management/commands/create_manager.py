@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from blog.models import User, Manager
+from blog.models import User, Manager, TeamLeader
 
 
 class Command(BaseCommand):
@@ -26,6 +26,9 @@ class Command(BaseCommand):
             last_name=options['last_name'],
         )
         Manager.objects.create(user=user)
+        # У менеджера всегда есть профиль тим-лидера — можно назначать его на
+        # мероприятия наравне с обычными тим-лидерами (см. blog/services/roles.py:assign_role).
+        TeamLeader.objects.create(user=user)
 
         self.stdout.write(self.style.SUCCESS(
             f'Менеджер создан: login={login}, id={user.id}'

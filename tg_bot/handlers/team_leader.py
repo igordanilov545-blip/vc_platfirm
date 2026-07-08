@@ -8,6 +8,7 @@ from aiogram.types import Message, CallbackQuery
 
 from tg_bot import services, keyboards as kb
 from tg_bot.states import Comment
+from tg_bot.ui import answer_with_expiring_keyboard
 from blog.services import roles as roles_service
 
 router = Router(name='team_leader')
@@ -31,7 +32,7 @@ async def cmd_myevents(message: Message):
     await message.answer('\n'.join(lines))
 
     for e in events:
-        await message.answer(f"«{e['title']}»", reply_markup=kb.event_actions(e['id']))
+        await answer_with_expiring_keyboard(message, f"«{e['title']}»", kb.event_actions(e['id']))
         if e['new_applications']:
             await _send_pending_applications(message, user.id, e['id'])
 
@@ -47,7 +48,7 @@ async def _send_pending_applications(message: Message, user_id: int, event_id: i
             f'📥 Заявка на «{a.event.title}»\n'
             f'👤 {a.first_name} {a.last_name or ""}'.strip() + contact + phone
         )
-        await message.answer(text, reply_markup=kb.application_decision(a.id))
+        await answer_with_expiring_keyboard(message, text, kb.application_decision(a.id))
 
 
 @router.callback_query(F.data.startswith('app_approve:'))
@@ -121,9 +122,9 @@ async def cb_profile(callback: CallbackQuery):
         f'✉ {target.email}' if target.email else '',
         f'@{target.telegram_username}' if target.telegram_username else '',
     ]
-    await callback.message.answer(
-        '\n'.join(line for line in lines if line),
-        reply_markup=kb.profile_comment_button(target.id),
+    await answer_with_expiring_keyboard(
+        callback.message, '\n'.join(line for line in lines if line),
+        kb.profile_comment_button(target.id),
     )
 
 
@@ -189,7 +190,7 @@ async def cb_event_attendance(callback: CallbackQuery):
         await callback.message.answer(f'📋 Явка — {shift.day.strftime("%d.%m.%Y")}')
         for p in rows:
             name = p.user.full_name
-            await callback.message.answer(name, reply_markup=kb.attendance_row(p.id))
+            await answer_with_expiring_keyboard(callback.message, name, kb.attendance_row(p.id))
 
 
 @router.callback_query(F.data.startswith('att:'))

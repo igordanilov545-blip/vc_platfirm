@@ -40,6 +40,10 @@ def main_menu(is_team_leader: bool = False, is_manager: bool = False) -> ReplyKe
         builder.button(text='👥 Мои мероприятия (ТЛ)')
     if is_manager:
         builder.button(text='⚙️ Управление')
+    # Тумблер уведомлений о новых заявках — только у тех, кому они вообще приходят
+    # (ТЛ своих меро и менеджеры). Волонтёру эта кнопка не показывается (§5.5).
+    if is_team_leader or is_manager:
+        builder.button(text='🔔 Заявки: уведомления')
     _add_webapp_button(builder)
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
@@ -78,6 +82,19 @@ def apply_button(event_id: int) -> InlineKeyboardMarkup:
 def applied_button() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text='✅ Заявка подана', callback_data='noop')
+    return builder.as_markup()
+
+
+def existing_application_actions(application_id: int, can_cancel: bool) -> InlineKeyboardMarkup:
+    """Кнопки при повторной подаче заявки на меро, где уже есть активная (tg-bot.md §4.3.2,
+    db.md правило 7d): посмотреть/изменить всегда доступны, отмена — только если до меро
+    осталось больше `const.late_cancel_hours` (иначе кнопки нет вовсе, чтобы не провоцировать
+    на действие, которое всё равно будет отклонено)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text='✏️ Изменить заявку', callback_data=f'app_edit:{application_id}')
+    if can_cancel:
+        builder.button(text='❌ Отменить заявку', callback_data=f'app_cancel:{application_id}')
+    builder.adjust(1)
     return builder.as_markup()
 
 

@@ -7,7 +7,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 
 from tg_bot import services, keyboards as kb
-from tg_bot.states import PendingApplication, Feedback
+from tg_bot.states import ApplicationCancel, ApplicationEdit, PendingApplication, Feedback
+from tg_bot.ui import answer_with_expiring_keyboard
 
 router = Router(name='volunteer')
 
@@ -36,7 +37,7 @@ async def _send_events(message: Message):
             lines.append(f"📆 Ближайший день: {e['first_day'].strftime('%d.%m.%Y')}")
         if e['description']:
             lines.append(e['description'])
-        await message.answer('\n'.join(lines), reply_markup=kb.apply_button(e['id']))
+        await answer_with_expiring_keyboard(message, '\n'.join(lines), kb.apply_button(e['id']))
 
 
 @router.message(Command('events'))
@@ -53,8 +54,6 @@ async def cb_events(callback: CallbackQuery):
 
 ERROR_TEXTS = {
     'closed': '⚠️ Набор на это мероприятие уже закрыт.',
-    'already_applied': 'ℹ️ У тебя уже есть активная заявка на это мероприятие. '
-                        'Статус — в разделе «📝 Мои заявки».',
     'blacklisted': '⛔ Не можем принять заявку — обратись к менеджеру центра.',
     'not_found': '⚠️ Мероприятие не найдено или снято с публикации.',
 }
@@ -85,6 +84,22 @@ async def cb_apply(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         await callback.message.answer('📝 Сначала нужно зарегистрироваться — используй /register.')
         return
+    if error == 'already_applied':
+        # db.md правило 7d: не молчаливая ошибка, а предложение посмотреть/изменить/
+        # отменить существующую заявку — `application` тут уже сама заявка (см.
+        # `services.apply_to_event`), а не None.
+        await callback.answer()
+        can_cancel, _, _ = await sync_to_async(services.application_cancel_eligibility)(
+            user.id, application.id
+        )
+        text = (
+            f'ℹ️ У тебя уже есть активная заявка на «{application.event.title}» '
+            f'({application.get_status_display()}).'
+        )
+        await answer_with_expiring_keyboard(
+            callback.message, text, kb.existing_application_actions(application.id, can_cancel)
+        )
+        return
     if error:
         await callback.answer()
         await callback.message.answer(ERROR_TEXTS.get(error, '⚠️ Не получилось подать заявку.'))
@@ -96,6 +111,125 @@ async def cb_apply(callback: CallbackQuery, state: FSMContext):
         f'✅ Заявка на «{application.event.title}» отправлена! '
         'Тим-лидер рассмотрит её и пришлёт ответ сюда, в бот.'
     )
+
+
+@router.callback_query(F.data.startswith('app_edit:'))
+async def cb_application_edit_start(callback: CallbackQuery, state: FSMContext):
+    """Начало изменения заявки (db.md правило 7d) — спрашиваем функцию, затем роль;
+    обе можно пропустить (оставить как в старой заявке)."""
+    application_id = int(callback.data.split(':', 1)[1])
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        callback.from_user.id, callback.from_user.username
+    )
+    application = await sync_to_async(services.get_own_application)(user.id, application_id)
+    await callback.answer()
+    if not application:
+        await callback.message.answer('⚠️ Заявка не найдена.')
+        return
+
+    await state.update_data(edit_application_id=application_id)
+    await state.set_state(ApplicationEdit.waiting_functions)
+    await callback.message.answer(
+        'Какую функцию хочешь указать? (например «Регистрация гостей»)\n'
+        'Если менять не нужно — отправь «Пропустить».'
+    )
+
+
+@router.message(ApplicationEdit.waiting_functions)
+async def application_edit_got_functions(message: Message, state: FSMContext):
+    text = (message.text or '').strip()
+    if text and text.lower() != 'пропустить':
+        await state.update_data(edit_functions=text)
+    await state.set_state(ApplicationEdit.waiting_role)
+    await message.answer(
+        'Какую роль хочешь указать? (например «Волонтёр на площадке»)\n'
+        'Если менять не нужно — отправь «Пропустить».'
+    )
+
+
+@router.message(ApplicationEdit.waiting_role)
+async def application_edit_got_role(message: Message, state: FSMContext):
+    text = (message.text or '').strip()
+    data = await state.get_data()
+    role_in_event = text if text and text.lower() != 'пропустить' else None
+    application_id = data.get('edit_application_id')
+    functions = data.get('edit_functions')
+    await state.set_state(None)
+    await state.clear()
+
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        message.from_user.id, message.from_user.username
+    )
+    new_application, error = await sync_to_async(services.edit_own_application)(
+        user.id, application_id, functions=functions, role_in_event=role_in_event
+    )
+    if error:
+        await message.answer('⚠️ Не удалось изменить заявку — возможно, она уже неактивна.')
+        return
+    await message.answer(
+        f'✅ Новая заявка на «{new_application.event.title}» с обновлёнными данными отправлена! '
+        'Тим-лидер рассмотрит её и пришлёт ответ сюда, в бот.'
+    )
+
+
+@router.callback_query(F.data.startswith('app_cancel:'))
+async def cb_application_cancel_start(callback: CallbackQuery, state: FSMContext):
+    """Отмена заявки — сначала проверяем срок (`late_cancel_hours`), затем спрашиваем
+    обязательную причину (tg-bot.md §4.3.3)."""
+    application_id = int(callback.data.split(':', 1)[1])
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        callback.from_user.id, callback.from_user.username
+    )
+    can_cancel, reason_code, late_cancel_hours = await sync_to_async(
+        services.application_cancel_eligibility
+    )(user.id, application_id)
+    await callback.answer()
+
+    if not can_cancel:
+        if reason_code == 'too_late':
+            await callback.message.answer(
+                f'⛔ Отменить заявку можно не позднее чем за {late_cancel_hours:g} ч. до начала '
+                'мероприятия — обратись к тим-лидеру или менеджеру напрямую.'
+            )
+        elif reason_code == 'not_found':
+            await callback.message.answer('⚠️ Заявка не найдена.')
+        else:
+            await callback.message.answer('⚠️ Эта заявка уже неактивна.')
+        return
+
+    await state.update_data(cancel_application_id=application_id)
+    await state.set_state(ApplicationCancel.waiting_reason)
+    await callback.message.answer('Напиши, пожалуйста, причину отмены:')
+
+
+@router.message(ApplicationCancel.waiting_reason)
+async def application_cancel_got_reason(message: Message, state: FSMContext):
+    reason = (message.text or '').strip()
+    if not reason:
+        await message.answer('Причина обязательна — напиши, пожалуйста, коротко почему отменяешь.')
+        return
+
+    data = await state.get_data()
+    application_id = data.get('cancel_application_id')
+    await state.set_state(None)
+    await state.clear()
+
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        message.from_user.id, message.from_user.username
+    )
+    application, error = await sync_to_async(services.cancel_own_application)(
+        user.id, application_id, reason
+    )
+    if error == 'too_late':
+        await message.answer(
+            '⛔ Не успели — до мероприятия осталось слишком мало времени. '
+            'Обратись к тим-лидеру или менеджеру напрямую.'
+        )
+        return
+    if error:
+        await message.answer('⚠️ Не удалось отменить заявку — возможно, она уже неактивна.')
+        return
+    await message.answer(f'❌ Заявка на «{application.event.title}» отменена.')
 
 
 @router.message(Command('myapps'))
@@ -173,9 +307,9 @@ async def cb_rate(callback: CallbackQuery, state: FSMContext):
 
     await state.update_data(feedback_id=feedback.id)
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer(
-        'Спасибо! Хочешь добавить комментарий, или на этом всё?',
-        reply_markup=kb.feedback_comment_prompt(),
+    await answer_with_expiring_keyboard(
+        callback.message, 'Спасибо! Хочешь добавить комментарий, или на этом всё?',
+        kb.feedback_comment_prompt(),
     )
 
 

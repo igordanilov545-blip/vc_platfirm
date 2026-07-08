@@ -1,3 +1,6 @@
+import uuid
+
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
@@ -73,10 +76,10 @@ class User(AbstractBaseUser):
     last_event_at = models.DateTimeField(blank=True, null=True)
 
     # Кэшированная статистика
-    total_event_count = models.IntegerField(default=0)
-    season_event_count = models.IntegerField(default=0)
-    total_hours = models.IntegerField(default=0)
-    season_hours = models.IntegerField(default=0)
+    total_event_count = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    season_event_count = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    total_hours = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    season_hours = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     churn_score = models.FloatField(default=0)
 
     # Веб-аутентификация (доп. канал входа).
@@ -90,6 +93,10 @@ class User(AbstractBaseUser):
     # Подписка ТЛ/менеджера на уведомления о новых заявках (db.md, правило 7c).
     # При false карточка новой заявки не приходит, но заявка остаётся видна в разделах меро/«Все заявки».
     notify_applications = models.BooleanField(default=True)
+
+    # Токен для публичной ссылки «Скопировать опыт» — открывает read-only блок
+    # волонтёрского опыта без входа (раздел «Мой опыт»). Не угадывается перебором id.
+    experience_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
 
     objects = UserManager()
 
@@ -130,8 +137,8 @@ class Manager(models.Model):
     revoked_at = models.DateTimeField(blank=True, null=True)
     assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_managers')
 
-    total_events = models.IntegerField(default=0)
-    season_events = models.IntegerField(default=0)
+    total_events = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    season_events = models.IntegerField(default=0, validators=[MinValueValidator(0)])
 
     class Meta:
         db_table = 'managers'
@@ -147,8 +154,8 @@ class TeamLeader(models.Model):
     revoked_at = models.DateTimeField(blank=True, null=True)
     assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_team_leaders')
 
-    total_events = models.IntegerField(default=0)
-    season_events = models.IntegerField(default=0)
+    total_events = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    season_events = models.IntegerField(default=0, validators=[MinValueValidator(0)])
 
     class Meta:
         db_table = 'team_leaders'
@@ -163,10 +170,13 @@ class Organization(models.Model):
     description = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
-    events_count = models.IntegerField(default=0)
-    volunteers_count = models.IntegerField(default=0)
-    shifts_count = models.IntegerField(default=0)
-    internal_rating = models.SmallIntegerField(blank=True, null=True)
+    events_count = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    volunteers_count = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    shifts_count = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    internal_rating = models.SmallIntegerField(
+        blank=True, null=True,
+        validators=[MinValueValidator(0), MaxValueValidator(10)],
+    )
     comment = models.TextField(blank=True, null=True)
 
     class Meta:
@@ -239,6 +249,8 @@ class Location(models.Model):
     """Справочник локаций."""
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=255, unique=True)
+    map_link = models.URLField(blank=True, null=True, verbose_name='Ссылка на карту')
+    description = models.TextField(blank=True, null=True, verbose_name='Описание')
 
     class Meta:
         db_table = 'locations'
@@ -382,7 +394,16 @@ class Event(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     published_at = models.DateTimeField(blank=True, null=True)
-    people_helped = models.IntegerField(blank=True, null=True)
+    # Момент публикации поста в Telegram-канале — отдельно от published_at (анонс на
+    # платформе), для графика тайминга заявок с двумя отсечками (db.md, reports.md).
+    post_published_at = models.DateTimeField(blank=True, null=True)
+    # Момент отправки рассылки-оповещения подписанным волонтёрам (кнопка «Сделать
+    # рассылку» — отдельно от «Опубликовать»: публикация открывает подачу заявок,
+    # рассылка лишь шлёт уведомления и может быть выполнена позже/повторно).
+    broadcast_sent_at = models.DateTimeField(blank=True, null=True)
+    # Токен для публичной («поделиться») ссылки на мероприятие — доступной без входа.
+    public_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    people_helped = models.IntegerField(blank=True, null=True, validators=[MinValueValidator(0)])
     internal_comment = models.TextField(blank=True, null=True)
 
     letter = models.ForeignKey(ThankYouLetterTemplate, on_delete=models.SET_NULL, null=True, blank=True, related_name='events')
@@ -472,7 +493,7 @@ class EventShift(models.Model):
     day = models.DateField()
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
-    volunteer_needed = models.IntegerField(default=0)
+    volunteer_needed = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     recruit_status = models.CharField(max_length=20, choices=RECRUIT_STATUS_CHOICES, default='open')
     location = models.ForeignKey(Location, on_delete=models.SET_NULL, null=True, blank=True, related_name='event_shifts')
 
@@ -527,6 +548,7 @@ class Application(models.Model):
         ('new', 'Новая'),
         ('approved', 'Одобрена'),
         ('rejected', 'Отклонена/резерв'),
+        ('cancelled', 'Отменена волонтёром'),
     ]
 
     id = models.AutoField(primary_key=True)
@@ -556,6 +578,11 @@ class Application(models.Model):
 
     assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='processed_applications')
 
+    # Отмена заявки самим волонтёром (веб) — доступна только пока до мероприятия
+    # осталось больше const.late_cancel_hours; причина обязательна.
+    cancelled_at = models.DateTimeField(blank=True, null=True)
+    cancel_reason = models.TextField(blank=True, null=True)
+
     class Meta:
         db_table = 'applications'
         verbose_name = 'Заявка'
@@ -566,6 +593,59 @@ class Application(models.Model):
 
     def __str__(self):
         return f"Application #{self.id} for {self.event.title}"
+
+
+class ApplicationShiftDecision(models.Model):
+    """Решение (одобрить/резерв) по заявке — ОТДЕЛЬНО на каждую смену, если заявка
+    подана сразу на несколько (`Application.selected_shifts`). Нужно, чтобы принять/
+    отклонить заявку на одну смену не затрагивало статус той же заявки на другие
+    смены — раньше был единственный общий `Application.status` на все смены сразу."""
+    STATUS_CHOICES = [
+        ('new', 'Новая'),
+        ('approved', 'Одобрена'),
+        ('rejected', 'Отклонена/резерв'),
+    ]
+
+    id = models.AutoField(primary_key=True)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name='shift_decisions')
+    shift = models.ForeignKey(EventShift, on_delete=models.CASCADE, related_name='application_decisions')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
+    assigned_at = models.DateTimeField(blank=True, null=True)
+    assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='processed_shift_decisions')
+
+    class Meta:
+        db_table = 'application_shift_decisions'
+        unique_together = ('application', 'shift')
+        verbose_name = 'Решение по смене заявки'
+        verbose_name_plural = 'Решения по сменам заявок'
+
+
+class ApplicationChangeLog(models.Model):
+    """Лента изменений заявок мероприятия — заполняется при повторном Excel-импорте:
+    заявка идентифицируется как (человек, мероприятие), повторная загрузка не создаёт
+    дубль, а ОБНОВЛЯЕТ существующую запись, и здесь фиксируется, что именно изменилось
+    ('этот изменил заявку с такого-то наполнения на такое', 'этот отказался', 'эти
+    появились'). Тим-лидер/менеджер отмечает ленту прочитанной кнопкой — очищается
+    целиком. После завершения мероприятия лента больше не показывается (не очищается
+    физически, просто скрыта в UI — see event_detail context: is_finished)."""
+    KIND_CHOICES = [
+        ('changed', 'Изменена'),
+        ('withdrawn', 'Отозвана'),
+        ('new', 'Новая'),
+    ]
+
+    id = models.AutoField(primary_key=True)
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='application_change_logs')
+    application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name='change_logs', null=True, blank=True)
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES)
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'application_change_logs'
+        verbose_name = 'Запись об изменении заявки'
+        verbose_name_plural = 'Записи об изменениях заявок'
+        ordering = ['-created_at']
 
 
 class Participation(models.Model):
@@ -583,7 +663,7 @@ class Participation(models.Model):
     # Отработал ли волонтёр полную смену (db.md, правило 7a) — не влияет на часы,
     # отдельная отметка добросовестного участия, проставляется тим-лидером вместе со статусом.
     full_shift = models.BooleanField(default=False)
-    hours = models.IntegerField(default=0)
+    hours = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Отметка, что запрос "оцени мероприятие" уже отправлен (tg-bot.md §4.6) —
@@ -623,6 +703,23 @@ class ChurnHistory(models.Model):
         ]
 
 
+class EventComment(models.Model):
+    """Внутренние комментарии к мероприятию от менеджеров/тим-лидеров (не путать
+    с Event.internal_comment — то одно поле для заметок, а это лента реплик от
+    разных авторов). В UI показываются без подписи автора — только текст и дата."""
+    id = models.AutoField(primary_key=True)
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='comments')
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='authored_event_comments')
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'event_comments'
+        verbose_name = 'Комментарий к мероприятию'
+        verbose_name_plural = 'Комментарии к мероприятиям'
+        ordering = ['created_at']
+
+
 class UserComment(models.Model):
     """Внутренние комментарии к волонтёрам от менеджеров/тим-лидеров."""
     id = models.AutoField(primary_key=True)
@@ -643,7 +740,7 @@ class EventFeedback(models.Model):
     id = models.AutoField(primary_key=True)
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='feedbacks')
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='feedbacks')
-    rating = models.SmallIntegerField()  # 0-10
+    rating = models.SmallIntegerField(validators=[MinValueValidator(0), MaxValueValidator(10)])  # 0-10
     comment = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -709,6 +806,73 @@ class BotOutbox(models.Model):
         indexes = [
             models.Index(fields=['status', 'created_at']),
         ]
+
+
+class PendingButtonRemoval(models.Model):
+    """Очередь на снятие inline-клавиатуры у отправленных ботом сообщений.
+
+    Любое сообщение бота с inline-кнопками (подать заявку, одобрить/резерв, оценка
+    и т.д.) должно "остывать" — кнопки не должны быть нажимаемы бесконечно (пользователь
+    иначе может нажать на кнопку многомесячной давности с уже неактуальным состоянием).
+    При отправке такого сообщения хендлер создаёт здесь запись с `remove_at = now + N`;
+    периодический обходчик в `tg_bot/notifier.py` (тот же цикл, что и `bot_outbox`/feedback)
+    снимает разметку (`edit_message_reply_markup(reply_markup=None)`) и удаляет запись.
+    Переживает рестарт бота — расписание живёт в БД, а не в памяти процесса.
+    """
+    id = models.AutoField(primary_key=True)
+    chat_id = models.CharField(max_length=50, db_index=True)
+    message_id = models.BigIntegerField()
+    remove_at = models.DateTimeField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'pending_button_removals'
+        verbose_name = 'Отложенное снятие кнопок'
+        verbose_name_plural = 'Отложенные снятия кнопок'
+        indexes = [
+            models.Index(fields=['remove_at']),
+        ]
+
+
+class ExternalExperience(models.Model):
+    """Внешнее волонтёрское мероприятие, не учтённое в системе центра (раздел «Мой опыт»).
+
+    Хранится как простой текст в личном профиле волонтёра и НЕ участвует в статистике
+    (никаких Participation/часов/пересчётов) — это самозаявленный опыт «извне»."""
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='external_experiences')
+    title = models.CharField(max_length=255, verbose_name='Название')
+    date = models.DateField(blank=True, null=True, verbose_name='Дата')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'external_experiences'
+        verbose_name = 'Внешний опыт'
+        verbose_name_plural = 'Внешний опыт'
+        ordering = ['-date', '-created_at']
+
+    def __str__(self):
+        return f'{self.title} ({self.user_id})'
+
+
+class TelegramAuthToken(models.Model):
+    """Одноразовая ссылка для входа/авто-регистрации через Telegram-бота (браузерный
+    вход вне Mini App): пользователь открывает бота по deep-link `?start=weblogin`,
+    бот создаёт эту запись и присылает ссылку `/auth/tg/<token>/`, действующую 5 минут.
+    Переход по ссылке логинит пользователя в веб-сессию и помечает токен использованным."""
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='auth_tokens')
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+    used_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'telegram_auth_tokens'
+        verbose_name = 'Токен входа через Telegram'
+        verbose_name_plural = 'Токены входа через Telegram'
+
+    def is_valid(self) -> bool:
+        return self.used_at is None and timezone.now() < self.expires_at
 
 
 class UserRequirementException(models.Model):

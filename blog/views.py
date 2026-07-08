@@ -6,7 +6,7 @@ from django.contrib.auth import authenticate, login as auth_login, logout as aut
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
-from django.db.models import Avg
+from django.db.models import Avg, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -15,19 +15,22 @@ from django.views.decorators.csrf import csrf_exempt
 
 from blog.decorators import manager_required
 from blog.forms import (
-    ApplicationForm, ConstForm, EventShiftForm, EventFeedbackForm, EventForm,
-    ExcelImportForm, LoginForm, OrganizationForm, OrganizerForm,
+    ApplicationCancelForm, ApplicationForm, ConstForm, EventCommentForm, EventShiftForm, EventFeedbackForm, EventForm,
+    ExcelImportForm, ExternalExperienceForm, LocationForm, LoginForm, OrganizationForm, OrganizerForm,
     ParticipationForm, QuickCategoryForm, QuickLocationForm, QuickOrganizationForm, QuickOrganizerForm,
     RoleUsersForm, SeasonForm, UserCommentForm,
 )
 from blog.models import (
-    Application, Const, Event, EventCategory, EventShift, EventFeedback, EventStaff,
+    Application, ApplicationShiftDecision, Const, Event, EventCategory, EventComment, EventShift, EventFeedback, EventStaff,
     Location, Manager, Organization, Organizer, Participation, Season, TeamLeader, User,
 )
 from blog.services import import_applications as import_service
 from blog.services import notifications as notifications_service
 from blog.services import reports as reports_service
-from blog.services.applications import event_closing_checklist, process_application
+from blog.services import report_exports
+from blog.services.applications import (
+    can_cancel_application, cancel_application, event_closing_checklist, process_application,
+)
 from blog.services import roles as roles_service
 from blog.services.roles import (
     can_process_applications, has_extended_access_to_profile, is_manager, is_team_leader, role_label,
@@ -116,9 +119,24 @@ def quick_create_category(request):
 # Аутентификация
 # ---------------------------------------------------------------------------
 
+def _safe_next(request, default='dashboard'):
+    """Возвращает безопасный URL для редиректа после входа: только относительный
+    путь того же сайта (защита от open-redirect), иначе — дефолтный маршрут."""
+    from django.utils.http import url_has_allowed_host_and_scheme
+
+    next_url = request.POST.get('next') or request.GET.get('next')
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return next_url
+    return reverse(default)
+
+
 def login_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
+
+    from django.conf import settings
 
     form = LoginForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
@@ -129,15 +147,178 @@ def login_view(request):
         )
         if user is not None:
             auth_login(request, user)
-            return redirect('dashboard')
+            return redirect(_safe_next(request))
         messages.error(request, 'Неверный логин или пароль.')
 
-    return render(request, 'blog/login.html', {'form': form})
+    return render(request, 'blog/login.html', {
+        'form': form,
+        'next': request.GET.get('next', ''),
+        'tg_bot_username': settings.TG_BOT_USERNAME,
+        # Абсолютный URL коллбэка Login Widget — Telegram шлёт данные на data-auth-url.
+        'tg_widget_auth_url': request.build_absolute_uri(reverse('telegram_login_callback')),
+    })
+
+
+@csrf_exempt
+def telegram_login_callback(request):
+    """Коллбэк Telegram Login Widget (браузерный вход вне Mini App): виджет
+    редиректит сюда с подписанными полями пользователя. Проверяем HMAC и логиним.
+
+    `csrf_exempt` по тем же причинам, что и `webapp_auth`: подлинность подтверждается
+    подписью Telegram, а не CSRF-токеном (у клиента ещё нет сессии)."""
+    from blog.services.telegram_auth import validate_login_widget
+    from data_base import data_controller as dc
+
+    data = {k: v for k, v in request.GET.items() if k != 'next'}
+    payload = validate_login_widget(data)
+    if not payload or not payload.get('id'):
+        messages.error(request, 'Не удалось подтвердить вход через Telegram. Попробуйте ещё раз.')
+        return redirect('login')
+
+    user, _ = dc.get_or_create_user_by_telegram_id(payload['id'], payload.get('username'))
+    if user.status == 'blacklisted':
+        messages.error(request, 'Доступ ограничен — обратитесь к менеджеру центра.')
+        return redirect('login')
+
+    auth_login(request, user, backend='blog.auth_backends.TelegramWebAppBackend')
+    return redirect(_safe_next(request))
+
+
+def tg_link_login(request, token):
+    """Вход по одноразовой ссылке из бота (deep-link `?start=weblogin`): проверяем
+    токен (не использован и не старше 5 минут), логиним и гасим токен."""
+    from blog.services.web_auth import consume_auth_token
+
+    user = consume_auth_token(str(token))
+    if user is None:
+        messages.error(request, 'Ссылка для входа недействительна или устарела. Запросите новую в боте.')
+        return redirect('login')
+    if user.status == 'blacklisted':
+        messages.error(request, 'Доступ ограничен — обратитесь к менеджеру центра.')
+        return redirect('login')
+
+    auth_login(request, user, backend='blog.auth_backends.TelegramWebAppBackend')
+    return redirect(_safe_next(request))
 
 
 def logout_view(request):
     auth_logout(request)
     return redirect('login')
+
+
+# ---------------------------------------------------------------------------
+# Публичный (гостевой) контур — просмотр опубликованных мероприятий без входа
+# и публичная страница волонтёрского опыта (раздел 2 и 4).
+# ---------------------------------------------------------------------------
+
+def _published_active_events():
+    """Опубликованные и ещё не завершённые мероприятия (для гостевого списка и
+    списка активных). Сортировка — ближайшие предстоящие/идущие сверху."""
+    events = list(
+        Event.objects.filter(published_at__isnull=False)
+        .exclude(event_status='finished')
+        .select_related('location')
+        .prefetch_related('shifts')
+    )
+    rows = []
+    for event in events:
+        if event.compute_status() in ('passed', 'finished'):
+            continue
+        days = sorted(s.day for s in event.shifts.all())
+        event.first_day = days[0] if days else None
+        event.last_day = days[-1] if days else None
+        rows.append(event)
+    rows.sort(key=lambda e: (e.first_day is None, e.first_day or datetime.date.max))
+    return rows
+
+
+def public_event_list(request):
+    """Гостевой список идущих/предстоящих мероприятий — без входа. Кнопка «Подать
+    заявку» на карточке ведёт на вход (заявку подаёт только авторизованный)."""
+    return render(request, 'blog/public_event_list.html', {
+        'events': _published_active_events(),
+        'is_public': True,
+    })
+
+
+def public_event_detail(request, token):
+    """Публичная витрина мероприятия по ссылке «Поделиться» — read-only, без входа.
+    Доступна только для опубликованного меро."""
+    event = get_object_or_404(
+        Event.objects.select_related('location', 'organization'),
+        public_token=token, published_at__isnull=False,
+    )
+    shifts = list(event.shifts.select_related('location').order_by('day'))
+    return render(request, 'blog/public_event_detail.html', {
+        'event': event,
+        'shifts': shifts,
+        'is_public': True,
+        # После входа вернуть человека на подачу заявки именно на это меро.
+        'apply_next': reverse('application_create') + f'?event={event.id}',
+    })
+
+
+def public_experience(request, token):
+    """Публичная страница волонтёрского опыта по ссылке «Скопировать опыт» — без
+    входа, показывает только блок опыта (без ПДн/комментариев)."""
+    from blog.services.experience import build_experience
+
+    target = get_object_or_404(User, experience_token=token)
+    return render(request, 'blog/public_experience.html', {
+        'target': target,
+        'experience': build_experience(target),
+        'is_public': True,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Внешний опыт волонтёра (раздел «Мой опыт») — CRUD только для владельца профиля
+# ---------------------------------------------------------------------------
+
+@login_required
+def external_experience_add(request):
+    form = ExternalExperienceForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        exp = form.save(commit=False)
+        exp.user = request.user
+        exp.save()
+        messages.success(request, 'Внешнее мероприятие добавлено в ваш опыт.')
+        return modal_form_response(
+            request, None, None,
+            success_redirect=reverse('profile_detail', args=[request.user.id]) + '#experience',
+        )
+    return modal_form_response(
+        request, 'blog/external_experience_form.html',
+        {'form': form, 'title': 'Добавить внешнее мероприятие', 'submit_label': 'Добавить'},
+    )
+
+
+@login_required
+def external_experience_edit(request, exp_id):
+    from blog.models import ExternalExperience
+    exp = get_object_or_404(ExternalExperience, pk=exp_id, user=request.user)
+    form = ExternalExperienceForm(request.POST or None, instance=exp)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Запись обновлена.')
+        return modal_form_response(
+            request, None, None,
+            success_redirect=reverse('profile_detail', args=[request.user.id]) + '#experience',
+        )
+    return modal_form_response(
+        request, 'blog/external_experience_form.html',
+        {'form': form, 'title': 'Редактировать внешнее мероприятие', 'submit_label': 'Сохранить'},
+    )
+
+
+@login_required
+def external_experience_delete(request, exp_id):
+    from blog.models import ExternalExperience
+    exp = get_object_or_404(ExternalExperience, pk=exp_id, user=request.user)
+    if request.method == 'POST':
+        exp.delete()
+        messages.success(request, 'Запись удалена.')
+    return redirect(reverse('profile_detail', args=[request.user.id]) + '#experience')
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +374,7 @@ def webapp_auth(request):
     # Telegram-клиент), обычный веб-вход по логину/паролю — по-прежнему DENY против
     # clickjacking. Читается в TelegramWebAppFrameMiddleware.
     request.session['is_webapp_session'] = True
-    return JsonResponse({'redirect': reverse('dashboard')})
+    return JsonResponse({'redirect': _safe_next(request)})
 
 
 # ---------------------------------------------------------------------------
@@ -220,10 +401,37 @@ def dashboard(request):
 
 @login_required
 def event_list(request):
-    events = Event.objects.select_related('location', 'organization').prefetch_related('shifts').order_by('-created_at')
-    paginator = Paginator(events, 20)
-    page = paginator.get_page(request.GET.get('page'))
-    return render(request, 'blog/event_list.html', {'page_obj': page})
+    hide_passed = request.GET.get('hide_passed') == '1'
+    events = list(
+        Event.objects.select_related('location', 'organization').prefetch_related('shifts')
+    )
+
+    today = timezone.now().date()
+    rows = []
+    for event in events:
+        days = sorted(s.day for s in event.shifts.all())
+        first_day = days[0] if days else None
+        last_day = days[-1] if days else None
+        is_passed = event.compute_status() in ('passed', 'finished')
+        if hide_passed and is_passed:
+            continue
+        event.first_day = first_day
+        event.last_day = last_day
+        rows.append(event)
+
+    # Ранжирование по дате: сначала ближайшие предстоящие/идущие (по возрастанию даты),
+    # затем прошедшие меро в конце (тоже по возрастанию — недавно прошедшие выше старых).
+    # Меро без смен вообще — в самом конце.
+    rows.sort(key=lambda e: (
+        e.first_day is None,
+        e.compute_status() in ('passed', 'finished'),
+        e.first_day or datetime.date.max,
+    ))
+
+    return render(request, 'blog/event_list.html', {
+        'events': rows,
+        'hide_passed': hide_passed,
+    })
 
 
 @login_required
@@ -239,29 +447,80 @@ def event_detail(request, event_id):
     team_leads = event.staff.filter(staff_role='team_lead').select_related('user')
     categories = EventCategory.objects.filter(event_map__event=event).order_by('name')
     can_manage_applications = can_process_applications(request.user, event.id)
+    # Мероприятие завершено — заявки/явку менять больше нельзя нигде (ни в вебе, ни
+    # через клики по таблице); данные показываются только для просмотра.
+    is_finished = event.event_status == 'finished'
+
+    has_open_recruitment = any(s.recruit_status == 'open' for s in shifts)
+    my_active_application = Application.objects.filter(
+        user=request.user, event=event, status__in=['new', 'approved'],
+    ).first()
 
     context = {
         'event': event,
         'shifts': shifts,
         'team_leads': team_leads,
         'categories': categories,
+        'share_url': request.build_absolute_uri(
+            reverse('public_event_detail', args=[event.public_token])
+        ),
         'can_manage_applications': can_manage_applications,
+        'can_edit_applications': can_manage_applications and not is_finished,
+        'is_finished': is_finished,
         'is_manager': is_manager(request.user),
+        'comments': event.comments.all(),
+        'comment_form': EventCommentForm() if can_manage_applications else None,
+        'has_open_recruitment': has_open_recruitment,
+        'my_active_application': my_active_application,
     }
+
+    # Лента изменений по заявкам (повторный Excel-импорт: кто изменил/отказался/появился) —
+    # видна только пока меро не завершено; после завершения скрывается независимо от
+    # того, есть ли непрочитанные записи (см. ApplicationChangeLog).
+    if can_manage_applications and not is_finished:
+        context['application_change_logs'] = event.application_change_logs.all()
 
     if context['is_manager'] and event.event_status != 'finished':
         context['closing_checklist'] = event_closing_checklist(event)
 
     if can_manage_applications:
-        applications = event.applications.select_related('user').order_by('-created_at')
+        from blog.services.applications import ensure_shift_decisions
+
         needed = sum(s.volunteer_needed for s in shifts)
-        approved = event.applications.filter(status='approved').count()
         pending_count = event.applications.filter(status='new').count()
+
+        # Набор разбит по сменам (не общий плоский список — иначе заявка на несколько
+        # смен визуально "дублируется" при простом листинге всех applications разом).
+        # Статус решения (одобрена/резерв/новая) теперь per-shift через
+        # ApplicationShiftDecision — принять/отклонить заявку на одну смену не трогает
+        # её статус на другие смены той же заявки.
+        for app in event.applications.exclude(status='cancelled').prefetch_related('selected_shifts', 'event__shifts'):
+            ensure_shift_decisions(app)
+
+        shifts_with_applications = []
+        approved_total = 0
+        for shift in shifts:
+            decisions = (
+                ApplicationShiftDecision.objects.filter(shift=shift)
+                .exclude(application__status='cancelled')
+                .select_related('application', 'application__user')
+                .order_by('-application__created_at')
+            )
+            shift_approved = decisions.filter(status='approved').count()
+            approved_total += shift_approved
+            shifts_with_applications.append({
+                'shift': shift,
+                'decisions': decisions,
+                'approved_count': shift_approved,
+                'needed': shift.volunteer_needed,
+                'remaining': max(shift.volunteer_needed - shift_approved, 0),
+            })
+
         context.update({
-            'applications': applications,
+            'shifts_with_applications': shifts_with_applications,
             'needed': needed,
-            'approved_count': approved,
-            'remaining': max(needed - approved, 0),
+            'approved_count': approved_total,
+            'remaining': max(needed - approved_total, 0),
             'pending_count': pending_count,
         })
 
@@ -291,9 +550,44 @@ def event_detail(request, event_id):
             'feedback_count': event.feedbacks.count(),
             'my_feedback': my_feedback,
             'feedback_form': EventFeedbackForm() if not my_feedback else None,
+            # Отзывы волонтёров — видно, кто оставил (в отличие от внутренних
+            # комментариев менеджеров/ТЛ, которые показываются без подписи автора).
+            'feedbacks': event.feedbacks.select_related('author').order_by('-created_at'),
         })
 
     return render(request, 'blog/event_detail.html', context)
+
+
+@login_required
+def event_comment_add(request, event_id):
+    """Внутренний комментарий к мероприятию (менеджеры/тим-лидеры своего меро) —
+    показывается на странице меро без подписи автора, только текст и дата."""
+    event = get_object_or_404(Event, pk=event_id)
+    if not can_process_applications(request.user, event.id):
+        raise PermissionDenied('Нет прав оставлять комментарии к этому мероприятию.')
+
+    if request.method == 'POST':
+        form = EventCommentForm(request.POST)
+        if form.is_valid():
+            comment = form.save(commit=False)
+            comment.event = event
+            comment.author = request.user
+            comment.save()
+            messages.success(request, 'Комментарий добавлен.')
+    return redirect('event_detail', event_id=event.id)
+
+
+@login_required
+def event_change_log_mark_read(request, event_id):
+    """«Прочитано» по ленте изменений заявок мероприятия — полностью очищает её
+    (пользователь явно подтвердил, что ознакомился)."""
+    event = get_object_or_404(Event, pk=event_id)
+    if not can_process_applications(request.user, event.id):
+        raise PermissionDenied('Нет прав на это действие.')
+    if request.method == 'POST':
+        event.application_change_logs.all().delete()
+        messages.success(request, 'Изменения по заявкам отмечены как прочитанные.')
+    return redirect('event_detail', event_id=event.id)
 
 
 @login_required
@@ -360,17 +654,39 @@ def event_edit(request, event_id):
 
 @manager_required
 def event_publish(request, event_id):
-    """Публикация мероприятия: проставляет published_at и рассылает уведомление
-    подписанным волонтёрам через бота (architecture.md, сценарий 4.4)."""
+    """Публикация мероприятия: проставляет published_at — после этого открывается
+    подача заявок и меро попадает в список активных. Рассылку уведомлений НЕ делает —
+    это отдельная кнопка «Сделать рассылку» (см. event_broadcast)."""
     event = get_object_or_404(Event, pk=event_id)
     if request.method == 'POST':
         if event.published_at:
             messages.error(request, 'Мероприятие уже опубликовано.')
+        elif event.event_status == 'finished':
+            messages.error(request, 'Мероприятие уже завершено — публиковать его больше нельзя.')
         else:
             event.published_at = timezone.now()
             event.save(update_fields=['published_at'])
+            messages.success(request, 'Мероприятие опубликовано — подача заявок открыта.')
+    return redirect('event_detail', event_id=event.id)
+
+
+@manager_required
+def event_broadcast(request, event_id):
+    """Рассылка-оповещение о мероприятии подписанным волонтёрам (отдельно от публикации).
+    Доступна только после публикации; ставит уведомления в очередь бота."""
+    event = get_object_or_404(Event, pk=event_id)
+    if request.method == 'POST':
+        if not event.published_at:
+            messages.error(request, 'Сначала опубликуйте мероприятие — потом можно делать рассылку.')
+        elif event.event_status == 'finished':
+            messages.error(request, 'Мероприятие завершено — рассылка больше не нужна.')
+        elif event.broadcast_sent_at:
+            messages.error(request, 'Рассылка по этому мероприятию уже отправлена.')
+        else:
             notifications_service.broadcast_new_event(event)
-            messages.success(request, 'Мероприятие опубликовано, уведомления волонтёрам поставлены в очередь.')
+            event.broadcast_sent_at = timezone.now()
+            event.save(update_fields=['broadcast_sent_at'])
+            messages.success(request, 'Рассылка поставлена в очередь — уведомления уйдут подписанным волонтёрам.')
     return redirect('event_detail', event_id=event.id)
 
 
@@ -383,6 +699,8 @@ def shift_toggle_recruit(request, event_id, shift_id):
     shift = get_object_or_404(EventShift, pk=shift_id, event=event)
     if not can_process_applications(request.user, event.id):
         raise PermissionDenied('Нет прав управлять набором этого мероприятия.')
+    if event.event_status == 'finished':
+        raise PermissionDenied('Мероприятие завершено — набор менять больше нельзя.')
 
     if request.method == 'POST':
         shift.recruit_status = 'closed' if shift.recruit_status == 'open' else 'open'
@@ -496,6 +814,8 @@ def participation_set_status(request, participation_id):
     event = participation.event_day.event
     if not can_process_applications(request.user, event.id):
         raise PermissionDenied('Нет доступа к явке этого мероприятия.')
+    if event.event_status == 'finished':
+        return JsonResponse({'error': 'Мероприятие завершено — явку менять больше нельзя.'}, status=403)
 
     new_status = request.POST.get('status')
     if new_status not in dict(Participation.STATUS_CHOICES):
@@ -536,6 +856,8 @@ def participation_edit(request, participation_id):
     event = participation.event_day.event
     if not can_process_applications(request.user, event.id):
         raise PermissionDenied('Нет доступа к явке этого мероприятия.')
+    if event.event_status == 'finished':
+        raise PermissionDenied('Мероприятие завершено — явку менять больше нельзя.')
 
     form = ParticipationForm(request.POST or None, instance=participation)
     if request.method == 'POST' and form.is_valid():
@@ -566,11 +888,45 @@ def participation_edit(request, participation_id):
 # Заявки (Этап 4)
 # ---------------------------------------------------------------------------
 
+def _fill_application_shifts(application, selected_shifts):
+    if selected_shifts:
+        application.selected_shifts.set(selected_shifts)
+        application.shifts = ', '.join(s.day.isoformat() for s in selected_shifts.order_by('day'))
+    else:
+        # Смены не выбраны — считаем заявку на все открытые смены меро (одна смена
+        # или пользователь ничего не отмечал вручную).
+        all_shifts = application.event.shifts.filter(recruit_status='open').order_by('day')
+        application.selected_shifts.set(all_shifts)
+        application.shifts = 'Все смены'
+    application.save(update_fields=['shifts'])
+
+
 @login_required
 def application_create(request):
     """Заявка через веб: ФИО/Telegram/телефон берём из профиля авторизованного
-    пользователя — система их уже знает, вводить заново не нужно."""
-    form = ApplicationForm(request.POST or None, user=request.user)
+    пользователя — система их уже знает, вводить заново не нужно.
+
+    Дубли на веб-форме не допускаются (в отличие от Excel-импорта, db.md правило 3,
+    которое остаётся как есть): если у пользователя уже есть активная заявка
+    (new/approved) на выбранное меро, вместо создания второй — редирект на
+    редактирование существующей."""
+    event_id = request.POST.get('event') or request.GET.get('event')
+    if event_id:
+        # Подать заявку можно только на опубликованное мероприятие (кнопка «Опубликовать»
+        # открывает набор). До публикации меро не видно волонтёрам и заявки не принимаются.
+        target_event = Event.objects.filter(pk=event_id).first()
+        if target_event and not target_event.published_at:
+            messages.error(request, 'Мероприятие ещё не опубликовано — подать заявку нельзя.')
+            return redirect('dashboard')
+        existing = Application.objects.filter(
+            user=request.user, event_id=event_id, status__in=['new', 'approved'],
+        ).first()
+        if existing:
+            messages.info(request, 'Заявка на это мероприятие уже подана — вы можете отредактировать её.')
+            return redirect('application_edit', application_id=existing.id)
+
+    initial = {'event': event_id} if event_id and request.method != 'POST' else None
+    form = ApplicationForm(request.POST or None, initial=initial, user=request.user)
     if request.method == 'POST' and form.is_valid():
         application = form.save(commit=False)
         application.submitted_at = timezone.now()
@@ -580,17 +936,7 @@ def application_create(request):
         application.telegram_username = request.user.telegram_username
         application.phone = request.user.phone
         application.save()
-        selected_shifts = form.cleaned_data.get('selected_shifts')
-        if selected_shifts:
-            application.selected_shifts.set(selected_shifts)
-            application.shifts = ', '.join(s.day.isoformat() for s in selected_shifts.order_by('day'))
-        else:
-            # Смены не выбраны — считаем заявку на все открытые смены меро (одна смена
-            # или пользователь ничего не отмечал вручную).
-            all_shifts = application.event.shifts.filter(recruit_status='open').order_by('day')
-            application.selected_shifts.set(all_shifts)
-            application.shifts = 'Все смены'
-        application.save(update_fields=['shifts'])
+        _fill_application_shifts(application, form.cleaned_data.get('selected_shifts'))
         notifications_service.notify_application_submitted(application)
         messages.success(request, 'Заявка отправлена.')
         return modal_form_response(request, None, None, success_redirect=reverse('dashboard'))
@@ -598,6 +944,58 @@ def application_create(request):
         request, 'blog/application_form.html',
         {'form': form, 'title': 'Подать заявку на мероприятие', 'submit_label': 'Отправить заявку'},
         partial_template='blog/partials/_application_form_body.html',
+    )
+
+
+@login_required
+def application_edit(request, application_id):
+    """Редактирование своей заявки (смены/функция/роль) — вместо создания дубля."""
+    application = get_object_or_404(Application, pk=application_id, user=request.user)
+    if application.status not in ('new', 'approved'):
+        messages.error(request, 'Эта заявка уже неактивна и не может быть отредактирована.')
+        return redirect('dashboard')
+
+    form = ApplicationForm(request.POST or None, user=request.user, instance=application)
+    if request.method == 'POST' and form.is_valid():
+        application = form.save(commit=False)
+        application.save()
+        _fill_application_shifts(application, form.cleaned_data.get('selected_shifts'))
+        messages.success(request, 'Заявка обновлена.')
+        return modal_form_response(request, None, None, success_redirect=reverse('dashboard'))
+    return modal_form_response(
+        request, 'blog/application_form.html',
+        {'form': form, 'title': 'Редактировать заявку', 'submit_label': 'Сохранить', 'application': application},
+        partial_template='blog/partials/_application_form_body.html',
+    )
+
+
+@login_required
+def application_cancel(request, application_id):
+    """Отмена заявки волонтёром — только пока до ближайшей выбранной смены осталось
+    больше `const.late_cancel_hours`; причина обязательна. Правило — общее с ботом,
+    см. `blog.services.applications.can_cancel_application`."""
+    application = get_object_or_404(Application, pk=application_id, user=request.user)
+    can_cancel, reason_code, late_cancel_hours = can_cancel_application(application)
+
+    if not can_cancel:
+        if reason_code == 'inactive':
+            messages.error(request, 'Эта заявка уже неактивна.')
+        else:
+            messages.error(
+                request,
+                f'Отменить заявку можно не позднее чем за {late_cancel_hours:g} ч. до начала мероприятия — '
+                'обратитесь к тим-лидеру или менеджеру напрямую.',
+            )
+        return redirect('dashboard')
+
+    form = ApplicationCancelForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        cancel_application(application, form.cleaned_data['reason'])
+        messages.success(request, 'Заявка отменена.')
+        return modal_form_response(request, None, None, success_redirect=reverse('dashboard'))
+    return modal_form_response(
+        request, 'blog/application_cancel_form.html',
+        {'form': form, 'title': f'Отменить заявку на «{application.event.title}»', 'submit_label': 'Отменить заявку', 'application': application},
     )
 
 
@@ -620,6 +1018,8 @@ def application_process(request, application_id):
     application = get_object_or_404(Application.objects.select_related('event'), pk=application_id)
     if not can_process_applications(request.user, application.event_id):
         raise PermissionDenied('Нет прав на обработку заявок этого мероприятия.')
+    if application.event.event_status == 'finished':
+        raise PermissionDenied('Мероприятие завершено — заявки менять больше нельзя.')
 
     # Возвращаемся туда, откуда пришёл запрос (страница мероприятия или
     # список необработанных заявок), а не всегда на карточку мероприятия.
@@ -636,6 +1036,30 @@ def application_process(request, application_id):
 
     process_application(application, new_status, request.user)
     messages.success(request, f'Заявка #{application.id} обработана: {application.get_status_display()}.')
+    return redirect(redirect_url)
+
+
+@login_required
+def application_shift_process(request, application_id, shift_id):
+    """Принять/отклонить заявку ТОЛЬКО на одну смену (таблица набора на event_detail,
+    где заявка на несколько смен показывается в таблице каждой смены отдельно) —
+    остальные смены той же заявки не затрагиваются (ApplicationShiftDecision)."""
+    application = get_object_or_404(Application.objects.select_related('event'), pk=application_id)
+    shift = get_object_or_404(EventShift, pk=shift_id, event=application.event)
+    if not can_process_applications(request.user, application.event_id):
+        raise PermissionDenied('Нет прав на обработку заявок этого мероприятия.')
+    if application.event.event_status == 'finished':
+        raise PermissionDenied('Мероприятие завершено — заявки менять больше нельзя.')
+
+    redirect_url = reverse('event_detail', args=[application.event_id]) + '#applications'
+    new_status = request.POST.get('status')
+    if new_status not in ('approved', 'rejected'):
+        messages.error(request, 'Некорректный статус.')
+        return redirect(redirect_url)
+
+    from blog.services.applications import process_shift_decision
+    process_shift_decision(application, shift, new_status, request.user)
+    messages.success(request, f'Заявка на смену {shift.day.strftime("%d.%m.%Y")} обработана.')
     return redirect(redirect_url)
 
 
@@ -659,6 +1083,8 @@ def application_process_all(request, event_id=None):
     if event:
         if not can_process_applications(request.user, event.id):
             raise PermissionDenied('Нет прав на обработку заявок этого мероприятия.')
+        if event.event_status == 'finished':
+            raise PermissionDenied('Мероприятие завершено — заявки менять больше нельзя.')
     elif not is_manager(request.user):
         raise PermissionDenied('Нет прав на обработку заявок.')
 
@@ -726,12 +1152,13 @@ def import_commit(request):
     for row in rows:
         if row.get('submitted_at'):
             row['submitted_at'] = datetime.datetime.fromisoformat(row['submitted_at'])
-        row['create_new_user'] = not row.get('matched_user_id')
 
     result = import_service.commit_import(rows)
-    msg = f'Импортировано заявок: {result["created"]}.'
+    msg = f'Новых заявок: {result["created"]}.'
+    if result['updated']:
+        msg += f' Обновлено (изменилось содержание): {result["updated"]}.'
     if result['skipped']:
-        msg += f' Пропущено дубликатов: {result["skipped"]}.'
+        msg += f' Без изменений: {result["skipped"]}.'
     messages.success(request, msg)
     return redirect('event_list')
 
@@ -751,6 +1178,9 @@ def profile_detail(request, user_id):
     # Комментарии волонтёр не видит никогда, даже о себе (access-control.md, правило 6).
     can_see_comments = is_mgr or (is_team_leader(request.user) and has_extended and not is_owner)
 
+    from blog.services.experience import build_experience
+    experience = build_experience(target)
+
     context = {
         'target': target,
         'is_owner': is_owner,
@@ -758,6 +1188,12 @@ def profile_detail(request, user_id):
         'has_extended_access': has_extended,
         'can_see_comments': can_see_comments,
         'past_participations': target.participations.filter(status='attended').select_related('event_day__event').order_by('-event_day__day')[:50],
+        'experience': experience,
+        # Ссылка «Скопировать опыт» — публичная страница опыта по токену (раздел 4).
+        'experience_share_url': request.build_absolute_uri(
+            reverse('public_experience', args=[target.experience_token])
+        ),
+        'experience_form': ExternalExperienceForm() if is_owner else None,
     }
 
     # Публичный блок ТЛ/менеджера (reports.md: кол-во меро как ТЛ, дата назначения).
@@ -837,10 +1273,8 @@ def letter_view(request, user_id, event_id):
 @manager_required
 def pending_applications(request):
     applications = Application.objects.filter(status='new').select_related('event', 'user').order_by('created_at')
-    paginator = Paginator(applications, 30)
-    page = paginator.get_page(request.GET.get('page'))
     return render(request, 'blog/pending_applications.html', {
-        'page_obj': page,
+        'applications': applications,
         'pending_count': applications.count(),
     })
 
@@ -922,82 +1356,270 @@ def _report_period_range(request):
     return period, today - datetime.timedelta(days=30), today
 
 
+def _report_scope(request):
+    """Охват отчёта — два взаимоисключающих режима (reports_template.md «Выбор охвата»):
+    `scope=events` + `event_ids=1,2,3` — по явному списку мероприятий (даты игнорируются),
+    иначе — по периоду через `_report_period_range`. Возвращает
+    (scope_mode, period, date_from, date_to, event_ids)."""
+    raw_event_ids = request.GET.get('event_ids', '').strip()
+    if request.GET.get('scope') == 'events' and raw_event_ids:
+        event_ids = [int(x) for x in raw_event_ids.split(',') if x.strip().isdigit()]
+        if event_ids:
+            return 'events', None, None, None, event_ids
+
+    period, date_from, date_to = _report_period_range(request)
+    return 'period', period, date_from, date_to, None
+
+
 @manager_required
 def report_period(request):
-    period, date_from, date_to = _report_period_range(request)
+    scope_mode, period, date_from, date_to, event_ids = _report_scope(request)
+    compare_mode = request.GET.get('compare', 'adjacent')
+    if compare_mode not in ('adjacent', 'year_ago'):
+        compare_mode = 'adjacent'
 
-    span = (date_to - date_from).days
-    prev_to = date_from - datetime.timedelta(days=1)
-    prev_from = prev_to - datetime.timedelta(days=span)
+    prev_from = prev_to = None
+    if scope_mode == 'period':
+        prev_from, prev_to = reports_service.previous_period_range(date_from, date_to, compare_mode)
 
-    data = reports_service.period_report(date_from, date_to, prev_from, prev_to)
-    efficiency = reports_service.recruitment_efficiency(date_from, date_to)
-    staff = reports_service.staff_load(date_from, date_to)
-    weekly = reports_service.weekly_dynamics(date_from, date_to)
+    data = reports_service.period_report(date_from, date_to, prev_from, prev_to, event_ids=event_ids)
+    efficiency = reports_service.recruitment_efficiency(date_from, date_to, event_ids=event_ids)
+    staff = reports_service.staff_load(date_from, date_to, event_ids=event_ids)
+    weekly = reports_service.weekly_dynamics(date_from, date_to, event_ids=event_ids)
+    timing = reports_service.application_timing(date_from, date_to, event_ids=event_ids)
+    post_timing = reports_service.post_publication_timing(date_from, date_to, event_ids=event_ids)
+
+    def _event_brief(event):
+        first_shift_day = event.shifts.order_by('day').values_list('day', flat=True).first()
+        return {'id': event.id, 'title': event.title, 'date': first_shift_day.strftime('%d.%m.%Y') if first_shift_day else None}
+
+    selected_events = []
+    if event_ids:
+        selected_events = list(Event.objects.filter(id__in=event_ids).order_by('-created_at'))
+
+    recent_events = [_event_brief(e) for e in Event.objects.order_by('-created_at')[:15]]
 
     context = {
+        'scope_mode': scope_mode,
         'period': period,
         'date_from': date_from,
         'date_to': date_to,
+        'event_ids': event_ids or [],
+        'selected_events': selected_events,
+        'compare_mode': compare_mode,
         'report': data,
         'efficiency': efficiency,
         'staff': staff,
         'weekly': weekly,
+        'timing': timing,
+        'post_timing': post_timing,
+        'recent_events_json': recent_events,
+        'selected_events_json': [_event_brief(e) for e in selected_events],
     }
     return render(request, 'blog/report_period.html', context)
 
 
 @manager_required
-def report_period_export(request):
-    """Экспорт отчёта за период в CSV (Этап 5.4). Разделитель `;` и BOM —
-    чтобы файл корректно открывался в русском Excel."""
-    import csv
+def report_events_search(request):
+    """Поиск/список мероприятий для модалки выбора охвата «по мероприятиям»
+    (reports_template.md: последние 15 сразу, остальное — по запросу с поиском)."""
+    query = request.GET.get('q', '').strip()
+    events = Event.objects.order_by('-created_at')
+    if query:
+        events = events.filter(title__icontains=query)
+    events = events[:50]
+
+    def _brief(event):
+        day = event.shifts.order_by('day').values_list('day', flat=True).first()
+        return {'id': event.id, 'title': event.title, 'date': day.strftime('%d.%m.%Y') if day else None}
+
+    return JsonResponse({'events': [_brief(e) for e in events]})
+
+
+def _xlsx_response(workbook, filename):
     from django.http import HttpResponse
-
-    period, date_from, date_to = _report_period_range(request)
-    data = reports_service.period_report(date_from, date_to)
-    efficiency = reports_service.recruitment_efficiency(date_from, date_to)
-
-    response = HttpResponse(content_type='text/csv; charset=utf-8')
-    response['Content-Disposition'] = (
-        f'attachment; filename="report_{date_from}_{date_to}.csv"'
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
-    response.write('﻿')  # BOM для Excel
-    writer = csv.writer(response, delimiter=';')
-
-    writer.writerow(['Отчёт за период', f'{date_from} — {date_to}'])
-    writer.writerow([])
-    writer.writerow(['Показатель', 'Значение'])
-    writer.writerow(['Часов за период', data['total_hours']])
-    writer.writerow(['Мероприятий', data['total_events']])
-    writer.writerow(['Уникальных волонтёров', data['unique_volunteers']])
-    writer.writerow(['Закрытых смен', data['closed_shifts']])
-    writer.writerow(['Новых волонтёров', data['new_volunteers']])
-    writer.writerow(['Людей получили помощь', data['people_helped']])
-    writer.writerow([])
-    writer.writerow(['Воронка набора'])
-    writer.writerow(['Подано', data['funnel']['submitted']])
-    writer.writerow(['Одобрено', data['funnel']['approved']])
-    writer.writerow(['Отклонено/резерв', data['funnel']['rejected']])
-    writer.writerow(['Явка', data['funnel']['attended']])
-    writer.writerow(['Не пришли без предупреждения', data['funnel']['unexcused']])
-    writer.writerow(['Конверсия подал → явка, %', data['funnel']['conversion_pct']])
-    writer.writerow([])
-    writer.writerow(['Топ волонтёров по часам'])
-    writer.writerow(['Волонтёр', 'Telegram', 'Часы'])
-    for v in data['top_volunteers']:
-        writer.writerow([
-            f"{v['user__first_name'] or ''} {v['user__last_name'] or ''}".strip(),
-            v['user__telegram_username'] or '',
-            v['hours'],
-        ])
-    writer.writerow([])
-    writer.writerow(['Эффективность набора по мероприятиям'])
-    writer.writerow(['Мероприятие', 'Нужно', 'Явилось', '% закрытия'])
-    for e in efficiency:
-        writer.writerow([e['title'], e['needed'], e['attended'], e['pct_closed']])
-
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    workbook.save(response)
     return response
+
+
+@manager_required
+def report_period_export(request):
+    """Excel-отчёт за охват (.xlsx) — reports_template.md §2: агрегатные листы
+    (дублируют внутренний PDF) + сырые построчные листы «Заявки» и «Мероприятия»."""
+    scope_mode, period, date_from, date_to, event_ids = _report_scope(request)
+    compare_mode = request.GET.get('compare', 'adjacent')
+    if compare_mode not in ('adjacent', 'year_ago'):
+        compare_mode = 'adjacent'
+
+    wb = report_exports.build_period_workbook(date_from, date_to, event_ids, scope_mode, compare_mode)
+    filename = f"report_{date_from}_{date_to}.xlsx" if scope_mode == 'period' else "report_events.xlsx"
+    return _xlsx_response(wb, filename)
+
+
+@manager_required
+def report_period_pdf(request, variant):
+    """Печатный HTML-отчёт за охват (reports_template.md §1). variant='external' — §1A
+    (обезличенный, для руководства), 'internal' — §1B (с именами/операционкой).
+    Открывается как страница со стилями @media print и кнопкой «Скачать PDF»
+    (браузерная печать → Save as PDF; серверная PDF-библиотека не требуется)."""
+    if variant not in ('external', 'internal'):
+        raise PermissionDenied('Неизвестная вариация отчёта.')
+
+    scope_mode, period, date_from, date_to, event_ids = _report_scope(request)
+    compare_mode = request.GET.get('compare', 'adjacent')
+    if compare_mode not in ('adjacent', 'year_ago'):
+        compare_mode = 'adjacent'
+
+    prev_from = prev_to = None
+    if scope_mode == 'period':
+        prev_from, prev_to = reports_service.previous_period_range(date_from, date_to, compare_mode)
+
+    data = reports_service.period_report(date_from, date_to, prev_from, prev_to, event_ids=event_ids)
+    efficiency = reports_service.recruitment_efficiency(date_from, date_to, event_ids=event_ids)
+    timing = reports_service.application_timing(date_from, date_to, event_ids=event_ids)
+    post_timing = reports_service.post_publication_timing(date_from, date_to, event_ids=event_ids)
+
+    context = {
+        'variant': variant,
+        'is_internal': variant == 'internal',
+        'scope_mode': scope_mode,
+        'date_from': date_from,
+        'date_to': date_to,
+        'compare_mode': compare_mode,
+        'generated_at': timezone.now(),
+        'report': data,
+        'efficiency': efficiency,
+        'timing': timing,
+        'post_timing': post_timing,
+    }
+    if variant == 'internal':
+        context['staff'] = reports_service.staff_load(date_from, date_to, event_ids=event_ids)
+    return render(request, 'blog/report_pdf_period.html', context)
+
+
+@manager_required
+def report_event_export(request, event_id):
+    """Excel-отчёт по одному мероприятию (reports_template.md §4)."""
+    event = get_object_or_404(Event, pk=event_id)
+    wb = report_exports.build_event_workbook(event.id)
+    return _xlsx_response(wb, f"event_{event.id}_report.xlsx")
+
+
+@manager_required
+def report_event_pdf(request, event_id):
+    """Печатный HTML-отчёт по одному мероприятию (reports_template.md §4)."""
+    event = get_object_or_404(Event, pk=event_id)
+    rep = report_exports.event_report(event.id)
+    rep['generated_at'] = timezone.now()
+    return render(request, 'blog/report_pdf_event.html', rep)
+
+
+@manager_required
+def report_dobro_export(request):
+    """Excel-отчёт простановки часов на Добро.ру (reports_template.md §5):
+    листы «По ссылке», «По человеку», «Сводка»."""
+    scope_mode, period, date_from, date_to, event_ids = _report_scope(request)
+    show_logged = request.GET.get('show_logged') == '1'
+    wb = report_exports.build_dobro_workbook(date_from, date_to, event_ids, show_logged)
+    return _xlsx_response(wb, "dobro_ru_logging.xlsx")
+
+
+@manager_required
+def report_bundle(request):
+    """Комплексный отчёт (reports_template.md §3): ZIP из внешнего PDF, внутреннего PDF
+    (как самостоятельные .html для печати) и Excel-книги. PDF отдаём печатным HTML,
+    т.к. серверной PDF-библиотеки в проекте нет (по договорённости)."""
+    import io
+    import zipfile
+    from django.http import HttpResponse
+    from django.template.loader import render_to_string
+
+    scope_mode, period, date_from, date_to, event_ids = _report_scope(request)
+    compare_mode = request.GET.get('compare', 'adjacent')
+    if compare_mode not in ('adjacent', 'year_ago'):
+        compare_mode = 'adjacent'
+
+    prev_from = prev_to = None
+    if scope_mode == 'period':
+        prev_from, prev_to = reports_service.previous_period_range(date_from, date_to, compare_mode)
+    data = reports_service.period_report(date_from, date_to, prev_from, prev_to, event_ids=event_ids)
+    efficiency = reports_service.recruitment_efficiency(date_from, date_to, event_ids=event_ids)
+    timing = reports_service.application_timing(date_from, date_to, event_ids=event_ids)
+    post_timing = reports_service.post_publication_timing(date_from, date_to, event_ids=event_ids)
+
+    base_ctx = {
+        'scope_mode': scope_mode, 'date_from': date_from, 'date_to': date_to,
+        'compare_mode': compare_mode, 'generated_at': timezone.now(),
+        'report': data, 'efficiency': efficiency, 'timing': timing, 'post_timing': post_timing,
+        'standalone': True,
+    }
+    external_html = render_to_string('blog/report_pdf_period.html', {
+        **base_ctx, 'variant': 'external', 'is_internal': False,
+    }, request=request)
+    internal_html = render_to_string('blog/report_pdf_period.html', {
+        **base_ctx, 'variant': 'internal', 'is_internal': True,
+        'staff': reports_service.staff_load(date_from, date_to, event_ids=event_ids),
+    }, request=request)
+
+    wb = report_exports.build_period_workbook(date_from, date_to, event_ids, scope_mode, compare_mode)
+    xlsx_buf = io.BytesIO()
+    wb.save(xlsx_buf)
+
+    scope_slug = f'{date_from}_{date_to}' if scope_mode == 'period' else 'events'
+
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(f'report_external_{scope_slug}.html', external_html)
+        zf.writestr(f'report_internal_{scope_slug}.html', internal_html)
+        zf.writestr(f'report_{scope_slug}.xlsx', xlsx_buf.getvalue())
+    zip_buf.seek(0)
+
+    response = HttpResponse(zip_buf.getvalue(), content_type='application/zip')
+    response['Content-Disposition'] = f'attachment; filename="report_bundle_{scope_slug}.zip"'
+    return response
+
+
+@manager_required
+def location_list(request):
+    locations = Location.objects.order_by('name')
+    return render(request, 'blog/location_list.html', {'locations': locations})
+
+
+@manager_required
+def location_create(request):
+    form = LocationForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Локация создана.')
+        return modal_form_response(
+            request, None, None,
+            success_redirect=reverse('location_list'),
+        )
+    return modal_form_response(
+        request, 'blog/location_form.html',
+        {'form': form, 'title': 'Новая локация'},
+    )
+
+
+@manager_required
+def location_edit(request, location_id):
+    location = get_object_or_404(Location, pk=location_id)
+    form = LocationForm(request.POST or None, instance=location)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Локация обновлена.')
+        return modal_form_response(
+            request, None, None,
+            success_redirect=reverse('location_list'),
+        )
+    return modal_form_response(
+        request, 'blog/location_form.html',
+        {'form': form, 'title': f'Редактировать: {location.name}', 'submit_label': 'Сохранить'},
+    )
 
 
 @manager_required
@@ -1056,17 +1678,20 @@ def organization_detail(request, org_id):
 @manager_required
 def user_list(request):
     users = User.objects.order_by('-created_at')
-    paginator = Paginator(users, 30)
+    paginator = Paginator(users, 40)
     page = paginator.get_page(request.GET.get('page'))
 
     manager_ids = set(Manager.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
     team_leader_ids = set(TeamLeader.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
 
-    return render(request, 'blog/user_list.html', {
+    context = {
         'page_obj': page,
         'manager_ids': manager_ids,
         'team_leader_ids': team_leader_ids,
-    })
+    }
+    if is_ajax(request):
+        return render(request, 'blog/partials/_user_list_rows.html', context)
+    return render(request, 'blog/user_list.html', context)
 
 
 @manager_required

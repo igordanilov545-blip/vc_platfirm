@@ -37,6 +37,7 @@
     <a href="{% url 'user_list' %}" class="nav-link {% if request.resolver_match.url_name == 'user_list' %}active{% endif %}" title="Пользователи"><span class="icon">👥</span><span class="nav-label"> Пользователи</span></a>
     <a href="{% url 'organizations_list' %}" class="nav-link {% if request.resolver_match.url_name in 'organizations_list,organization_detail,organization_create' %}active{% endif %}" title="Организации"><span class="icon">🏢</span><span class="nav-label"> Организации</span></a>
     <a href="{% url 'organizer_list' %}" class="nav-link {% if request.resolver_match.url_name in 'organizer_list,organizer_detail,organizer_create' %}active{% endif %}" title="Организаторы"><span class="icon">🤝</span><span class="nav-label"> Организаторы</span></a>
+    <a href="{% url 'location_list' %}" class="nav-link {% if request.resolver_match.url_name in 'location_list,location_create,location_edit' %}active{% endif %}" title="Локации"><span class="icon">📍</span><span class="nav-label"> Локации</span></a>
     <a href="{% url 'report_period' %}" class="nav-link {% if request.resolver_match.url_name == 'report_period' %}active{% endif %}" title="Отчёты"><span class="icon">📊</span><span class="nav-label"> Отчёты</span></a>
     {% endif %}
 
@@ -51,6 +52,20 @@
         <a href="{% url 'logout' %}" class="nav-link" title="Выйти"><span class="icon">🚪</span><span class="nav-label"> Выйти</span></a>
     </div>
 </aside>
+{% endif %}
+
+{% if not user.is_authenticated %}
+{# Гостевой хедер: статус «Гость» слева (клик → вход) + кнопка «Войти». #}
+<header class="guest-header" style="display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:0.6rem 1rem; border-bottom:1px solid var(--border, #e5e7eb);">
+    <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" style="display:flex; align-items:center; gap:0.5rem; text-decoration:none; color:inherit;" title="Войти в аккаунт">
+        <span class="avatar-placeholder" style="width:2rem; height:2rem; display:inline-flex; align-items:center; justify-content:center; border-radius:50%;">👤</span>
+        <span style="display:flex; flex-direction:column; line-height:1.1;">
+            <span style="font-weight:600;">Гость</span>
+            <span style="font-size:0.78rem; color:var(--text-secondary);">Войти в аккаунт</span>
+        </span>
+    </a>
+    <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" class="btn">Войти</a>
+</header>
 {% endif %}
 
 <div class="page-wrapper" style="{% if not user.is_authenticated %}margin-left:0;{% endif %}">
@@ -282,9 +297,119 @@
     // ======================================================================
     function initEventForm(root) {
         initCategoryChips(root);
+        initShiftChips(root);
         initDatepickers(root);
         initTimepickers(root);
         initApplicationForm(root);
+    }
+
+    // ======================================================================
+    // Смены в форме создания мероприятия — тот же визуальный язык, что у чипов
+    // категорий: уже добавленные смены показываются чипами с крестиком (убрать),
+    // поля ввода ниже собирают одну новую смену за раз (дата — обычный календарь
+    // data-datepicker, время — data-timepicker, как везде в проекте), кнопка "＋"
+    // добавляет её в список. Итоговый массив уходит на сервер JSON-строкой в
+    // shifts_json — сервер валидирует каждую смену отдельно (EventForm._build_shift_forms).
+    // Вызывается ДО initDatepickers/initTimepickers, чтобы найти исходные поля по
+    // data-shift-day/-start/-end, пока их ещё не подменили виджеты.
+    // ======================================================================
+    function initShiftChips(root) {
+        root.querySelectorAll('[data-shift-chips-json]').forEach(function (jsonInput) {
+            if (jsonInput.dataset.shiftInit) return;
+            jsonInput.dataset.shiftInit = '1';
+
+            var wrap = jsonInput.parentNode;
+            var selectedRow = wrap.querySelector('[data-shift-chips-selected]');
+            var dayInput = wrap.querySelector('[data-shift-day]');
+            var startInput = wrap.querySelector('[data-shift-start]');
+            var endInput = wrap.querySelector('[data-shift-end]');
+            var neededInput = wrap.querySelector('[data-shift-needed]');
+            var addBtn = wrap.querySelector('[data-shift-add]');
+            var errorBox = wrap.querySelector('[data-shift-error]');
+            if (!selectedRow || !dayInput || !addBtn) return;
+
+            // initDatepickers удаляет исходный dayInput и кладёт рядом hidden с
+            // реальным значением — запоминаем родителя сейчас, пока dayInput жив.
+            var dayFieldParent = dayInput.parentNode;
+
+            var shifts = [];
+            try { shifts = JSON.parse(jsonInput.value || '[]'); } catch (e) { shifts = []; }
+
+            function showError(text) {
+                if (!errorBox) return;
+                errorBox.textContent = text;
+                errorBox.hidden = !text;
+            }
+
+            function render() {
+                selectedRow.innerHTML = '';
+                if (!shifts.length) {
+                    var empty = document.createElement('span');
+                    empty.className = 'cat-chips-empty';
+                    empty.textContent = 'Смены ещё не добавлены';
+                    selectedRow.appendChild(empty);
+                }
+                shifts.forEach(function (s, idx) {
+                    var chip = document.createElement('span');
+                    chip.className = 'cat-chip ' + shiftChipColor(idx);
+                    chip.innerHTML = '<span class="cat-chip-label"></span>' +
+                        '<button type="button" class="cat-chip-x" aria-label="Убрать смену">×</button>';
+                    chip.querySelector('.cat-chip-label').textContent =
+                        s.dayLabel + ' ' + s.start_time + '–' + s.end_time +
+                        (s.volunteer_needed ? ' (' + s.volunteer_needed + ' чел.)' : '');
+                    chip.querySelector('.cat-chip-x').addEventListener('click', function () {
+                        shifts.splice(idx, 1);
+                        sync();
+                    });
+                    selectedRow.appendChild(chip);
+                });
+                jsonInput.value = JSON.stringify(shifts.map(function (s) {
+                    return { day: s.day, start_time: s.start_time, end_time: s.end_time, volunteer_needed: s.volunteer_needed };
+                }));
+            }
+
+            function sync() { render(); }
+
+            var CHIP_COLORS = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7'];
+            function shiftChipColor(idx) { return 'cat-chip--' + CHIP_COLORS[idx % CHIP_COLORS.length]; }
+
+            function dpFmtLabel(iso) {
+                var p = iso.split('-');
+                return p[2] + '.' + p[1] + '.' + p[0];
+            }
+
+            addBtn.addEventListener('click', function () {
+                // Значение даты берём из hidden-поля, которое initDatepickers создаёт
+                // рядом с исходным input (сам input к этому моменту уже удалён из DOM).
+                var dayHidden = dayFieldParent.querySelector('input[type=hidden]');
+                var dayIso = dayHidden ? dayHidden.value : '';
+                if (!dayIso) {
+                    showError('Выберите дату смены в календаре.');
+                    return;
+                }
+                var start = (startInput.value || '').trim();
+                var end = (endInput.value || '').trim();
+                if (!/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end)) {
+                    showError('Укажите время начала и окончания смены.');
+                    return;
+                }
+                if (end <= start) {
+                    showError('Время окончания должно быть позже времени начала.');
+                    return;
+                }
+                showError('');
+                shifts.push({
+                    day: dayIso,
+                    dayLabel: dpFmtLabel(dayIso),
+                    start_time: start,
+                    end_time: end,
+                    volunteer_needed: Math.max(0, parseInt(neededInput.value, 10) || 0),
+                });
+                sync();
+            });
+
+            render();
+        });
     }
 
     // ======================================================================
@@ -381,11 +506,15 @@
             wrap.appendChild(cal);
 
             // Скрытое поле — реальное значение для сабмита формы (исходное имя
-            // Django-поля); видимый input больше не участвует в сабмите.
+            // Django-поля); видимый input больше не участвует в сабмите. Значение
+            // ставим сразу в dpToISO(selected) (а не только когда input.value был
+            // непустым) — календарь и так визуально показывает `selected` как текущий
+            // выбор (сегодня по умолчанию), так что скрытое поле должно ему соответствовать,
+            // иначе форма не отправляет дату, пока пользователь явно не кликнет по дню.
             var hidden = document.createElement('input');
             hidden.type = 'hidden';
             hidden.name = input.name;
-            hidden.value = input.value ? dpToISO(selected) : '';
+            hidden.value = dpToISO(selected);
             input.removeAttribute('name');
             input.remove();
             wrap.appendChild(hidden);
@@ -565,7 +694,8 @@
                         avail.querySelector('.cat-chip-label').textContent = opt.textContent;
                         avail.addEventListener('click', function () {
                             opt.selected = true;
-                            if (searchInput) searchInput.value = '';
+                            // Поиск намеренно не сбрасывается — можно добавить несколько
+                            // элементов подряд, продолжая фильтровать по тому же запросу.
                             render();
                         });
                         availableRow.appendChild(avail);
@@ -586,12 +716,12 @@
             }
 
             if (searchInput) {
-                // Фильтрация запускается через 2с после того, как пользователь перестал
+                // Фильтрация запускается через 1.5с после того, как пользователь перестал
                 // печатать — не при каждом нажатии клавиши.
                 var debounceTimer = null;
                 searchInput.addEventListener('input', function () {
                     clearTimeout(debounceTimer);
-                    debounceTimer = setTimeout(render, 2000);
+                    debounceTimer = setTimeout(render, 1500);
                 });
             }
 
@@ -602,6 +732,156 @@
     }
 
     initEventForm(document);
+
+    // ======================================================================
+    // Сортировка таблиц по клику на заголовок — три режима, переключаются по
+    // циклу: обычный (без сортировки, порядок с сервера) → по возрастанию →
+    // по убыванию → обычный. Стрелка показывается в правом нижнем углу активного
+    // заголовка. Значение для сравнения берётся из data-sort-value на <td>
+    // (если есть) или из текстового содержимого ячейки; сравнение — числовое,
+    // если все значения колонки — числа, иначе алфавитное (localeCompare).
+    // ======================================================================
+    function initSortableTables(root) {
+        root.querySelectorAll('table[data-sortable]').forEach(function (table) {
+            if (table.dataset.sortInit) return;
+            table.dataset.sortInit = '1';
+
+            var headers = Array.prototype.slice.call(table.querySelectorAll('thead th[data-sort-key]'));
+            var tbody = table.querySelector('tbody');
+            if (!tbody) return;
+
+            var nextOrigIndex = 0;
+            function getRows() {
+                var rows = Array.prototype.filter.call(tbody.querySelectorAll('tr'), function (tr) {
+                    return tr.querySelector('td');
+                });
+                // Строки, подгруженные позже (infinite scroll), ещё не имеют origIndex —
+                // присваиваем по мере появления, чтобы "обычный" режим сортировки не
+                // ломался и продолжал восстанавливать порядок с сервера.
+                rows.forEach(function (row) {
+                    if (row.dataset.origIndex === undefined) row.dataset.origIndex = nextOrigIndex++;
+                });
+                return rows;
+            }
+
+            function cellValue(row, index) {
+                var cell = row.children[index];
+                if (!cell) return '';
+                return cell.hasAttribute('data-sort-value') ? cell.getAttribute('data-sort-value') : cell.textContent.trim();
+            }
+
+            function clearIndicators(except) {
+                headers.forEach(function (h) {
+                    if (h !== except) { h.removeAttribute('data-sort-dir'); }
+                });
+            }
+
+            headers.forEach(function (th, index) {
+                th.classList.add('sortable-th');
+                th.addEventListener('click', function () {
+                    var current = th.getAttribute('data-sort-dir');
+                    var next = current === 'asc' ? 'desc' : (current === 'desc' ? null : 'asc');
+                    clearIndicators(th);
+                    if (next) th.setAttribute('data-sort-dir', next);
+                    else th.removeAttribute('data-sort-dir');
+
+                    var rows = getRows();
+                    if (!next) {
+                        // Обычный режим — восстановить исходный порядок с сервера.
+                        rows.sort(function (a, b) {
+                            return (+a.dataset.origIndex || 0) - (+b.dataset.origIndex || 0);
+                        });
+                    } else {
+                        var allNumeric = rows.every(function (r) {
+                            var v = cellValue(r, index);
+                            return v === '' || !isNaN(parseFloat(v));
+                        });
+                        rows.sort(function (a, b) {
+                            var va = cellValue(a, index), vb = cellValue(b, index);
+                            var cmp;
+                            if (allNumeric) {
+                                cmp = (parseFloat(va) || 0) - (parseFloat(vb) || 0);
+                            } else {
+                                cmp = va.localeCompare(vb, 'ru');
+                            }
+                            return next === 'asc' ? cmp : -cmp;
+                        });
+                    }
+                    rows.forEach(function (r) { tbody.appendChild(r); });
+                });
+            });
+
+            // Запоминаем исходный порядок строк, чтобы можно было вернуться к нему.
+            getRows();
+
+            // Опциональная колонка с сортировкой по умолчанию при загрузке страницы.
+            var defaultTh = headers.find(function (h) { return h.hasAttribute('data-sort-default'); });
+            if (defaultTh) {
+                defaultTh.setAttribute('data-sort-dir', defaultTh.getAttribute('data-sort-default'));
+                defaultTh.dispatchEvent(new Event('click'));
+            }
+        });
+    }
+    initSortableTables(document);
+
+    // ======================================================================
+    // Постепенная подгрузка списков вместо пролистывания по стрелочкам:
+    // таблица с data-infinite-scroll="/url/" содержит <tbody data-rows
+    // data-next-page="2"> (partial с сервера при первом рендере уже отдаёт номер
+    // следующей страницы). "Часовой" элемент вставляется сразу после таблицы —
+    // при его появлении в зоне видимости (IntersectionObserver) подгружается
+    // следующая страница через fetch(url?page=N) и новые <tr> переносятся в конец
+    // текущего <tbody>. Останавливается сам, когда сервер перестаёт присылать
+    // data-next-page (последняя страница).
+    // ======================================================================
+    function initInfiniteScroll(root) {
+        root.querySelectorAll('table[data-infinite-scroll]').forEach(function (table) {
+            if (table.dataset.infiniteInit) return;
+            table.dataset.infiniteInit = '1';
+
+            var baseUrl = table.getAttribute('data-infinite-scroll');
+            var loading = false;
+
+            var sentinel = document.createElement('div');
+            sentinel.className = 'infinite-scroll-sentinel';
+            table.parentNode.insertBefore(sentinel, table.nextSibling);
+
+            function currentBody() { return table.querySelector('tbody[data-rows]'); }
+
+            function loadNext() {
+                var body = currentBody();
+                var nextPage = body ? body.getAttribute('data-next-page') : '';
+                if (!nextPage || loading) return;
+                loading = true;
+
+                var url = baseUrl + (baseUrl.indexOf('?') === -1 ? '?' : '&') + 'page=' + nextPage;
+                fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    .then(function (r) { return r.text(); })
+                    .then(function (html) {
+                        var temp = document.createElement('table');
+                        temp.innerHTML = html;
+                        var newBody = temp.querySelector('tbody[data-rows]');
+                        var target = currentBody();
+                        if (newBody && target) {
+                            target.setAttribute('data-next-page', newBody.getAttribute('data-next-page') || '');
+                            while (newBody.firstChild) target.appendChild(newBody.firstChild);
+                        } else if (target) {
+                            target.removeAttribute('data-next-page');
+                        }
+                        loading = false;
+                    })
+                    .catch(function () { loading = false; });
+            }
+
+            var observer = new IntersectionObserver(function (entries) {
+                entries.forEach(function (entry) {
+                    if (entry.isIntersecting) loadNext();
+                });
+            }, { rootMargin: '400px' });
+            observer.observe(sentinel);
+        });
+    }
+    initInfiniteScroll(document);
 
     // ======================================================================
     // Подтверждение перед назначением/снятием роли (настройки): показывает
@@ -636,6 +916,7 @@
             createUrl: '{% url "quick_create_location" %}',
             fields: [
                 { name: 'name', label: 'Название локации', type: 'text', required: true },
+                { name: 'map_link', label: 'Ссылка на карту', type: 'text', required: false },
             ],
         },
         organization: {
@@ -813,6 +1094,42 @@
     });
     document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape' && !quickAddBackdrop.hidden) closeQuickAddModal();
+    });
+
+    // ======================================================================
+    // Копирование в буфер: кнопка «Поделиться» ([data-share-url]) копирует ссылку,
+    // кнопка «Скопировать опыт» ([data-copy-text]) — заранее собранный текст со
+    // ссылкой. Показывает короткое подтверждение прямо на кнопке.
+    // ======================================================================
+    function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text);
+        }
+        // Фолбэк для не-HTTPS/старых браузеров.
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+        return Promise.resolve();
+    }
+
+    function flashCopied(btn) {
+        var original = btn.textContent;
+        btn.textContent = '✅ Скопировано';
+        btn.disabled = true;
+        setTimeout(function () { btn.textContent = original; btn.disabled = false; }, 1600);
+    }
+
+    document.addEventListener('click', function (event) {
+        var btn = event.target.closest('[data-share-url], [data-copy-text]');
+        if (!btn) return;
+        event.preventDefault();
+        var text = btn.getAttribute('data-share-url') || btn.getAttribute('data-copy-text') || '';
+        copyToClipboard(text).then(function () { flashCopied(btn); });
     });
 </script>
 </body>

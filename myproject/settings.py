@@ -17,6 +17,9 @@ DEBUG = env('DEBUG')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=[])
 
 TG_BOT_TOKEN = env('TG_BOT_TOKEN', default='')
+# Username бота без ведущего @ — нужен для Telegram Login Widget и deep-link
+# «войти через бота» (t.me/<username>?start=weblogin) на странице входа.
+TG_BOT_USERNAME = env('TG_BOT_USERNAME', default='')
 # Публичный HTTPS-адрес сайта — нужен для кнопки запуска Mini App из бота
 # (Telegram требует HTTPS; для локальной разработки — туннель вроде ngrok/cloudflared).
 WEBAPP_URL = env('WEBAPP_URL', default='')

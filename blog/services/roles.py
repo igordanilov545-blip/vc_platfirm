@@ -102,7 +102,11 @@ def users_with_role(kind: str):
 @transaction.atomic
 def assign_role(kind: str, users, assigned_by: User):
     """Выдаёт роль `kind` каждому из `users`, у кого её ещё нет. Возвращает список
-    реально затронутых пользователей (уже имевших роль — пропускаются молча)."""
+    реально затронутых пользователей (уже имевших роль — пропускаются молча).
+
+    Менеджеру автоматически выдаётся и роль тим-лидера (если её ещё нет) — чтобы
+    менеджера можно было назначать тим-лидером на мероприятия наравне с обычными
+    тим-лидерами (правило: у менеджера всегда есть профиль ТЛ)."""
     model = ROLE_MODELS[kind]
     already_active = set(
         model.objects.filter(revoked_at__isnull=True, user__in=users).values_list('user_id', flat=True)
@@ -113,6 +117,8 @@ def assign_role(kind: str, users, assigned_by: User):
             continue
         model.objects.create(user=user, assigned_by=assigned_by)
         affected.append(user)
+        if kind == 'manager' and not TeamLeader.objects.filter(user=user, revoked_at__isnull=True).exists():
+            TeamLeader.objects.create(user=user, assigned_by=assigned_by)
     return affected
 
 

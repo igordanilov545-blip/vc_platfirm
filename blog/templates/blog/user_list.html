@@ -3,37 +3,32 @@
 {% block content %}
 <h1>Пользователи</h1>
 
+<div class="card">
+    <input type="search" id="users-search" placeholder="Поиск по имени, telegram…" style="margin:0;">
+</div>
+
 <div class="card" style="padding:0; overflow:hidden;">
-    <table class="responsive-table">
+    <table class="responsive-table" data-sortable data-infinite-scroll="{% url 'user_list' %}" id="users-table">
         <thead>
-            <tr><th>Имя</th><th>Telegram</th><th>Роль</th><th>Статус</th><th class="num">Часов всего</th></tr>
+            <tr><th data-sort-key="name">Имя</th><th data-sort-key="tg">Telegram</th><th data-sort-key="role">Роль</th><th data-sort-key="status">Статус</th><th data-sort-key="hours" class="num">Часов всего</th></tr>
         </thead>
-        <tbody>
-        {% for u in page_obj %}
-            <tr data-href="{% url 'profile_detail' u.id %}">
-                <td data-label="Имя">{{ u.full_name }}</td>
-                <td data-label="Telegram">{{ u.telegram_username|default:"—" }}</td>
-                <td data-label="Роль">
-                    {% if u.id in manager_ids %}<span class="pill info"><span class="dot"></span>Менеджер</span>
-                    {% elif u.id in team_leader_ids %}<span class="pill info"><span class="dot"></span>Тим-лидер</span>
-                    {% else %}<span class="pill neutral"><span class="dot"></span>Волонтёр</span>{% endif %}
-                </td>
-                <td data-label="Статус">
-                    {% if u.status == 'blacklisted' %}<span class="pill danger"><span class="dot"></span>В блэклисте</span>
-                    {% elif u.status == 'inactive' %}<span class="pill warning"><span class="dot"></span>Неактивен</span>
-                    {% else %}<span class="pill success"><span class="dot"></span>Активен</span>{% endif %}
-                </td>
-                <td data-label="Часов всего" class="num mono">{{ u.total_hours }}</td>
-            </tr>
-        {% empty %}
-            <tr><td colspan="5">Пользователей пока нет.</td></tr>
-        {% endfor %}
-        </tbody>
+        {% include 'blog/partials/_user_list_rows.html' %}
     </table>
 </div>
 
-<div>
-    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">← Назад</a>{% endif %}
-    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Вперёд →</a>{% endif %}
-</div>
+<script>
+(function () {
+    var searchInput = document.getElementById('users-search');
+    var debounceTimer = null;
+    searchInput.addEventListener('input', function () {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+            var query = searchInput.value.trim().toLowerCase();
+            document.querySelectorAll('#users-table tbody tr[data-href]').forEach(function (row) {
+                row.hidden = !!query && row.getAttribute('data-search').toLowerCase().indexOf(query) === -1;
+            });
+        }, 1500);
+    });
+})();
+</script>
 {% endblock %}

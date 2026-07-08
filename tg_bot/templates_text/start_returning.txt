@@ -1,0 +1,3 @@
+👋 <b>С возвращением, {name}!</b>
+
+Быстрые команды: /events · /myapps · /stats · /help

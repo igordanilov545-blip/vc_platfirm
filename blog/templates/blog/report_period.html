@@ -1,41 +1,145 @@
 {% extends 'blog/base.html' %}
 {% block title %}Отчёт за период{% endblock %}
 {% block content %}
+{{ recent_events_json|json_script:"recent-events-data" }}
+{{ selected_events_json|json_script:"selected-events-data" }}
 <h1>Отчёт за период</h1>
 
 <div class="card daterange-card">
-    <div class="daterange-layout">
-        <div class="daterange-presets">
-            <button type="button" class="daterange-preset {% if period == 'yesterday' %}active{% endif %}" data-preset="yesterday">Вчера</button>
-            <button type="button" class="daterange-preset {% if period == 'today' %}active{% endif %}" data-preset="today">Сегодня</button>
-            <button type="button" class="daterange-preset {% if period == 'week' %}active{% endif %}" data-preset="week">Неделя</button>
-            <button type="button" class="daterange-preset {% if period == 'month' %}active{% endif %}" data-preset="month">Месяц</button>
-            <button type="button" class="daterange-preset {% if period == 'season' %}active{% endif %}" data-preset="season">Этот сезон</button>
-            <button type="button" class="daterange-preset {% if period == 'last_season' %}active{% endif %}" data-preset="last_season">Прошлый сезон</button>
+    <div class="scope-toggle">
+        <button type="button" class="scope-toggle-btn {% if scope_mode == 'period' %}active{% endif %}" data-scope="period">По периоду</button>
+        <button type="button" class="scope-toggle-btn {% if scope_mode == 'events' %}active{% endif %}" data-scope="events">По мероприятиям</button>
+    </div>
+
+    <div id="scope-period-panel" {% if scope_mode == 'events' %}style="display:none;"{% endif %}>
+        <div class="daterange-layout">
+            <div class="daterange-presets">
+                <button type="button" class="daterange-preset {% if period == 'yesterday' %}active{% endif %}" data-preset="yesterday">Вчера</button>
+                <button type="button" class="daterange-preset {% if period == 'today' %}active{% endif %}" data-preset="today">Сегодня</button>
+                <button type="button" class="daterange-preset {% if period == 'week' %}active{% endif %}" data-preset="week">Неделя</button>
+                <button type="button" class="daterange-preset {% if period == 'month' %}active{% endif %}" data-preset="month">Месяц</button>
+                <button type="button" class="daterange-preset {% if period == 'season' %}active{% endif %}" data-preset="season">Этот сезон</button>
+                <button type="button" class="daterange-preset {% if period == 'last_season' %}active{% endif %}" data-preset="last_season">Прошлый сезон</button>
+            </div>
+            <div class="daterange-main">
+                <div class="daterange-summary">
+                    <span class="pill neutral"><span class="dot"></span><span class="mono" id="daterange-label">{{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }}</span></span>
+                    <div class="daterange-buttons">
+                        <label class="compare-select">
+                            Сравнение:
+                            <select id="compare-mode">
+                                <option value="adjacent" {% if compare_mode == 'adjacent' %}selected{% endif %}>Смежный период</option>
+                                <option value="year_ago" {% if compare_mode == 'year_ago' %}selected{% endif %}>Год назад</option>
+                            </select>
+                        </label>
+                        <a href="{% url 'report_period_export' %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}&compare={{ compare_mode }}" class="btn secondary">⬇ Экспорт в Excel</a>
+                        <button type="button" class="btn" id="daterange-apply">Применить</button>
+                    </div>
+                </div>
+                <div class="daterange-calendars" id="daterange-calendars"></div>
+            </div>
         </div>
-        <div class="daterange-main">
-            <div class="daterange-summary">
-                <span class="pill neutral"><span class="dot"></span><span class="mono" id="daterange-label">{{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }}</span></span>
+    </div>
+
+    <div id="scope-events-panel" {% if scope_mode != 'events' %}style="display:none;"{% endif %}>
+        <div class="events-scope-main">
+            <div class="events-scope-summary">
+                <span class="pill neutral"><span class="dot"></span><span class="mono" id="events-scope-label">{{ selected_events|length }} мероприятий выбрано</span></span>
                 <div class="daterange-buttons">
-                    <a href="{% url 'report_period_export' %}?date_from={{ date_from|date:'Y-m-d' }}&date_to={{ date_to|date:'Y-m-d' }}" class="btn secondary">⬇ Экспорт в CSV</a>
-                    <button type="button" class="btn" id="daterange-apply">Применить</button>
+                    <button type="button" class="btn secondary" id="events-pick-btn">Выбрать мероприятия…</button>
+                    <a href="#" id="events-export-link" class="btn secondary">⬇ Экспорт в Excel</a>
+                    <button type="button" class="btn" id="events-apply">Применить</button>
                 </div>
             </div>
-            <div class="daterange-calendars" id="daterange-calendars"></div>
+            <div class="events-chip-list" id="events-chip-list">
+                {% for e in selected_events %}
+                <span class="event-chip" data-id="{{ e.id }}">{{ e.title }} <button type="button" class="chip-remove" data-id="{{ e.id }}">×</button></span>
+                {% empty %}
+                <span class="events-chip-empty">Мероприятия не выбраны — нажмите «Выбрать мероприятия…».</span>
+                {% endfor %}
+            </div>
         </div>
     </div>
 </div>
+
+<!-- Модалка выбора мероприятий: последние 15 сразу видны скруглёнными карточками,
+     поиск + полный список открываются по ссылке «Показать все» (reports_template.md). -->
+<div class="events-modal-backdrop" id="events-modal-backdrop">
+    <div class="events-modal">
+        <div class="events-modal-head">
+            <h3>Выбор мероприятий</h3>
+            <button type="button" class="events-modal-close" id="events-modal-close">×</button>
+        </div>
+        <input type="text" id="events-modal-search" class="events-modal-search" placeholder="Поиск мероприятия по названию…">
+        <div class="events-modal-body" id="events-modal-body"></div>
+        <div class="events-modal-foot">
+            <span id="events-modal-count" class="mono"></span>
+            <button type="button" class="btn" id="events-modal-done">Готово</button>
+        </div>
+    </div>
+</div>
+
+<!-- Панель выбора вида отчёта: все выгружаемые форматы (reports_template.md §1–5).
+     href проставляются JS-функцией из текущего охвата (период/мероприятия + сравнение). -->
+<div class="card report-formats-card">
+    <h3 style="margin-top:0;">Скачать / открыть отчёт</h3>
+    <p style="opacity:0.7; font-size:0.85rem; margin-top:-4px;">Все форматы строятся по текущему охвату, выбранному выше.</p>
+    <div class="report-formats">
+        <a class="report-format" data-report="pdf-external" href="#">
+            <span class="rf-icon">🌐</span>
+            <span class="rf-body"><b>Внешний PDF</b><small>Для руководства — только агрегаты, без имён</small></span>
+        </a>
+        <a class="report-format" data-report="pdf-internal" href="#">
+            <span class="rf-icon">🔒</span>
+            <span class="rf-body"><b>Внутренний PDF</b><small>Для менеджеров — с именами, нагрузкой, churn</small></span>
+        </a>
+        <a class="report-format" data-report="excel" href="#">
+            <span class="rf-icon">📊</span>
+            <span class="rf-body"><b>Excel-отчёт</b><small>Агрегаты + сырые листы «Заявки» и «Мероприятия»</small></span>
+        </a>
+        <a class="report-format" data-report="bundle" href="#">
+            <span class="rf-icon">📦</span>
+            <span class="rf-body"><b>Комплексный (ZIP)</b><small>Внешний + внутренний PDF + Excel одним архивом</small></span>
+        </a>
+        <a class="report-format" data-report="dobro" href="#">
+            <span class="rf-icon">✅</span>
+            <span class="rf-body"><b>Простановка часов Добро.ру</b><small>Excel: по ссылке / по человеку / сводка</small></span>
+        </a>
+    </div>
+    <p class="note-events-only" style="display:none; opacity:0.7; font-size:0.85rem;">
+        Отчёт по конкретному мероприятию доступен из карточки мероприятия и в таблицах ниже.
+    </p>
+</div>
+
+<style>
+    .report-formats-card { }
+    .report-formats { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-top: 12px; }
+    .report-format {
+        display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md, 12px); text-decoration: none; color: var(--text-primary); transition: background 0.1s, border-color 0.1s;
+    }
+    .report-format:hover { background: var(--bg-card-hover); border-color: var(--accent); }
+    .report-format.disabled { opacity: 0.45; }
+    .report-format .rf-icon { font-size: 22px; flex-shrink: 0; }
+    .report-format .rf-body { display: flex; flex-direction: column; }
+    .report-format .rf-body b { font-size: 13px; }
+    .report-format .rf-body small { color: var(--text-tertiary); font-size: 11.5px; }
+</style>
 
 <style>
     /* Date Range Picker (brandbook §6.3, стиль Booking.com) — календарь виден постоянно,
        не сворачивается сам по себе; закрывается только применение диапазона.
        Общие стили самого календаря (.cal/.cal-grid/.day) — в nexus.css, переиспользуются
        и одиночным date-picker'ом (data-datepicker) для полей даты в формах. */
-    .daterange-card { padding: 0; overflow: visible; }
+    .daterange-card { padding: 16px; overflow: visible; }
+    .scope-toggle { display: flex; gap: 4px; margin-bottom: 14px; background: var(--bg-card-hover); border-radius: var(--radius-sm); padding: 4px; width: fit-content; }
+    .scope-toggle-btn { border: none; background: transparent; padding: 7px 16px; border-radius: calc(var(--radius-sm) - 2px); font-family: inherit; font-size: 13px; cursor: pointer; color: var(--text-secondary); }
+    .scope-toggle-btn.active { background: var(--accent); color: var(--accent-text-on); font-weight: 600; }
+
     .daterange-layout { display: flex; gap: 0; }
     .daterange-presets {
         display: flex; flex-direction: column; gap: 4px; min-width: 160px; flex-shrink: 0;
-        padding: 16px 12px; border-right: 1px solid var(--border-subtle);
+        padding: 4px 12px 4px 0; border-right: 1px solid var(--border-subtle);
     }
     .daterange-preset {
         text-align: left; background: transparent; border: none; border-radius: var(--radius-sm);
@@ -43,36 +147,98 @@
     }
     .daterange-preset:hover { background: var(--bg-card-hover); }
     .daterange-preset.active { background: var(--accent); color: var(--accent-text-on); font-weight: 600; }
-    .daterange-main { flex: 1; padding: 16px 20px; min-width: 0; }
+    .daterange-main { flex: 1; padding: 4px 0 4px 20px; min-width: 0; }
     .daterange-summary { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
-    .daterange-buttons { display: flex; gap: 8px; }
+    .daterange-buttons { display: flex; gap: 8px; align-items: center; }
     .daterange-calendars { display: flex; gap: 24px; flex-wrap: wrap; }
+    .compare-select { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+    .compare-select select { font-family: inherit; font-size: 13px; padding: 6px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); background: var(--bg-card); color: var(--text-primary); }
 
     @media (max-width: 900px) {
         .daterange-layout { flex-direction: column; }
         .daterange-presets {
             flex-direction: row; overflow-x: auto; border-right: none;
-            border-bottom: 1px solid var(--border-subtle); min-width: 0;
+            border-bottom: 1px solid var(--border-subtle); min-width: 0; padding: 0 0 12px;
         }
         .daterange-preset { flex-shrink: 0; white-space: nowrap; }
+        .daterange-main { padding: 12px 0 0; }
     }
     @media (max-width: 720px) {
         .daterange-calendars { flex-direction: column; }
     }
-</style>
 
-<style>
+    /* Режим «по мероприятиям» */
+    .events-scope-main { display: flex; flex-direction: column; gap: 12px; }
+    .events-scope-summary { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+    .events-chip-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .events-chip-empty { color: var(--text-tertiary); font-size: 13px; }
+    .event-chip {
+        display: inline-flex; align-items: center; gap: 6px; background: var(--bg-card-hover);
+        border-radius: 999px; padding: 6px 8px 6px 14px; font-size: 13px;
+    }
+    .chip-remove { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); font-size: 16px; line-height: 1; padding: 2px 4px; }
+    .chip-remove:hover { color: var(--text-primary); }
+
+    /* Модалка выбора мероприятий */
+    .events-modal-backdrop {
+        display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 200;
+        align-items: center; justify-content: center; padding: 20px;
+    }
+    .events-modal-backdrop.open { display: flex; }
+    .events-modal {
+        background: var(--bg-card); border-radius: var(--radius-md); width: 100%; max-width: 640px;
+        max-height: 82vh; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .events-modal-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border-subtle); }
+    .events-modal-head h3 { margin: 0; }
+    .events-modal-close { border: none; background: transparent; font-size: 22px; cursor: pointer; color: var(--text-tertiary); }
+    .events-modal-search {
+        margin: 14px 20px 0; padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);
+        background: var(--bg-card-hover); color: var(--text-primary); font-family: inherit; font-size: 13px;
+    }
+    .events-modal-body { flex: 1; overflow-y: auto; padding: 14px 20px 20px; display: flex; flex-direction: column; gap: 8px; }
+    .event-pick-card {
+        display: flex; justify-content: space-between; align-items: center; gap: 10px;
+        border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 10px 14px;
+        cursor: pointer; transition: background 0.1s;
+    }
+    .event-pick-card:hover { background: var(--bg-card-hover); }
+    .event-pick-card.selected { border-color: var(--accent); background: var(--bg-card-hover); }
+    .event-pick-title { font-weight: 500; }
+    .event-pick-date { font-size: 12px; color: var(--text-tertiary); font-family: var(--font-mono); white-space: nowrap; }
+    .event-pick-check { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--border-subtle); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+    .event-pick-card.selected .event-pick-check { background: var(--accent); border-color: var(--accent); color: var(--accent-text-on); }
+    .events-modal-foot { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-top: 1px solid var(--border-subtle); }
+
     /* Графики отчёта: десатурированная палитра линий, отдельная от UI-акцента (brandbook §6.5). */
     .hbar-row { display: grid; grid-template-columns: 160px 1fr 70px; align-items: center; gap: 0.6rem; margin-bottom: 6px; }
     .hbar-track { background: var(--bg-card-hover); border-radius: 4px; height: 22px; }
     .hbar-fill { background: var(--text-tertiary); border-radius: 4px; height: 100%; min-width: 2px; }
     .hbar-label { font-size: 0.85rem; text-align: right; color: var(--text-secondary); }
     .hbar-value { font-size: 0.85rem; font-weight: 600; font-family: var(--font-mono); }
-    .cols { display: flex; align-items: flex-end; gap: 6px; height: 160px; padding-top: 0.5rem; }
-    .col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
+    .cols { display: flex; align-items: flex-end; gap: 6px; height: 160px; padding-top: 0.5rem; overflow-x: auto; }
+    .col { flex: 1; min-width: 34px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
     .col .bar { width: 100%; max-width: 48px; background: var(--text-tertiary); border-radius: 4px 4px 0 0; min-height: 2px; }
     .col .val { font-size: 0.78rem; font-weight: 600; margin-bottom: 2px; font-family: var(--font-mono); }
     .col .lbl { font-size: 0.72rem; color: var(--text-tertiary); margin-top: 4px; text-align: center; white-space: nowrap; }
+
+    /* Поэтапная воронка — сужающиеся полосы */
+    .funnel { display: flex; flex-direction: column; gap: 4px; margin: 0.75rem 0; }
+    .funnel-stage { display: flex; flex-direction: column; align-items: center; }
+    .funnel-bar {
+        background: linear-gradient(90deg, var(--accent), var(--text-tertiary));
+        color: var(--accent-text-on); border-radius: 6px; padding: 10px 0; font-weight: 600;
+        font-family: var(--font-mono); font-size: 0.9rem; transition: width 0.2s;
+    }
+    .funnel-label { font-size: 0.75rem; color: var(--text-tertiary); margin-top: 3px; margin-bottom: 6px; }
+
+    .category-metric-toggle { display: flex; gap: 4px; margin-bottom: 10px; background: var(--bg-card-hover); border-radius: var(--radius-sm); padding: 3px; width: fit-content; }
+    .category-metric-toggle button { border: none; background: transparent; padding: 6px 12px; border-radius: calc(var(--radius-sm) - 2px); font-family: inherit; font-size: 12px; cursor: pointer; color: var(--text-secondary); }
+    .category-metric-toggle button.active { background: var(--accent); color: var(--accent-text-on); font-weight: 600; }
+
+    .timing-chart { position: relative; height: 220px; border-left: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); margin: 10px 0; overflow-x: auto; }
+    .timing-line { position: absolute; bottom: 0; left: 0; height: 2px; background: var(--text-tertiary); }
+    .timing-point { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); transform: translate(-50%, 50%); }
 </style>
 
 <div class="stat-grid">
@@ -87,11 +253,22 @@
 {% if report.comparison %}
 <div class="card">
     <h3>Сравнение с прошлым периодом</h3>
-    <p>Δ часов: {{ report.comparison.hours_delta }}</p>
-    <p>Δ мероприятий: {{ report.comparison.events_delta }}</p>
-    <p>Δ волонтёров: {{ report.comparison.volunteers_delta }}</p>
-    <p>Δ новых волонтёров: {{ report.comparison.new_volunteers_delta }}</p>
+    <p style="opacity:0.7; font-size:0.85rem;">
+        База сравнения: {{ report.comparison.date_from|date:"d.m.Y" }} — {{ report.comparison.date_to|date:"d.m.Y" }}
+        ({% if compare_mode == 'year_ago' %}тот же период год назад{% else %}смежный период той же длины{% endif %})
+    </p>
+    <table class="responsive-table">
+        <thead><tr><th>Метрика</th><th class="num">Δ абс.</th><th class="num">Δ %</th></tr></thead>
+        <tbody>
+            <tr><td data-label="Метрика">Часы</td><td data-label="Δ абс." class="num mono">{{ report.comparison.hours_delta }}</td><td data-label="Δ %" class="num mono">{{ report.comparison.hours_delta_pct|default:"—" }}{% if report.comparison.hours_delta_pct %}%{% endif %}</td></tr>
+            <tr><td data-label="Метрика">Мероприятия</td><td data-label="Δ абс." class="num mono">{{ report.comparison.events_delta }}</td><td data-label="Δ %" class="num mono">{{ report.comparison.events_delta_pct|default:"—" }}{% if report.comparison.events_delta_pct %}%{% endif %}</td></tr>
+            <tr><td data-label="Метрика">Уникальных волонтёров</td><td data-label="Δ абс." class="num mono">{{ report.comparison.volunteers_delta }}</td><td data-label="Δ %" class="num mono">{{ report.comparison.volunteers_delta_pct|default:"—" }}{% if report.comparison.volunteers_delta_pct %}%{% endif %}</td></tr>
+            <tr><td data-label="Метрика">Новых волонтёров</td><td data-label="Δ абс." class="num mono">{{ report.comparison.new_volunteers_delta }}</td><td data-label="Δ %" class="num mono">{{ report.comparison.new_volunteers_delta_pct|default:"—" }}{% if report.comparison.new_volunteers_delta_pct %}%{% endif %}</td></tr>
+        </tbody>
+    </table>
 </div>
+{% elif scope_mode == 'events' %}
+<div class="card"><p style="opacity:0.7;">Сравнение с прошлым периодом недоступно в режиме «по мероприятиям» — период не задан.</p></div>
 {% endif %}
 
 <div class="card" style="padding:0; overflow:hidden;">
@@ -101,7 +278,7 @@
         <tbody>
         {% for v in report.top_volunteers %}
             <tr data-href="{% url 'profile_detail' v.user__id %}">
-                <td data-label="Волонтёр">{{ v.user__first_name }} {{ v.user__last_name }} ({{ v.user__telegram_username|default:"—" }})</td>
+                <td data-label="Волонтёр">{{ v.name }} ({{ v.user__telegram_username|default:"—" }})</td>
                 <td data-label="Часы" class="num mono">{{ v.hours }}</td>
             </tr>
         {% empty %}
@@ -112,37 +289,60 @@
 </div>
 
 <div class="card">
-    <h3>Воронка набора</h3>
-    {% widthratio report.funnel.approved report.funnel.submitted|default:1 100 as approved_pct %}
-    {% widthratio report.funnel.attended report.funnel.submitted|default:1 100 as attended_pct %}
-    {% widthratio report.funnel.unexcused report.funnel.submitted|default:1 100 as unexcused_pct %}
-    <div class="hbar-row">
-        <span class="hbar-label">Подано</span>
-        <div class="hbar-track"><div class="hbar-fill" style="width:{% if report.funnel.submitted %}100{% else %}0{% endif %}%;"></div></div>
-        <span class="hbar-value">{{ report.funnel.submitted }}</span>
+    <h3>Распределение по категориям</h3>
+    <p style="opacity:0.7; font-size:0.85rem;">Высота столбца — выбранная метрика по категории мероприятий.</p>
+    <div class="category-metric-toggle" id="category-metric-toggle">
+        <button type="button" data-metric="volunteers" class="active">Волонтёры</button>
+        <button type="button" data-metric="hours">Часы</button>
+        <button type="button" data-metric="events">Мероприятия</button>
     </div>
-    <div class="hbar-row">
-        <span class="hbar-label">Одобрено</span>
-        <div class="hbar-track"><div class="hbar-fill" style="width:{{ approved_pct }}%;"></div></div>
-        <span class="hbar-value">{{ report.funnel.approved }}</span>
+    <div class="cols" id="category-chart">
+        {% for c in report.category_breakdown %}
+        <div class="col" data-volunteers="{{ c.volunteers }}" data-hours="{{ c.hours|default:0 }}" data-events="{{ c.events }}" title="{{ c.name|default:'Без категории' }}">
+            <span class="val" data-value="{{ c.volunteers }}">{{ c.volunteers }}</span>
+            <div class="bar"></div>
+            <span class="lbl">{{ c.name|default:"Без категории"|truncatechars:14 }}</span>
+        </div>
+        {% empty %}
+        <p style="opacity:0.6;">Нет данных.</p>
+        {% endfor %}
     </div>
-    <div class="hbar-row">
-        <span class="hbar-label">Явка</span>
-        <div class="hbar-track"><div class="hbar-fill" style="width:{{ attended_pct }}%;"></div></div>
-        <span class="hbar-value">{{ report.funnel.attended }}</span>
-    </div>
-    <div class="hbar-row">
-        <span class="hbar-label">Не пришли (без пред.)</span>
-        <div class="hbar-track"><div class="hbar-fill" style="width:{{ unexcused_pct }}%;"></div></div>
-        <span class="hbar-value">{{ report.funnel.unexcused }}</span>
-    </div>
-    <p style="margin-top:0.75rem;">Конверсия подал → явка: <b>{{ report.funnel.conversion_pct }}%</b></p>
 </div>
 
 <div class="card">
+    <h3>Воронка набора</h3>
+    <div class="funnel" id="funnel-chart">
+        <div class="funnel-stage">
+            <div class="funnel-bar" style="width:100%;">Подано: {{ report.funnel.submitted }}</div>
+        </div>
+        <div class="funnel-stage">
+            <div class="funnel-bar" id="funnel-approved" data-value="{{ report.funnel.approved }}" data-total="{{ report.funnel.submitted }}">Одобрено: {{ report.funnel.approved }}</div>
+        </div>
+        <div class="funnel-stage">
+            <div class="funnel-bar" id="funnel-attended" data-value="{{ report.funnel.attended }}" data-total="{{ report.funnel.submitted }}">Явка: {{ report.funnel.attended }}</div>
+        </div>
+        <div class="funnel-stage">
+            <div class="funnel-bar" id="funnel-unexcused" data-value="{{ report.funnel.unexcused }}" data-total="{{ report.funnel.submitted }}">Неявка без предупреждения: {{ report.funnel.unexcused }}</div>
+        </div>
+    </div>
+    <table class="responsive-table" style="margin-top:0.5rem;">
+        <thead><tr><th>Этап</th><th class="num">Значение</th></tr></thead>
+        <tbody>
+            <tr><td data-label="Этап">Подано заявок</td><td data-label="Значение" class="num mono">{{ report.funnel.submitted }}</td></tr>
+            <tr><td data-label="Этап">Одобрено</td><td data-label="Значение" class="num mono">{{ report.funnel.approved }}</td></tr>
+            <tr><td data-label="Этап">Отклонено (резерв)</td><td data-label="Значение" class="num mono">{{ report.funnel.rejected }}</td></tr>
+            <tr><td data-label="Этап">Явка</td><td data-label="Значение" class="num mono">{{ report.funnel.attended }}</td></tr>
+            <tr><td data-label="Этап">Неявка без предупреждения</td><td data-label="Значение" class="num mono">{{ report.funnel.unexcused }}</td></tr>
+        </tbody>
+    </table>
+    <p style="margin-top:0.75rem;">Конверсия подал → явка: <b>{{ report.funnel.conversion_pct }}%</b></p>
+</div>
+
+{% if weekly %}
+<div class="card">
     <h3>Динамика по неделям</h3>
     <p style="opacity:0.7; font-size:0.85rem;">Часы (высота столбца) и закрытые смены по неделям периода.</p>
-    <div class="cols">
+    <div class="cols" id="weekly-chart">
         {% for w in weekly %}
         <div class="col" title="{{ w.from|date:'d.m' }} – {{ w.to|date:'d.m' }}: {{ w.hours }} ч, {{ w.shifts }} смен">
             <span class="val">{{ w.hours }}</span>
@@ -164,18 +364,64 @@
         </tbody>
     </table>
 </div>
+{% endif %}
 
 <div class="card" style="padding:0; overflow:hidden;">
-    <h3 style="padding:20px 20px 0;">Эффективность набора по мероприятиям</h3>
+    <h3 style="padding:20px 20px 0;">Эффективность набора по сменам</h3>
+    {% if efficiency.avg_recruit_days is not None %}
+    <p style="padding:0 20px; opacity:0.7; font-size:0.85rem;">Среднее время набора (до закрытия): <b>{{ efficiency.avg_recruit_days }}</b> дн.</p>
+    {% endif %}
     <table class="responsive-table">
-        <thead><tr><th>Мероприятие</th><th class="num">Нужно</th><th class="num">Явилось</th><th>% закрытия</th></tr></thead>
+        <thead><tr><th>Мероприятие</th><th>Смена</th><th class="num">Нужно</th><th class="num">Пришло</th><th>% закрытия</th><th>Отчёт по меро</th></tr></thead>
         <tbody>
-        {% for e in efficiency %}
-            <tr data-href="{% url 'event_detail' e.event_id %}">
-                <td data-label="Мероприятие">{{ e.title }}</td>
-                <td data-label="Нужно" class="num mono">{{ e.needed }}</td>
-                <td data-label="Явилось" class="num mono">{{ e.attended }}</td>
-                <td data-label="% закрытия"><span class="mono">{{ e.pct_closed }}%</span> {% if e.understaffed %}<span class="pill warning"><span class="dot"></span>Недобор</span>{% endif %}</td>
+        {% for s in efficiency.shifts %}
+            <tr>
+                <td data-label="Мероприятие"><a href="{% url 'event_detail' s.event_id %}">{{ s.title }}</a></td>
+                <td data-label="Смена" class="mono">{{ s.day|date:"d.m.Y" }}</td>
+                <td data-label="Нужно" class="num mono">{{ s.needed }}</td>
+                <td data-label="Пришло" class="num mono">{{ s.attended }}</td>
+                <td data-label="% закрытия"><span class="mono">{{ s.pct_closed }}%</span> {% if s.understaffed %}<span class="pill warning"><span class="dot"></span>Недобор</span>{% endif %}</td>
+                <td data-label="Отчёт по меро">
+                    <a href="{% url 'report_event_pdf' s.event_id %}" target="_blank" title="PDF-отчёт по мероприятию">PDF</a>
+                    ·
+                    <a href="{% url 'report_event_export' s.event_id %}" title="Excel-отчёт по мероприятию">Excel</a>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="6">Нет данных.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h3>Нагрузка персонала</h3>
+    <h4>Менеджеры</h4>
+    <table class="responsive-table">
+        <thead><tr><th>Менеджер</th><th class="num">Мероприятий</th><th class="num">Заявок обработано</th><th class="num">Ср. время обработки</th></tr></thead>
+        <tbody>
+        {% for m in staff.managers %}
+            <tr data-href="{% url 'profile_detail' m.user__id %}">
+                <td data-label="Менеджер">{{ m.name }}</td>
+                <td data-label="Мероприятий" class="num mono">{{ m.event_count }}</td>
+                <td data-label="Заявок обработано" class="num mono">{{ m.applications_processed }}</td>
+                <td data-label="Ср. время обработки" class="num mono">{% if m.avg_processing_hours %}{{ m.avg_processing_hours }} ч{% else %}—{% endif %}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="4">Нет данных.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <h4>Тим-лидеры</h4>
+    <table class="responsive-table">
+        <thead><tr><th>Тим-лидер</th><th class="num">Мероприятий</th><th class="num">Заявок обработано</th><th class="num">Ср. время обработки</th></tr></thead>
+        <tbody>
+        {% for t in staff.team_leads %}
+            <tr data-href="{% url 'profile_detail' t.user__id %}">
+                <td data-label="Тим-лидер">{{ t.name }}</td>
+                <td data-label="Мероприятий" class="num mono">{{ t.event_count }}</td>
+                <td data-label="Заявок обработано" class="num mono">{{ t.applications_processed }}</td>
+                <td data-label="Ср. время обработки" class="num mono">{% if t.avg_processing_hours %}{{ t.avg_processing_hours }} ч{% else %}—{% endif %}</td>
             </tr>
         {% empty %}
             <tr><td colspan="4">Нет данных.</td></tr>
@@ -188,6 +434,18 @@
     <h3>Retention и churn</h3>
     <p>Churn rate: {{ report.retention.churn_rate_pct }}%</p>
     <p>Новых в блэклисте за период: {{ report.retention.new_blacklisted }}</p>
+    <p style="opacity:0.7; font-size:0.85rem; margin-top:0.5rem;">Распределение churn-score по всем волонтёрам. Порог блэклиста — {{ report.churn_threshold }}.</p>
+    <div class="cols">
+        {% with max_count=report.churn_histogram|length %}
+        {% for b in report.churn_histogram %}
+        <div class="col" title="{{ b.label }}: {{ b.count }} волонтёров">
+            <span class="val">{{ b.count }}</span>
+            <div class="bar" data-count="{{ b.count }}" style="background:{% if b.low >= report.churn_threshold %}var(--danger, #c0392b){% else %}var(--text-tertiary){% endif %};"></div>
+            <span class="lbl">{{ b.label }}</span>
+        </div>
+        {% endfor %}
+        {% endwith %}
+    </div>
 </div>
 
 <div class="card">
@@ -225,35 +483,34 @@
 </div>
 
 <div class="card">
-    <h3>Нагрузка персонала</h3>
-    <h4>Менеджеры</h4>
-    <table class="responsive-table">
-        <thead><tr><th>Менеджер</th><th class="num">Мероприятий</th></tr></thead>
-        <tbody>
-        {% for m in staff.managers %}
-            <tr data-href="{% url 'profile_detail' m.user__id %}">
-                <td data-label="Менеджер">{{ m.user__first_name }} {{ m.user__last_name }}</td>
-                <td data-label="Мероприятий" class="num mono">{{ m.event_count }}</td>
-            </tr>
+    <h3>Время отклика на мероприятие</h3>
+    <p style="opacity:0.7; font-size:0.85rem;">Плотность распределения: сколько заявок пришло в каждом временном окне от публикации/анонса меро.</p>
+    <div class="cols">
+        {% for d in timing.density %}
+        <div class="col" title="{{ d.label }}: {{ d.count }} заявок">
+            <span class="val">{{ d.count }}</span>
+            <div class="bar" data-count="{{ d.count }}"></div>
+            <span class="lbl">{{ d.label }}</span>
+        </div>
         {% empty %}
-            <tr><td colspan="2">Нет данных.</td></tr>
+        <p style="opacity:0.6;">Нет данных.</p>
         {% endfor %}
-        </tbody>
-    </table>
-    <h4>Тим-лидеры</h4>
-    <table class="responsive-table">
-        <thead><tr><th>Тим-лидер</th><th class="num">Мероприятий</th></tr></thead>
-        <tbody>
-        {% for t in staff.team_leads %}
-            <tr data-href="{% url 'profile_detail' t.user__id %}">
-                <td data-label="Тим-лидер">{{ t.user__first_name }} {{ t.user__last_name }}</td>
-                <td data-label="Мероприятий" class="num mono">{{ t.event_count }}</td>
-            </tr>
-        {% empty %}
-            <tr><td colspan="2">Нет данных.</td></tr>
+    </div>
+    <p style="opacity:0.7; font-size:0.8rem; margin-top:0.5rem;">Всего заявок с известным временем подачи: {{ timing.total_applications }}</p>
+</div>
+
+<div class="card">
+    <h3>Время публикации постов</h3>
+    <p style="opacity:0.7; font-size:0.85rem;">Распределение по часам суток.</p>
+    <div class="cols">
+        {% for count in post_timing.by_hour %}
+        <div class="col" title="{{ forloop.counter0 }}:00 — {{ count }} публикаций">
+            <span class="val">{{ count }}</span>
+            <div class="bar" data-count="{{ count }}"></div>
+            <span class="lbl">{{ forloop.counter0 }}</span>
+        </div>
         {% endfor %}
-        </tbody>
-    </table>
+    </div>
 </div>
 
 <script>
@@ -262,6 +519,7 @@
     var applyBtn = document.getElementById('daterange-apply');
     var label = document.getElementById('daterange-label');
     var presetButtons = document.querySelectorAll('[data-preset]');
+    var compareSelect = document.getElementById('compare-mode');
 
     var MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
     var DOW = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
@@ -278,13 +536,8 @@
     var today = new Date();
     var rangeStart = parseISO(initialFrom);
     var rangeEnd = parseISO(initialTo);
-    // Незавершённый выбор: пользователь кликнул первую дату, вторая ещё не выбрана.
     var pendingStart = null;
-    // Активный пресет — снимается при ручном изменении диапазона по клику на календарь.
     var activePreset = initialPeriod !== 'custom' ? initialPeriod : null;
-    // Левый календарь показывает месяц начала диапазона, правый — месяц конца (если
-    // диапазон умещается в одном месяце, правый календарь просто показывает следующий,
-    // чтобы не дублировать один и тот же месяц дважды).
     var viewMonthLeft = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
     var viewMonthRight = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1);
     if (viewMonthRight.getTime() <= viewMonthLeft.getTime()) {
@@ -300,7 +553,7 @@
     function renderMonth(monthDate) {
         var year = monthDate.getFullYear(), month = monthDate.getMonth();
         var firstDay = new Date(year, month, 1);
-        var startOffset = (firstDay.getDay() + 6) % 7; // понедельник = 0
+        var startOffset = (firstDay.getDay() + 6) % 7;
         var daysInMonth = new Date(year, month + 1, 0).getDate();
 
         var html = '<div class="cal-head"><button type="button" data-nav="-1">‹</button><span>' + MONTHS[month] + ' ' + year + '</span><button type="button" data-nav="1">›</button></div>';
@@ -349,7 +602,6 @@
             cell.addEventListener('click', function () {
                 var d = parseISO(cell.getAttribute('data-date'));
                 if (!pendingStart) {
-                    // Первый клик произвольного выбора — начинаем новый диапазон с этой даты.
                     pendingStart = d;
                     rangeStart = d;
                     rangeEnd = d;
@@ -361,10 +613,10 @@
                     }
                     pendingStart = null;
                 }
-                // Ручное изменение диапазона — активный пресет больше не соответствует выбору.
                 activePreset = null;
                 updatePresetHighlight();
                 render();
+                if (typeof updateReportFormatLinks === 'function') updateReportFormatLinks();
             });
         });
     }
@@ -374,16 +626,264 @@
 
     presetButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
-            window.location.search = '?period=' + btn.getAttribute('data-preset');
+            window.location.search = '?period=' + btn.getAttribute('data-preset') + '&compare=' + compareSelect.value;
         });
     });
 
     applyBtn.addEventListener('click', function () {
         label.textContent = fmt(rangeStart) + ' — ' + fmt(rangeEnd);
-        window.location.search = '?date_from=' + toISO(rangeStart) + '&date_to=' + toISO(rangeEnd);
+        window.location.search = '?date_from=' + toISO(rangeStart) + '&date_to=' + toISO(rangeEnd) + '&compare=' + compareSelect.value;
     });
 
     window.addEventListener('resize', render);
+
+    // --------------------------------------------------------------
+    // Переключатель охвата: период / мероприятия
+    // --------------------------------------------------------------
+    var scopeButtons = document.querySelectorAll('.scope-toggle-btn');
+    var periodPanel = document.getElementById('scope-period-panel');
+    var eventsPanel = document.getElementById('scope-events-panel');
+    scopeButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var scope = btn.getAttribute('data-scope');
+            scopeButtons.forEach(function (b) { b.classList.toggle('active', b === btn); });
+            periodPanel.style.display = scope === 'period' ? '' : 'none';
+            eventsPanel.style.display = scope === 'events' ? '' : 'none';
+            updateReportFormatLinks();
+        });
+    });
+
+    // --------------------------------------------------------------
+    // Выбор мероприятий: чипы + модалка (последние 15 / поиск)
+    // --------------------------------------------------------------
+    var recentEvents = JSON.parse(document.getElementById('recent-events-data').textContent);
+    var initialSelectedEvents = JSON.parse(document.getElementById('selected-events-data').textContent);
+    var selectedEventIds = new Set(initialSelectedEvents.map(function (e) { return e.id; }));
+    var selectedEventTitles = {};
+    initialSelectedEvents.forEach(function (e) { selectedEventTitles[e.id] = e.title; });
+
+    var chipList = document.getElementById('events-chip-list');
+    var scopeLabel = document.getElementById('events-scope-label');
+    var pickBtn = document.getElementById('events-pick-btn');
+    var modalBackdrop = document.getElementById('events-modal-backdrop');
+    var modalBody = document.getElementById('events-modal-body');
+    var modalSearch = document.getElementById('events-modal-search');
+    var modalClose = document.getElementById('events-modal-close');
+    var modalDone = document.getElementById('events-modal-done');
+    var modalCount = document.getElementById('events-modal-count');
+    var eventsApplyBtn = document.getElementById('events-apply');
+    var eventsExportLink = document.getElementById('events-export-link');
+
+    function renderChips() {
+        if (selectedEventIds.size === 0) {
+            chipList.innerHTML = '<span class="events-chip-empty">Мероприятия не выбраны — нажмите «Выбрать мероприятия…».</span>';
+        } else {
+            var html = '';
+            selectedEventIds.forEach(function (id) {
+                html += '<span class="event-chip" data-id="' + id + '">' + (selectedEventTitles[id] || ('#' + id)) +
+                    ' <button type="button" class="chip-remove" data-id="' + id + '">×</button></span>';
+            });
+            chipList.innerHTML = html;
+            chipList.querySelectorAll('.chip-remove').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    selectedEventIds.delete(parseInt(btn.getAttribute('data-id'), 10));
+                    renderChips();
+                });
+            });
+        }
+        scopeLabel.textContent = selectedEventIds.size + ' мероприятий выбрано';
+        updateEventsLinks();
+    }
+
+    // Текущий охват в виде query-строки — для всех кнопок форматов.
+    // В режиме «мероприятия» берём выбранные id (даже до «Применить»),
+    // в режиме «период» — активный диапазон/пресет + сравнение.
+    function currentScopeQuery() {
+        var activeScopeBtn = document.querySelector('.scope-toggle-btn.active');
+        var mode = activeScopeBtn ? activeScopeBtn.getAttribute('data-scope') : '{{ scope_mode }}';
+        if (mode === 'events') {
+            var ids = Array.from(selectedEventIds).join(',');
+            return { mode: 'events', query: 'scope=events&event_ids=' + encodeURIComponent(ids), hasScope: !!ids };
+        }
+        var q = 'date_from=' + toISO(rangeStart) + '&date_to=' + toISO(rangeEnd) + '&compare=' + compareSelect.value;
+        return { mode: 'period', query: q, hasScope: true };
+    }
+
+    var reportFormatLinks = document.querySelectorAll('.report-format');
+    var eventsOnlyNote = document.querySelector('.note-events-only');
+    function updateReportFormatLinks() {
+        var scope = currentScopeQuery();
+        reportFormatLinks.forEach(function (a) {
+            var kind = a.getAttribute('data-report');
+            var base;
+            if (kind === 'pdf-external') base = '{% url "report_period_pdf" "external" %}';
+            else if (kind === 'pdf-internal') base = '{% url "report_period_pdf" "internal" %}';
+            else if (kind === 'excel') base = '{% url "report_period_export" %}';
+            else if (kind === 'bundle') base = '{% url "report_bundle" %}';
+            else if (kind === 'dobro') base = '{% url "report_dobro_export" %}';
+            a.href = base + '?' + scope.query;
+            // PDF открываем в новой вкладке (печать), файлы — обычным переходом.
+            if (kind === 'pdf-external' || kind === 'pdf-internal') a.setAttribute('target', '_blank');
+            else a.removeAttribute('target');
+            if (!scope.hasScope) {
+                a.classList.add('disabled');
+                a.addEventListener('click', blockIfNoScope);
+            } else {
+                a.classList.remove('disabled');
+                a.removeEventListener('click', blockIfNoScope);
+            }
+        });
+        if (eventsOnlyNote) eventsOnlyNote.style.display = scope.mode === 'events' ? '' : 'none';
+    }
+    function blockIfNoScope(e) {
+        e.preventDefault();
+        alert('Сначала выберите хотя бы одно мероприятие — нажмите «Выбрать мероприятия…».');
+    }
+
+    function updateEventsLinks() {
+        var ids = Array.from(selectedEventIds).join(',');
+        eventsApplyBtn.setAttribute('data-ids', ids);
+        eventsExportLink.href = '{% url "report_period_export" %}?scope=events&event_ids=' + encodeURIComponent(ids);
+        updateReportFormatLinks();
+    }
+
+    function renderPickList(events, isSearch) {
+        if (!events.length) {
+            var message = isSearch
+                ? 'Ничего не найдено по этому запросу.'
+                : 'В системе пока нет ни одного мероприятия — сначала создайте мероприятие в разделе «Мероприятия».';
+            modalBody.innerHTML = '<p style="opacity:0.6; text-align:center; padding:20px 0;">' + message + '</p>';
+            return;
+        }
+        var html = '';
+        events.forEach(function (ev) {
+            var isSel = selectedEventIds.has(ev.id);
+            html += '<div class="event-pick-card' + (isSel ? ' selected' : '') + '" data-id="' + ev.id + '" data-title="' + ev.title.replace(/"/g, '&quot;') + '">' +
+                '<div><div class="event-pick-title">' + ev.title + '</div></div>' +
+                '<div style="display:flex; align-items:center; gap:10px;">' +
+                (ev.date ? '<span class="event-pick-date">' + ev.date + '</span>' : '') +
+                '<span class="event-pick-check">' + (isSel ? '✓' : '') + '</span>' +
+                '</div></div>';
+        });
+        modalBody.innerHTML = html;
+        modalBody.querySelectorAll('.event-pick-card').forEach(function (card) {
+            card.addEventListener('click', function () {
+                var id = parseInt(card.getAttribute('data-id'), 10);
+                var title = card.getAttribute('data-title');
+                if (selectedEventIds.has(id)) {
+                    selectedEventIds.delete(id);
+                    card.classList.remove('selected');
+                    card.querySelector('.event-pick-check').textContent = '';
+                } else {
+                    selectedEventIds.add(id);
+                    selectedEventTitles[id] = title;
+                    card.classList.add('selected');
+                    card.querySelector('.event-pick-check').textContent = '✓';
+                }
+                modalCount.textContent = selectedEventIds.size + ' выбрано';
+            });
+        });
+    }
+
+    var searchTimer = null;
+    function doSearch(query) {
+        if (!query) {
+            renderPickList(recentEvents, false);
+            return;
+        }
+        fetch('{% url "report_events_search" %}?q=' + encodeURIComponent(query))
+            .then(function (r) { return r.json(); })
+            .then(function (data) { renderPickList(data.events, true); });
+    }
+
+    if (pickBtn) {
+        if (!recentEvents.length) {
+            pickBtn.disabled = true;
+            pickBtn.title = 'В системе пока нет ни одного мероприятия';
+        }
+        pickBtn.addEventListener('click', function () {
+            modalBackdrop.classList.add('open');
+            modalSearch.value = '';
+            renderPickList(recentEvents, false);
+            modalCount.textContent = selectedEventIds.size + ' выбрано';
+        });
+    }
+    if (modalClose) modalClose.addEventListener('click', function () { modalBackdrop.classList.remove('open'); });
+    if (modalBackdrop) modalBackdrop.addEventListener('click', function (e) { if (e.target === modalBackdrop) modalBackdrop.classList.remove('open'); });
+    if (modalDone) modalDone.addEventListener('click', function () { modalBackdrop.classList.remove('open'); renderChips(); });
+    if (modalSearch) {
+        modalSearch.addEventListener('input', function () {
+            clearTimeout(searchTimer);
+            var q = modalSearch.value.trim();
+            searchTimer = setTimeout(function () { doSearch(q); }, 250);
+        });
+    }
+    if (eventsApplyBtn) {
+        eventsApplyBtn.addEventListener('click', function () {
+            var ids = Array.from(selectedEventIds).join(',');
+            if (!ids) {
+                alert('Сначала выберите хотя бы одно мероприятие — нажмите «Выбрать мероприятия…».');
+                return;
+            }
+            window.location.search = '?scope=events&event_ids=' + encodeURIComponent(ids);
+        });
+    }
+
+    renderChips();
+    if (compareSelect) compareSelect.addEventListener('change', updateReportFormatLinks);
+    updateReportFormatLinks();
+
+    // --------------------------------------------------------------
+    // Графики: нормализация высоты столбцов на клиенте (без доп. запросов)
+    // --------------------------------------------------------------
+    function normalizeBars(container, valueAttr) {
+        var cols = container.querySelectorAll('.col');
+        var max = 0;
+        cols.forEach(function (col) {
+            var v = parseFloat(col.getAttribute(valueAttr) || col.querySelector('.bar').getAttribute('data-count') || 0);
+            if (v > max) max = v;
+        });
+        cols.forEach(function (col) {
+            var bar = col.querySelector('.bar');
+            var v = parseFloat(col.getAttribute(valueAttr) || bar.getAttribute('data-count') || 0);
+            bar.style.height = max ? Math.max(2, Math.round(v / max * 100)) + '%' : '2px';
+        });
+    }
+
+    var categoryChart = document.getElementById('category-chart');
+    if (categoryChart) {
+        var metricToggle = document.getElementById('category-metric-toggle');
+        function renderCategoryMetric(metric) {
+            categoryChart.querySelectorAll('.col').forEach(function (col) {
+                var v = col.getAttribute('data-' + metric) || 0;
+                col.querySelector('.val').textContent = v;
+                col.querySelector('.bar').setAttribute('data-count', v);
+            });
+            normalizeBars(categoryChart, null);
+        }
+        renderCategoryMetric('volunteers');
+        metricToggle.querySelectorAll('button').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                metricToggle.querySelectorAll('button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+                renderCategoryMetric(btn.getAttribute('data-metric'));
+            });
+        });
+    }
+
+    document.querySelectorAll('.cols').forEach(function (container) {
+        if (container.id === 'category-chart' || container.id === 'weekly-chart') return;
+        normalizeBars(container, null);
+    });
+
+    // Воронка — ширина полос пропорциональна значению относительно "Подано"
+    ['funnel-approved', 'funnel-attended', 'funnel-unexcused'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var value = parseFloat(el.getAttribute('data-value') || 0);
+        var total = parseFloat(el.getAttribute('data-total') || 0);
+        var pct = total ? Math.max(4, Math.round(value / total * 100)) : 0;
+        el.style.width = pct + '%';
+    });
 })();
 </script>
 {% endblock %}

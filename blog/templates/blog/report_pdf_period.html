@@ -1,0 +1,246 @@
+{% load static %}<!-- Печатный отчёт за охват (reports_template.md §1A внешний / §1B внутренний).
+     Самодостаточный HTML (не extends base): открывается как отдельная страница и печатается
+     через браузер (Ctrl+P → Сохранить как PDF). Серверная PDF-библиотека не требуется. -->
+<meta charset="utf-8">
+<title>{% if is_internal %}Внутренний{% else %}Внешний{% endif %} отчёт ВЦ — {% if scope_mode == 'period' %}{{ date_from|date:"d.m.Y" }}—{{ date_to|date:"d.m.Y" }}{% else %}по мероприятиям{% endif %}</title>
+<style>
+    :root {
+        --accent: #7C3AED; --ink: #2B2B33; --muted: #83838f; --faint: #9A9AA5;
+        --line: #E3E3E8; --bar: #C9C4D6; --card: #F7F6FA;
+        --mono: 'JetBrains Mono', 'Consolas', monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+        font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        color: var(--ink); max-width: 900px; margin: 0 auto; padding: 32px 40px;
+        line-height: 1.5; background: #fff;
+    }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    h2 { font-size: 17px; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 2px solid var(--accent); }
+    h3 { font-size: 14px; margin: 16px 0 6px; color: var(--muted); }
+    .subtitle { color: var(--muted); font-size: 13px; }
+    .brand { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid var(--accent); padding-bottom: 16px; }
+    .brand .logo { font-weight: 700; font-size: 15px; color: var(--accent); letter-spacing: 0.02em; }
+    .variant-tag { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0; }
+    th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; }
+    td.num, th.num { text-align: right; font-family: var(--mono); }
+    .mono { font-family: var(--mono); }
+
+    .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0; }
+    .kpi { background: var(--card); border-radius: 10px; padding: 12px 14px; }
+    .kpi .v { font-size: 22px; font-weight: 700; }
+    .kpi .l { font-size: 12px; color: var(--muted); }
+
+    /* Горизонтальная воронка */
+    .funnel { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+    .funnel-bar { background: var(--accent); color: #fff; border-radius: 6px; padding: 8px 12px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+    .funnel-lbl { font-size: 11px; color: var(--faint); margin: 2px 0 6px; }
+
+    /* Столбчатые графики */
+    .cols { display: flex; align-items: flex-end; gap: 6px; height: 130px; margin: 10px 0; }
+    .col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; min-width: 22px; }
+    .col .bar { width: 100%; max-width: 40px; background: var(--bar); border-radius: 4px 4px 0 0; min-height: 2px; }
+    .col .bar.danger { background: #d9534f; }
+    .col .v { font-size: 11px; font-weight: 600; font-family: var(--mono); margin-bottom: 2px; }
+    .col .l { font-size: 10px; color: var(--faint); margin-top: 4px; text-align: center; word-break: break-word; }
+
+    .toolbar { position: sticky; top: 0; background: #fff; padding: 10px 0; margin-bottom: 8px; display: flex; gap: 10px; }
+    .btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }
+    .btn.secondary { background: var(--card); color: var(--ink); }
+    .note { color: var(--faint); font-size: 12px; }
+
+    @media print {
+        .toolbar { display: none; }
+        body { padding: 0; max-width: none; }
+        h2 { page-break-after: avoid; }
+        table, .cols, .funnel, .kpi-grid { page-break-inside: avoid; }
+    }
+</style>
+
+{% if not standalone %}
+<div class="toolbar">
+    <button type="button" class="btn" onclick="window.print()">🖨 Скачать PDF (печать)</button>
+    <a href="javascript:history.back()" class="btn secondary">← Назад к отчётам</a>
+</div>
+{% endif %}
+
+<div class="brand">
+    <div>
+        <div class="logo">ВОЛОНТЁРСКИЙ ЦЕНТР</div>
+        <h1>{% if is_internal %}Внутренний отчёт{% else %}Отчёт волонтёрского центра{% endif %}</h1>
+        <div class="subtitle">
+            {% if scope_mode == 'period' %}Период: {{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }}{% else %}Охват: по выбранным мероприятиям{% endif %}
+            · Сформирован: {{ generated_at|date:"d.m.Y H:i" }}
+        </div>
+    </div>
+    <div class="variant-tag">{% if is_internal %}🔒 для менеджеров{% else %}🌐 для руководства{% endif %}</div>
+</div>
+
+<h2>1. Общие достижения сообщества</h2>
+<div class="kpi-grid">
+    <div class="kpi"><div class="v">{{ report.total_hours }}</div><div class="l">Всего часов</div></div>
+    <div class="kpi"><div class="v">{{ report.total_events }}</div><div class="l">Мероприятий</div></div>
+    <div class="kpi"><div class="v">{{ report.unique_volunteers }}</div><div class="l">Уникальных волонтёров</div></div>
+    <div class="kpi"><div class="v">{{ report.closed_shifts }}</div><div class="l">Закрытых смен</div></div>
+    <div class="kpi"><div class="v">{{ report.new_volunteers }}</div><div class="l">Новых волонтёров</div></div>
+    <div class="kpi"><div class="v">{{ report.people_helped }}</div><div class="l">Людей получили помощь</div></div>
+</div>
+
+<h3>Топ категорий</h3>
+<table>
+    <thead><tr><th>Категория</th><th class="num">Участий</th></tr></thead>
+    <tbody>
+    {% for c in report.top_categories %}
+        <tr><td>{{ c.event_day__event__category_map__category__name|default:"Без категории" }}</td><td class="num">{{ c.count }}</td></tr>
+    {% empty %}<tr><td colspan="2">Нет данных.</td></tr>{% endfor %}
+    </tbody>
+</table>
+
+<h3>Распределение по категориям (по числу волонтёров)</h3>
+<div class="cols" id="cat-chart">
+    {% for c in report.category_breakdown %}
+    <div class="col"><div class="v">{{ c.volunteers }}</div><div class="bar" data-count="{{ c.volunteers }}"></div><div class="l">{{ c.name|default:"—"|truncatechars:12 }}</div></div>
+    {% empty %}<span class="note">Нет данных.</span>{% endfor %}
+</div>
+
+{% if is_internal %}
+<h3>🔒 Топ волонтёров по часам</h3>
+<table>
+    <thead><tr><th>Волонтёр</th><th class="num">Часы</th></tr></thead>
+    <tbody>
+    {% for v in report.top_volunteers %}
+        <tr><td>{{ v.name }} ({{ v.user__telegram_username|default:"—" }})</td><td class="num">{{ v.hours }}</td></tr>
+    {% empty %}<tr><td colspan="2">Нет данных.</td></tr>{% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<h2>2. Воронка набора</h2>
+<div class="funnel" id="funnel">
+    <div><div class="funnel-bar" data-value="{{ report.funnel.submitted }}" data-total="{{ report.funnel.submitted }}">Подано: {{ report.funnel.submitted }}</div><div class="funnel-lbl">100%</div></div>
+    <div><div class="funnel-bar" data-value="{{ report.funnel.approved }}" data-total="{{ report.funnel.submitted }}">Одобрено: {{ report.funnel.approved }}</div></div>
+    <div><div class="funnel-bar" data-value="{{ report.funnel.attended }}" data-total="{{ report.funnel.submitted }}">Явка: {{ report.funnel.attended }}</div></div>
+    <div><div class="funnel-bar" data-value="{{ report.funnel.unexcused }}" data-total="{{ report.funnel.submitted }}">Неявка без предупреждения: {{ report.funnel.unexcused }}</div></div>
+</div>
+<table>
+    <tr><td>Отклонено (резерв)</td><td class="num">{{ report.funnel.rejected }}</td></tr>
+    <tr><td>Конверсия подал → явка</td><td class="num">{{ report.funnel.conversion_pct }}%</td></tr>
+</table>
+
+<h2>3. Эффективность набора (по сменам)</h2>
+{% if efficiency.avg_recruit_days is not None %}<p class="note">Среднее время набора: {{ efficiency.avg_recruit_days }} дн.</p>{% endif %}
+<table>
+    <thead><tr><th>Мероприятие</th><th>Смена</th><th class="num">Нужно</th><th class="num">Пришло</th><th class="num">% закрытия</th></tr></thead>
+    <tbody>
+    {% for s in efficiency.shifts %}
+        <tr><td>{{ s.title }}</td><td class="mono">{{ s.day|date:"d.m.Y" }}</td><td class="num">{{ s.needed }}</td><td class="num">{{ s.attended }}</td><td class="num">{{ s.pct_closed }}%</td></tr>
+    {% empty %}<tr><td colspan="5">Нет данных.</td></tr>{% endfor %}
+    </tbody>
+</table>
+
+{% if is_internal %}
+<h2>4. 🔒 Нагрузка персонала</h2>
+<h3>Менеджеры</h3>
+<table>
+    <thead><tr><th>ФИО</th><th class="num">Меро</th><th class="num">Заявок</th><th class="num">Ср. время, ч</th></tr></thead>
+    <tbody>
+    {% for m in staff.managers %}
+        <tr><td>{{ m.name }}</td><td class="num">{{ m.event_count }}</td><td class="num">{{ m.applications_processed }}</td><td class="num">{{ m.avg_processing_hours|default:"—" }}</td></tr>
+    {% empty %}<tr><td colspan="4">Нет данных.</td></tr>{% endfor %}
+    </tbody>
+</table>
+<h3>Тим-лидеры</h3>
+<table>
+    <thead><tr><th>ФИО</th><th class="num">Меро как ТЛ</th><th class="num">Заявок</th><th class="num">Ср. время, ч</th></tr></thead>
+    <tbody>
+    {% for t in staff.team_leads %}
+        <tr><td>{{ t.name }}</td><td class="num">{{ t.event_count }}</td><td class="num">{{ t.applications_processed }}</td><td class="num">{{ t.avg_processing_hours|default:"—" }}</td></tr>
+    {% empty %}<tr><td colspan="4">Нет данных.</td></tr>{% endfor %}
+    </tbody>
+</table>
+
+<h2>5. 🔒 Retention и churn</h2>
+<table>
+    <tr><td>Churn rate</td><td class="num">{{ report.retention.churn_rate_pct }}%</td></tr>
+    <tr><td>Новых в blacklist за период</td><td class="num">{{ report.retention.new_blacklisted }}</td></tr>
+</table>
+<h3>Распределение churn_score (порог blacklist — {{ report.churn_threshold }})</h3>
+<div class="cols" id="churn-chart">
+    {% for b in report.churn_histogram %}
+    <div class="col"><div class="v">{{ b.count }}</div><div class="bar {% if b.low >= report.churn_threshold %}danger{% endif %}" data-count="{{ b.count }}"></div><div class="l">{{ b.label }}</div></div>
+    {% endfor %}
+</div>
+
+<h2>6. 🔒 Проблемные зоны</h2>
+<h3>Мероприятия с низким рейтингом</h3>
+<table>
+    <thead><tr><th>Мероприятие</th><th class="num">Рейтинг</th><th class="num">Отзывов</th></tr></thead>
+    <tbody>
+    {% for e in report.problem_zones.low_rated_events %}
+        <tr><td>{{ e.title }}</td><td class="num">{{ e.avg_rating|floatformat:1 }}</td><td class="num">{{ e.fb_count }}</td></tr>
+    {% empty %}<tr><td colspan="3">Нет данных.</td></tr>{% endfor %}
+    </tbody>
+</table>
+<h3>Волонтёры на грани blacklist</h3>
+<table>
+    <thead><tr><th>Волонтёр</th><th class="num">Churn</th></tr></thead>
+    <tbody>
+    {% for u in report.problem_zones.at_risk_users %}
+        <tr><td>{{ u.first_name }} {{ u.last_name }} ({{ u.telegram_username|default:"—" }})</td><td class="num">{{ u.churn_score|floatformat:2 }}</td></tr>
+    {% empty %}<tr><td colspan="2">Нет данных.</td></tr>{% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% if report.comparison %}
+<h2>7. Сравнение с прошлым периодом</h2>
+<p class="note">База сравнения: {{ report.comparison.date_from|date:"d.m.Y" }} — {{ report.comparison.date_to|date:"d.m.Y" }}
+    ({% if compare_mode == 'year_ago' %}тот же период год назад{% else %}смежный период той же длины{% endif %})</p>
+<table>
+    <thead><tr><th>Метрика</th><th class="num">Δ абс.</th><th class="num">Δ %</th></tr></thead>
+    <tbody>
+        <tr><td>Часы</td><td class="num">{{ report.comparison.hours_delta }}</td><td class="num">{{ report.comparison.hours_delta_pct|default:"—" }}</td></tr>
+        <tr><td>Мероприятия</td><td class="num">{{ report.comparison.events_delta }}</td><td class="num">{{ report.comparison.events_delta_pct|default:"—" }}</td></tr>
+        <tr><td>Уникальных волонтёров</td><td class="num">{{ report.comparison.volunteers_delta }}</td><td class="num">{{ report.comparison.volunteers_delta_pct|default:"—" }}</td></tr>
+        <tr><td>Новых волонтёров</td><td class="num">{{ report.comparison.new_volunteers_delta }}</td><td class="num">{{ report.comparison.new_volunteers_delta_pct|default:"—" }}</td></tr>
+    </tbody>
+</table>
+{% endif %}
+
+<h2>8. Графики</h2>
+<h3>Время публикации постов (по часам суток)</h3>
+<div class="cols" id="post-chart">
+    {% for count in post_timing.by_hour %}
+    <div class="col"><div class="bar" data-count="{{ count }}"></div><div class="l">{{ forloop.counter0 }}</div></div>
+    {% endfor %}
+</div>
+<h3>Отклик на меро: плотность заявок по времени от публикации</h3>
+<div class="cols" id="timing-chart">
+    {% for d in timing.density %}
+    <div class="col"><div class="v">{{ d.count }}</div><div class="bar" data-count="{{ d.count }}"></div><div class="l">{{ d.label }}</div></div>
+    {% empty %}<span class="note">Нет данных.</span>{% endfor %}
+</div>
+<p class="note">Всего заявок с известным временем подачи: {{ timing.total_applications }}</p>
+
+<script>
+(function () {
+    // Нормализация высоты столбцов и ширины воронки (те же данные, что на экране отчёта).
+    document.querySelectorAll('.cols').forEach(function (c) {
+        var bars = c.querySelectorAll('.bar');
+        var max = 0;
+        bars.forEach(function (b) { max = Math.max(max, parseFloat(b.getAttribute('data-count') || 0)); });
+        bars.forEach(function (b) {
+            var v = parseFloat(b.getAttribute('data-count') || 0);
+            b.style.height = max ? Math.max(2, Math.round(v / max * 100)) + '%' : '2px';
+        });
+    });
+    document.querySelectorAll('#funnel .funnel-bar').forEach(function (el) {
+        var v = parseFloat(el.getAttribute('data-value') || 0);
+        var t = parseFloat(el.getAttribute('data-total') || 0);
+        el.style.width = t ? Math.max(8, Math.round(v / t * 100)) + '%' : '8%';
+    });
+})();
+</script>

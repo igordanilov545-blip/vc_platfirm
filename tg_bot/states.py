@@ -32,3 +32,16 @@ class Comment(StatesGroup):
 class Feedback(StatesGroup):
     """Отзыв о мероприятии после участия (tg-bot.md §4.6)."""
     waiting_comment = State()
+
+
+class ApplicationEdit(StatesGroup):
+    """Изменение данных активной заявки (tg-bot.md §4.3.2, db.md правило 7d) — создаёт
+    НОВУЮ запись `applications` с обновлёнными функцией/ролью, старая остаётся в истории."""
+    waiting_functions = State()
+    waiting_role = State()
+
+
+class ApplicationCancel(StatesGroup):
+    """Отмена активной заявки самим волонтёром — причина обязательна
+    (tg-bot.md §4.3.3, доступно только пока до меро больше `const.late_cancel_hours`)."""
+    waiting_reason = State()

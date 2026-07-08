@@ -1,0 +1,86 @@
+<!-- Печатный отчёт по одному мероприятию (reports_template.md §4). Самодостаточный HTML,
+     печатается через браузер (Ctrl+P → PDF). -->
+<meta charset="utf-8">
+<title>Отчёт по мероприятию — {{ event.title }}</title>
+<style>
+    :root { --accent: #7C3AED; --ink: #2B2B33; --muted: #83838f; --faint: #9A9AA5; --line: #E3E3E8; --card: #F7F6FA; --mono: 'JetBrains Mono','Consolas',monospace; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system,'Segoe UI',Roboto,Arial,sans-serif; color: var(--ink); max-width: 900px; margin: 0 auto; padding: 32px 40px; line-height: 1.5; background: #fff; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 16px; margin: 24px 0 8px; padding-bottom: 6px; border-bottom: 2px solid var(--accent); }
+    h3 { font-size: 13px; margin: 14px 0 4px; }
+    .subtitle { color: var(--muted); font-size: 13px; }
+    .brand { border-bottom: 3px solid var(--accent); padding-bottom: 14px; }
+    .logo { font-weight: 700; font-size: 14px; color: var(--accent); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0; }
+    th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; }
+    td.num, th.num { text-align: right; font-family: var(--mono); }
+    .header-grid { display: grid; grid-template-columns: 180px 1fr; gap: 4px 14px; font-size: 13px; margin: 10px 0; }
+    .header-grid .k { color: var(--muted); }
+    .shift-block { background: var(--card); border-radius: 10px; padding: 12px 14px; margin: 10px 0; }
+    .shift-head { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+    .totals { background: var(--card); border-radius: 10px; padding: 14px; }
+    .toolbar { position: sticky; top: 0; background: #fff; padding: 10px 0; margin-bottom: 8px; display: flex; gap: 10px; }
+    .btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }
+    .btn.secondary { background: var(--card); color: var(--ink); }
+    @media print { .toolbar { display: none; } body { padding: 0; max-width: none; } .shift-block, table { page-break-inside: avoid; } }
+</style>
+
+<div class="toolbar">
+    <button type="button" class="btn" onclick="window.print()">🖨 Скачать PDF (печать)</button>
+    <a href="javascript:history.back()" class="btn secondary">← Назад</a>
+</div>
+
+<div class="brand">
+    <div class="logo">ВОЛОНТЁРСКИЙ ЦЕНТР · ОТЧЁТ ПО МЕРОПРИЯТИЮ</div>
+    <h1>{{ event.title }}</h1>
+    <div class="subtitle">Сформирован: {{ generated_at|date:"d.m.Y H:i" }}</div>
+</div>
+
+<h2>Справка</h2>
+<div class="header-grid">
+    <div class="k">Организация</div><div>{{ event.organization.name|default:"—" }}</div>
+    <div class="k">Организатор</div><div>{% if event.organizer %}{{ event.organizer.first_name }} {{ event.organizer.last_name }}{% if event.organizer.phone %} · {{ event.organizer.phone }}{% endif %}{% else %}—{% endif %}</div>
+    <div class="k">Категории</div><div>{{ categories }}</div>
+    <div class="k">Статус</div><div>{{ event.get_event_status_display }}</div>
+    <div class="k">Ссылка на чат</div><div>{{ event.chat_link|default:"—" }}</div>
+    <div class="k">Пост в канале</div><div>{{ event.post_in_chanel_link|default:"—" }}</div>
+    <div class="k">Добро.ру</div><div>{{ event.dobro_ru_link|default:"—" }} ({{ event.get_dobro_ru_link_kind_display }})</div>
+    <div class="k">Менеджер(ы)</div><div>{% for u in managers %}{{ u.full_name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</div>
+    <div class="k">Тим-лидер(ы)</div><div>{% for u in team_leads %}{{ u.full_name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</div>
+</div>
+
+<h2>Смены и участники</h2>
+{% for shift in shifts %}
+<div class="shift-block">
+    <div class="shift-head">Смена {{ shift.day|date:"d.m.Y" }}, {{ shift.start_time|date:"H:i" }}–{{ shift.end_time|date:"H:i" }} · Локация: {{ shift.location }} · Нужно: {{ shift.needed }}</div>
+    <table>
+        <thead><tr><th>Волонтёр</th><th>Подал</th><th>Статус заявки</th><th>Пришёл</th><th class="num">Часы</th></tr></thead>
+        <tbody>
+        {% for p in shift.participants %}
+            <tr><td>{{ p.name }}</td><td class="num">{% if p.submitted_at %}{{ p.submitted_at|date:"d.m.Y" }}{% else %}—{% endif %}</td><td>{{ p.app_status }}</td><td>{{ p.part_status }}</td><td class="num">{{ p.hours }}</td></tr>
+        {% empty %}
+            <tr><td colspan="5">Нет участников.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% empty %}
+<p>У мероприятия нет смен.</p>
+{% endfor %}
+
+<h2>Итоги</h2>
+<div class="totals">
+    <table>
+        <tr><td>Всего заявок</td><td class="num">{{ totals.submitted }}</td></tr>
+        <tr><td>Одобрено</td><td class="num">{{ totals.approved }}</td></tr>
+        <tr><td>Явка</td><td class="num">{{ totals.attended }}</td></tr>
+        <tr><td>Нужно волонтёров</td><td class="num">{{ totals.needed }}</td></tr>
+        <tr><td>% закрытия</td><td class="num">{{ totals.pct_closed }}%</td></tr>
+        <tr><td>Всего часов</td><td class="num">{{ totals.total_hours }}</td></tr>
+        <tr><td>Людей получили помощь</td><td class="num">{{ totals.people_helped|default:"—" }}</td></tr>
+        <tr><td>Средний рейтинг</td><td class="num">{% if totals.rating is not None %}{{ totals.rating }} ({{ totals.rating_count }} отзывов){% else %}—{% endif %}</td></tr>
+    </table>
+    {% if event.internal_comment %}<h3>Внутренние комментарии</h3><p>{{ event.internal_comment }}</p>{% endif %}
+</div>

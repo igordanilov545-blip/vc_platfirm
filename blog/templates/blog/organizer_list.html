@@ -6,16 +6,20 @@
     <a href="{% url 'organizer_create' %}" class="btn" data-modal data-modal-title="Новый организатор">+ Новый организатор</a>
 </div>
 
+<div class="card">
+    <input type="search" id="organizers-search" placeholder="Поиск по ФИО, телефону, telegram, email…" style="margin:0;">
+</div>
+
 <div class="card" style="padding:0; overflow:hidden;">
-    <table class="responsive-table">
-        <thead><tr><th>ФИО</th><th>Телефон</th><th>Telegram</th><th>Email</th></tr></thead>
+    <table class="responsive-table" data-sortable id="organizers-table">
+        <thead><tr><th data-sort-key="name">ФИО</th><th data-sort-key="phone">Телефон</th><th data-sort-key="tg">Telegram</th><th data-sort-key="email">Email</th></tr></thead>
         <tbody>
         {% for organizer in organizers %}
-            <tr data-href="{% url 'organizer_detail' organizer.id %}">
-                <td data-label="ФИО">{{ organizer.first_name }} {{ organizer.last_name }}</td>
-                <td data-label="Телефон" class="mono">{{ organizer.phone|default:"—" }}</td>
-                <td data-label="Telegram">{{ organizer.telegram_username|default:"—" }}</td>
-                <td data-label="Email">{{ organizer.email|default:"—" }}</td>
+            <tr data-href="{% url 'organizer_detail' organizer.id %}" data-search="{{ organizer.first_name }} {{ organizer.last_name }} {{ organizer.phone }} {{ organizer.telegram_username }} {{ organizer.email }}">
+                <td data-label="ФИО" data-sort-value="{{ organizer.first_name }} {{ organizer.last_name }}">{{ organizer.first_name }} {{ organizer.last_name }}</td>
+                <td data-label="Телефон" class="mono" data-sort-value="{{ organizer.phone }}">{{ organizer.phone|default:"—" }}</td>
+                <td data-label="Telegram" data-sort-value="{{ organizer.telegram_username }}">{{ organizer.telegram_username|default:"—" }}</td>
+                <td data-label="Email" data-sort-value="{{ organizer.email }}">{{ organizer.email|default:"—" }}</td>
             </tr>
         {% empty %}
             <tr><td colspan="4">Организаторов пока нет.</td></tr>
@@ -23,4 +27,19 @@
         </tbody>
     </table>
 </div>
+<script>
+(function () {
+    var searchInput = document.getElementById('organizers-search');
+    var debounceTimer = null;
+    searchInput.addEventListener('input', function () {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+            var query = searchInput.value.trim().toLowerCase();
+            document.querySelectorAll('#organizers-table tbody tr[data-href]').forEach(function (row) {
+                row.hidden = !!query && row.getAttribute('data-search').toLowerCase().indexOf(query) === -1;
+            });
+        }, 1500);
+    });
+})();
+</script>
 {% endblock %}

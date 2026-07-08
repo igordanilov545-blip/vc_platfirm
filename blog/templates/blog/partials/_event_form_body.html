@@ -38,6 +38,9 @@
             </div>
         </div>
         {{ form.team_leads }}
+        {% if form.require_shift %}
+        <div class="field-hint">Если не выбрать никого, тим-лидером назначитесь вы сами.</div>
+        {% endif %}
     </div>
 
     {# ─── Организатор ─── #}
@@ -67,6 +70,44 @@
         </div>
         {% if form.location.errors %}<div class="field-error">{{ form.location.errors|striptags }}</div>{% endif %}
     </div>
+
+    {# ─── Смены (обязательны при создании — без хотя бы одной смены меро не создать) ───
+       Добавленные смены показываются чипами сверху (как категории), с крестиком для
+       удаления. Ниже — поля одной новой смены + кнопка "➕ Добавить смену". Итоговый
+       список хранится в JSON (shift-chips.js ниже) и уходит на сервер в shifts_json. #}
+    {% if form.require_shift %}
+    <hr class="form-divider">
+    <h3 style="margin-top:0;">Смены мероприятия</h3>
+    <p class="field-hint" style="margin-top:-8px;">У мероприятия должна быть хотя бы одна смена.</p>
+    {% if form.non_field_errors %}{% for e in form.non_field_errors %}{% if 'смену' in e %}<div class="form-errors">{{ e }}</div>{% endif %}{% endfor %}{% endif %}
+
+    <div class="shift-chips-row" data-shift-chips-selected></div>
+    <input type="hidden" name="shifts_json" data-shift-chips-json value="[]">
+
+    <div class="field">
+        <label>Дата</label>
+        <input type="text" data-shift-day data-datepicker autocomplete="off">
+    </div>
+    <div class="field-row" style="display:flex; gap:12px; align-items:flex-end;">
+        <div class="field" style="flex:1;">
+            <label>Время начала</label>
+            <input type="text" data-shift-start data-timepicker autocomplete="off" value="10:00">
+        </div>
+        <div class="field" style="flex:1;">
+            <label>Время окончания</label>
+            <input type="text" data-shift-end data-timepicker autocomplete="off" value="18:00">
+        </div>
+        <div class="field" style="flex:1;">
+            <label>Нужно волонтёров</label>
+            <input type="number" data-shift-needed value="0" min="0">
+        </div>
+        <button type="button" class="btn secondary shift-add-btn" data-shift-add title="Добавить смену" aria-label="Добавить смену">＋</button>
+    </div>
+    <div class="field-error" data-shift-error hidden></div>
+    {% for sf in form.shift_forms %}
+        {% if sf.errors %}<div class="field-error">Смена {{ forloop.counter }}: {{ sf.errors.as_text }}</div>{% endif %}
+    {% endfor %}
+    {% endif %}
 
     {# ─── Ссылки ─── #}
     <div class="field">

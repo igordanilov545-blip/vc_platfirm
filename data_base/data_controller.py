@@ -107,13 +107,17 @@ def create_manager(
     total_events: int = 0,
     season_events: int = 0
 ) -> Manager:
-    """Выдает роль менеджера."""
-    return Manager.objects.create(
+    """Выдает роль менеджера. У менеджера всегда есть и профиль тим-лидера
+    (если ещё нет) — чтобы его можно было назначать ТЛ на мероприятия."""
+    manager = Manager.objects.create(
         user=user,
         assigned_by=assigned_by,
         total_events=total_events,
         season_events=season_events
     )
+    if not TeamLeader.objects.filter(user=user, revoked_at__isnull=True).exists():
+        TeamLeader.objects.create(user=user, assigned_by=assigned_by)
+    return manager
 
 def create_team_leader(
     user: User,
@@ -452,12 +456,17 @@ def get_applications(
     return list(qs)
 
 def get_user_active_applications(user_id: int) -> List[Application]:
-    """Активные заявки волонтёра — только new/approved (tg-bot.md §4.4)."""
-    return list(
+    """Активные заявки волонтёра — только new/approved (tg-bot.md §4.4), и только на
+    мероприятия, которые ещё идут или предстоят (`compute_status` in upcoming/ongoing).
+    Заявки на уже прошедшие/завершённые меро не показываются — волонтёру нечего с ними
+    делать, они провисели бы в списке бесконечно."""
+    apps = (
         Application.objects.filter(user_id=user_id, status__in=['new', 'approved'])
         .select_related('event')
+        .prefetch_related('event__shifts')
         .order_by('-created_at')
     )
+    return [a for a in apps if a.event.compute_status() in ('upcoming', 'ongoing')]
 
 
 def get_user_application_for_event(user_id: int, event_id: int) -> Optional[Application]:

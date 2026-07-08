@@ -56,3 +56,39 @@ def validate_init_data(init_data: str, bot_token: str = None) -> dict | None:
             pairs['user'] = None
 
     return pairs
+
+
+def validate_login_widget(data: dict, bot_token: str = None) -> dict | None:
+    """Проверка данных Telegram Login Widget (браузерный вход вне Mini App).
+
+    Отличается от `validate_init_data` алгоритмом: у Login Widget секретный ключ —
+    это `sha256(bot_token)`, а поля приходят готовым dict (id/first_name/username/
+    photo_url/auth_date/hash), а не одной urlencoded-строкой. Алгоритм — из офиц.
+    документации Telegram (https://core.telegram.org/widgets/login#checking-authorization).
+
+    Возвращает dict полей (с int `id`) при верной подписи и свежем `auth_date`,
+    иначе None.
+    """
+    bot_token = bot_token or settings.TG_BOT_TOKEN
+    if not data or not bot_token:
+        return None
+
+    received_hash = data.get('hash')
+    if not received_hash:
+        return None
+
+    pairs = {k: v for k, v in data.items() if k != 'hash'}
+    data_check_string = '\n'.join(f'{k}={pairs[k]}' for k in sorted(pairs))
+    secret_key = hashlib.sha256(bot_token.encode()).digest()
+    computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+
+    if not hmac.compare_digest(computed_hash, received_hash):
+        return None
+
+    auth_date = pairs.get('auth_date')
+    if auth_date:
+        import time
+        if time.time() - int(auth_date) > MAX_AUTH_AGE_SECONDS:
+            return None
+
+    return pairs

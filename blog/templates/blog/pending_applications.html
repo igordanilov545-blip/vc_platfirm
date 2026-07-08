@@ -14,17 +14,21 @@
     {% endif %}
 </div>
 
+<div class="card">
+    <input type="search" id="apps-search" placeholder="Поиск по мероприятию, ФИО, телефону, telegram…" style="margin:0;">
+</div>
+
 <div class="card" style="padding:0; overflow:hidden;">
-    <table class="responsive-table">
-        <thead><tr><th>Мероприятие</th><th>ФИО</th><th>Telegram</th><th>Телефон</th><th>Подано</th><th></th></tr></thead>
+    <table class="responsive-table" data-sortable id="apps-table">
+        <thead><tr><th data-sort-key="event">Мероприятие</th><th data-sort-key="name">ФИО</th><th data-sort-key="tg">Telegram</th><th data-sort-key="phone">Телефон</th><th data-sort-key="date" data-sort-default="desc">Подано</th><th></th></tr></thead>
         <tbody>
-        {% for application in page_obj %}
-            <tr data-href="{% url 'event_detail' application.event_id %}#applications">
-                <td data-label="Мероприятие">{{ application.event.title }}</td>
-                <td data-label="ФИО">{{ application.first_name }}{% if application.last_name %} {{ application.last_name }}{% endif %}</td>
-                <td data-label="Telegram">{{ application.telegram_username|default:"—" }}</td>
-                <td data-label="Телефон" class="mono">{{ application.phone|default:"—" }}</td>
-                <td data-label="Подано" class="mono">{{ application.submitted_at|default:application.created_at }}</td>
+        {% for application in applications %}
+            <tr data-href="{% url 'event_detail' application.event_id %}#applications" data-search="{{ application.event.title }} {{ application.first_name }} {{ application.last_name }} {{ application.telegram_username }} {{ application.phone }}">
+                <td data-label="Мероприятие" data-sort-value="{{ application.event.title }}">{{ application.event.title }}</td>
+                <td data-label="ФИО" data-sort-value="{{ application.first_name }} {{ application.last_name }}">{{ application.first_name }}{% if application.last_name %} {{ application.last_name }}{% endif %}</td>
+                <td data-label="Telegram" data-sort-value="{{ application.telegram_username }}">{{ application.telegram_username|default:"—" }}</td>
+                <td data-label="Телефон" class="mono" data-sort-value="{{ application.phone }}">{{ application.phone|default:"—" }}</td>
+                <td data-label="Подано" class="mono" data-sort-value="{{ application.submitted_at|default:application.created_at|date:'U' }}">{{ application.submitted_at|default:application.created_at }}</td>
                 <td data-label="">
                     <form method="post" action="{% url 'application_process' application.id %}" class="inline">
                         {% csrf_token %}
@@ -47,8 +51,20 @@
     </table>
 </div>
 
-<div>
-    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">← Назад</a>{% endif %}
-    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Вперёд →</a>{% endif %}
-</div>
+<script>
+(function () {
+    var searchInput = document.getElementById('apps-search');
+    var rows = document.querySelectorAll('#apps-table tbody tr[data-href]');
+    var debounceTimer = null;
+    searchInput.addEventListener('input', function () {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+            var query = searchInput.value.trim().toLowerCase();
+            rows.forEach(function (row) {
+                row.hidden = !!query && row.getAttribute('data-search').toLowerCase().indexOf(query) === -1;
+            });
+        }, 1500);
+    });
+})();
+</script>
 {% endblock %}

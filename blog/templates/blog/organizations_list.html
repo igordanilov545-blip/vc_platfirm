@@ -5,16 +5,19 @@
     <h1>Организации</h1>
     <a href="{% url 'organization_create' %}" class="btn" data-modal data-modal-title="Новая организация">+ Новая организация</a>
 </div>
+<div class="card">
+    <input type="search" id="orgs-search" placeholder="Поиск по названию…" style="margin:0;">
+</div>
 <div class="card" style="padding:0; overflow:hidden;">
-    <table class="responsive-table">
-        <thead><tr><th>Название</th><th class="num">Мероприятий</th><th class="num">Волонтёров</th><th class="num">Рейтинг</th></tr></thead>
+    <table class="responsive-table" data-sortable id="orgs-table">
+        <thead><tr><th data-sort-key="name">Название</th><th data-sort-key="events" class="num">Мероприятий</th><th data-sort-key="volunteers" class="num">Волонтёров</th><th data-sort-key="rating" class="num">Рейтинг</th></tr></thead>
         <tbody>
         {% for org in organizations %}
-            <tr data-href="{% url 'organization_detail' org.id %}">
-                <td data-label="Название"><a href="{% url 'organization_detail' org.id %}">{{ org.name }}</a></td>
-                <td data-label="Мероприятий" class="num mono">{{ org.events_count }}</td>
-                <td data-label="Волонтёров" class="num mono">{{ org.volunteers_count }}</td>
-                <td data-label="Рейтинг" class="num mono">{{ org.internal_rating|default:"—" }}</td>
+            <tr data-href="{% url 'organization_detail' org.id %}" data-search="{{ org.name }}">
+                <td data-label="Название" data-sort-value="{{ org.name }}"><a href="{% url 'organization_detail' org.id %}">{{ org.name }}</a></td>
+                <td data-label="Мероприятий" class="num mono" data-sort-value="{{ org.events_count }}">{{ org.events_count }}</td>
+                <td data-label="Волонтёров" class="num mono" data-sort-value="{{ org.volunteers_count }}">{{ org.volunteers_count }}</td>
+                <td data-label="Рейтинг" class="num mono" data-sort-value="{{ org.internal_rating|default:0 }}">{{ org.internal_rating|default:"—" }}</td>
             </tr>
         {% empty %}
             <tr><td colspan="4">Организаций пока нет.</td></tr>
@@ -22,4 +25,19 @@
         </tbody>
     </table>
 </div>
+<script>
+(function () {
+    var searchInput = document.getElementById('orgs-search');
+    var debounceTimer = null;
+    searchInput.addEventListener('input', function () {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+            var query = searchInput.value.trim().toLowerCase();
+            document.querySelectorAll('#orgs-table tbody tr[data-href]').forEach(function (row) {
+                row.hidden = !!query && row.getAttribute('data-search').toLowerCase().indexOf(query) === -1;
+            });
+        }, 1500);
+    });
+})();
+</script>
 {% endblock %}

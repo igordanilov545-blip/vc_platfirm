@@ -2,12 +2,14 @@
 from asgiref.sync import sync_to_async
 
 from aiogram import Router, F
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
 from tg_bot import services, keyboards as kb
 from tg_bot.states import Registration, PendingApplication
+from tg_bot.templates_loader import render
+from tg_bot.ui import answer_with_expiring_keyboard
 
 router = Router(name='common')
 
@@ -18,31 +20,47 @@ async def _menu_for(user) -> tuple:
     return is_tl, is_mgr
 
 
+async def _send_web_login_link(message: Message, user):
+    """Присылает пользователю одноразовую ссылку для входа в веб (deep-link
+    `?start=weblogin`). Ссылка живёт 5 минут (раздел 2b)."""
+    link = await sync_to_async(services.issue_web_login_link)(user.id)
+    if not link or link.startswith('/'):
+        # WEBAPP_URL не сконфигурирован — ссылку построить нельзя.
+        await message.answer(
+            'Не удалось сформировать ссылку для входа — обратитесь к менеджеру центра.'
+        )
+        return
+    markup = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text='🔓 Войти на сайт', url=link),
+    ]])
+    await message.answer(
+        'Ссылка для входа на сайт готова. Она действует <b>5 минут</b> и работает один раз.',
+        reply_markup=markup,
+    )
+
+
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start(message: Message, state: FSMContext, command: CommandObject = None):
     await state.clear()
     user, created = await sync_to_async(services.get_or_create_user)(
         message.from_user.id, message.from_user.username
     )
 
+    # Deep-link входа на сайт: t.me/<bot>?start=weblogin — авто-регистрация (если
+    # новый, останется гостем) + одноразовая ссылка входа в веб-сессию.
+    if command is not None and (command.args or '').strip() == 'weblogin':
+        await _send_web_login_link(message, user)
+        return
+
     if not created and not await sync_to_async(services.is_guest)(user):
         is_tl, is_mgr = await _menu_for(user)
         await message.answer(
-            f'👋 С возвращением, {user.first_name}!',
+            render('start_returning', name=user.first_name),
             reply_markup=kb.main_menu(is_tl, is_mgr),
         )
         return
 
-    await message.answer(
-        '👋 Привет! Я бот Волонтёрского центра.\n\n'
-        'Здесь можно:\n'
-        '• 📅 смотреть мероприятия и подавать на них заявки\n'
-        '• 📊 следить за своей статистикой — часами и количеством меро\n'
-        '• 🔔 получать уведомления о новых меро и статусах своих заявок\n\n'
-        'Пока ты можешь просто посмотреть список мероприятий (📅 Мероприятия).\n'
-        'Чтобы подавать заявки и участвовать — нужна короткая регистрация (имя и телефон).',
-        reply_markup=kb.guest_menu(),
-    )
+    await message.answer(render('start_new'), reply_markup=kb.guest_menu())
 
 
 @router.message(Command('help'))
@@ -52,47 +70,24 @@ async def cmd_help(message: Message):
     )
 
     if await sync_to_async(services.is_guest)(user):
-        await message.answer(
-            'ℹ️ Что я умею:\n\n'
-            '/events — посмотреть открытые мероприятия\n'
-            '/register — зарегистрироваться, чтобы подавать заявки\n\n'
-            'После регистрации станут доступны: подача заявок, статистика, '
-            'подписка на новые меро.'
-        )
+        await message.answer(render('help_guest'))
         return
 
     role = await sync_to_async(services.user_role_label)(user)
-    text = (
-        'ℹ️ Что я умею:\n\n'
-        '/events — открытые мероприятия и подача заявки\n'
-        '/myapps — мои активные заявки\n'
-        '/stats — моя статистика (часы, мероприятия)\n'
-        '/subscribe — подписка на уведомления о новых меро\n'
-        '/webaccess — доступ к сайту (логин/пароль)\n'
-    )
+    text = render('help_volunteer')
 
     is_tl, is_mgr = await _menu_for(user)
     if is_tl:
-        text += (
-            '\nКак тим-лидер своих мероприятий ты также можешь:\n'
-            '/myevents — мои мероприятия и заявки на них (одобрить / в резерв)\n'
-            '— проставлять явку участникам после смены\n'
-            '— оставлять внутренние комментарии волонтёрам своих меро\n'
-        )
+        text += render('help_team_leader')
     if is_mgr:
-        text += (
-            '\nКак менеджер тебе также доступно:\n'
-            '/allapplications — все заявки по всем мероприятиям\n'
-            '— обработка заявок и явка на любом мероприятии\n'
-            '— контакты организаторов активных мероприятий\n'
-        )
-    text += f'\nТвоя роль: {role}.'
+        text += render('help_manager')
+    text += render('help_role_footer', role=role)
     await message.answer(text)
 
 
 async def start_registration(message_or_cb, state: FSMContext):
     await state.set_state(Registration.waiting_name)
-    text = '📝 Регистрация\n\nКак тебя зовут? (имя и фамилия)'
+    text = render('register_ask_name')
     if isinstance(message_or_cb, CallbackQuery):
         await message_or_cb.message.answer(text, reply_markup=kb.remove_keyboard())
         await message_or_cb.answer()
@@ -108,7 +103,7 @@ async def cmd_register(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == 'register')
 async def cb_register(callback: CallbackQuery, state: FSMContext):
-    await _start_registration(callback, state)
+    await start_registration(callback, state)
 
 
 @router.message(Registration.waiting_name)
@@ -140,7 +135,7 @@ async def _finish_registration(message: Message, state: FSMContext, phone: str =
 
     is_tl, is_mgr = await _menu_for(user)
     await message.answer(
-        '✅ Готово, ты зарегистрирован! Теперь доступны заявки на мероприятия и вся статистика.',
+        render('register_done'),
         reply_markup=kb.main_menu(is_tl, is_mgr),
     )
 
@@ -151,9 +146,9 @@ async def _finish_registration(message: Message, state: FSMContext, phone: str =
         from tg_bot.handlers.volunteer import get_event_title
         title = await sync_to_async(get_event_title)(pending_event_id)
         if title:
-            await message.answer(
-                f'Кстати, ты хотел подать заявку на «{title}» — подать сейчас?',
-                reply_markup=kb.confirm_pending_application(pending_event_id),
+            await answer_with_expiring_keyboard(
+                message, f'Кстати, ты хотел подать заявку на «{title}» — подать сейчас?',
+                kb.confirm_pending_application(pending_event_id),
             )
 
 
@@ -171,6 +166,22 @@ async def registration_skip_phone(message: Message, state: FSMContext):
 async def registration_got_phone_text(message: Message, state: FSMContext):
     phone = (message.text or '').strip()
     await _finish_registration(message, state, phone=phone or None)
+
+
+@router.message(Command('appnotify'))
+@router.message(F.text == '🔔 Заявки: уведомления')
+async def cmd_appnotify(message: Message):
+    """Тумблер уведомлений о новых заявках (`notify_applications`) — только для ТЛ/менеджера.
+    Волонтёру команда недоступна: ему заявки не приходят в принципе (tg-bot.md §5.5, §7)."""
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        message.from_user.id, message.from_user.username
+    )
+    is_tl, is_mgr = await _menu_for(user)
+    if not (is_tl or is_mgr):
+        await message.answer('⛔ У тебя нет доступа к этому действию.')
+        return
+    enabled = await sync_to_async(services.toggle_application_notifications)(user.id)
+    await message.answer(render('appnotify_on' if enabled else 'appnotify_off'))
 
 
 @router.callback_query(F.data == 'dismiss')

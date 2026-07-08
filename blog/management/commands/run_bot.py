@@ -20,8 +20,17 @@ class Command(BaseCommand):
         asyncio.run(self._run())
 
     async def _run(self):
+        from aiogram.types import BotCommand
+
         bot = create_bot()
         dp = create_dispatcher()
+
+        # Нативное меню команд Telegram (кнопка «/» в клиенте, tg-bot.md §9).
+        await bot.set_my_commands([
+            BotCommand(command='start', description='Начать / главное меню'),
+            BotCommand(command='login', description='Авторизоваться на сайте'),
+            BotCommand(command='help', description='Помощь'),
+        ])
 
         notifier_task = asyncio.create_task(run_notifier_loop(bot))
         try:

@@ -69,6 +69,23 @@ def has_extended_access_to_profile(viewer: User, target: User) -> bool:
     return has_application or has_participation
 
 
+def account_is_complete(user: User) -> bool:
+    """«Заполненный аккаунт» — минимум, при котором пользователь может подать заявку:
+    известно ФИО (хотя бы имя) и есть ссылка на Telegram (username или реальный
+    telegram_id из бота). Авторизация в боте не обязательна — заявка может прийти из
+    Excel-выгрузки, там достаточно ФИО + Telegram. Пользователи с веб-входом
+    (login/пароль, служебный telegram_id `web:*`) без TG-username сюда не попадают —
+    им заявки подавать не нужно."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    has_name = bool((user.first_name or '').strip())
+    # Реальный telegram_id пользователя — положительное целое (служебные web:*-id и
+    # отрицательные id каналов/групп не считаем «привязкой к Telegram»).
+    real_tg_id = bool(user.telegram_id) and user.telegram_id.isdigit()
+    has_tg = bool((user.telegram_username or '').strip()) or real_tg_id
+    return has_name and has_tg
+
+
 def role_label(user: User) -> str:
     if is_manager(user):
         return 'Менеджер'

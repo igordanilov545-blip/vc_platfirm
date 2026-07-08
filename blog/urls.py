@@ -7,6 +7,7 @@ urlpatterns = [
     path('logout/', views.logout_view, name='logout'),
     path('auth/telegram/callback/', views.telegram_login_callback, name='telegram_login_callback'),
     path('auth/tg/<uuid:token>/', views.tg_link_login, name='tg_link_login'),
+    path('profile/complete/', views.complete_profile, name='complete_profile'),
     path('', views.dashboard, name='dashboard'),
 
     path('webapp/', views.webapp_entry, name='webapp_entry'),

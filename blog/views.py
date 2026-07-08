@@ -1,5 +1,6 @@
 import datetime
 import random
+from urllib.parse import quote
 
 from django.contrib import messages
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
@@ -16,7 +17,7 @@ from django.views.decorators.csrf import csrf_exempt
 from blog.decorators import manager_required
 from blog.forms import (
     ApplicationCancelForm, ApplicationForm, ConstForm, EventCommentForm, EventShiftForm, EventFeedbackForm, EventForm,
-    ExcelImportForm, ExternalExperienceForm, LocationForm, LoginForm, OrganizationForm, OrganizerForm,
+    ExcelImportForm, ExternalExperienceForm, LocationForm, LoginForm, OrganizationForm, OrganizerForm, ProfileCompletionForm,
     ParticipationForm, QuickCategoryForm, QuickLocationForm, QuickOrganizationForm, QuickOrganizerForm,
     RoleUsersForm, SeasonForm, UserCommentForm,
 )
@@ -33,7 +34,7 @@ from blog.services.applications import (
 )
 from blog.services import roles as roles_service
 from blog.services.roles import (
-    can_process_applications, has_extended_access_to_profile, is_manager, is_team_leader, role_label,
+    account_is_complete, can_process_applications, has_extended_access_to_profile, is_manager, is_team_leader, role_label,
 )
 from blog.services.stats import recalc_user_aggregates
 
@@ -132,6 +133,16 @@ def _safe_next(request, default='dashboard'):
     return reverse(default)
 
 
+def _post_tg_login_redirect(request, user):
+    """Куда отправить пользователя сразу после входа через Telegram. Если аккаунт
+    ещё не «заполнен» (нет ФИО) — на дозаполнение профиля, сохранив исходный next,
+    чтобы после заполнения вернуть человека туда, куда он шёл (напр. подача заявки)."""
+    target = _safe_next(request)
+    if not account_is_complete(user):
+        return reverse('complete_profile') + f'?next={quote(target)}'
+    return target
+
+
 def login_view(request):
     if request.user.is_authenticated:
         return redirect('dashboard')
@@ -181,7 +192,27 @@ def telegram_login_callback(request):
         return redirect('login')
 
     auth_login(request, user, backend='blog.auth_backends.TelegramWebAppBackend')
-    return redirect(_safe_next(request))
+    return redirect(_post_tg_login_redirect(request, user))
+
+
+@login_required
+def complete_profile(request):
+    """Дозаполнение аккаунта после входа через Telegram: ФИО обязательно, телефон/
+    почта/дата рождения — по желанию. Без «заполненного аккаунта» (ФИО + Telegram)
+    нельзя подать заявку — сюда редиректит вход и попытка подачи заявки."""
+    if account_is_complete(request.user) and request.method == 'GET' and not request.GET.get('edit'):
+        return redirect(_safe_next(request))
+
+    form = ProfileCompletionForm(request.POST or None, instance=request.user)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Профиль заполнен — теперь можно подавать заявки.')
+        return redirect(_safe_next(request))
+
+    return render(request, 'blog/complete_profile.html', {
+        'form': form,
+        'next': request.GET.get('next', ''),
+    })
 
 
 def tg_link_login(request, token):
@@ -198,7 +229,7 @@ def tg_link_login(request, token):
         return redirect('login')
 
     auth_login(request, user, backend='blog.auth_backends.TelegramWebAppBackend')
-    return redirect(_safe_next(request))
+    return redirect(_post_tg_login_redirect(request, user))
 
 
 def logout_view(request):
@@ -374,15 +405,23 @@ def webapp_auth(request):
     # Telegram-клиент), обычный веб-вход по логину/паролю — по-прежнему DENY против
     # clickjacking. Читается в TelegramWebAppFrameMiddleware.
     request.session['is_webapp_session'] = True
-    return JsonResponse({'redirect': _safe_next(request)})
+    return JsonResponse({'redirect': _post_tg_login_redirect(request, user)})
 
 
 # ---------------------------------------------------------------------------
 # Дашборд
 # ---------------------------------------------------------------------------
 
-@login_required
 def dashboard(request):
+    # Гость (без входа) НЕ редиректится на логин — видит публичный список открытых
+    # мероприятий с плашкой «авторизуйтесь» и статусом «Гость» (см. base.html).
+    if not request.user.is_authenticated:
+        return render(request, 'blog/public_event_list.html', {
+            'events': _published_active_events(),
+            'is_public': True,
+            'show_guest_banner': True,
+        })
+
     user = request.user
     context = {
         'role_label': role_label(user),
@@ -910,6 +949,12 @@ def application_create(request):
     которое остаётся как есть): если у пользователя уже есть активная заявка
     (new/approved) на выбранное меро, вместо создания второй — редирект на
     редактирование существующей."""
+    # Подать заявку может только пользователь с «заполненным аккаунтом» (известны ФИО
+    # и Telegram). Если ФИО ещё нет — сначала дозаполнение профиля, потом возврат сюда.
+    if not account_is_complete(request.user):
+        messages.info(request, 'Заполните профиль (ФИО), чтобы подать заявку.')
+        return redirect(reverse('complete_profile') + f'?next={quote(request.get_full_path())}')
+
     event_id = request.POST.get('event') or request.GET.get('event')
     if event_id:
         # Подать заявку можно только на опубликованное мероприятие (кнопка «Опубликовать»

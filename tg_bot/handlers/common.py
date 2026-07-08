@@ -31,10 +31,11 @@ async def _send_web_login_link(message: Message, user):
         )
         return
     markup = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text='🔓 Войти на сайт', url=link),
+        InlineKeyboardButton(text='🔐 Авторизоваться на сайте', url=link),
     ]])
     await message.answer(
-        'Ссылка для входа на сайт готова. Она действует <b>5 минут</b> и работает один раз.',
+        'Ссылка для авторизации на сайте готова. Она действует <b>5 минут</b> и работает один раз.\n'
+        'Перейдите по ней — вы автоматически войдёте на сайт под своим Telegram-аккаунтом.',
         reply_markup=markup,
     )
 
@@ -61,6 +62,20 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
         return
 
     await message.answer(render('start_new'), reply_markup=kb.guest_menu())
+
+
+@router.message(Command('login'))
+@router.message(Command('weblogin'))
+@router.message(F.text == '🔐 Авторизоваться на сайте')
+async def cmd_weblogin(message: Message, state: FSMContext):
+    """Прислать одноразовую ссылку для входа на сайт (действует 5 минут). Работает
+    сразу после /start — не важно, зарегистрирован пользователь в боте или нет:
+    линковка идёт по telegram_id, а ФИО при необходимости дозаполняется на сайте."""
+    await state.clear()
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        message.from_user.id, message.from_user.username
+    )
+    await _send_web_login_link(message, user)
 
 
 @router.message(Command('help'))

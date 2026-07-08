@@ -403,6 +403,37 @@ class ApplicationCancelForm(forms.Form):
     )
 
 
+class ProfileCompletionForm(forms.ModelForm):
+    """Дозаполнение аккаунта после входа через Telegram: ФИО обязательно, остальное
+    (телефон/почта/дата рождения) — опционально. Нужно, чтобы пользователь мог
+    подавать заявки («заполненный аккаунт», см. roles.account_is_complete)."""
+    first_name = forms.CharField(label='Имя', max_length=100, required=True)
+    last_name = forms.CharField(label='Фамилия', max_length=100, required=False)
+
+    class Meta:
+        model = User
+        fields = ['first_name', 'last_name', 'phone', 'email', 'birthday']
+        widgets = {
+            'birthday': forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d'),
+        }
+        labels = {'phone': 'Телефон', 'email': 'Почта', 'birthday': 'Дата рождения'}
+
+    def clean_first_name(self):
+        value = (self.cleaned_data.get('first_name') or '').strip()
+        if not value:
+            raise forms.ValidationError('Укажите имя — без него нельзя подать заявку.')
+        return value
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        # Вход через Telegram оставляет registration_status='guest' — после
+        # дозаполнения ФИО считаем анкету заполненной.
+        user.registration_status = 'registered'
+        if commit:
+            user.save()
+        return user
+
+
 class ExternalExperienceForm(forms.ModelForm):
     """Внешнее волонтёрское мероприятие (раздел «Мой опыт») — хранится как текст в
     профиле и не влияет на статистику."""

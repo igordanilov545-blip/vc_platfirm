@@ -10,10 +10,13 @@ from django.conf import settings
 
 def _add_webapp_button(builder: ReplyKeyboardBuilder):
     """Кнопка запуска Mini App (implementation-plan.md, Этап 4.4.5) — только если
-    задан публичный HTTPS-адрес (`WEBAPP_URL`); Telegram не примет http:// или пустой URL."""
-    if not settings.WEBAPP_URL:
+    задан публичный HTTPS-адрес. Telegram принимает Web App URL ТОЛЬКО по https://
+    (http/localhost вызывают TelegramBadRequest и роняют отправку меню), поэтому на
+    локальной разработке (http://127.0.0.1) кнопку просто не показываем."""
+    url = (settings.WEBAPP_URL or '').strip()
+    if not url.startswith('https://'):
         return
-    builder.button(text='🖥 Личный кабинет', web_app=WebAppInfo(url=settings.WEBAPP_URL.rstrip('/') + '/webapp/'))
+    builder.button(text='🖥 Личный кабинет', web_app=WebAppInfo(url=url.rstrip('/') + '/webapp/'))
 
 
 # ---------------------------------------------------------------------------
@@ -24,6 +27,7 @@ def guest_menu() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.button(text='📅 Мероприятия')
     builder.button(text='📝 Зарегистрироваться')
+    builder.button(text='🔐 Авторизоваться на сайте')
     _add_webapp_button(builder)
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
@@ -35,6 +39,7 @@ def main_menu(is_team_leader: bool = False, is_manager: bool = False) -> ReplyKe
     builder.button(text='📝 Мои заявки')
     builder.button(text='📊 Статистика')
     builder.button(text='🔔 Подписка')
+    builder.button(text='🔐 Авторизоваться на сайте')
     builder.button(text='🔐 Доступ к сайту')
     if is_team_leader:
         builder.button(text='👥 Мои мероприятия (ТЛ)')

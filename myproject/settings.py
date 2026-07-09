@@ -46,6 +46,11 @@ TG_BOT_USERNAME = env('TG_BOT_USERNAME', default='')
 # (Telegram требует HTTPS; для локальной разработки — туннель вроде ngrok/cloudflared).
 WEBAPP_URL = env('WEBAPP_URL', default='')
 
+# Секрет для webhook-эндпоинта Telegram (см. tg_bot/webhook.py). Входит в непубличный
+# путь `/tg/webhook/<secret>/` и в заголовок X-Telegram-Bot-Api-Secret-Token.
+# На shared-хостинге Beget бот работает через webhook, а не long polling.
+TG_WEBHOOK_SECRET = env('TG_WEBHOOK_SECRET', default='')
+
 # Закрытый список telegram_id, кому доступен технический дашборд аналитики (/analytics/)
 # — не бизнес-роль (менеджер/ТЛ), а конкретные люди, которым доверена техническая
 # диагностика нагрузки и внутренние логи. Пример в .env: ANALYTICS_ADMIN_TG_IDS=123456,789012

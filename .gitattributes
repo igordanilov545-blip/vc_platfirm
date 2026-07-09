@@ -1,0 +1,5 @@
+# Shell-скрипты и серверные конфиги всегда с LF — иначе bash на Linux (Beget)
+# спотыкается о \r в shebang, а Passenger — о CRLF в .htaccess.
+*.sh              text eol=lf
+deploy/htaccess.* text eol=lf
+passenger_wsgi.py text eol=lf

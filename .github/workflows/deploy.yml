@@ -45,13 +45,13 @@ jobs:
             python manage.py collectstatic --noinput
 
             # 4) Перезапуск веб-приложения (Passenger следит за tmp/restart.txt).
+            #    После рестарта Passenger подхватит новый код, включая webhook-эндпоинт.
             mkdir -p tmp
             touch tmp/restart.txt
 
-            # 5) Перезапуск Telegram-бота с новым кодом.
-            #    Убиваем текущий процесс, keepalive поднимет свежий.
-            if [ -f deploy/bot.pid ] && kill -0 "$(cat deploy/bot.pid)" 2>/dev/null; then
-              kill "$(cat deploy/bot.pid)" || true
-              sleep 2
-            fi
-            bash deploy/bot_keepalive.sh
+            # 5) Telegram-бот на shared-хостинге Beget работает через WEBHOOK, а не
+            #    long polling (постоянный фоновый процесс тут убивается). Обновляем
+            #    регистрацию webhook у Telegram на случай смены URL/секрета.
+            #    Исходящие уведомления (notifier) крутит cron панели Beget через
+            #    `manage.py process_notifications` — см. documentation/deploy.md.
+            python manage.py set_webhook || echo "set_webhook: пропущено (проверьте HTTPS/секрет)"

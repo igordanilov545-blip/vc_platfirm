@@ -45,15 +45,17 @@ def telegram_webhook(request, secret: str):
         logger.warning('Webhook: неверный секрет в пути.')
         return HttpResponseForbidden('forbidden')
 
-    # Слой 2: секретный заголовок от Telegram (если настроен).
+    # health-check из браузера (GET): путь с верным секретом уже подтверждён — ок.
+    # Заголовок Telegram проверяем только для реальных апдейтов (POST).
+    if request.method != 'POST':
+        return HttpResponse('ok')
+
+    # Слой 2: секретный заголовок от Telegram (Telegram шлёт его при set_webhook).
     if settings.TG_WEBHOOK_SECRET:
         header_token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
         if header_token != settings.TG_WEBHOOK_SECRET:
             logger.warning('Webhook: неверный секретный заголовок Telegram.')
             return HttpResponseForbidden('forbidden')
-
-    if request.method != 'POST':
-        return HttpResponse('ok')  # health-check в браузере
 
     try:
         payload = json.loads(request.body.decode('utf-8'))

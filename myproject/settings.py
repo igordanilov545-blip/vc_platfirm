@@ -31,12 +31,17 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
 USE_X_FORWARDED_HOST = True
 
-if not DEBUG:
-    # Secure-cookie и HTTPS-редирект включаем только в проде, чтобы не мешать
-    # локальной разработке на http://127.0.0.1.
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=False)
+# Secure-cookie управляются через .env, а не привязаны к DEBUG: пока на проде нет
+# HTTPS (SSL ещё не выпущен), их нужно держать выключенными — иначе браузер не
+# сохранит secure CSRF/session-cookie по http и вход в аккаунт падает с 403 CSRF.
+# После выпуска SSL достаточно выставить COOKIE_SECURE=True в .env (без правки кода).
+#
+# По умолчанию в проде (DEBUG=False) — True: безопасно для целевого HTTPS. Локально
+# (DEBUG=True) — всегда False, чтобы работал http://127.0.0.1.
+_secure_cookies_default = not DEBUG
+SESSION_COOKIE_SECURE = env.bool('COOKIE_SECURE', default=_secure_cookies_default)
+CSRF_COOKIE_SECURE = env.bool('COOKIE_SECURE', default=_secure_cookies_default)
+SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=False)
 
 TG_BOT_TOKEN = env('TG_BOT_TOKEN', default='')
 # Username бота без ведущего @ — нужен для Telegram Login Widget и deep-link

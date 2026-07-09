@@ -29,6 +29,7 @@
     <a href="{% url 'dashboard' %}" class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" title="Главная"><span class="icon">🏠</span><span class="nav-label"> Главная</span></a>
     <a href="{% url 'event_list' %}" class="nav-link {% if request.resolver_match.url_name in 'event_list,event_detail' %}active{% endif %}" title="Мероприятия"><span class="icon">📅</span><span class="nav-label"> Мероприятия</span></a>
     <a href="{% url 'application_create' %}" class="nav-link {% if request.resolver_match.url_name == 'application_create' %}active{% endif %}" title="Подать заявку"><span class="icon">📝</span><span class="nav-label"> Подать заявку</span></a>
+    <a href="{% url 'profile_detail' user.id %}" class="nav-link {% if request.resolver_match.url_name in 'profile_detail,profile_edit' %}active{% endif %}" title="Мой профиль"><span class="icon">👤</span><span class="nav-label"> Мой профиль</span></a>
 
     {% if is_manager %}
     <div class="nav-section-title">Управление</div>
@@ -39,6 +40,7 @@
     <a href="{% url 'organizer_list' %}" class="nav-link {% if request.resolver_match.url_name in 'organizer_list,organizer_detail,organizer_create' %}active{% endif %}" title="Организаторы"><span class="icon">🤝</span><span class="nav-label"> Организаторы</span></a>
     <a href="{% url 'location_list' %}" class="nav-link {% if request.resolver_match.url_name in 'location_list,location_create,location_edit' %}active{% endif %}" title="Локации"><span class="icon">📍</span><span class="nav-label"> Локации</span></a>
     <a href="{% url 'report_period' %}" class="nav-link {% if request.resolver_match.url_name == 'report_period' %}active{% endif %}" title="Отчёты"><span class="icon">📊</span><span class="nav-label"> Отчёты</span></a>
+    <a href="{% url 'dobro_page' %}" class="nav-link {% if request.resolver_match.url_name == 'dobro_page' %}active{% endif %}" title="Добро.ру"><span class="icon">❤️</span><span class="nav-label"> Добро.ру</span></a>
     {% endif %}
 
     <div class="sidebar-footer">
@@ -271,14 +273,38 @@
         });
     }
 
+    // Запомненные URL профиля для «повторного клика»: если сервер ответил
+    // profile_incomplete, первый клик показывает плашку, второй — ведёт на заполнение.
+    var pendingProfileRedirect = {};
+
     function loadModal(url, title) {
         openModal(title);
         modalBody.innerHTML = '<p style="color:var(--text-secondary);">Загрузка…</p>';
         fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-            .then(function (r) { return r.text(); })
-            .then(function (html) {
+            .then(function (r) {
+                var ct = r.headers.get('content-type') || '';
+                if (ct.indexOf('application/json') !== -1) {
+                    return r.json().then(function (data) { return { json: data }; });
+                }
+                return r.text().then(function (html) { return { html: html }; });
+            })
+            .then(function (result) {
+                // Профиль не заполнен: не показываем форму — показываем плашку с призывом
+                // заполнить ФИО/ТГ/телефон и кнопку перехода в личный кабинет. Если по этой
+                // же кнопке кликнули повторно — сразу переносим на заполнение профиля.
+                if (result.json && result.json.profile_incomplete) {
+                    if (pendingProfileRedirect[url]) {
+                        window.location.href = result.json.profile_url;
+                        return;
+                    }
+                    pendingProfileRedirect[url] = result.json.profile_url;
+                    modalBody.innerHTML =
+                        '<p style="margin-top:0;">' + (result.json.message || 'Заполните профиль, чтобы подать заявку.') + '</p>' +
+                        '<a href="' + result.json.profile_url + '" class="btn">Перейти в личный кабинет</a>';
+                    return;
+                }
                 document.querySelectorAll('.timepicker-list').forEach(function (el) { el.remove(); });
-                modalBody.innerHTML = html;
+                modalBody.innerHTML = result.html;
                 initCharCounters(modalBody);
                 initEventForm(modalBody);
                 bindModalForm(url);
@@ -893,6 +919,20 @@
     initInfiniteScroll(document);
 
     // ======================================================================
+    // Универсальное подтверждение перед отправкой формы (защита от мисс-клика):
+    // на форме указывается data-confirm="Текст вопроса"; при сабмите показываем
+    // confirm() и прерываем отправку, если пользователь не подтвердил.
+    // ======================================================================
+    document.querySelectorAll('form[data-confirm]').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            var question = form.getAttribute('data-confirm');
+            if (question && !confirm(question)) {
+                event.preventDefault();
+            }
+        });
+    });
+
+    // ======================================================================
     // Подтверждение перед назначением/снятием роли (настройки): показывает
     // список выбранных ФИО и количество, требует явного OK.
     // ======================================================================
@@ -986,8 +1026,15 @@
         .then(function (data) {
             if (checkbox) checkbox.checked = (data.status === 'attended');
             if (select) select.value = data.status;
-            var hoursCell = row.querySelector('[data-hours-cell]');
-            if (hoursCell) hoursCell.textContent = data.hours;
+            var hoursInput = row.querySelector('[data-attendance-hours]');
+            if (hoursInput) {
+                hoursInput.value = data.hours;
+                // Часы редактируются только у присутствовавших — у отсутствовавших 0 и поле заблокировано.
+                hoursInput.disabled = (data.status !== 'attended');
+            } else {
+                var hoursCell = row.querySelector('[data-hours-cell]');
+                if (hoursCell) hoursCell.textContent = data.hours;
+            }
         })
         .catch(function () {
             alert('Не удалось сохранить явку. Попробуйте ещё раз.');
@@ -1011,6 +1058,41 @@
             var id = select.getAttribute('data-participation-id');
             var row = select.closest('[data-participation-row]');
             sendParticipationStatus(row, id, select.value);
+        });
+    });
+
+    // Ручная правка часов участия тим-лидером прямо в таблице явки — сохраняется на blur
+    // и по Enter (чтобы не слать запрос на каждый набранный символ).
+    function sendParticipationHours(input) {
+        var id = input.getAttribute('data-participation-id');
+        var row = input.closest('[data-participation-row]');
+        input.disabled = true;
+        fetch('/participations/' + id + '/set-hours/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: 'hours=' + encodeURIComponent(input.value) + '&csrfmiddlewaretoken=' + encodeURIComponent(getCsrfToken()),
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.error) { alert(data.error); return; }
+            input.value = data.hours;
+            var cell = input.closest('[data-hours-cell]');
+            if (cell) cell.setAttribute('data-sort-value', data.hours);
+        })
+        .catch(function () { alert('Не удалось сохранить часы. Попробуйте ещё раз.'); })
+        .finally(function () { input.disabled = false; });
+    }
+
+    document.querySelectorAll('[data-attendance-hours]').forEach(function (input) {
+        var lastSaved = input.value;
+        input.addEventListener('change', function () {
+            if (input.value !== lastSaved) { lastSaved = input.value; sendParticipationHours(input); }
+        });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
         });
     });
 

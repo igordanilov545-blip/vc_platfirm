@@ -18,16 +18,28 @@ from blog.services import roles as roles_service
 from blog.services.applications import process_application
 from blog.services.notifications import notify_application_submitted
 from blog.services.stats import is_pgas_star
+from blog.logging_utils import get_bot_logger, actor
+
+logger = get_bot_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
 # Пользователи: первое касание, регистрация, профиль
 # ---------------------------------------------------------------------------
 
-def get_or_create_user(telegram_id: int, telegram_username: str = None):
-    """Первое касание (tg-bot.md §3.1) — не регистрация. Возвращает (user, created)."""
+def get_or_create_user(telegram_id: int, telegram_username: str = None,
+                        first_name: str = None, last_name: str = None):
+    """Первое касание (tg-bot.md §3.1) — не регистрация. Возвращает (user, created).
+
+    Имя/фамилия из Telegram (если переданы) заполняют пустые поля профиля и участвуют
+    в синхронизации с ранее поданными заявками (телефон и т.п.)."""
     close_old_connections()
-    return dc.get_or_create_user_by_telegram_id(telegram_id, telegram_username)
+    user, created = dc.get_or_create_user_by_telegram_id(
+        telegram_id, telegram_username, first_name=first_name, last_name=last_name
+    )
+    if created:
+        logger.info('Первое касание бота: создан гость %s telegram_id=%s', actor(user), telegram_id)
+    return user, created
 
 
 def get_user(user_id: int):
@@ -40,8 +52,9 @@ def is_guest(user) -> bool:
     return user.registration_status != 'registered'
 
 
-def complete_registration(user_id: int, first_name: str, last_name: str = None, phone: str = None):
-    """Завершает регистрацию (tg-bot.md §3.2): имя обязательно, телефон опционален."""
+def complete_registration(user_id: int, first_name: str, last_name: str = None,
+                          phone: str = None, middle_name: str = None):
+    """Завершает регистрацию (tg-bot.md §3.2): имя обязательно, отчество/телефон опциональны."""
     close_old_connections()
     user = get_user(user_id)
     fields = {
@@ -50,9 +63,13 @@ def complete_registration(user_id: int, first_name: str, last_name: str = None, 
     }
     if last_name:
         fields['last_name'] = last_name.strip()[:100]
+    if middle_name:
+        fields['middle_name'] = middle_name.strip()[:100]
     if phone:
         fields['phone'] = phone.strip()[:20]
-    return dc.update_user_fields(user, **fields)
+    result = dc.update_user_fields(user, **fields)
+    logger.info('Регистрация в боте завершена: %s phone=%s', actor(user), bool(phone))
+    return result
 
 
 def update_profile(user_id: int, first_name: str = None, last_name: str = None, phone: str = None):
@@ -146,6 +163,7 @@ def set_web_credentials(user_id: int, login: str, password: str):
     for session in Session.objects.filter(expire_date__gte=timezone.now()):
         if session.get_decoded().get('_auth_user_id') == str(user.id):
             session.delete()
+    logger.info('Установлены/сброшены веб-креды через бот: %s login=%s', actor(user), user.login)
     return user
 
 
@@ -166,21 +184,39 @@ def user_stats(user_id: int) -> dict:
     }
 
 
-def open_events(limit: int = 7) -> list:
-    """Ближайшие опубликованные мероприятия с открытым набором (tg-bot.md §4.1)."""
+def open_events(limit: int = 7, user_id: int = None) -> list:
+    """Ближайшие опубликованные мероприятия с открытым набором (tg-bot.md §4.1).
+
+    Если передан `user_id`, к каждому меро добавляется инфо об АКТИВНОЙ заявке этого
+    пользователя (`my_application_id`, `my_application_status`) — чтобы в списке вместо
+    кнопки «Подать заявку» показать статус уже поданной заявки (db.md правило 7d)."""
     close_old_connections()
     today = timezone.now().date()
     events = dc.get_open_events()
+
+    my_apps = {}
+    if user_id:
+        from blog.models import Application
+        for app in Application.objects.filter(
+            user_id=user_id, status__in=['new', 'approved'],
+            event__in=[e.id for e in events],
+        ):
+            # На одно меро может быть несколько активных заявок — берём последнюю.
+            my_apps[app.event_id] = app
+
     result = []
     for event in events:
         days = sorted(s.day for s in event.shifts.all())
         first_day = next((d for d in days if d >= today), days[0] if days else None)
+        my_app = my_apps.get(event.id)
         result.append({
             'id': event.id,
             'title': event.title,
             'description': (event.description or '')[:200],
             'location': event.location.name if event.location else None,
             'first_day': first_day,
+            'my_application_id': my_app.id if my_app else None,
+            'my_application_status': my_app.get_status_display() if my_app else None,
         })
     result.sort(key=lambda e: (e['first_day'] is None, e['first_day']))
     return result[:limit]
@@ -218,6 +254,10 @@ def apply_to_event(user_id: int, event_id: int):
         status='new',
     )
     notify_application_submitted(application)
+    logger.info(
+        'Заявка подана из бота: application=%s event=%s by=%s',
+        application.id, event_id, actor(user),
+    )
     return application, None
 
 
@@ -399,12 +439,16 @@ def set_attendance(user_id: int, participation_id: int, status: str, hours: int 
     if not roles_service.can_process_applications(user, event_id):
         return None, 'forbidden'
 
-    dc.update_participation_status(participation, status, hours=hours)
+    dc.update_participation_status(participation, status, hours=hours, actor_user=user)
     recalc_user_aggregates(participation.user)
     if status == 'absent_unexcused':
         apply_churn_no_show(participation.user)
     elif status == 'attended':
         apply_churn_activity_decay(participation.user)
+    logger.info(
+        'Явка проставлена из бота: participation=%s status=%s by=%s subject=%s',
+        participation_id, status, actor(user), actor(participation.user),
+    )
     return participation, None
 
 

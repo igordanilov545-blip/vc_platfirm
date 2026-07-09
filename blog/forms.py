@@ -323,7 +323,25 @@ class EventShiftForm(forms.ModelForm):
         )
         if commit:
             instance.save()
+            # При изменении времени смены часы уже проставленной явки должны стать
+            # ровно как в смене (длительность смены). Пересчитываем только присутствовавших
+            # (attended) — у отсутствовавших часы 0 и меняться не должны. Затрагиваем
+            # только тех, кому НЕ правили часы вручную тим-лидером (hours_overridden),
+            # чтобы не затирать ручную корректировку.
+            self._recalc_participation_hours(instance)
         return instance
+
+    @staticmethod
+    def _recalc_participation_hours(shift):
+        from blog.models import Participation
+        from blog.services.stats import recalc_user_aggregates
+
+        duration_hours = max(0, round((shift.end_time - shift.start_time).total_seconds() / 3600))
+        affected = shift.participations.filter(status='attended', hours_overridden=False)
+        users = list({p.user for p in affected})
+        affected.update(hours=duration_hours)
+        for user in users:
+            recalc_user_aggregates(user)
 
 
 class ParticipationForm(forms.ModelForm):
@@ -373,10 +391,11 @@ class ApplicationForm(forms.ModelForm):
         # гарантированно не предлагать прошедшие меро (нет отдельного планировщика задач).
         for event in Event.objects.filter(shifts__recruit_status='open').distinct():
             event.close_recruit_if_passed()
-        # Подать заявку можно только на меро хотя бы с одной сменой с открытым набором —
-        # меро, где все смены закрыты (вручную или автоматически), пропадают из выбора.
+        # Подать заявку можно только на ОПУБЛИКОВАННОЕ меро (published_at задан) хотя бы
+        # с одной сменой с открытым набором — неопубликованные меро и меро, где все смены
+        # закрыты (вручную или автоматически), в пул выбора не попадают.
         self.fields['event'].queryset = Event.objects.filter(
-            shifts__recruit_status='open'
+            shifts__recruit_status='open', published_at__isnull=False,
         ).distinct().order_by('-created_at')
 
         # Пул смен для чипов — только смены уже выбранного меро с открытым набором.
@@ -403,35 +422,70 @@ class ApplicationCancelForm(forms.Form):
     )
 
 
-class ProfileCompletionForm(forms.ModelForm):
-    """Дозаполнение аккаунта после входа через Telegram: ФИО обязательно, остальное
-    (телефон/почта/дата рождения) — опционально. Нужно, чтобы пользователь мог
-    подавать заявки («заполненный аккаунт», см. roles.account_is_complete)."""
+class ProfileForm(forms.ModelForm):
+    """Личный кабинет: редактирование своих данных пользователем. Обязательны для
+    подачи заявки — ФИО (имя), Telegram-username и телефон (см. roles.account_is_complete);
+    остальное (юзернейм для системы, почта, дата рождения, о себе, ссылка на ВК) —
+    по желанию.
+
+    Дата рождения — как и везде в проекте, красивый календарь (data-datepicker), а не
+    нативный type=date."""
     first_name = forms.CharField(label='Имя', max_length=100, required=True)
     last_name = forms.CharField(label='Фамилия', max_length=100, required=False)
+    middle_name = forms.CharField(label='Отчество', max_length=100, required=False)
 
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'phone', 'email', 'birthday']
+        fields = [
+            'first_name', 'last_name', 'middle_name', 'system_username', 'telegram_username',
+            'phone', 'email', 'birthday', 'about', 'VK_username',
+        ]
         widgets = {
-            'birthday': forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d'),
+            'birthday': forms.DateInput(
+                attrs={'type': 'text', 'data-datepicker': '', 'autocomplete': 'off'},
+                format='%Y-%m-%d',
+            ),
+            'about': forms.Textarea(attrs={'rows': 3}),
         }
-        labels = {'phone': 'Телефон', 'email': 'Почта', 'birthday': 'Дата рождения'}
+        labels = {
+            'system_username': 'Юзернейм для системы',
+            'telegram_username': 'Telegram-юзернейм',
+            'phone': 'Номер телефона',
+            'email': 'Почта',
+            'birthday': 'Дата рождения',
+            'about': 'О себе',
+            'VK_username': 'Ссылка на ВК',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Обязательные для подачи заявки поля помечаем required на форме — визуально
+        # (звёздочка) и на уровне валидации.
+        self.fields['telegram_username'].required = True
+        self.fields['phone'].required = True
 
     def clean_first_name(self):
         value = (self.cleaned_data.get('first_name') or '').strip()
         if not value:
-            raise forms.ValidationError('Укажите имя — без него нельзя подать заявку.')
+            raise forms.ValidationError('Укажите имя — оно обязательно для подачи заявки.')
         return value
+
+    def clean_telegram_username(self):
+        return (self.cleaned_data.get('telegram_username') or '').strip().lstrip('@') or None
 
     def save(self, commit=True):
         user = super().save(commit=False)
-        # Вход через Telegram оставляет registration_status='guest' — после
-        # дозаполнения ФИО считаем анкету заполненной.
-        user.registration_status = 'registered'
+        # Заполненная анкета → registration_status='registered' (после входа через
+        # Telegram он оставался 'guest').
+        if (user.first_name or '').strip():
+            user.registration_status = 'registered'
         if commit:
             user.save()
         return user
+
+
+# Обратная совместимость: часть кода/шаблонов ещё ссылается на старое имя.
+ProfileCompletionForm = ProfileForm
 
 
 class ExternalExperienceForm(forms.ModelForm):
@@ -442,7 +496,12 @@ class ExternalExperienceForm(forms.ModelForm):
         fields = ['title', 'date']
         widgets = {
             'title': forms.TextInput(attrs={'placeholder': 'Например: Городской субботник'}),
-            'date': forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d'),
+            # Красивый календарь проекта (data-datepicker), как в смене мероприятия,
+            # вместо нативного type=date.
+            'date': forms.DateInput(
+                attrs={'type': 'text', 'data-datepicker': '', 'autocomplete': 'off'},
+                format='%Y-%m-%d',
+            ),
         }
         labels = {'title': 'Название', 'date': 'Дата'}
 

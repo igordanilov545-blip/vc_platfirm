@@ -5,6 +5,9 @@ from django.db import transaction
 from django.utils import timezone
 
 from blog.models import ApplicationShiftDecision, User, Application, Event, Participation
+from blog.logging_utils import get_web_logger, actor
+
+logger = get_web_logger(__name__)
 
 
 def application_shifts(application: Application):
@@ -70,9 +73,14 @@ def process_application(application: Application, new_status: str, processed_by:
     application.assigned_at = timezone.now()
     application.assigned_by = processed_by
     application.save(update_fields=['status', 'assigned_at', 'assigned_by'])
+    logger.info(
+        'Заявка обработана целиком: application=%s event=%s status=%s by=%s subject=%s',
+        application.id, application.event_id, new_status,
+        actor(processed_by), actor(application.user) if application.user_id else 'user=?',
+    )
 
+    shifts = list(application.selected_shifts.all() or application.event.shifts.all())
     if new_status == 'approved' and application.user:
-        shifts = application.selected_shifts.all() or application.event.shifts.all()
         for shift in shifts:
             duration_hours = max(0, round((shift.end_time - shift.start_time).total_seconds() / 3600))
             Participation.objects.get_or_create(
@@ -89,6 +97,25 @@ def process_application(application: Application, new_status: str, processed_by:
         # "зависает" на нулях до первого вмешательства тим-лидера.
         from blog.services.stats import recalc_user_aggregates
         recalc_user_aggregates(application.user)
+    elif new_status == 'rejected' and application.user:
+        # Отклонение/резерв заявки целиком → убираем участия по её сменам, чтобы
+        # отклонённый волонтёр исчез из таблицы явки (показываем только одобренных).
+        deleted, _ = Participation.objects.filter(
+            user=application.user, event_day__in=shifts
+        ).delete()
+        if deleted:
+            from blog.services.stats import recalc_user_aggregates
+            recalc_user_aggregates(application.user)
+
+    # Синхронизируем решения по сменам (ApplicationShiftDecision) с общим статусом
+    # заявки: process_application меняет статус заявки целиком, поэтому и все её
+    # per-shift решения должны прийти в тот же статус (иначе таблица набора по сменам
+    # разойдётся с фактическим решением по заявке).
+    for shift in shifts:
+        ApplicationShiftDecision.objects.update_or_create(
+            application=application, shift=shift,
+            defaults={'status': new_status, 'assigned_at': timezone.now(), 'assigned_by': processed_by},
+        )
 
     # Автоматика только ЗАКРЫВАЕТ набор на смену при достижении порога (правило 10) —
     # никогда не открывает его обратно. Открытие/закрытие вручную (кнопка «Набор закрыт»
@@ -117,21 +144,37 @@ def process_shift_decision(application: Application, shift, new_status: str, pro
     decision.assigned_at = timezone.now()
     decision.assigned_by = processed_by
     decision.save(update_fields=['status', 'assigned_at', 'assigned_by'])
+    logger.info(
+        'Заявка обработана по смене: application=%s shift=%s status=%s by=%s subject=%s',
+        application.id, shift.id, new_status, actor(processed_by),
+        actor(application.user) if application.user_id else 'user=?',
+    )
 
     if application.assigned_at is None:
         application.assigned_at = timezone.now()
         application.assigned_by = processed_by
         application.save(update_fields=['assigned_at', 'assigned_by'])
 
-    if new_status == 'approved' and application.user:
-        duration_hours = max(0, round((shift.end_time - shift.start_time).total_seconds() / 3600))
-        Participation.objects.get_or_create(
-            user=application.user,
-            event_day=shift,
-            defaults={'status': 'attended', 'hours': duration_hours, 'full_shift': True},
-        )
-        from blog.services.stats import recalc_user_aggregates
-        recalc_user_aggregates(application.user)
+    if application.user:
+        if new_status == 'approved':
+            duration_hours = max(0, round((shift.end_time - shift.start_time).total_seconds() / 3600))
+            Participation.objects.get_or_create(
+                user=application.user,
+                event_day=shift,
+                defaults={'status': 'attended', 'hours': duration_hours, 'full_shift': True},
+            )
+            from blog.services.stats import recalc_user_aggregates
+            recalc_user_aggregates(application.user)
+        elif new_status == 'rejected':
+            # Отклонённая (уведённая в резерв) заявка на смену → участие удаляем: волонтёр
+            # не должен оставаться в таблице явки этой смены (показываем только одобренных).
+            # Другие смены той же заявки не затрагиваются — участие привязано к смене.
+            deleted, _ = Participation.objects.filter(
+                user=application.user, event_day=shift
+            ).delete()
+            if deleted:
+                from blog.services.stats import recalc_user_aggregates
+                recalc_user_aggregates(application.user)
 
     _recompute_application_status(application)
 
@@ -185,6 +228,11 @@ def cancel_application(application: Application, reason: str) -> Application:
     application.cancelled_at = timezone.now()
     application.cancel_reason = reason
     application.save(update_fields=['status', 'cancelled_at', 'cancel_reason'])
+    logger.info(
+        'Заявка отменена волонтёром: application=%s event=%s by=%s',
+        application.id, application.event_id,
+        actor(application.user) if application.user_id else 'user=?',
+    )
 
     from blog.models import ApplicationChangeLog
     name = f'{application.first_name} {application.last_name or ""}'.strip()

@@ -18,11 +18,11 @@ from blog.decorators import manager_required
 from blog.forms import (
     ApplicationCancelForm, ApplicationForm, ConstForm, EventCommentForm, EventShiftForm, EventFeedbackForm, EventForm,
     ExcelImportForm, ExternalExperienceForm, LocationForm, LoginForm, OrganizationForm, OrganizerForm, ProfileCompletionForm,
-    ParticipationForm, QuickCategoryForm, QuickLocationForm, QuickOrganizationForm, QuickOrganizerForm,
+    ProfileForm, ParticipationForm, QuickCategoryForm, QuickLocationForm, QuickOrganizationForm, QuickOrganizerForm,
     RoleUsersForm, SeasonForm, UserCommentForm,
 )
 from blog.models import (
-    Application, ApplicationShiftDecision, Const, Event, EventCategory, EventComment, EventShift, EventFeedback, EventStaff,
+    Application, ApplicationShiftDecision, Const, DobroRuSharedLink, Event, EventCategory, EventComment, EventShift, EventFeedback, EventStaff,
     Location, Manager, Organization, Organizer, Participation, Season, TeamLeader, User,
 )
 from blog.services import import_applications as import_service
@@ -34,9 +34,13 @@ from blog.services.applications import (
 )
 from blog.services import roles as roles_service
 from blog.services.roles import (
-    account_is_complete, can_process_applications, has_extended_access_to_profile, is_manager, is_team_leader, role_label,
+    account_is_complete, account_missing_fields, can_process_applications, has_extended_access_to_profile,
+    is_manager, is_team_leader, role_label,
 )
 from blog.services.stats import recalc_user_aggregates
+from blog.logging_utils import get_web_logger, actor
+
+logger = get_web_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +162,9 @@ def login_view(request):
         )
         if user is not None:
             auth_login(request, user)
+            logger.info('Веб-вход по логину/паролю успешен: user=%s login=%s', user.id, user.login)
             return redirect(_safe_next(request))
+        logger.warning('Неудачная попытка веб-входа: login=%r', form.cleaned_data.get('login'))
         messages.error(request, 'Неверный логин или пароль.')
 
     return render(request, 'blog/login.html', {
@@ -183,36 +189,63 @@ def telegram_login_callback(request):
     data = {k: v for k, v in request.GET.items() if k != 'next'}
     payload = validate_login_widget(data)
     if not payload or not payload.get('id'):
+        logger.warning('Login Widget: не удалось подтвердить подпись Telegram.')
         messages.error(request, 'Не удалось подтвердить вход через Telegram. Попробуйте ещё раз.')
         return redirect('login')
 
-    user, _ = dc.get_or_create_user_by_telegram_id(payload['id'], payload.get('username'))
+    user, created = dc.get_or_create_user_by_telegram_id(
+        payload['id'], payload.get('username'),
+        first_name=payload.get('first_name'), last_name=payload.get('last_name'),
+    )
     if user.status == 'blacklisted':
+        logger.warning('Login Widget: вход заблокированного пользователя отклонён user=%s', user.id)
         messages.error(request, 'Доступ ограничен — обратитесь к менеджеру центра.')
         return redirect('login')
 
     auth_login(request, user, backend='blog.auth_backends.TelegramWebAppBackend')
+    logger.info('Веб-вход через Telegram Login Widget: user=%s created=%s', user.id, created)
     return redirect(_post_tg_login_redirect(request, user))
 
 
 @login_required
-def complete_profile(request):
-    """Дозаполнение аккаунта после входа через Telegram: ФИО обязательно, телефон/
-    почта/дата рождения — по желанию. Без «заполненного аккаунта» (ФИО + Telegram)
-    нельзя подать заявку — сюда редиректит вход и попытка подачи заявки."""
-    if account_is_complete(request.user) and request.method == 'GET' and not request.GET.get('edit'):
-        return redirect(_safe_next(request))
+def profile_edit(request):
+    """Личный кабинет → «Редактировать»: пользователь правит свои данные (ФИО, юзернейм
+    для системы, ТГ, телефон, почта, дата рождения, о себе, ВК). Полноценная страница
+    (не модалка), чтобы корректно работать и как точка дозаполнения профиля перед
+    подачей заявки. Обязательные для заявки поля (ФИО, ТГ, телефон) помечены в форме.
 
-    form = ProfileCompletionForm(request.POST or None, instance=request.user)
+    `next` сохраняется сквозь сабмит: если пользователь пришёл сюда с попытки подать
+    заявку, после сохранения его вернёт туда же."""
+    next_url = request.POST.get('next') or request.GET.get('next') or ''
+    was_complete = account_is_complete(request.user)
+
+    form = ProfileForm(request.POST or None, instance=request.user)
     if request.method == 'POST' and form.is_valid():
         form.save()
-        messages.success(request, 'Профиль заполнен — теперь можно подавать заявки.')
-        return redirect(_safe_next(request))
+        if account_is_complete(request.user):
+            if not was_complete:
+                messages.success(request, 'Профиль заполнен — теперь можно подавать заявки.')
+            else:
+                messages.success(request, 'Профиль обновлён.')
+            # Возврат туда, откуда пришли (напр. на страницу мероприятия для подачи заявки).
+            if next_url:
+                from django.utils.http import url_has_allowed_host_and_scheme
+                if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+                    return redirect(next_url)
+            return redirect('profile_detail', user_id=request.user.id)
+        else:
+            missing = ', '.join(account_missing_fields(request.user))
+            messages.warning(request, f'Чтобы подавать заявки, заполните: {missing}.')
 
-    return render(request, 'blog/complete_profile.html', {
+    return render(request, 'blog/profile_edit.html', {
         'form': form,
-        'next': request.GET.get('next', ''),
+        'next': next_url,
+        'missing_fields': account_missing_fields(request.user),
     })
+
+
+# Обратная совместимость по имени маршрута/вьюхи.
+complete_profile = profile_edit
 
 
 def tg_link_login(request, token):
@@ -391,16 +424,20 @@ def webapp_auth(request):
     init_data = request.POST.get('init_data', '')
     payload = validate_init_data(init_data)
     if not payload or not payload.get('user') or not payload['user'].get('id'):
+        logger.warning('Mini App auth: невалидный или устаревший initData.')
         return JsonResponse({'error': 'Не удалось подтвердить данные Telegram.'}, status=400)
 
     tg_user = payload['user']
-    user, _ = dc.get_or_create_user_by_telegram_id(
-        tg_user['id'], tg_user.get('username')
+    user, created = dc.get_or_create_user_by_telegram_id(
+        tg_user['id'], tg_user.get('username'),
+        first_name=tg_user.get('first_name'), last_name=tg_user.get('last_name'),
     )
     if user.status == 'blacklisted':
+        logger.warning('Mini App auth: вход заблокированного пользователя отклонён user=%s', user.id)
         return JsonResponse({'error': 'Доступ ограничен — обратитесь к менеджеру центра.'}, status=403)
 
     auth_login(request, user, backend='blog.auth_backends.TelegramWebAppBackend')
+    logger.info('Вход через Mini App: user=%s created=%s', user.id, created)
     # Флаг в сессии: запросы из Mini App разрешено встраивать в <iframe> (десктопный
     # Telegram-клиент), обычный веб-вход по логину/паролю — по-прежнему DENY против
     # clickjacking. Читается в TelegramWebAppFrameMiddleware.
@@ -546,11 +583,13 @@ def event_detail(request, event_id):
                 .order_by('-application__created_at')
             )
             shift_approved = decisions.filter(status='approved').count()
+            shift_pending = decisions.filter(status='new').count()
             approved_total += shift_approved
             shifts_with_applications.append({
                 'shift': shift,
                 'decisions': decisions,
                 'approved_count': shift_approved,
+                'pending_count': shift_pending,
                 'needed': shift.volunteer_needed,
                 'remaining': max(shift.volunteer_needed - shift_approved, 0),
             })
@@ -563,12 +602,24 @@ def event_detail(request, event_id):
             'pending_count': pending_count,
         })
 
-        # Явка по сменам: участники (Participation) уже созданы автоматически при approve
-        # заявки на все смены меро (db.md, правило 4) — здесь просто группируем их по смене,
-        # чтобы проставить явку чекбоксом «Был» прямо в таблице.
+        # Явка по сменам: участники (Participation) создаются автоматически при approve
+        # заявки на смену (db.md, правило 4). В таблице явки показываем ТОЛЬКО волонтёров
+        # с одобренной заявкой на смену — если заявку на эту смену отклонили (резерв),
+        # волонтёр из явки пропадает. Участие удаляется при reject (см. applications.py),
+        # но на случай унаследованных данных дополнительно отфильтровываем тех, у кого
+        # решение по этой смене = 'rejected'.
         shifts_with_participations = []
         for shift in shifts:
-            participations = shift.participations.select_related('user').order_by('user__last_name', 'user__first_name')
+            rejected_user_ids = (
+                ApplicationShiftDecision.objects.filter(shift=shift, status='rejected')
+                .exclude(application__status='cancelled')
+                .values_list('application__user_id', flat=True)
+            )
+            participations = (
+                shift.participations.select_related('user')
+                .exclude(user_id__in=rejected_user_ids)
+                .order_by('user__last_name', 'user__first_name')
+            )
             shifts_with_participations.append({'shift': shift, 'participations': participations})
         context['shifts_with_participations'] = shifts_with_participations
 
@@ -705,6 +756,7 @@ def event_publish(request, event_id):
         else:
             event.published_at = timezone.now()
             event.save(update_fields=['published_at'])
+            logger.info('Мероприятие опубликовано: event=%s by=%s', event.id, actor(request.user))
             messages.success(request, 'Мероприятие опубликовано — подача заявок открыта.')
     return redirect('event_detail', event_id=event.id)
 
@@ -712,20 +764,40 @@ def event_publish(request, event_id):
 @manager_required
 def event_broadcast(request, event_id):
     """Рассылка-оповещение о мероприятии подписанным волонтёрам (отдельно от публикации).
-    Доступна только после публикации; ставит уведомления в очередь бота."""
+    Доступна только после публикации; ставит уведомления в очередь бота.
+
+    Рассылку можно делать несколько раз (напр. для добора): уведомления уходят только
+    тем, кто ещё НЕ подал заявку на это меро. Если рассылка уже была сделана ранее,
+    сообщаем об этом (broadcast_sent_at показывает момент ПЕРВОЙ рассылки)."""
     event = get_object_or_404(Event, pk=event_id)
     if request.method == 'POST':
         if not event.published_at:
             messages.error(request, 'Сначала опубликуйте мероприятие — потом можно делать рассылку.')
         elif event.event_status == 'finished':
             messages.error(request, 'Мероприятие завершено — рассылка больше не нужна.')
-        elif event.broadcast_sent_at:
-            messages.error(request, 'Рассылка по этому мероприятию уже отправлена.')
         else:
-            notifications_service.broadcast_new_event(event)
-            event.broadcast_sent_at = timezone.now()
-            event.save(update_fields=['broadcast_sent_at'])
-            messages.success(request, 'Рассылка поставлена в очередь — уведомления уйдут подписанным волонтёрам.')
+            was_sent_before = event.broadcast_sent_at is not None
+            sent = notifications_service.broadcast_new_event(event)
+            logger.info(
+                'Рассылка о мероприятии event=%s поставлена в очередь: адресатов=%s повторная=%s by=%s',
+                event.id, sent, was_sent_before, actor(request.user),
+            )
+            if not was_sent_before:
+                event.broadcast_sent_at = timezone.now()
+                event.save(update_fields=['broadcast_sent_at'])
+            if sent:
+                prefix = 'Повторная рассылка' if was_sent_before else 'Рассылка'
+                messages.success(
+                    request,
+                    f'{prefix} поставлена в очередь — уведомления уйдут {sent} '
+                    'подписанным волонтёрам (кроме уже подавших заявку).'
+                )
+            else:
+                messages.info(
+                    request,
+                    'Все подписанные волонтёры уже подали заявку на это мероприятие — '
+                    'рассылать некому.'
+                )
     return redirect('event_detail', event_id=event.id)
 
 
@@ -746,6 +818,32 @@ def shift_toggle_recruit(request, event_id, shift_id):
         shift.save(update_fields=['recruit_status'])
         label = 'закрыт' if shift.recruit_status == 'closed' else 'открыт'
         messages.success(request, f'Набор на смену {shift.day} {label}.')
+    return redirect('event_detail', event_id=event.id)
+
+
+@login_required
+def shift_toggle_attendance_confirmed(request, event_id, shift_id):
+    """«Можно забирать» — тим-лидер/менеджер этого меро подтверждает, что явка и часы
+    по смене актуализированы. Чисто визуальный индикатор (ни на что не влияет), доступен
+    только для смен, которые уже прошли — до этого момента актуализировать ещё нечего."""
+    event = get_object_or_404(Event, pk=event_id)
+    shift = get_object_or_404(EventShift, pk=shift_id, event=event)
+    if not can_process_applications(request.user, event.id):
+        raise PermissionDenied('Нет прав управлять явкой этого мероприятия.')
+    if shift.compute_status() != 'passed':
+        raise PermissionDenied('Отметить «можно забирать» можно только после того, как смена прошла.')
+
+    if request.method == 'POST':
+        shift.attendance_confirmed = not shift.attendance_confirmed
+        if shift.attendance_confirmed:
+            shift.attendance_confirmed_at = timezone.now()
+            shift.attendance_confirmed_by = request.user
+        else:
+            shift.attendance_confirmed_at = None
+            shift.attendance_confirmed_by = None
+        shift.save(update_fields=['attendance_confirmed', 'attendance_confirmed_at', 'attendance_confirmed_by'])
+        label = 'можно забирать' if shift.attendance_confirmed else 'снята отметка «можно забирать»'
+        messages.success(request, f'Смена {shift.day.strftime("%d.%m.%Y")}: {label}.')
     return redirect('event_detail', event_id=event.id)
 
 
@@ -770,10 +868,37 @@ def event_close(request, event_id):
         event.people_helped = int(people_helped)
         event.event_status = 'finished'
         event.save(update_fields=['people_helped', 'event_status'])
+        logger.info(
+            'Мероприятие завершено: event=%s people_helped=%s by=%s',
+            event.id, event.people_helped, actor(request.user),
+        )
         messages.success(request, f'Мероприятие «{event.title}» завершено.')
         return redirect('event_detail', event_id=event.id)
 
     return render(request, 'blog/event_close.html', {'event': event, 'checklist': checklist})
+
+
+@manager_required
+def event_dobro_toggle(request, event_id):
+    """Переключение статуса «Часы на Добро.ру выставлены / не выставлены» для
+    мероприятия (только менеджер). Доступно лишь после закрытия мероприятия
+    (event_status='finished') — до этого простановка часов не имеет смысла.
+    Мероприятия с типом учёта 'none' часы на Добро.ру не ведут — для них статус
+    не выставляется."""
+    event = get_object_or_404(Event, pk=event_id)
+    if request.method == 'POST':
+        if event.event_status != 'finished':
+            messages.error(request, 'Статус часов на Добро.ру доступен только после завершения мероприятия.')
+        elif event.dobro_ru_link_kind == 'none':
+            messages.error(request, 'У этого мероприятия учёт часов на Добро.ру не ведётся.')
+        else:
+            event.dobro_ru_hours_logged = not event.dobro_ru_hours_logged
+            if event.dobro_ru_hours_logged:
+                event.dobro_ru_logged_by = request.user
+            event.save(update_fields=['dobro_ru_hours_logged', 'dobro_ru_logged_by'])
+            label = 'выставлены' if event.dobro_ru_hours_logged else 'не выставлены'
+            messages.success(request, f'Часы на Добро.ру отмечены как {label}.')
+    return redirect('event_detail', event_id=event.id)
 
 
 @manager_required
@@ -862,6 +987,10 @@ def participation_set_status(request, participation_id):
 
     old_status = participation.status
     participation.status = new_status
+    # Смена статуса заново вычисляет часы из длительности смены и сбрасывает ручную
+    # корректировку (hours_overridden): переключение «Был/Не был» — это явное действие,
+    # после которого часы возвращаются к автоматическому значению, пока их снова не
+    # поправят вручную.
     if new_status == 'attended':
         day = participation.event_day
         duration = day.end_time - day.start_time
@@ -870,7 +999,8 @@ def participation_set_status(request, participation_id):
     else:
         participation.hours = 0
         participation.full_shift = False
-    participation.save(update_fields=['status', 'hours', 'full_shift'])
+    participation.hours_overridden = False
+    participation.save(update_fields=['status', 'hours', 'full_shift', 'hours_overridden'])
     recalc_user_aggregates(participation.user)
 
     if new_status == 'absent_unexcused' and old_status != 'absent_unexcused':
@@ -880,11 +1010,53 @@ def participation_set_status(request, participation_id):
         from blog.services.stats import apply_churn_activity_decay
         apply_churn_activity_decay(participation.user)
 
+    logger.info(
+        'Явка проставлена (веб): participation=%s event=%s %s→%s by=%s subject=%s',
+        participation.id, event.id, old_status, new_status,
+        actor(request.user), actor(participation.user),
+    )
     return JsonResponse({
         'status': participation.status,
         'status_display': participation.get_status_display(),
         'hours': participation.hours,
     })
+
+
+@login_required
+def participation_set_hours(request, participation_id):
+    """Ручная корректировка часов участия тим-лидером/менеджером прямо в таблице явки
+    (AJAX). Помечает участие hours_overridden=True — после этого автоматический пересчёт
+    часов при изменении времени смены эти часы не трогает."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Метод не поддерживается.'}, status=405)
+
+    participation = get_object_or_404(
+        Participation.objects.select_related('event_day__event', 'user'), pk=participation_id
+    )
+    event = participation.event_day.event
+    if not can_process_applications(request.user, event.id):
+        raise PermissionDenied('Нет доступа к явке этого мероприятия.')
+    if event.event_status == 'finished':
+        return JsonResponse({'error': 'Мероприятие завершено — явку менять больше нельзя.'}, status=403)
+
+    raw = (request.POST.get('hours') or '').strip()
+    try:
+        hours = int(raw)
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'Часы должны быть целым числом.'}, status=400)
+    if hours < 0:
+        return JsonResponse({'error': 'Часы не могут быть отрицательными.'}, status=400)
+
+    participation.hours = hours
+    participation.hours_overridden = True
+    participation.save(update_fields=['hours', 'hours_overridden'])
+    recalc_user_aggregates(participation.user)
+
+    logger.info(
+        'Часы участия скорректированы вручную (веб): participation=%s hours=%s by=%s subject=%s',
+        participation.id, hours, actor(request.user), actor(participation.user),
+    )
+    return JsonResponse({'hours': participation.hours})
 
 
 @login_required
@@ -900,8 +1072,14 @@ def participation_edit(request, participation_id):
 
     form = ParticipationForm(request.POST or None, instance=participation)
     if request.method == 'POST' and form.is_valid():
-        old_status = Participation.objects.get(pk=participation.pk).status
-        participation = form.save()
+        old = Participation.objects.get(pk=participation.pk)
+        old_status = old.status
+        participation = form.save(commit=False)
+        # Ручная правка часов через форму фиксирует hours_overridden, чтобы автопересчёт
+        # при изменении времени смены не затирал введённое значение.
+        if participation.status == 'attended' and participation.hours != old.hours:
+            participation.hours_overridden = True
+        participation.save()
         recalc_user_aggregates(participation.user)
 
         if participation.status == 'absent_unexcused' and old_status != 'absent_unexcused':
@@ -949,11 +1127,22 @@ def application_create(request):
     которое остаётся как есть): если у пользователя уже есть активная заявка
     (new/approved) на выбранное меро, вместо создания второй — редирект на
     редактирование существующей."""
-    # Подать заявку может только пользователь с «заполненным аккаунтом» (известны ФИО
-    # и Telegram). Если ФИО ещё нет — сначала дозаполнение профиля, потом возврат сюда.
+    # Подать заявку может только пользователь с «заполненным аккаунтом» (ФИО + Telegram +
+    # телефон). Если чего-то не хватает — НЕ грузим форму в модалку (иначе редирект внутри
+    # fetch ломался и «ничего не происходило»): отвечаем JSON с плашкой и ссылкой на
+    # редактирование профиля. Модальный JS показывает плашку, а по повторному клику ведёт
+    # на страницу заполнения профиля. Для не-AJAX (прямой заход) — обычный редирект.
     if not account_is_complete(request.user):
-        messages.info(request, 'Заполните профиль (ФИО), чтобы подать заявку.')
-        return redirect(reverse('complete_profile') + f'?next={quote(request.get_full_path())}')
+        missing = ', '.join(account_missing_fields(request.user))
+        profile_url = reverse('profile_edit') + f'?next={quote(request.get_full_path())}'
+        if is_ajax(request):
+            return JsonResponse({
+                'profile_incomplete': True,
+                'message': f'Заполните {missing} в личном кабинете, чтобы подать заявку.',
+                'profile_url': profile_url,
+            }, status=200)
+        messages.warning(request, f'Заполните {missing} в личном кабинете, чтобы подать заявку.')
+        return redirect(profile_url)
 
     event_id = request.POST.get('event') or request.GET.get('event')
     if event_id:
@@ -978,11 +1167,16 @@ def application_create(request):
         application.user = request.user
         application.first_name = request.user.first_name or ''
         application.last_name = request.user.last_name
+        application.middle_name = request.user.middle_name
         application.telegram_username = request.user.telegram_username
         application.phone = request.user.phone
         application.save()
         _fill_application_shifts(application, form.cleaned_data.get('selected_shifts'))
         notifications_service.notify_application_submitted(application)
+        logger.info(
+            'Заявка подана через веб: application=%s event=%s by=%s',
+            application.id, application.event_id, actor(request.user),
+        )
         messages.success(request, 'Заявка отправлена.')
         return modal_form_response(request, None, None, success_redirect=reverse('dashboard'))
     return modal_form_response(
@@ -1108,6 +1302,47 @@ def application_shift_process(request, application_id, shift_id):
     return redirect(redirect_url)
 
 
+@login_required
+def shift_applications_approve_all(request, event_id, shift_id):
+    """«Принять всех» на КОНКРЕТНУЮ смену — одобряет все нерешённые (new) решения по
+    заявкам на эту смену. Дополняет общую кнопку «Принять всех» по мероприятию: та
+    обрабатывает все new-заявки целиком, а эта — только выбранную смену."""
+    event = get_object_or_404(Event, pk=event_id)
+    shift = get_object_or_404(EventShift, pk=shift_id, event=event)
+    if not can_process_applications(request.user, event.id):
+        raise PermissionDenied('Нет прав на обработку заявок этого мероприятия.')
+    if event.event_status == 'finished':
+        raise PermissionDenied('Мероприятие завершено — заявки менять больше нельзя.')
+
+    redirect_url = reverse('event_detail', args=[event.id]) + '#applications'
+    if request.method != 'POST':
+        return redirect(redirect_url)
+
+    from blog.services.applications import ensure_shift_decisions, process_shift_decision
+
+    # Гарантируем, что у всех активных заявок на это меро есть решения по сменам,
+    # затем берём new-решения именно этой смены.
+    for app in event.applications.exclude(status='cancelled').prefetch_related('selected_shifts', 'event__shifts'):
+        ensure_shift_decisions(app)
+
+    pending_decisions = list(
+        ApplicationShiftDecision.objects.filter(shift=shift, status='new')
+        .exclude(application__status='cancelled')
+        .select_related('application')
+    )
+    if not pending_decisions:
+        messages.info(request, f'На смене {shift.day.strftime("%d.%m.%Y")} нет необработанных заявок.')
+        return redirect(redirect_url)
+
+    for decision in pending_decisions:
+        process_shift_decision(decision.application, shift, 'approved', request.user)
+    messages.success(
+        request,
+        f'Принято заявок на смену {shift.day.strftime("%d.%m.%Y")}: {len(pending_decisions)}.'
+    )
+    return redirect(redirect_url)
+
+
 def _pending_applications_queryset(event_id=None):
     qs = Application.objects.filter(status='new').select_related('event')
     if event_id:
@@ -1199,6 +1434,10 @@ def import_commit(request):
             row['submitted_at'] = datetime.datetime.fromisoformat(row['submitted_at'])
 
     result = import_service.commit_import(rows)
+    logger.info(
+        'Excel-импорт заявок подтверждён: by=%s created=%s updated=%s skipped=%s',
+        actor(request.user), result['created'], result['updated'], result['skipped'],
+    )
     msg = f'Новых заявок: {result["created"]}.'
     if result['updated']:
         msg += f' Обновлено (изменилось содержание): {result["updated"]}.'
@@ -1251,6 +1490,11 @@ def profile_detail(request, user_id):
     mgr_role = target.manager_roles.filter(revoked_at__isnull=True).first()
     if mgr_role:
         context['mgr_role'] = mgr_role
+
+    # Владельцу профиля показываем его собственные заявки (главное, что он хочет видеть
+    # в своём профиле), даже если у него нет расширенного доступа как у менеджера/ТЛ.
+    if is_owner:
+        context['my_applications'] = target.applications.select_related('event').order_by('-created_at')
 
     if has_extended:
         context['applications'] = target.applications.select_related('event').order_by('-created_at')
@@ -1561,6 +1805,62 @@ def report_event_pdf(request, event_id):
     rep = report_exports.event_report(event.id)
     rep['generated_at'] = timezone.now()
     return render(request, 'blog/report_pdf_event.html', rep)
+
+
+@manager_required
+def dobro_page(request):
+    """Страница «Добро.ру»: все ссылки Добро.ру таблицей — общие (DobroRuSharedLink) и
+    уникальные (заданные прямо у мероприятия), их тип, к каким мероприятиям привязана
+    ссылка (чипами сбоку) и статус простановки часов (выставлены/нет) по каждому меро.
+
+    Мероприятия с типом учёта 'none' в таблицу не попадают (часы не ведём).
+
+    Фильтр `?only_unlogged=1` оставляет только ссылки, по которым часы ещё НЕ полностью
+    проставлены (есть хотя бы одно незакрытое меро)."""
+    only_unlogged = request.GET.get('only_unlogged') == '1'
+    rows = []
+
+    # 1) Общие ссылки: одна строка на ссылку, к ней привязаны несколько меро.
+    for link in DobroRuSharedLink.objects.order_by('-created_at'):
+        events = list(
+            link.events.filter(dobro_ru_link_kind='shared')
+            .order_by('-created_at')
+        )
+        rows.append({
+            'title': link.title,
+            'url': link.url,
+            'kind': 'shared',
+            'kind_display': 'Общая',
+            'link_type_display': link.get_link_type_display(),
+            'is_active': link.is_active,
+            'events': events,
+            'all_logged': bool(events) and all(e.dobro_ru_hours_logged for e in events),
+        })
+
+    # 2) Уникальные ссылки: у каждого меро своя ссылка — строка на меро.
+    for event in (
+        Event.objects.filter(dobro_ru_link_kind='unique')
+        .order_by('-created_at')
+    ):
+        rows.append({
+            'title': event.dobro_ru_link or event.title,
+            'url': event.dobro_ru_link,
+            'kind': 'unique',
+            'kind_display': 'Уникальная',
+            'link_type_display': '—',
+            'is_active': True,
+            'events': [event],
+            'all_logged': event.dobro_ru_hours_logged,
+        })
+
+    if only_unlogged:
+        # Оставляем ссылки, где часы ещё не полностью проставлены (есть незакрытые меро),
+        # а также ссылки вообще без привязанных меро скрываем — по ним закрывать нечего.
+        rows = [r for r in rows if r['events'] and not r['all_logged']]
+
+    return render(request, 'blog/dobro_page.html', {
+        'rows': rows, 'only_unlogged': only_unlogged,
+    })
 
 
 @manager_required
@@ -1907,7 +2207,7 @@ def settings_view(request):
                 affected = roles_service.assign_role(kind, users, assigned_by=request.user)
                 verb_text = 'назначены'
             else:
-                affected = roles_service.revoke_role(kind, users)
+                affected = roles_service.revoke_role(kind, users, revoked_by=request.user)
                 verb_text = 'сняты с роли'
             role_word = ROLE_LABELS[kind]
             if affected:

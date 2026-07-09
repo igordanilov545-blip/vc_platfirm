@@ -37,6 +37,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -137,8 +138,119 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'blog' / 'static']
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# ---------------------------------------------------------------------------
+# Логирование (см. documentation/logging.md)
+#
+# Три независимых канала логов, каждый в свой файл в logs/ с ротацией:
+#   - logs/web.log  — веб-приложение (вьюхи, сервисы, аутентификация Web/Mini App)
+#   - logs/bot.log  — Telegram-бот (хендлеры aiogram, диспетчер уведомлений)
+#   - logs/db.log   — прямой слой доступа к данным (data_base/data_controller.py)
+#
+# Каналы разведены по именам логгеров: логгер, чьё имя начинается на `vc.web`
+# (или Django-логгеры), пишет в web.log; `vc.bot.*` — в bot.log; `vc.db.*` — в db.log.
+# Код получает нужный логгер через blog.logging_utils.get_logger(...) или напрямую
+# logging.getLogger('vc.web'/'vc.bot'/'vc.db').
+# ---------------------------------------------------------------------------
+
+LOG_DIR = env('LOG_DIR', default=str(BASE_DIR / 'logs'))
+Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
+
+# Уровень логирования по каналам можно поднять/опустить через .env без правки кода.
+LOG_LEVEL = env('LOG_LEVEL', default='INFO')
+
+# Максимальный размер одного файла лога до ротации и число хранимых бэкапов.
+LOG_MAX_BYTES = env.int('LOG_MAX_BYTES', default=5 * 1024 * 1024)  # 5 МБ
+LOG_BACKUP_COUNT = env.int('LOG_BACKUP_COUNT', default=5)
+
+
+def _rotating_handler(filename):
+    return {
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': str(Path(LOG_DIR) / filename),
+        'maxBytes': LOG_MAX_BYTES,
+        'backupCount': LOG_BACKUP_COUNT,
+        'encoding': 'utf-8',
+        'formatter': 'verbose',
+        'level': LOG_LEVEL,
+    }
+
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{asctime} {levelname} [{name}] {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} [{name}] {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+            'level': LOG_LEVEL,
+        },
+        'web_file': _rotating_handler('web.log'),
+        'bot_file': _rotating_handler('bot.log'),
+        'db_file': _rotating_handler('db.log'),
+    },
+    'loggers': {
+        # Веб-приложение (наш код) — vc.web.*
+        'vc.web': {
+            'handlers': ['web_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        # Telegram-бот — vc.bot.*
+        'vc.bot': {
+            'handlers': ['bot_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        # Прямой доступ к БД — vc.db.*
+        'vc.db': {
+            'handlers': ['db_file'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        # Ошибки самого Django (запросы, сервер) — в web.log, это часть веб-канала.
+        'django': {
+            'handlers': ['web_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['web_file'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        # Логи самой библиотеки aiogram — в bot.log.
+        'aiogram': {
+            'handlers': ['bot_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
+# В режиме отладки дублируем всё в консоль — удобно при локальной разработке.
+if DEBUG:
+    for _logger in ('vc.web', 'vc.bot', 'vc.db'):
+        LOGGING['loggers'][_logger]['handlers'].append('console')

@@ -11,6 +11,9 @@ import datetime
 from django.utils import timezone
 
 from blog.models import TelegramAuthToken, User
+from blog.logging_utils import get_web_logger
+
+logger = get_web_logger(__name__)
 
 # Время жизни одноразовой ссылки входа через бота.
 AUTH_TOKEN_TTL = datetime.timedelta(minutes=5)
@@ -33,7 +36,9 @@ def consume_auth_token(token: str):
     использованным, либо None, если токен неизвестен/просрочен/уже использован."""
     obj = TelegramAuthToken.objects.filter(token=token).select_related('user').first()
     if obj is None or not obj.is_valid():
+        logger.warning('Попытка входа по недействительной/просроченной ссылке из бота.')
         return None
     obj.used_at = timezone.now()
     obj.save(update_fields=['used_at'])
+    logger.info('Вход по одноразовой ссылке из бота: user=%s', obj.user_id)
     return obj.user

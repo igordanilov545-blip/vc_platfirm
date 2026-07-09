@@ -1,0 +1,44 @@
+{% extends 'blog/base.html' %}
+{% block title %}Мой профиль — редактирование{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Редактирование профиля</h1>
+    <a href="{% url 'profile_detail' user.id %}" class="btn secondary">← К профилю</a>
+</div>
+
+{% if missing_fields %}
+<div class="card" style="background:var(--warning-soft, #fff8e1);">
+    <p style="margin:0;">
+        <span class="pill warning"><span class="dot"></span>Не хватает для заявок</span>
+        Чтобы подавать заявки на мероприятия, заполните: <b>{{ missing_fields|join:", " }}</b>.
+    </p>
+</div>
+{% endif %}
+
+<div class="card" style="max-width:560px;">
+    <p style="color:var(--text-secondary); font-size:0.9rem; margin-top:0;">
+        Поля <b>ФИО</b>, <b>Telegram-юзернейм</b> и <b>Номер телефона</b> обязательны для подачи заявки.
+        Остальное — по желанию.
+    </p>
+    <form method="post" action="{% url 'profile_edit' %}">
+        {% csrf_token %}
+        {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+        {% for field in form %}
+        <div class="field">
+            {{ field.label_tag }}
+            {% if field.name == 'first_name' or field.name == 'telegram_username' or field.name == 'phone' %}
+                <span style="color:var(--danger, #d33);">*</span>
+            {% endif %}
+            {{ field }}
+            {% if field.help_text %}<div style="color:var(--text-tertiary); font-size:12px;">{{ field.help_text }}</div>{% endif %}
+            {% if field.errors %}<div class="field-error">{{ field.errors|striptags }}</div>{% endif %}
+        </div>
+        {% endfor %}
+        <div class="event-form-actions">
+            <button type="submit" class="btn">Сохранить</button>
+            <a href="{% url 'profile_detail' user.id %}" class="btn secondary">Отмена</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

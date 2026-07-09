@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python.exe manage.py shell -c ' *)",
+      "Bash(.venv/Scripts/python.exe -c \"import ast; [ast.parse\\(open\\(f,encoding='utf-8'\\).read\\(\\)\\) for f in ['blog/views.py','blog/forms.py','blog/models.py','blog/services/applications.py','blog/services/notifications.py','blog/services/experience.py']]; print\\('py syntax OK'\\)\")",
+      "Bash(.venv/Scripts/python.exe -m pip show whitenoise)",
+      "Bash(.venv/Scripts/python.exe -m pip install \"whitenoise==6.9.0\")",
+      "Bash(.venv/Scripts/python.exe -c \"import os,django; os.environ.setdefault\\('DJANGO_SETTINGS_MODULE','myproject.settings'\\); django.setup\\(\\); import tg_bot.services, tg_bot.handlers.common; import data_base.data_controller; print\\('bot + data_controller import OK'\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"import ast; [ast.parse\\(open\\(f,encoding='utf-8'\\).read\\(\\)\\) for f in ['blog/views.py','blog/forms.py','blog/services/roles.py','data_base/data_controller.py','tg_bot/services.py','tg_bot/handlers/common.py']]; print\\('syntax OK'\\)\")",
+      "Bash(echo \"---EXIT $?---\")",
+      "Bash(.venv/Scripts/python.exe -c ' *)"
+    ]
+  }
+}

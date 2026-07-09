@@ -19,8 +19,12 @@ def get_event_title(event_id: int):
     return event.title if event else None
 
 
-async def _send_events(message: Message):
-    events = await sync_to_async(services.open_events)(limit=7)
+async def _send_events(message: Message, from_user_id: int = None):
+    tg_id = from_user_id or message.from_user.id
+    # user_id в open_events — это внутренний id пользователя (не telegram_id): нужен, чтобы
+    # понять, на какие меро уже подана заявка (тогда вместо «Подать заявку» показываем статус).
+    user, _ = await sync_to_async(services.get_or_create_user)(tg_id, message.from_user.username)
+    events = await sync_to_async(services.open_events)(limit=7, user_id=user.id)
     if not events:
         await message.answer(
             '📅 Сейчас нет мероприятий с открытым набором.\n'
@@ -37,7 +41,19 @@ async def _send_events(message: Message):
             lines.append(f"📆 Ближайший день: {e['first_day'].strftime('%d.%m.%Y')}")
         if e['description']:
             lines.append(e['description'])
-        await answer_with_expiring_keyboard(message, '\n'.join(lines), kb.apply_button(e['id']))
+        # Если на это меро уже есть активная заявка — не предлагаем подать ещё раз,
+        # а показываем её статус и кнопки посмотреть/изменить (db.md правило 7d).
+        if e['my_application_id']:
+            lines.append(f"\nℹ️ Ты уже подал(а) заявку на это мероприятие — статус: {e['my_application_status']}.")
+            can_cancel, _, _ = await sync_to_async(services.application_cancel_eligibility)(
+                user.id, e['my_application_id']
+            )
+            await answer_with_expiring_keyboard(
+                message, '\n'.join(lines),
+                kb.existing_application_actions(e['my_application_id'], can_cancel),
+            )
+        else:
+            await answer_with_expiring_keyboard(message, '\n'.join(lines), kb.apply_button(e['id']))
 
 
 @router.message(Command('events'))

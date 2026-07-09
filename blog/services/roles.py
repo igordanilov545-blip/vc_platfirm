@@ -4,6 +4,9 @@ from django.db.models import Q
 from django.utils import timezone
 
 from blog.models import Application, EventStaff, Manager, Participation, TeamLeader, User
+from blog.logging_utils import get_web_logger, actor
+
+logger = get_web_logger(__name__)
 
 
 def is_manager(user: User) -> bool:
@@ -71,11 +74,13 @@ def has_extended_access_to_profile(viewer: User, target: User) -> bool:
 
 def account_is_complete(user: User) -> bool:
     """«Заполненный аккаунт» — минимум, при котором пользователь может подать заявку:
-    известно ФИО (хотя бы имя) и есть ссылка на Telegram (username или реальный
-    telegram_id из бота). Авторизация в боте не обязательна — заявка может прийти из
-    Excel-выгрузки, там достаточно ФИО + Telegram. Пользователи с веб-входом
-    (login/пароль, служебный telegram_id `web:*`) без TG-username сюда не попадают —
-    им заявки подавать не нужно."""
+    известно ФИО (хотя бы имя), есть ссылка на Telegram (username или реальный
+    telegram_id из бота) И указан номер телефона. Эти три поля (ФИО, ТГ, телефон) —
+    обязательны для подачи заявки; остальные поля профиля опциональны.
+
+    Авторизация в боте не обязательна — заявка может прийти из Excel-выгрузки, там
+    достаточно ФИО + Telegram + телефон. Пользователи с веб-входом (login/пароль,
+    служебный telegram_id `web:*`) без TG-username сюда не попадают."""
     if not user or not getattr(user, 'is_authenticated', False):
         return False
     has_name = bool((user.first_name or '').strip())
@@ -83,7 +88,24 @@ def account_is_complete(user: User) -> bool:
     # отрицательные id каналов/групп не считаем «привязкой к Telegram»).
     real_tg_id = bool(user.telegram_id) and user.telegram_id.isdigit()
     has_tg = bool((user.telegram_username or '').strip()) or real_tg_id
-    return has_name and has_tg
+    has_phone = bool((user.phone or '').strip())
+    return has_name and has_tg and has_phone
+
+
+def account_missing_fields(user: User) -> list:
+    """Список человекочитаемых названий обязательных для заявки полей, которых не
+    хватает в профиле (для плашки «заполните …, чтобы подать заявку»)."""
+    if not user or not getattr(user, 'is_authenticated', False):
+        return ['ФИО', 'Telegram', 'номер телефона']
+    missing = []
+    if not (user.first_name or '').strip():
+        missing.append('ФИО')
+    real_tg_id = bool(user.telegram_id) and user.telegram_id.isdigit()
+    if not ((user.telegram_username or '').strip() or real_tg_id):
+        missing.append('Telegram')
+    if not (user.phone or '').strip():
+        missing.append('номер телефона')
+    return missing
 
 
 def role_label(user: User) -> str:
@@ -136,17 +158,28 @@ def assign_role(kind: str, users, assigned_by: User):
         affected.append(user)
         if kind == 'manager' and not TeamLeader.objects.filter(user=user, revoked_at__isnull=True).exists():
             TeamLeader.objects.create(user=user, assigned_by=assigned_by)
+    if affected:
+        logger.info(
+            'Выдана роль %s: subjects=%s by=%s',
+            kind, [actor(u) for u in affected], actor(assigned_by),
+        )
     return affected
 
 
 @transaction.atomic
-def revoke_role(kind: str, users):
+def revoke_role(kind: str, users, revoked_by: User = None):
     """Снимает активную роль `kind` у каждого из `users`. Возвращает список
-    реально затронутых пользователей."""
+    реально затронутых пользователей. `revoked_by` — кто снял (для аудита в логе)."""
     model = ROLE_MODELS[kind]
     now = timezone.now()
     updated_ids = list(
         model.objects.filter(revoked_at__isnull=True, user__in=users).values_list('user_id', flat=True)
     )
     model.objects.filter(revoked_at__isnull=True, user__in=users).update(revoked_at=now)
-    return [u for u in users if u.id in updated_ids]
+    affected = [u for u in users if u.id in updated_ids]
+    if affected:
+        logger.info(
+            'Снята роль %s: subjects=%s by=%s',
+            kind, [actor(u) for u in affected], actor(revoked_by),
+        )
+    return affected

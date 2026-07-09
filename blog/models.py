@@ -57,6 +57,7 @@ class User(AbstractBaseUser):
     VK_username = models.CharField(max_length=100, blank=True, null=True)
     first_name = models.CharField(max_length=100, blank=True, null=True)
     last_name = models.CharField(max_length=100, blank=True, null=True)
+    middle_name = models.CharField(max_length=100, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     birthday = models.DateField(blank=True, null=True)
@@ -113,7 +114,9 @@ class User(AbstractBaseUser):
 
     @property
     def full_name(self):
-        return f"{self.first_name or ''} {self.last_name or ''}".strip() or self.telegram_username or self.telegram_id
+        parts = [self.first_name or '', self.middle_name or '', self.last_name or '']
+        joined = ' '.join(p for p in parts if p).strip()
+        return joined or self.telegram_username or self.telegram_id
 
     @property
     def is_active(self):
@@ -497,6 +500,16 @@ class EventShift(models.Model):
     recruit_status = models.CharField(max_length=20, choices=RECRUIT_STATUS_CHOICES, default='open')
     location = models.ForeignKey(Location, on_delete=models.SET_NULL, null=True, blank=True, related_name='event_shifts')
 
+    # Отметка «можно забирать» (визуальный индикатор для менеджера, db.md/reports.md):
+    # тим-лидер/менеджер этого меро подтверждает, что явка и часы по смене актуализированы
+    # и данные можно забирать (напр. для отчётности). Доступна только для прошедших смен —
+    # до этого момента актуализировать явку ещё нечего.
+    attendance_confirmed = models.BooleanField(default=False)
+    attendance_confirmed_at = models.DateTimeField(blank=True, null=True)
+    attendance_confirmed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='confirmed_shifts'
+    )
+
     class Meta:
         db_table = 'event_shifts'
         verbose_name = 'Смена мероприятия'
@@ -557,6 +570,7 @@ class Application(models.Model):
 
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100, blank=True, null=True)
+    middle_name = models.CharField(max_length=100, blank=True, null=True)
     telegram_username = models.CharField(max_length=100, blank=True, null=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
 
@@ -664,6 +678,10 @@ class Participation(models.Model):
     # отдельная отметка добросовестного участия, проставляется тим-лидером вместе со статусом.
     full_shift = models.BooleanField(default=False)
     hours = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    # Часы проставлены/изменены вручную тим-лидером (а не автоматически из длительности
+    # смены). Если True — автоматический пересчёт часов при изменении времени смены их
+    # НЕ перезаписывает (ручная корректировка приоритетнее).
+    hours_overridden = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Отметка, что запрос "оцени мероприятие" уже отправлен (tg-bot.md §4.6) —
@@ -796,6 +814,11 @@ class BotOutbox(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     attempts = models.IntegerField(default=0)
     last_error = models.TextField(blank=True, null=True)
+    # Если задано — к сообщению прикрепляется inline-кнопка «Подать заявку» на это меро
+    # (используется рассылкой о новом мероприятии, чтобы сразу предложить откликнуться).
+    apply_event = models.ForeignKey(
+        Event, on_delete=models.CASCADE, null=True, blank=True, related_name='outbox_messages'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     sent_at = models.DateTimeField(blank=True, null=True)
 

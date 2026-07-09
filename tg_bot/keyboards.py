@@ -27,6 +27,9 @@ def guest_menu() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.button(text='📅 Мероприятия')
     builder.button(text='📝 Зарегистрироваться')
+    # Подписку на новые мероприятия можно включать/выключать и гостю — уведомления
+    # приходят всем активным подписчикам независимо от завершённости регистрации.
+    builder.button(text='🔔 Подписка')
     builder.button(text='🔐 Авторизоваться на сайте')
     _add_webapp_button(builder)
     builder.adjust(2)

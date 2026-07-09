@@ -3,20 +3,24 @@
     python manage.py run_bot
 """
 import asyncio
-import logging
 
 from django.core.management.base import BaseCommand
 
 from tg_bot.bot import create_bot, create_dispatcher
 from tg_bot.notifier import run_notifier_loop
+from blog.logging_utils import get_bot_logger
 
-logging.basicConfig(level=logging.INFO)
+# Логирование настроено централизованно в settings.LOGGING (канал vc.bot → logs/bot.log).
+# Отдельный logging.basicConfig здесь НЕ ставим — он перехватил бы корневой логгер и
+# сломал разведение логов по файлам.
+logger = get_bot_logger(__name__)
 
 
 class Command(BaseCommand):
     help = 'Запускает Telegram-бота (long polling) и диспетчер уведомлений.'
 
     def handle(self, *args, **options):
+        logger.info('Запуск процесса бота (run_bot).')
         asyncio.run(self._run())
 
     async def _run(self):

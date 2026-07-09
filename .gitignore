@@ -1,6 +1,11 @@
 # Локальные тестовые учётные данные — не коммитить
 documentation/dev_credentials.md
 
+# Логи проекта (web.log / bot.log / db.log и ротация) — см. documentation/logging.md
+logs/
+*.log
+*.log.*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

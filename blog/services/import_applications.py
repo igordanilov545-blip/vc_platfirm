@@ -27,6 +27,7 @@ COLUMN_MAP = {
     'event': ['Мероприятие', 'Название мероприятия'],
     'first_name': ['Автор', 'Имя'],
     'last_name': ['Фамилия'],
+    'middle_name': ['Отчество'],
     'telegram_username': ['Телеграм', 'Telegram'],
     'phone': ['Номер телефона', 'Телефон'],
     'functions': ['Функция'],
@@ -119,6 +120,7 @@ def parse_excel(file) -> dict:
         telegram_username = get('telegram_username')
         phone = get('phone')
         last_name = get('last_name')
+        middle_name = get('middle_name')
         matched_user = find_matching_user(
             telegram_username=telegram_username, phone=phone,
             first_name=first_name, last_name=last_name,
@@ -132,6 +134,7 @@ def parse_excel(file) -> dict:
             'event_end_date': event_end.isoformat(),
             'first_name': first_name,
             'last_name': last_name,
+            'middle_name': middle_name,
             'telegram_username': telegram_username,
             'phone': phone,
             'functions': get('functions'),
@@ -311,6 +314,7 @@ def commit_import(rows: list) -> dict:
                         telegram_username=row.get('telegram_username'),
                         first_name=row.get('first_name'),
                         last_name=row.get('last_name'),
+                        middle_name=row.get('middle_name'),
                         phone=row.get('phone'),
                     )
                     if match_key:
@@ -321,6 +325,7 @@ def commit_import(rows: list) -> dict:
                 user=user,
                 first_name=row['first_name'],
                 last_name=row.get('last_name'),
+                middle_name=row.get('middle_name'),
                 telegram_username=row.get('telegram_username'),
                 phone=row.get('phone'),
                 functions=row.get('functions'),

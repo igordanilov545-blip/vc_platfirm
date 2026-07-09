@@ -1,0 +1,33 @@
+name: Deploy to Beget
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.BEGET_HOST }}
+          username: ${{ secrets.BEGET_USER }}
+          key: ${{ secrets.BEGET_SSH_KEY }}
+          port: ${{ secrets.BEGET_SSH_PORT }}
+          script: |
+            set -e
+            cd ${{ secrets.BEGET_PROJECT_DIR }}
+            git pull origin main
+            source .venv/bin/activate
+            pip install -r requirements.txt
+            python manage.py migrate --noinput
+            python manage.py collectstatic --noinput
+            # Останавливаем бота, чтобы он перезапустился уже с новым кодом
+            # (иначе keepalive увидит "процесс жив" и не тронет старую версию).
+            if [ -f deploy/bot.pid ] && kill -0 "$(cat deploy/bot.pid)" 2>/dev/null; then
+              kill "$(cat deploy/bot.pid)"
+              sleep 2
+            fi
+            bash deploy/bot_keepalive.sh

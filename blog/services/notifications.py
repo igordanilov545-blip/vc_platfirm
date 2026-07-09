@@ -14,14 +14,15 @@ def _has_telegram_chat(user: User) -> bool:
     return bool(user.telegram_id) and user.telegram_id.lstrip('-').isdigit()
 
 
-def enqueue(chat_id: str, text: str) -> BotOutbox:
-    return BotOutbox.objects.create(chat_id=str(chat_id), text=text)
+def enqueue(chat_id: str, text: str, apply_event=None) -> BotOutbox:
+    return BotOutbox.objects.create(chat_id=str(chat_id), text=text, apply_event=apply_event)
 
 
-def notify_user(user: User, text: str):
-    """Уведомление конкретному пользователю, если он приходил в бота."""
+def notify_user(user: User, text: str, apply_event=None):
+    """Уведомление конкретному пользователю, если он приходил в бота. Если передан
+    `apply_event`, к сообщению прикрепляется кнопка «Подать заявку» на это меро."""
     if user and _has_telegram_chat(user):
-        enqueue(user.telegram_id, text)
+        enqueue(user.telegram_id, text, apply_event=apply_event)
 
 
 def notify_event_staff(event, text: str):
@@ -121,15 +122,29 @@ def notify_feedback_request(user: User, event):
 
 
 def broadcast_new_event(event):
-    """Новое опубликованное мероприятие → всем подписанным активным волонтёрам."""
+    """Оповещение о мероприятии → подписанным активным волонтёрам, КРОМЕ тех, кто уже
+    подал заявку на это меро (им напоминание не нужно). Рассылку можно делать повторно
+    (напр. добор): те, кто заявился между рассылками, автоматически исключаются.
+
+    Возвращает число адресатов, кому реально ушло уведомление."""
     first_shift = event.shifts.order_by('day').first()
     when = f'\n📆 Ближайший день: {first_shift.day.strftime("%d.%m.%Y")}' if first_shift else ''
     where = f'\n📍 {event.location.name}' if event.location else ''
     text = (
         f'🆕 <b>Новое мероприятие: {event.title}</b>{when}{where}\n\n'
         f'{(event.description or "")[:300]}\n\n'
-        'Подать заявку: /events'
+        'Нажми кнопку ниже, чтобы сразу подать заявку 👇'
     )
-    subscribers = User.objects.filter(status='active', notify_new_events=True)
+    # Волонтёры, уже подавшие заявку на это меро (в любом статусе) — из рассылки исключаем.
+    applied_user_ids = set(
+        event.applications.filter(user__isnull=False).values_list('user_id', flat=True)
+    )
+    subscribers = User.objects.filter(status='active', notify_new_events=True).exclude(
+        id__in=applied_user_ids
+    )
+    sent = 0
     for user in subscribers:
-        notify_user(user, text)
+        # apply_event → к сообщению прикрепится inline-кнопка «Подать заявку» на это меро.
+        notify_user(user, text, apply_event=event)
+        sent += 1
+    return sent

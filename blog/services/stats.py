@@ -6,6 +6,9 @@ from django.db.models import Sum, Count
 from django.utils import timezone
 
 from blog.models import Participation, Const, Season, ChurnHistory
+from blog.logging_utils import get_web_logger
+
+logger = get_web_logger(__name__)
 
 
 def _const(name: str, default: float) -> float:
@@ -78,8 +81,12 @@ def apply_churn_activity_decay(user):
 
 def _apply_blacklist_if_needed(user):
     threshold = _const('churn_blacklist_threshold', 5)
-    if (user.churn_score or 0) >= threshold:
+    if (user.churn_score or 0) >= threshold and user.status != 'blacklisted':
         user.status = 'blacklisted'
+        logger.warning(
+            'Волонтёр отправлен в блэклист по churn: user=%s churn_score=%.2f threshold=%.2f',
+            user.id, user.churn_score or 0, threshold,
+        )
 
 
 def is_pgas_star(user) -> bool:
@@ -126,6 +133,7 @@ def close_season(season):
 
     next_start = season.end_season + timedelta(days=1)
     has_next = Season.objects.filter(start_season__gte=next_start).exists()
+    logger.info('Сезон закрыт: season=%s end=%s создан_следующий=%s', season.id, season.end_season, not has_next)
     if not has_next:
         # Бессрочный сезон: end_season=NULL — плашка «нужно задать дату конца».
         return Season.objects.create(start_season=next_start, end_season=None)

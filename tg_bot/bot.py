@@ -1,6 +1,4 @@
 """Точка сборки бота: диспетчер, роутеры (tg-bot.md §9)."""
-import logging
-
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -9,8 +7,9 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from django.conf import settings
 
 from tg_bot.handlers import common, volunteer, web_access, team_leader, manager
+from blog.logging_utils import get_bot_logger
 
-logger = logging.getLogger(__name__)
+logger = get_bot_logger(__name__)
 
 
 def create_bot() -> Bot:

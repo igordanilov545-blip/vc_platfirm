@@ -48,8 +48,14 @@ def build_experience(user: User) -> dict:
             'exp_id': exp.id,
         })
 
-    # Сортировка: с датой — по убыванию даты; без даты — в конце.
-    items.sort(key=lambda i: (i['date'] is None, -i['date'].toordinal() if i['date'] else 0))
+    # Ранжирование: сначала мероприятия ВЦ (kind='system'), внутри — по времени
+    # (свежие сверху); затем внешний опыт (kind='external'), тоже по времени.
+    # Записи без даты — в конце своей группы.
+    items.sort(key=lambda i: (
+        0 if i['kind'] == 'system' else 1,
+        i['date'] is None,
+        -i['date'].toordinal() if i['date'] else 0,
+    ))
 
     return {
         'items': items,

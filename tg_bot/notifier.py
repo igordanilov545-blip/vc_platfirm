@@ -3,7 +3,6 @@
 которым нужна inline-клавиатура, поэтому они не идут через `bot_outbox`.
 """
 import asyncio
-import logging
 
 from asgiref.sync import sync_to_async
 
@@ -11,8 +10,9 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
 
 from tg_bot import services, keyboards as kb
+from blog.logging_utils import get_bot_logger, actor
 
-logger = logging.getLogger(__name__)
+logger = get_bot_logger(__name__)
 
 POLL_INTERVAL_SECONDS = 5
 FEEDBACK_DELAY_HOURS = 3.0
@@ -22,8 +22,17 @@ async def _process_outbox_batch(bot: Bot):
     items = await sync_to_async(services.fetch_pending_outbox)()
     for item in items:
         try:
-            await bot.send_message(chat_id=item.chat_id, text=item.text)
+            # Если у сообщения задано apply_event — прикрепляем inline-кнопку «Подать
+            # заявку» на это меро (рассылка о новом мероприятии, tg-bot.md §4.4).
+            # item.apply_event_id — FK-id, доступен без обращения к БД в async-контексте.
+            reply_markup = kb.apply_button(item.apply_event_id) if item.apply_event_id else None
+            sent = await bot.send_message(
+                chat_id=item.chat_id, text=item.text, reply_markup=reply_markup
+            )
             await sync_to_async(services.mark_outbox_sent)(item.id)
+            if reply_markup is not None:
+                await sync_to_async(services.schedule_button_removal)(sent.chat.id, sent.message_id)
+            logger.info('Outbox #%s доставлен chat=%s', item.id, item.chat_id)
         except TelegramAPIError as e:
             logger.warning('Не удалось отправить outbox #%s: %s', item.id, e)
             await sync_to_async(services.mark_outbox_failed)(item.id, str(e))
@@ -48,8 +57,11 @@ async def _process_feedback_requests(bot: Bot):
                 reply_markup=kb.rating_keyboard(event.id),
             )
             await sync_to_async(services.schedule_button_removal)(sent.chat.id, sent.message_id)
+            logger.info('Запрос оценки отправлен: participation=%s %s event=%s', p.id, actor(user), event.id)
         except TelegramAPIError as e:
-            logger.warning('Не удалось отправить запрос оценки участнику %s: %s', p.id, e)
+            logger.warning(
+                'Не удалось отправить запрос оценки: participation=%s %s: %s', p.id, actor(user), e
+            )
         await sync_to_async(services.mark_feedback_requested)(p.id)
 
 

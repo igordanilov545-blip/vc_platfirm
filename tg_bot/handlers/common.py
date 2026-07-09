@@ -44,7 +44,8 @@ async def _send_web_login_link(message: Message, user):
 async def cmd_start(message: Message, state: FSMContext, command: CommandObject = None):
     await state.clear()
     user, created = await sync_to_async(services.get_or_create_user)(
-        message.from_user.id, message.from_user.username
+        message.from_user.id, message.from_user.username,
+        first_name=message.from_user.first_name, last_name=message.from_user.last_name,
     )
 
     # Deep-link входа на сайт: t.me/<bot>?start=weblogin — авто-регистрация (если
@@ -123,13 +124,16 @@ async def cb_register(callback: CallbackQuery, state: FSMContext):
 
 @router.message(Registration.waiting_name)
 async def registration_got_name(message: Message, state: FSMContext):
-    parts = (message.text or '').strip().split(maxsplit=1)
-    if not parts or not parts[0]:
-        await message.answer('Напиши, пожалуйста, как тебя зовут.')
+    # Формат ФИО: «Фамилия Имя [Отчество]». Имя — обязательно; фамилия и отчество —
+    # опциональны (можно потом дополнить в личном кабинете на сайте).
+    parts = (message.text or '').strip().split()
+    if not parts:
+        await message.answer('Напиши, пожалуйста, как тебя зовут (Фамилия Имя Отчество).')
         return
-    first_name = parts[0]
-    last_name = parts[1] if len(parts) > 1 else None
-    await state.update_data(first_name=first_name, last_name=last_name)
+    last_name = parts[0] if len(parts) >= 2 else None
+    first_name = parts[1] if len(parts) >= 2 else parts[0]
+    middle_name = parts[2] if len(parts) >= 3 else None
+    await state.update_data(first_name=first_name, last_name=last_name, middle_name=middle_name)
     await state.set_state(Registration.waiting_phone)
     await message.answer(
         f'Отлично, {first_name}! Оставишь номер телефона? Он понадобится '
@@ -144,7 +148,8 @@ async def _finish_registration(message: Message, state: FSMContext, phone: str =
         message.from_user.id, message.from_user.username
     )
     await sync_to_async(services.complete_registration)(
-        user.id, data.get('first_name'), data.get('last_name'), phone
+        user.id, data.get('first_name'), data.get('last_name'), phone,
+        middle_name=data.get('middle_name'),
     )
     await state.set_state(None)
 

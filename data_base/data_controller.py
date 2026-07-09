@@ -9,10 +9,18 @@ from blog.models import (
     EventRequirementMap, UserRequirementException, Season, ThankYouLetterTemplate, Const,
     DobroRuSharedLink,
 )
+from blog.logging_utils import get_db_logger, actor
+
+# Канал прямого доступа к данным (→ logs/db.log). Логируем изменяющие БД операции
+# этого слоя — чтения (get_*) намеренно не логируем, чтобы не зашумлять файл.
+# Во всех записях по возможности указываем «кто совершил действие» (actor) и
+# «над кем/чем» (subject) — это аудиторский след изменений данных.
+logger = get_db_logger(__name__)
 
 __all__ = [
     'create_user', 'get_users',
     'get_user_by_telegram_id', 'get_or_create_user_by_telegram_id', 'update_user_fields',
+    'sync_user_from_applications',
     'create_manager', 'get_managers',
     'create_team_leader', 'get_team_leaders',
     'create_organization', 'get_organizations',
@@ -60,7 +68,7 @@ def create_user(
     comment: Optional[str] = None
 ) -> User:
     """Создает пользователя через кастомный менеджер."""
-    return User.objects.create_user(
+    user = User.objects.create_user(
         telegram_id=telegram_id,
         telegram_username=telegram_username,
         first_name=first_name,
@@ -73,22 +81,108 @@ def create_user(
         status=status,
         comment=comment
     )
+    logger.info('INSERT users: user=%s telegram_id=%s', user.id, telegram_id)
+    return user
 
 def get_user_by_telegram_id(telegram_id: str) -> Optional[User]:
     return User.objects.filter(telegram_id=str(telegram_id)).first()
 
 
-def get_or_create_user_by_telegram_id(telegram_id: str, telegram_username: Optional[str] = None):
+def get_or_create_user_by_telegram_id(
+    telegram_id: str,
+    telegram_username: Optional[str] = None,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+):
     """Первое касание бота (tg-bot.md §3.1): создаёт пользователя-гостя, если его ещё нет.
-    Возвращает (user, created)."""
+    Возвращает (user, created).
+
+    При наличии данных из Telegram (username, имя/фамилия) заполняет ими пустые поля
+    профиля: telegram_username, first_name, last_name и system_username (из username, иначе
+    из имени). Уже заполненные пользователем поля не перетираются. После этого пытается
+    подтянуть недостающее (в первую очередь телефон) из ранее поданных заявок (в т.ч.
+    Excel-импорта) — см. sync_user_from_applications."""
     user, created = User.objects.get_or_create(
         telegram_id=str(telegram_id),
-        defaults={'telegram_username': telegram_username, 'registration_status': 'guest'},
+        defaults={
+            'telegram_username': telegram_username,
+            'first_name': first_name,
+            'last_name': last_name,
+            'system_username': telegram_username or first_name,
+            'registration_status': 'guest',
+        },
     )
-    if not created and telegram_username and user.telegram_username != telegram_username:
+
+    updates = []
+    if telegram_username and user.telegram_username != telegram_username:
         user.telegram_username = telegram_username
-        user.save(update_fields=['telegram_username'])
+        updates.append('telegram_username')
+    # Заполняем ТОЛЬКО пустые поля — не перетираем то, что пользователь уже указал сам.
+    if first_name and not (user.first_name or '').strip():
+        user.first_name = first_name
+        updates.append('first_name')
+    if last_name and not (user.last_name or '').strip():
+        user.last_name = last_name
+        updates.append('last_name')
+    if not (user.system_username or '').strip():
+        candidate = telegram_username or first_name or user.first_name
+        if candidate:
+            user.system_username = candidate
+            updates.append('system_username')
+    if updates:
+        user.save(update_fields=updates)
+
+    # Подтягиваем недостающие данные (телефон, ФИО) из ранее поданных заявок —
+    # напр. пользователь раньше был импортирован из Excel и мы знаем его телефон.
+    sync_user_from_applications(user)
+
     return user, created
+
+
+def sync_user_from_applications(user: User) -> User:
+    """Синхронизирует профиль с ранее поданными заявками того же человека: заполняет
+    пустые поля (телефон, ФИО, telegram_username) данными из наиболее свежей заявки,
+    сопоставленной по telegram_username → телефону → ФИО. Также привязывает найденные
+    «ничьи» заявки (user IS NULL) к этому пользователю.
+
+    Ничего не перетирает, если поле уже заполнено. Работает и для веб-, и для бот-входа.
+    """
+    uname = (user.telegram_username or '').lstrip('@') if user.telegram_username else None
+    conditions = Q()
+    if uname:
+        conditions |= Q(telegram_username__iexact=uname)
+    if (user.phone or '').strip():
+        conditions |= Q(phone=user.phone)
+    if (user.first_name or '').strip() and (user.last_name or '').strip():
+        conditions |= Q(first_name__iexact=user.first_name, last_name__iexact=user.last_name)
+    if not conditions:
+        return user
+
+    apps = Application.objects.filter(conditions).order_by('-submitted_at', '-created_at')
+
+    # Привязка ничьих заявок к пользователю (сопоставление по данным).
+    apps.filter(user__isnull=True).update(user=user)
+
+    source = apps.first()
+    if not source:
+        return user
+
+    updates = []
+    if not (user.phone or '').strip() and (source.phone or '').strip():
+        user.phone = source.phone
+        updates.append('phone')
+    if not (user.first_name or '').strip() and (source.first_name or '').strip():
+        user.first_name = source.first_name
+        updates.append('first_name')
+    if not (user.last_name or '').strip() and (source.last_name or '').strip():
+        user.last_name = source.last_name
+        updates.append('last_name')
+    if not (user.telegram_username or '').strip() and (source.telegram_username or '').strip():
+        user.telegram_username = source.telegram_username.lstrip('@')
+        updates.append('telegram_username')
+    if updates:
+        user.save(update_fields=updates)
+    return user
 
 
 def update_user_fields(user: User, **fields) -> User:
@@ -254,7 +348,7 @@ def create_application(
     submitted_at=None,
     status: str = 'new'
 ) -> Application:
-    return Application.objects.create(
+    application = Application.objects.create(
         event=event,
         user=user,
         first_name=first_name,
@@ -268,6 +362,11 @@ def create_application(
         submitted_at=submitted_at or timezone.now(),
         status=status
     )
+    logger.info(
+        'INSERT applications: application=%s event=%s status=%s applicant=%s',
+        application.id, event.id, status, actor(user) if user else 'user=?',
+    )
+    return application
 
 def create_participation(
     user: User,
@@ -470,7 +569,10 @@ def get_user_active_applications(user_id: int) -> List[Application]:
 
 
 def get_user_application_for_event(user_id: int, event_id: int) -> Optional[Application]:
-    return Application.objects.filter(
+    # select_related('event') обязателен: возвращённый объект используется в async-хендлере
+    # бота (cb_apply), где обращение к application.event.* без предзагрузки роняет
+    # SynchronousOnlyOperation.
+    return Application.objects.select_related('event').filter(
         user_id=user_id, event_id=event_id, status__in=['new', 'approved']
     ).first()
 
@@ -481,6 +583,11 @@ def update_application_status(application: Application, status: str, assigned_by
     if assigned_by:
         application.assigned_by = assigned_by
     application.save(update_fields=['status', 'assigned_at', 'assigned_by'])
+    logger.info(
+        'UPDATE applications: application=%s status=%s by=%s subject=%s',
+        application.id, status, actor(assigned_by),
+        actor(application.user) if application.user_id else 'user=?',
+    )
     return application
 
 
@@ -522,7 +629,10 @@ def update_participation_status(
     status: str,
     hours: Optional[int] = None,
     full_shift: Optional[bool] = None,
+    actor_user: Optional[User] = None,
 ) -> Participation:
+    """`actor_user` — кто проставляет явку (тим-лидер/менеджер), для аудита в db.log.
+    Субъект (чью явку меняем) берётся из самого participation."""
     update_fields = ['status']
     participation.status = status
     if hours is not None:
@@ -532,6 +642,11 @@ def update_participation_status(
         participation.full_shift = full_shift
         update_fields.append('full_shift')
     participation.save(update_fields=update_fields)
+    logger.info(
+        'UPDATE participations: participation=%s status=%s hours=%s by=%s subject=%s',
+        participation.id, status, hours, actor(actor_user),
+        actor(participation.user) if participation.user_id else 'user=?',
+    )
     return participation
 
 
@@ -657,8 +772,12 @@ def create_record_generic(table_name: str, **data) -> Any:
     if model == User:
         if 'telegram_id' not in data:
             raise ValueError("Для создания пользователя обязательно поле telegram_id")
-        return User.objects.create_user(**data)
-        
-    return model.objects.create(**data)
+        obj = User.objects.create_user(**data)
+        logger.info('INSERT %s (generic): pk=%s', table_name, obj.pk)
+        return obj
+
+    obj = model.objects.create(**data)
+    logger.info('INSERT %s (generic): pk=%s', table_name, obj.pk)
+    return obj
 
 

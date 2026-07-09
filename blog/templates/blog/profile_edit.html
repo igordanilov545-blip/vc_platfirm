@@ -17,9 +17,23 @@
 
 <div class="card" style="max-width:560px;">
     <p style="color:var(--text-secondary); font-size:0.9rem; margin-top:0;">
-        Поля <b>ФИО</b>, <b>Telegram-юзернейм</b> и <b>Номер телефона</b> обязательны для подачи заявки.
+        Поля <b>ФИО</b>, <b>Telegram</b> и <b>Номер телефона</b> обязательны для подачи заявки.
         Остальное — по желанию.
     </p>
+
+    <div class="field">
+        <label>Telegram</label>
+        {% if user.telegram_username %}
+            <p style="margin:4px 0;">@{{ user.telegram_username }} <span class="pill success" style="margin-left:6px;"><span class="dot"></span>привязан</span></p>
+        {% else %}
+            <p style="margin:4px 0;"><span class="pill warning"><span class="dot"></span>не привязан</span></p>
+        {% endif %}
+        <div style="color:var(--text-tertiary); font-size:12px;">
+            Telegram-юзернейм можно указать только через авторизацию в боте — это подтверждает,
+            что аккаунт действительно ваш. Веб-форма его не меняет.
+        </div>
+    </div>
+
     <form method="post" action="{% url 'profile_edit' %}">
         {% csrf_token %}
         {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
@@ -27,7 +41,7 @@
         {% for field in form %}
         <div class="field">
             {{ field.label_tag }}
-            {% if field.name == 'first_name' or field.name == 'telegram_username' or field.name == 'phone' %}
+            {% if field.name == 'first_name' or field.name == 'phone' %}
                 <span style="color:var(--danger, #d33);">*</span>
             {% endif %}
             {{ field }}

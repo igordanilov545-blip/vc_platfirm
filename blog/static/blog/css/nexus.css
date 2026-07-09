@@ -745,3 +745,55 @@ input:focus, select:focus, textarea:focus {
 @media (max-width: 720px) {
     .shift-table.responsive-table tbody tr.shift-row { border-left-width: 4px; }
 }
+
+/* ==========================================================================
+   Пикер волонтёра (data-user-picker, base.html): поле поиска — только триггер,
+   сам выбор происходит во всплывающей модалке с виртуальным скроллом. z-index
+   выше quick-add (300) — пикер может открываться поверх уже открытой формы-модалки
+   (напр. в форме мероприятия при выборе тим-лидеров).
+   ========================================================================== */
+.cat-chips-search input[data-chips-search] { cursor: pointer; background: var(--bg-card); }
+.cat-chips-search input[data-chips-search]:hover { background: var(--bg-card-hover); }
+
+.user-picker-modal-backdrop {
+  position: fixed; inset: 0; z-index: 400;
+  background: var(--overlay); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.user-picker-modal-backdrop[hidden] { display: none; }
+.user-picker-modal {
+  width: 480px; max-width: 100%; max-height: min(600px, calc(100vh - 48px));
+  background: var(--bg-card); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card); overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.user-picker-modal-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 16px 16px 12px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0;
+}
+.user-picker-modal-search {
+  flex: 1; margin: 0; font-size: 14px;
+}
+.user-picker-modal-close {
+  cursor: pointer; color: var(--text-secondary); background: none; border: none;
+  font-size: 20px; line-height: 1; padding: 4px; flex-shrink: 0;
+}
+.user-picker-modal-close:hover { color: var(--text-primary); }
+.user-picker-modal-body {
+  overflow-y: auto; flex: 1; padding: 6px;
+}
+.user-picker-row {
+  display: block; width: 100%; text-align: left;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  border: none; background: none; cursor: pointer;
+  font-family: inherit; font-size: 13.5px; color: var(--text-primary);
+}
+.user-picker-row:hover { background: var(--bg-card-hover); }
+.user-picker-modal-foot {
+  padding: 10px 16px; border-top: 1px solid var(--border-subtle);
+  font-size: 12px; color: var(--text-tertiary); flex-shrink: 0;
+}
+@media (max-width: 720px) {
+  .user-picker-modal-backdrop { padding: 0; align-items: flex-end; }
+  .user-picker-modal { width: 100%; max-height: 85vh; border-radius: 20px 20px 0 0; }
+}

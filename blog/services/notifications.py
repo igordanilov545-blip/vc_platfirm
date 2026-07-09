@@ -62,12 +62,20 @@ def notify_application_changed(application, change_text: str):
     notify_event_staff(application.event, text)
 
 
-def notify_application_submitted(application):
+def notify_application_submitted(application, unknown_age: bool = False):
+    """Новая заявка → тим-лидерам/менеджерам. Если заявка автоматически ушла в резерв
+    из-за несоответствия требованиям меро (application.auto_reject_reason) — причина
+    указывается прямо в уведомлении. `unknown_age` — отдельная пометка (не блокирует
+    заявку сама по себе): у меро есть требование «18+», а дата рождения неизвестна."""
     text = (
         f'📥 <b>Новая заявка</b> на «{application.event.title}»\n'
         f'{application.first_name} {application.last_name or ""}'.strip()
         + (f' (@{application.telegram_username.lstrip("@")})' if application.telegram_username else '')
     )
+    if application.auto_reject_reason:
+        text += f'\n\n⚠️ <b>Автоматически отправлена в резерв:</b> {application.auto_reject_reason}.'
+    if unknown_age:
+        text += '\n\n❓ Возраст волонтёра неизвестен (дата рождения не указана в профиле) — проверьте вручную.'
     notify_event_staff(application.event, text)
 
 

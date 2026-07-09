@@ -1,11 +1,11 @@
-<!-- Печатный отчёт по одному мероприятию (reports_template.md §4). Самодостаточный HTML,
-     печатается через браузер (Ctrl+P → PDF). -->
+<!-- PDF-отчёт по одному мероприятию (reports_template.md §4), рендерится сервером
+     через WeasyPrint (blog/services/pdf.py) — не печать браузером. -->
 <meta charset="utf-8">
 <title>Отчёт по мероприятию — {{ event.title }}</title>
 <style>
     :root { --accent: #7C3AED; --ink: #2B2B33; --muted: #83838f; --faint: #9A9AA5; --line: #E3E3E8; --card: #F7F6FA; --mono: 'JetBrains Mono','Consolas',monospace; }
     * { box-sizing: border-box; }
-    body { font-family: -apple-system,'Segoe UI',Roboto,Arial,sans-serif; color: var(--ink); max-width: 900px; margin: 0 auto; padding: 32px 40px; line-height: 1.5; background: #fff; }
+    body { font-family: -apple-system,'Segoe UI',Roboto,Arial,sans-serif; color: var(--ink); margin: 0; padding: 32px 40px; line-height: 1.5; background: #fff; }
     h1 { font-size: 22px; margin: 0 0 4px; }
     h2 { font-size: 16px; margin: 24px 0 8px; padding-bottom: 6px; border-bottom: 2px solid var(--accent); }
     h3 { font-size: 13px; margin: 14px 0 4px; }
@@ -16,21 +16,14 @@
     th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
     th { color: var(--muted); font-weight: 600; font-size: 12px; }
     td.num, th.num { text-align: right; font-family: var(--mono); }
-    .header-grid { display: grid; grid-template-columns: 180px 1fr; gap: 4px 14px; font-size: 13px; margin: 10px 0; }
-    .header-grid .k { color: var(--muted); }
+    .header-grid { width: 100%; font-size: 13px; margin: 10px 0; border-collapse: collapse; }
+    .header-grid td { border: none; padding: 3px 0; }
+    .header-grid .k { color: var(--muted); width: 180px; }
     .shift-block { background: var(--card); border-radius: 10px; padding: 12px 14px; margin: 10px 0; }
     .shift-head { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
     .totals { background: var(--card); border-radius: 10px; padding: 14px; }
-    .toolbar { position: sticky; top: 0; background: #fff; padding: 10px 0; margin-bottom: 8px; display: flex; gap: 10px; }
-    .btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }
-    .btn.secondary { background: var(--card); color: var(--ink); }
-    @media print { .toolbar { display: none; } body { padding: 0; max-width: none; } .shift-block, table { page-break-inside: avoid; } }
+    .timeline-block img { width: 100%; }
 </style>
-
-<div class="toolbar">
-    <button type="button" class="btn" onclick="window.print()">🖨 Скачать PDF (печать)</button>
-    <a href="javascript:history.back()" class="btn secondary">← Назад</a>
-</div>
 
 <div class="brand">
     <div class="logo">ВОЛОНТЁРСКИЙ ЦЕНТР · ОТЧЁТ ПО МЕРОПРИЯТИЮ</div>
@@ -39,17 +32,24 @@
 </div>
 
 <h2>Справка</h2>
-<div class="header-grid">
-    <div class="k">Организация</div><div>{{ event.organization.name|default:"—" }}</div>
-    <div class="k">Организатор</div><div>{% if event.organizer %}{{ event.organizer.first_name }} {{ event.organizer.last_name }}{% if event.organizer.phone %} · {{ event.organizer.phone }}{% endif %}{% else %}—{% endif %}</div>
-    <div class="k">Категории</div><div>{{ categories }}</div>
-    <div class="k">Статус</div><div>{{ event.get_event_status_display }}</div>
-    <div class="k">Ссылка на чат</div><div>{{ event.chat_link|default:"—" }}</div>
-    <div class="k">Пост в канале</div><div>{{ event.post_in_chanel_link|default:"—" }}</div>
-    <div class="k">Добро.ру</div><div>{{ event.dobro_ru_link|default:"—" }} ({{ event.get_dobro_ru_link_kind_display }})</div>
-    <div class="k">Менеджер(ы)</div><div>{% for u in managers %}{{ u.full_name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</div>
-    <div class="k">Тим-лидер(ы)</div><div>{% for u in team_leads %}{{ u.full_name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</div>
+<table class="header-grid">
+    <tr><td class="k">Организация</td><td>{{ event.organization.name|default:"—" }}</td></tr>
+    <tr><td class="k">Организатор</td><td>{% if event.organizer %}{{ event.organizer.first_name }} {{ event.organizer.last_name }}{% if event.organizer.phone %} · {{ event.organizer.phone }}{% endif %}{% else %}—{% endif %}</td></tr>
+    <tr><td class="k">Категории</td><td>{{ categories }}</td></tr>
+    <tr><td class="k">Статус</td><td>{{ event.get_event_status_display }}</td></tr>
+    <tr><td class="k">Ссылка на чат</td><td>{{ event.chat_link|default:"—" }}</td></tr>
+    <tr><td class="k">Пост в канале</td><td>{{ event.post_in_chanel_link|default:"—" }}</td></tr>
+    <tr><td class="k">Добро.ру</td><td>{{ event.dobro_ru_link|default:"—" }} ({{ event.get_dobro_ru_link_kind_display }})</td></tr>
+    <tr><td class="k">Менеджер(ы)</td><td>{% for u in managers %}{{ u.full_name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td></tr>
+    <tr><td class="k">Тим-лидер(ы)</td><td>{% for u in team_leads %}{{ u.full_name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td></tr>
+</table>
+
+{% if timeline_chart %}
+<h2>📈 Жизнь мероприятия</h2>
+<div class="timeline-block">
+    <img src="{{ timeline_chart }}" alt="Таймлайн жизни мероприятия">
 </div>
+{% endif %}
 
 <h2>Смены и участники</h2>
 {% for shift in shifts %}

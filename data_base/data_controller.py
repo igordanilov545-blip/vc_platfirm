@@ -339,6 +339,7 @@ def create_application(
     first_name: str,
     last_name: str,
     user: Optional[User] = None,
+    middle_name: Optional[str] = None,
     telegram_username: Optional[str] = None,
     phone: Optional[str] = None,
     functions: Optional[str] = None,
@@ -346,13 +347,15 @@ def create_application(
     role_in_event: Optional[str] = None,
     user_status: Optional[str] = None,
     submitted_at=None,
-    status: str = 'new'
+    status: str = 'new',
+    auto_reject_reason: Optional[str] = None,
 ) -> Application:
     application = Application.objects.create(
         event=event,
         user=user,
         first_name=first_name,
         last_name=last_name,
+        middle_name=middle_name,
         telegram_username=telegram_username,
         phone=phone,
         functions=functions,
@@ -360,7 +363,8 @@ def create_application(
         role_in_event=role_in_event,
         user_status=user_status,
         submitted_at=submitted_at or timezone.now(),
-        status=status
+        status=status,
+        auto_reject_reason=auto_reject_reason,
     )
     logger.info(
         'INSERT applications: application=%s event=%s status=%s applicant=%s',

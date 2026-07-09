@@ -27,6 +27,8 @@
         {% if event.event_status != 'finished' %}
         <a href="{% url 'event_edit' event.id %}" class="btn secondary" data-modal data-modal-title="Редактировать: {{ event.title }}">Редактировать</a>
         {% endif %}
+        <a href="{% url 'report_event_pdf' event.id %}" class="btn secondary" target="_blank" title="Скачать DOCX-отчёт по мероприятию">📄 Отчёт (DOCX)</a>
+        <a href="{% url 'report_event_export' event.id %}" class="btn secondary" title="Скачать Excel-отчёт по мероприятию">📊 Отчёт (Excel)</a>
         {% if closing_checklist %}
         <a href="{% url 'event_close' event.id %}" class="btn {% if closing_checklist.ready %}danger{% else %}secondary{% endif %}">
             {% if closing_checklist.ready %}✅ Завершить мероприятие{% else %}Завершить мероприятие{% endif %}
@@ -134,6 +136,14 @@
             <span style="color:var(--text-secondary); font-size:13px;">не указаны</span>
         {% endfor %}
     </div>
+    {% if requirements %}
+    <div class="cat-chips-row" style="margin-top:6px;">
+        <span style="color:var(--text-secondary); font-size:13px;">Требования:</span>
+        {% for requirement in requirements %}
+            <span class="cat-chip {{ requirement.id|chip_color }}" title="{{ requirement.description }}"><span class="cat-chip-label">{{ requirement.title }}</span></span>
+        {% endfor %}
+    </div>
+    {% endif %}
     {% if is_manager %}
         <p>{% if event.published_at %}Опубликовано: {{ event.published_at }}{% else %}<span class="pill warning"><span class="dot"></span>Не опубликовано</span> — волонтёры ещё не получили уведомление в боте{% endif %}</p>
     {% endif %}
@@ -342,6 +352,9 @@
                     {% if decision.status == 'approved' %}<span class="pill success"><span class="dot"></span>Одобрена</span>
                     {% elif decision.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>Резерв/отклонена</span>
                     {% else %}<span class="pill warning"><span class="dot"></span>Новая</span>{% endif %}
+                    {% if application.auto_reject_reason %}
+                    <span class="pill danger" title="{{ application.auto_reject_reason }}" style="margin-left:4px;">⚠️ авто</span>
+                    {% endif %}
                 </td>
                 <td data-label="Подано" class="mono" data-sort-value="{{ application.submitted_at|default:application.created_at|date:'U' }}">{{ application.submitted_at|default:application.created_at }}</td>
                 <td data-label="">

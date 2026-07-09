@@ -1,0 +1,111 @@
+<!-- Комплексный отчёт за период (PDF-пакет, reports_template.md «Комплексный отчёт»):
+     часть 1 — сводная аналитика; часть 2 — мероприятия периода подряд с таймлайнами;
+     часть 3 — таблица работы с заявками; часть 4 — карточки волонтёров периода. WeasyPrint. -->
+<meta charset="utf-8">
+<title>Комплексный отчёт за период</title>
+{% include 'blog/_report_pdf_base.html' %}
+
+<div class="brand">
+    <div class="logo">ВОЛОНТЁРСКИЙ ЦЕНТР</div>
+    <h1>Комплексный отчёт за период</h1>
+    <div class="subtitle">
+        {% if scope_mode == 'period' %}Период: {{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }}{% else %}Охват: по выбранным мероприятиям{% endif %}
+        · Сформирован: {{ generated_at|date:"d.m.Y H:i" }}
+    </div>
+    <div class="tag">🔒 внутренний · части 1–4</div>
+</div>
+
+<!-- ============ ЧАСТЬ 1. Сводная аналитика ============ -->
+<h2>Часть 1. Сводная аналитика</h2>
+<table class="kv">
+    <tr><td class="k">Всего часов</td><td>{{ report.total_hours }}</td></tr>
+    <tr><td class="k">Мероприятий</td><td>{{ report.total_events }}</td></tr>
+    <tr><td class="k">Уникальных волонтёров</td><td>{{ report.unique_volunteers }}</td></tr>
+    <tr><td class="k">Закрытых смен</td><td>{{ report.closed_shifts }}</td></tr>
+    <tr><td class="k">Новых волонтёров</td><td>{{ report.new_volunteers }}</td></tr>
+    <tr><td class="k">Людей получили помощь</td><td>{{ report.people_helped }}</td></tr>
+</table>
+
+<h3>Воронка набора</h3>
+<table class="data">
+    <tr><td>Подано</td><td class="num">{{ report.funnel.submitted }}</td></tr>
+    <tr><td>Одобрено</td><td class="num">{{ report.funnel.approved }}</td></tr>
+    <tr><td>Отклонено (резерв)</td><td class="num">{{ report.funnel.rejected }}</td></tr>
+    <tr><td>Явка</td><td class="num">{{ report.funnel.attended }}</td></tr>
+    <tr><td>Конверсия подал → явка</td><td class="num">{{ report.funnel.conversion_pct }}%</td></tr>
+</table>
+
+<h3>Нагрузка персонала — менеджеры</h3>
+<table class="data">
+    <thead><tr><th>ФИО</th><th class="num">Меро</th><th class="num">Заявок</th><th class="num">Ср. время, ч</th></tr></thead>
+    <tbody>
+    {% for m in staff.managers %}
+        <tr><td>{{ m.name }}</td><td class="num">{{ m.event_count }}</td><td class="num">{{ m.applications_processed }}</td><td class="num">{{ m.avg_processing_hours|default:"—" }}</td></tr>
+    {% empty %}<tr><td colspan="4">Нет данных.</td></tr>{% endfor %}
+    </tbody>
+</table>
+<h3>Нагрузка персонала — тим-лидеры</h3>
+<table class="data">
+    <thead><tr><th>ФИО</th><th class="num">Меро как ТЛ</th><th class="num">Заявок</th><th class="num">Ср. время, ч</th></tr></thead>
+    <tbody>
+    {% for t in staff.team_leads %}
+        <tr><td>{{ t.name }}</td><td class="num">{{ t.event_count }}</td><td class="num">{{ t.applications_processed }}</td><td class="num">{{ t.avg_processing_hours|default:"—" }}</td></tr>
+    {% empty %}<tr><td colspan="4">Нет данных.</td></tr>{% endfor %}
+    </tbody>
+</table>
+
+<!-- ============ ЧАСТЬ 2. Мероприятия периода подряд ============ -->
+<h2 style="page-break-before: always;">Часть 2. Мероприятия периода</h2>
+{% for ev in events_reports %}
+<div class="event-report">
+    <h3 style="font-size:15px;color:var(--ink);">{{ ev.event.title }}</h3>
+    <table class="kv">
+        <tr><td class="k">Организация</td><td>{{ ev.event.organization.name|default:"—" }}</td></tr>
+        <tr><td class="k">Статус</td><td>{{ ev.event.get_event_status_display }}</td></tr>
+    </table>
+    {% if ev.timeline_chart %}<div class="chart-block"><img src="{{ ev.timeline_chart }}" alt="Жизнь мероприятия"></div>{% endif %}
+    <table class="data">
+        <thead><tr><th>Смена</th><th class="num">Нужно</th><th class="num">Участников</th></tr></thead>
+        <tbody>
+        {% for shift in ev.shifts %}
+            <tr><td class="mono">{{ shift.day|date:"d.m.Y" }}</td><td class="num">{{ shift.needed }}</td><td class="num">{{ shift.participants|length }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <p class="note">Итого: подано {{ ev.totals.submitted }}, одобрено {{ ev.totals.approved }}, явка {{ ev.totals.attended }}, часов {{ ev.totals.total_hours }}.</p>
+</div>
+{% empty %}
+<p class="note">Мероприятий в охвате нет.</p>
+{% endfor %}
+
+<!-- ============ ЧАСТЬ 3. Работа с заявками ============ -->
+<h2 style="page-break-before: always;">Часть 3. Работа с заявками за период</h2>
+<table class="kv">
+    <tr><td class="k">Всего заявок</td><td>{{ applications_summary.total }}</td></tr>
+    <tr><td class="k">Одобрено / Резерв</td><td>{{ applications_summary.approved }} / {{ applications_summary.rejected }}</td></tr>
+    <tr><td class="k">Не обработано (new)</td><td>{{ applications_summary.new }}</td></tr>
+    <tr><td class="k">Ср. время обработки</td><td>{{ applications_summary.avg_lag_hours|default:"—" }} ч</td></tr>
+</table>
+<table class="data">
+    <thead><tr><th>Мероприятие</th><th>Волонтёр</th><th>Подана</th><th>Статус</th><th>Обработал</th></tr></thead>
+    <tbody>
+    {% for row in applications_rows %}
+        <tr><td>{{ row.event }}</td><td>{{ row.name }}</td>
+            <td class="mono">{{ row.submitted_at|date:"d.m.Y H:i"|default:"—" }}</td>
+            <td>{{ row.status }}</td><td>{{ row.assigned_by }}</td></tr>
+    {% empty %}<tr><td colspan="5">Заявок в охвате нет.</td></tr>{% endfor %}
+    </tbody>
+</table>
+
+<!-- ============ ЧАСТЬ 4. Волонтёры периода ============ -->
+<h2 style="page-break-before: always;">Часть 4. Волонтёры периода</h2>
+<table class="kv">
+    <tr><td class="k">Волонтёров в отчёте</td><td>{{ volunteers.count }}</td></tr>
+    <tr><td class="k">Суммарно часов</td><td>{{ volunteers.summary.total_hours }}</td></tr>
+    <tr><td class="k">Со «Звёздочкой» ПГАС</td><td>{{ volunteers.summary.star_count }}</td></tr>
+</table>
+{% for card in volunteers.cards %}
+    {% include 'blog/partials/_person_card.html' with rep=card with_charts=False %}
+{% empty %}
+    <p class="note">Волонтёров в охвате нет.</p>
+{% endfor %}

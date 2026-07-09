@@ -1,0 +1,468 @@
+{% extends 'blog/base.html' %}
+{% block title %}Техническая аналитика{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3"></script>
+<style>
+    .analytics-grid { display: flex; flex-direction: column; gap: 1.5rem; max-width: 100%; }
+    .analytics-card { padding: 1.25rem; }
+    .analytics-card h2 { margin: 0 0 0.25rem; font-size: 1.1rem; }
+    .analytics-card .hint { margin: 0 0 1rem; color: var(--text-secondary, #6b7280); font-size: 0.85rem; }
+    .analytics-filters-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+    .analytics-filters-row select, .analytics-filters-row input[type=date], .analytics-filters-row input[type=datetime-local] { padding: 0.4rem 0.6rem; }
+    .analytics-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 1100px) { .analytics-two-col { grid-template-columns: 1fr; } }
+    .downtime-legend { display: flex; gap: 1.25rem; margin-top: 0.75rem; font-size: 0.85rem; }
+    .downtime-legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+    .downtime-swatch { width: 0.9rem; height: 0.9rem; border-radius: 2px; display: inline-block; }
+    .downtime-list { margin-top: 0.75rem; font-size: 0.85rem; }
+    .downtime-list table { width: 100%; border-collapse: collapse; }
+    .downtime-list td, .downtime-list th { padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border, #e5e7eb); text-align: left; }
+    .downtime-form { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border, #e5e7eb); }
+    .log-tabs { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .log-tab-btn { padding: 0.35rem 0.9rem; border-radius: 6px; border: 1px solid var(--border, #e5e7eb); background: transparent; cursor: pointer; }
+    .log-tab-btn.active { background: var(--accent, #2f6bff); color: #fff; }
+    .log-viewer { height: 560px; overflow-y: auto; background: #0d1117; color: #c9d1d9; font-family: monospace; font-size: 0.8rem; padding: 0.75rem; border-radius: 6px; white-space: pre-wrap; word-break: break-all; }
+    .log-viewer .log-loading { text-align: center; color: #8b949e; padding: 0.5rem; }
+    .log-actions { display: flex; justify-content: flex-end; margin-bottom: 0.5rem; }
+</style>
+{% endblock %}
+{% block content %}
+<h1>Техническая аналитика</h1>
+<p class="hint">Нагрузка системы, время отклика, сценарии использования веба и бота. Данные реальные, обновляются без перезагрузки страницы.</p>
+
+<div class="analytics-grid">
+
+    <div class="card analytics-card">
+        <h2>Онлайн на сайте (веб)</h2>
+        <p class="hint">Уникальные активные сессии по минутам, последний час. Обновление каждые 5 секунд, пока вкладка открыта. Колесо мыши/жест — зум по оси времени.</p>
+        <div id="chart-online-web"></div>
+        <div class="downtime-legend">
+            <span><span class="downtime-swatch" style="background:#e5484d;"></span> Сбой</span>
+            <span><span class="downtime-swatch" style="background:#f2b90c;"></span> Плановое отключение</span>
+        </div>
+    </div>
+
+    <div class="card analytics-card">
+        <h2>Онлайн в Telegram-боте</h2>
+        <p class="hint">Уникальные пользователи, приславшие боту сообщение/нажавшие кнопку, по минутам. Обновление каждые 5 секунд.</p>
+        <div id="chart-online-bot"></div>
+    </div>
+
+    <div class="card analytics-card">
+        <h2>Простои системы</h2>
+        <p class="hint">Ручные отметки — нет автоматического мониторинга аптайма. Записи здесь рисуются красными/жёлтыми зонами на графиках онлайна выше.</p>
+        <form class="downtime-form" id="downtime-form">
+            <select name="kind" id="downtime-kind">
+                <option value="crash">Сбой</option>
+                <option value="planned">Плановое отключение</option>
+            </select>
+            <label>С <input type="datetime-local" id="downtime-start" required></label>
+            <label>По <input type="datetime-local" id="downtime-end" required></label>
+            <input type="text" id="downtime-comment" placeholder="Комментарий (необязательно)" style="flex:1; min-width:200px; padding:0.4rem 0.6rem;">
+            <button type="submit" class="btn">Добавить запись</button>
+        </form>
+        <div class="downtime-list">
+            <table>
+                <thead><tr><th>Тип</th><th>Начало</th><th>Конец</th><th>Комментарий</th><th></th></tr></thead>
+                <tbody id="downtime-table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card analytics-card">
+        <div class="analytics-filters-row">
+            <strong>Период для графиков ниже:</strong>
+            <button type="button" class="btn secondary period-preset" data-days="1">Сутки</button>
+            <button type="button" class="btn secondary period-preset" data-days="7">Неделя</button>
+            <button type="button" class="btn secondary period-preset" data-days="30">Месяц</button>
+            <input type="date" id="filter-date-from">
+            <span>—</span>
+            <input type="date" id="filter-date-to">
+            <button type="button" class="btn" id="filter-apply">Применить</button>
+        </div>
+    </div>
+
+    <div class="analytics-two-col">
+        <div class="card analytics-card">
+            <h2>Клики по кнопкам — веб</h2>
+            <p class="hint">Все пункты меню и основные действия. Роль фильтрует по снимку роли пользователя на момент клика.</p>
+            <div class="analytics-filters-row">
+                <select id="web-clicks-role-filter">
+                    <option value="">Все роли</option>
+                    <option value="volunteer">Волонтёр</option>
+                    <option value="team_leader">Тим-лидер</option>
+                    <option value="manager">Менеджер</option>
+                </select>
+            </div>
+            <div id="chart-clicks-web"></div>
+        </div>
+
+        <div class="card analytics-card">
+            <h2>Клики по кнопкам/командам — Telegram-бот</h2>
+            <p class="hint">Все команды, reply-кнопки меню и inline-кнопки бота (сгруппированы по типу действия).</p>
+            <div class="analytics-filters-row">
+                <select id="bot-clicks-role-filter">
+                    <option value="">Все роли</option>
+                    <option value="volunteer">Волонтёр</option>
+                    <option value="team_leader">Тим-лидер</option>
+                    <option value="manager">Менеджер</option>
+                </select>
+            </div>
+            <div id="chart-clicks-bot"></div>
+        </div>
+    </div>
+
+    <div class="card analytics-card">
+        <h2>Время загрузки страниц</h2>
+        <p class="hint">Время ответа сервера (мс) по каждому типу страницы: минимум / 25-й перцентиль / медиана / 75-й перцентиль / максимум. Считается на бэкенде в `ActivityTrackingMiddleware` от начала обработки запроса до готового ответа.</p>
+        <div id="chart-load"></div>
+    </div>
+
+    <div class="card analytics-card">
+        <h2>Время на странице</h2>
+        <p class="hint">Логарифмическая шкала — забытая открытой вкладка на 30+ минут не искажает картину. Считается от захода на страницу до heartbeat/ухода (JS, раз в 5 секунд, пока вкладка видима).</p>
+        <div id="chart-duration"></div>
+    </div>
+
+    <div class="analytics-two-col">
+        <div class="card analytics-card">
+            <h2>Топ страниц сайта</h2>
+            <p class="hint">По числу просмотров за период.</p>
+            <div id="chart-top-pages"></div>
+        </div>
+        <div class="card analytics-card">
+            <h2>Топ команд/кнопок бота</h2>
+            <p class="hint">По числу кликов за период, только реально встретившееся.</p>
+            <div id="chart-top-bot"></div>
+        </div>
+    </div>
+
+    <div class="card analytics-card">
+        <h2>Логи</h2>
+        <p class="hint">Полная последовательность событий из файловых логов (см. logs/*.log) — для восстановления цепочки действий пользователя и диагностики сбоев.</p>
+        <div class="log-tabs">
+            <button type="button" class="log-tab-btn active" data-channel="web">web.log</button>
+            <button type="button" class="log-tab-btn" data-channel="bot">bot.log</button>
+            <button type="button" class="log-tab-btn" data-channel="db">db.log</button>
+        </div>
+        <div class="log-actions">
+            <a class="btn secondary" id="log-download-link" href="{% url 'analytics_log_download' 'web' %}">⬇ Скачать web.log</a>
+        </div>
+        <div class="log-viewer" id="log-viewer"></div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    'use strict';
+
+    function get(url) {
+        return fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } }).then(function (r) { return r.json(); });
+    }
+
+    function getCookie(name) {
+        var match = document.cookie.match('(^|;\\s*)' + name + '=([^;]*)');
+        return match ? decodeURIComponent(match[2]) : '';
+    }
+
+    function post(url, params) {
+        params.csrfmiddlewaretoken = getCookie('csrftoken');
+        var body = Object.keys(params).map(function (k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+        }).join('&');
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+            body: body,
+        }).then(function (r) { return r.json(); });
+    }
+
+    // ---------------------------------------------------------------------
+    // Простои системы: список + форма добавления + аннотации на графиках онлайна
+    // ---------------------------------------------------------------------
+    var downtimes = [];
+    var onlineCharts = [];
+
+    function downtimeAnnotations() {
+        return downtimes.map(function (d) {
+            return {
+                x: new Date(d.started_at).getTime(),
+                x2: new Date(d.ended_at).getTime(),
+                fillColor: d.kind === 'crash' ? '#e5484d' : '#f2b90c',
+                opacity: 0.25,
+                label: { text: d.kind === 'crash' ? 'Сбой' : 'Плановое отключение', style: { fontSize: '10px' } },
+            };
+        });
+    }
+
+    function applyDowntimeAnnotations() {
+        var annotations = { xaxis: downtimeAnnotations() };
+        onlineCharts.forEach(function (chart) { chart.updateOptions({ annotations: annotations }, false, false); });
+    }
+
+    function renderDowntimeTable() {
+        var tbody = document.getElementById('downtime-table-body');
+        tbody.innerHTML = '';
+        downtimes.slice().reverse().forEach(function (d) {
+            var tr = document.createElement('tr');
+            var kindLabel = d.kind === 'crash' ? 'Сбой' : 'Плановое отключение';
+            tr.innerHTML =
+                '<td>' + kindLabel + '</td>' +
+                '<td>' + new Date(d.started_at).toLocaleString('ru-RU') + '</td>' +
+                '<td>' + new Date(d.ended_at).toLocaleString('ru-RU') + '</td>' +
+                '<td></td><td></td>';
+            tr.children[3].textContent = d.comment || '';
+            var delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'btn secondary';
+            delBtn.textContent = 'Удалить';
+            delBtn.addEventListener('click', function () {
+                post('/analytics/downtimes/' + d.id + '/delete/', {}).then(loadDowntimes);
+            });
+            tr.children[4].appendChild(delBtn);
+            tbody.appendChild(tr);
+        });
+    }
+
+    function loadDowntimes() {
+        get('{% url "analytics_downtimes_data" %}?hours=' + (24 * 30)).then(function (data) {
+            downtimes = data.downtimes;
+            renderDowntimeTable();
+            applyDowntimeAnnotations();
+        });
+    }
+
+    document.getElementById('downtime-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var start = document.getElementById('downtime-start').value;
+        var end = document.getElementById('downtime-end').value;
+        if (!start || !end) return;
+        post('{% url "analytics_downtime_add" %}', {
+            kind: document.getElementById('downtime-kind').value,
+            started_at: start,
+            ended_at: end,
+            comment: document.getElementById('downtime-comment').value,
+        }).then(function (result) {
+            if (result.ok) {
+                document.getElementById('downtime-comment').value = '';
+                loadDowntimes();
+            } else {
+                alert(result.error || 'Не удалось добавить запись.');
+            }
+        });
+    });
+
+    // ---------------------------------------------------------------------
+    // Live online charts
+    // ---------------------------------------------------------------------
+    function makeOnlineChart(elId, url) {
+        var chart = new ApexCharts(document.querySelector(elId), {
+            chart: { type: 'area', height: 320, animations: { enabled: false }, zoom: { type: 'x', enabled: true, autoScaleYaxis: true }, toolbar: { autoSelected: 'zoom' } },
+            series: [{ name: 'Онлайн', data: [] }],
+            xaxis: { type: 'datetime' },
+            yaxis: { min: 0, forceNiceScale: true },
+            stroke: { curve: 'smooth', width: 2 },
+            dataLabels: { enabled: false },
+            colors: ['#2f6bff'],
+        });
+        chart.render();
+        onlineCharts.push(chart);
+
+        function refresh() {
+            if (document.visibilityState !== 'visible') return;
+            get(url).then(function (data) {
+                var points = data.timestamps.map(function (t, i) { return [new Date(t).getTime(), data.values[i]]; });
+                chart.updateSeries([{ name: 'Онлайн', data: points }]);
+            });
+        }
+        refresh();
+        setInterval(refresh, 5000);
+        document.addEventListener('visibilitychange', refresh);
+    }
+
+    makeOnlineChart('#chart-online-web', '{% url "analytics_online_data" %}?source=web&minutes=60');
+    makeOnlineChart('#chart-online-bot', '{% url "analytics_online_data" %}?source=bot&minutes=60');
+    loadDowntimes();
+    setInterval(loadDowntimes, 30000);
+
+    // ---------------------------------------------------------------------
+    // Общий фильтр периода
+    // ---------------------------------------------------------------------
+    var today = new Date();
+    var weekAgo = new Date(today.getTime() - 7 * 86400000);
+    document.getElementById('filter-date-from').value = weekAgo.toISOString().slice(0, 10);
+    document.getElementById('filter-date-to').value = today.toISOString().slice(0, 10);
+
+    document.querySelectorAll('.period-preset').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var days = parseInt(btn.getAttribute('data-days'), 10);
+            var from = new Date(Date.now() - days * 86400000);
+            document.getElementById('filter-date-from').value = from.toISOString().slice(0, 10);
+            document.getElementById('filter-date-to').value = new Date().toISOString().slice(0, 10);
+            reloadDistributionCharts();
+        });
+    });
+    document.getElementById('filter-apply').addEventListener('click', reloadDistributionCharts);
+    document.getElementById('web-clicks-role-filter').addEventListener('change', reloadDistributionCharts);
+    document.getElementById('bot-clicks-role-filter').addEventListener('change', reloadDistributionCharts);
+
+    function periodParams() {
+        var from = document.getElementById('filter-date-from').value;
+        var to = document.getElementById('filter-date-to').value;
+        var params = new URLSearchParams();
+        if (from) params.set('date_from', from);
+        if (to) params.set('date_to', to);
+        return params;
+    }
+
+    // ---------------------------------------------------------------------
+    // Клики: два отдельных графика — веб и бот
+    // ---------------------------------------------------------------------
+    function makeBarChart(elId, seriesName, horizontal) {
+        var chart = new ApexCharts(document.querySelector(elId), {
+            chart: { type: 'bar', height: horizontal ? 420 : 340, animations: { enabled: false } },
+            plotOptions: horizontal ? { bar: { horizontal: true } } : {},
+            series: [{ name: seriesName, data: [] }],
+            xaxis: { categories: [] },
+            dataLabels: { enabled: false },
+            colors: ['#2f6bff'],
+        });
+        chart.render();
+        return chart;
+    }
+
+    var clicksWebChart = makeBarChart('#chart-clicks-web', 'Клики', true);
+    var clicksBotChart = makeBarChart('#chart-clicks-bot', 'Клики', true);
+    var topPagesChart = makeBarChart('#chart-top-pages', 'Просмотры', true);
+    var topBotChart = makeBarChart('#chart-top-bot', 'Клики', true);
+
+    var loadChart = new ApexCharts(document.querySelector('#chart-load'), {
+        chart: { type: 'boxPlot', height: 420, animations: { enabled: false } },
+        series: [{ type: 'boxPlot', data: [] }],
+        xaxis: { type: 'category' },
+        colors: ['#2f6bff'],
+    });
+    loadChart.render();
+
+    var durationChart = makeBarChart('#chart-duration', 'Просмотров', false);
+
+    function reloadDistributionCharts() {
+        var params = periodParams();
+
+        var webParams = new URLSearchParams(params);
+        webParams.set('source', 'web');
+        var webRole = document.getElementById('web-clicks-role-filter').value;
+        if (webRole) webParams.set('role', webRole);
+        get('{% url "analytics_clicks_data" %}?' + webParams.toString()).then(function (data) {
+            clicksWebChart.updateOptions({ xaxis: { categories: data.labels } });
+            clicksWebChart.updateSeries([{ name: 'Клики', data: data.values }]);
+        });
+
+        var botParams = new URLSearchParams(params);
+        botParams.set('source', 'bot');
+        var botRole = document.getElementById('bot-clicks-role-filter').value;
+        if (botRole) botParams.set('role', botRole);
+        get('{% url "analytics_clicks_data" %}?' + botParams.toString()).then(function (data) {
+            clicksBotChart.updateOptions({ xaxis: { categories: data.labels } });
+            clicksBotChart.updateSeries([{ name: 'Клики', data: data.values }]);
+        });
+
+        get('{% url "analytics_load_data" %}?' + params.toString()).then(function (data) {
+            if (data.series && data.series.length) {
+                loadChart.updateSeries([{ type: 'boxPlot', data: data.series }]);
+            } else {
+                loadChart.updateSeries([{ type: 'boxPlot', data: [] }]);
+            }
+        });
+
+        get('{% url "analytics_duration_data" %}?' + params.toString()).then(function (data) {
+            durationChart.updateOptions({ xaxis: { categories: data.labels } });
+            durationChart.updateSeries([{ name: 'Просмотров', data: data.values }]);
+        });
+
+        get('{% url "analytics_top_pages_data" %}?' + params.toString()).then(function (data) {
+            topPagesChart.updateOptions({ xaxis: { categories: data.labels } });
+            topPagesChart.updateSeries([{ name: 'Просмотры', data: data.values }]);
+        });
+
+        get('{% url "analytics_top_bot_commands_data" %}?' + params.toString()).then(function (data) {
+            topBotChart.updateOptions({ xaxis: { categories: data.labels } });
+            topBotChart.updateSeries([{ name: 'Клики', data: data.values }]);
+        });
+    }
+
+    reloadDistributionCharts();
+
+    // ---------------------------------------------------------------------
+    // Вьюер логов: infinite scroll снизу вверх, батчами по 150 строк
+    // ---------------------------------------------------------------------
+    var logViewer = document.getElementById('log-viewer');
+    var currentChannel = 'web';
+    var nextCursor = 0;
+    var hasMore = true;
+    var loading = false;
+    var logUrlBase = '/analytics/logs/';
+
+    function renderBatch(lines, prepend) {
+        var frag = document.createDocumentFragment();
+        lines.forEach(function (line) {
+            var div = document.createElement('div');
+            div.textContent = line;
+            frag.appendChild(div);
+        });
+        if (prepend) {
+            var prevHeight = logViewer.scrollHeight;
+            logViewer.insertBefore(frag, logViewer.firstChild);
+            logViewer.scrollTop = logViewer.scrollHeight - prevHeight;
+        } else {
+            logViewer.appendChild(frag);
+            logViewer.scrollTop = logViewer.scrollHeight;
+        }
+    }
+
+    function loadNextBatch() {
+        if (loading || !hasMore) return;
+        loading = true;
+        var loadingEl = document.createElement('div');
+        loadingEl.className = 'log-loading';
+        loadingEl.textContent = 'Загрузка…';
+        logViewer.insertBefore(loadingEl, logViewer.firstChild);
+
+        get(logUrlBase + currentChannel + '/tail/?before_line=' + nextCursor).then(function (data) {
+            loadingEl.remove();
+            nextCursor = data.next_cursor;
+            hasMore = data.has_more;
+            renderBatch(data.lines, nextCursor > data.lines.length);
+            loading = false;
+        }).catch(function () { loadingEl.remove(); loading = false; });
+    }
+
+    function resetLogViewer(channel) {
+        currentChannel = channel;
+        nextCursor = 0;
+        hasMore = true;
+        logViewer.innerHTML = '';
+        document.getElementById('log-download-link').setAttribute('href', logUrlBase + channel + '/download/');
+        document.getElementById('log-download-link').textContent = '⬇ Скачать ' + channel + '.log';
+        loadNextBatch();
+    }
+
+    document.querySelectorAll('.log-tab-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('.log-tab-btn').forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            resetLogViewer(btn.getAttribute('data-channel'));
+        });
+    });
+
+    logViewer.addEventListener('scroll', function () {
+        if (logViewer.scrollTop < 80) loadNextBatch();
+    });
+
+    resetLogViewer('web');
+})();
+</script>
+{% endblock %}

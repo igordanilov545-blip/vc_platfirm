@@ -24,6 +24,11 @@ TG_BOT_USERNAME = env('TG_BOT_USERNAME', default='')
 # (Telegram требует HTTPS; для локальной разработки — туннель вроде ngrok/cloudflared).
 WEBAPP_URL = env('WEBAPP_URL', default='')
 
+# Закрытый список telegram_id, кому доступен технический дашборд аналитики (/analytics/)
+# — не бизнес-роль (менеджер/ТЛ), а конкретные люди, которым доверена техническая
+# диагностика нагрузки и внутренние логи. Пример в .env: ANALYTICS_ADMIN_TG_IDS=123456,789012
+ANALYTICS_ADMIN_TG_IDS = set(env.list('ANALYTICS_ADMIN_TG_IDS', default=[]))
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -45,6 +50,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'blog.middleware.TelegramWebAppFrameMiddleware',
+    'blog.middleware.ActivityTrackingMiddleware',
 ]
 
 ROOT_URLCONF = 'myproject.urls'

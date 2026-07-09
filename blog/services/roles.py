@@ -116,6 +116,15 @@ def role_label(user: User) -> str:
     return 'Волонтёр'
 
 
+def role_slug(user: User) -> str:
+    """Машиночитаемый слаг роли (аналитика/фильтры) — 'manager'/'team_leader'/'volunteer'."""
+    if is_manager(user):
+        return 'manager'
+    if is_team_leader(user):
+        return 'team_leader'
+    return 'volunteer'
+
+
 # ---------------------------------------------------------------------------
 # Назначение/снятие ролей (настройки, только менеджер — см. settings_view)
 # ---------------------------------------------------------------------------

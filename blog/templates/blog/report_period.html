@@ -62,8 +62,9 @@
     </div>
 </div>
 
-<!-- Модалка выбора мероприятий: последние 15 сразу видны скруглёнными карточками,
-     поиск + полный список открываются по ссылке «Показать все» (reports_template.md). -->
+<!-- Модалка выбора мероприятий: полный список сразу виден скруглёнными карточками
+     (reports_template.md), поиск фильтрует его же. Кнопка «Выбрать все с непроставленными
+     часами» — быстрый охват для отчёта Добро.ру, чтобы не собирать вручную. -->
 <div class="events-modal-backdrop" id="events-modal-backdrop">
     <div class="events-modal">
         <div class="events-modal-head">
@@ -71,6 +72,7 @@
             <button type="button" class="events-modal-close" id="events-modal-close">×</button>
         </div>
         <input type="text" id="events-modal-search" class="events-modal-search" placeholder="Поиск мероприятия по названию…">
+        <button type="button" class="btn secondary btn-sm" id="events-modal-pick-unlogged" style="align-self:flex-start; margin:0 20px 8px;">☑ Выбрать все с непроставленными часами на Добро.ру</button>
         <div class="events-modal-body" id="events-modal-body"></div>
         <div class="events-modal-foot">
             <span id="events-modal-count" class="mono"></span>
@@ -79,51 +81,132 @@
     </div>
 </div>
 
-<!-- Панель выбора вида отчёта: все выгружаемые форматы (reports_template.md §1–5).
-     href проставляются JS-функцией из текущего охвата (период/мероприятия + сравнение). -->
-<div class="card report-formats-card">
-    <h3 style="margin-top:0;">Скачать / открыть отчёт</h3>
-    <p style="opacity:0.7; font-size:0.85rem; margin-top:-4px;">Все форматы строятся по текущему охвату, выбранному выше.</p>
-    <div class="report-formats">
-        <a class="report-format" data-report="pdf-external" href="#">
-            <span class="rf-icon">🌐</span>
-            <span class="rf-body"><b>Внешний PDF</b><small>Для руководства — только агрегаты, без имён</small></span>
-        </a>
-        <a class="report-format" data-report="pdf-internal" href="#">
-            <span class="rf-icon">🔒</span>
-            <span class="rf-body"><b>Внутренний PDF</b><small>Для менеджеров — с именами, нагрузкой, churn</small></span>
-        </a>
-        <a class="report-format" data-report="excel" href="#">
-            <span class="rf-icon">📊</span>
-            <span class="rf-body"><b>Excel-отчёт</b><small>Агрегаты + сырые листы «Заявки» и «Мероприятия»</small></span>
-        </a>
-        <a class="report-format" data-report="bundle" href="#">
-            <span class="rf-icon">📦</span>
-            <span class="rf-body"><b>Комплексный (ZIP)</b><small>Внешний + внутренний PDF + Excel одним архивом</small></span>
-        </a>
-        <a class="report-format" data-report="dobro" href="#">
-            <span class="rf-icon">✅</span>
-            <span class="rf-body"><b>Простановка часов Добро.ру</b><small>Excel: по ссылке / по человеку / сводка</small></span>
-        </a>
+<!-- Выбор вида отчёта: сначала выбираем тип, затем появляются нужные поля (цель/охват)
+     и кнопки скачивания. Охват «период/мероприятия» берётся из хедера выше. -->
+<div class="card report-picker-card">
+    <h3 style="margin-top:0;">Выберите отчёт</h3>
+
+    <div class="report-types">
+        <button type="button" class="report-type active" data-type="period">
+            <span class="rt-icon">📅</span><span class="rt-title">За период (общий)</span>
+            <span class="rt-desc">Сводная аналитика: воронка, эффективность, retention</span>
+        </button>
+        <button type="button" class="report-type" data-type="complex">
+            <span class="rt-icon">📦</span><span class="rt-title">Комплексный</span>
+            <span class="rt-desc">Сводка + все меро подряд + заявки + волонтёры периода</span>
+        </button>
+        <button type="button" class="report-type" data-type="volunteers">
+            <span class="rt-icon">👥</span><span class="rt-title">По волонтёрам</span>
+            <span class="rt-desc">Сводка + карточка каждого волонтёра подряд</span>
+        </button>
+        <button type="button" class="report-type" data-type="person">
+            <span class="rt-icon">🧑</span><span class="rt-title">По человеку</span>
+            <span class="rt-desc">Один человек: профиль, часы, заявки (+ТЛ/менеджер)</span>
+        </button>
+        <button type="button" class="report-type" data-type="organization">
+            <span class="rt-icon">🏢</span><span class="rt-title">По организации</span>
+            <span class="rt-desc">Профиль организации и все её мероприятия</span>
+        </button>
+        <button type="button" class="report-type" data-type="event">
+            <span class="rt-icon">📅</span><span class="rt-title">По мероприятию</span>
+            <span class="rt-desc">Одно мероприятие: набор, явка, тайминг заявок</span>
+        </button>
+        <button type="button" class="report-type" data-type="dobro">
+            <span class="rt-icon">✅</span><span class="rt-title">Часы Добро.ру</span>
+            <span class="rt-desc">Excel для простановки: по ссылке / по человеку</span>
+        </button>
     </div>
-    <p class="note-events-only" style="display:none; opacity:0.7; font-size:0.85rem;">
-        Отчёт по конкретному мероприятию доступен из карточки мероприятия и в таблицах ниже.
-    </p>
+
+    <!-- Динамические поля под выбранный тип -->
+    <div class="report-fields">
+        <!-- Охват «всё время / период» для отчётов по человеку/волонтёрам/организации -->
+        <div class="rf-row" id="rf-time-scope" style="display:none;">
+            <span class="rf-label">Охват:</span>
+            <div class="time-scope-toggle">
+                <button type="button" class="ts-btn active" data-ts="period">За период (из хедера)</button>
+                <button type="button" class="ts-btn" data-ts="all">За всё время</button>
+            </div>
+        </div>
+
+        <!-- Выбор конкретного человека -->
+        <div class="rf-row" id="rf-person-pick" style="display:none;">
+            <span class="rf-label">Человек:</span>
+            <div class="target-search">
+                <input type="text" id="person-search-input" placeholder="Поиск по ФИО или @username…" autocomplete="off">
+                <div class="target-results" id="person-results"></div>
+                <span class="target-chosen" id="person-chosen">не выбран</span>
+            </div>
+        </div>
+
+        <!-- Выбор организации -->
+        <div class="rf-row" id="rf-org-pick" style="display:none;">
+            <span class="rf-label">Организация:</span>
+            <div class="target-search">
+                <input type="text" id="org-search-input" placeholder="Поиск организации…" autocomplete="off">
+                <div class="target-results" id="org-results"></div>
+                <span class="target-chosen" id="org-chosen">не выбрана</span>
+            </div>
+        </div>
+
+        <!-- Выбор мероприятия (отчёт «по мероприятию») -->
+        <div class="rf-row" id="rf-event-pick" style="display:none;">
+            <span class="rf-label">Мероприятие:</span>
+            <div class="target-search">
+                <input type="text" id="event-search-input" placeholder="Поиск мероприятия по названию…" autocomplete="off">
+                <div class="target-results" id="event-results"></div>
+                <span class="target-chosen" id="event-chosen">не выбрано</span>
+            </div>
+        </div>
+
+        <!-- Вариация для отчёта за период -->
+        <div class="rf-row" id="rf-period-variant" style="display:none;">
+            <span class="rf-label">Вариация:</span>
+            <label class="rf-radio"><input type="radio" name="period-variant" value="external"> 🌐 Внешний (без имён)</label>
+            <label class="rf-radio"><input type="radio" name="period-variant" value="internal" checked> 🔒 Внутренний</label>
+        </div>
+    </div>
+
+    <div class="report-actions" id="report-actions">
+        <a class="btn" id="report-primary-btn" href="#" target="_blank">Скачать DOCX</a>
+        <a class="btn secondary" id="report-secondary-btn" href="#" style="display:none;">⬇ Excel</a>
+        <span class="report-hint" id="report-hint"></span>
+    </div>
 </div>
 
 <style>
-    .report-formats-card { }
-    .report-formats { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-top: 12px; }
-    .report-format {
-        display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--border-subtle);
-        border-radius: var(--radius-md, 12px); text-decoration: none; color: var(--text-primary); transition: background 0.1s, border-color 0.1s;
+    .report-picker-card h3 { margin-top: 0; }
+    .report-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin: 12px 0; }
+    .report-type {
+        display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 12px 14px;
+        border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 12px);
+        background: var(--bg-card); cursor: pointer; font-family: inherit; transition: border-color 0.1s, background 0.1s;
     }
-    .report-format:hover { background: var(--bg-card-hover); border-color: var(--accent); }
-    .report-format.disabled { opacity: 0.45; }
-    .report-format .rf-icon { font-size: 22px; flex-shrink: 0; }
-    .report-format .rf-body { display: flex; flex-direction: column; }
-    .report-format .rf-body b { font-size: 13px; }
-    .report-format .rf-body small { color: var(--text-tertiary); font-size: 11.5px; }
+    .report-type:hover { background: var(--bg-card-hover); }
+    .report-type.active { border-color: var(--accent); background: var(--bg-card-hover); box-shadow: 0 0 0 1px var(--accent) inset; }
+    .report-type .rt-icon { font-size: 20px; }
+    .report-type .rt-title { font-weight: 600; font-size: 13px; color: var(--text-primary); }
+    .report-type .rt-desc { font-size: 11.5px; color: var(--text-tertiary); }
+
+    .report-fields { display: flex; flex-direction: column; gap: 12px; margin: 8px 0 14px; }
+    .rf-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .rf-label { font-size: 13px; color: var(--text-secondary); min-width: 92px; }
+    .rf-radio { font-size: 13px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+    .time-scope-toggle { display: flex; gap: 4px; background: var(--bg-card-hover); border-radius: var(--radius-sm); padding: 4px; }
+    .ts-btn { border: none; background: transparent; padding: 6px 14px; border-radius: calc(var(--radius-sm) - 2px); font-family: inherit; font-size: 12.5px; cursor: pointer; color: var(--text-secondary); }
+    .ts-btn.active { background: var(--accent); color: var(--accent-text-on); font-weight: 600; }
+
+    .target-search { position: relative; flex: 1; min-width: 260px; }
+    .target-search input { width: 100%; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); font-family: inherit; font-size: 13px; background: var(--bg-card); color: var(--text-primary); }
+    .target-results { position: absolute; top: 100%; left: 0; right: 0; z-index: 20; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); margin-top: 4px; max-height: 240px; overflow-y: auto; display: none; box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+    .target-results.open { display: block; }
+    .target-result { padding: 8px 12px; cursor: pointer; font-size: 13px; }
+    .target-result:hover { background: var(--bg-card-hover); }
+    .target-chosen { display: inline-block; margin-top: 6px; font-size: 12px; color: var(--text-tertiary); }
+    .target-chosen.set { color: var(--accent); font-weight: 600; }
+
+    .report-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .report-hint { font-size: 12px; color: var(--text-tertiary); }
+    .btn.disabled { opacity: 0.45; pointer-events: none; }
 </style>
 
 <style>
@@ -382,7 +465,7 @@
                 <td data-label="Пришло" class="num mono">{{ s.attended }}</td>
                 <td data-label="% закрытия"><span class="mono">{{ s.pct_closed }}%</span> {% if s.understaffed %}<span class="pill warning"><span class="dot"></span>Недобор</span>{% endif %}</td>
                 <td data-label="Отчёт по меро">
-                    <a href="{% url 'report_event_pdf' s.event_id %}" target="_blank" title="PDF-отчёт по мероприятию">PDF</a>
+                    <a href="{% url 'report_event_pdf' s.event_id %}" target="_blank" title="DOCX-отчёт по мероприятию">DOCX</a>
                     ·
                     <a href="{% url 'report_event_export' s.event_id %}" title="Excel-отчёт по мероприятию">Excel</a>
                 </td>
@@ -654,7 +737,7 @@
     });
 
     // --------------------------------------------------------------
-    // Выбор мероприятий: чипы + модалка (последние 15 / поиск)
+    // Выбор мероприятий: чипы + модалка (полный список / поиск)
     // --------------------------------------------------------------
     var recentEvents = JSON.parse(document.getElementById('recent-events-data').textContent);
     var initialSelectedEvents = JSON.parse(document.getElementById('selected-events-data').textContent);
@@ -671,6 +754,7 @@
     var modalClose = document.getElementById('events-modal-close');
     var modalDone = document.getElementById('events-modal-done');
     var modalCount = document.getElementById('events-modal-count');
+    var modalPickUnlogged = document.getElementById('events-modal-pick-unlogged');
     var eventsApplyBtn = document.getElementById('events-apply');
     var eventsExportLink = document.getElementById('events-export-link');
 
@@ -709,36 +793,216 @@
         return { mode: 'period', query: q, hasScope: true };
     }
 
-    var reportFormatLinks = document.querySelectorAll('.report-format');
-    var eventsOnlyNote = document.querySelector('.note-events-only');
-    function updateReportFormatLinks() {
-        var scope = currentScopeQuery();
-        reportFormatLinks.forEach(function (a) {
-            var kind = a.getAttribute('data-report');
-            var base;
-            if (kind === 'pdf-external') base = '{% url "report_period_pdf" "external" %}';
-            else if (kind === 'pdf-internal') base = '{% url "report_period_pdf" "internal" %}';
-            else if (kind === 'excel') base = '{% url "report_period_export" %}';
-            else if (kind === 'bundle') base = '{% url "report_bundle" %}';
-            else if (kind === 'dobro') base = '{% url "report_dobro_export" %}';
-            a.href = base + '?' + scope.query;
-            // PDF открываем в новой вкладке (печать), файлы — обычным переходом.
-            if (kind === 'pdf-external' || kind === 'pdf-internal') a.setAttribute('target', '_blank');
-            else a.removeAttribute('target');
-            if (!scope.hasScope) {
-                a.classList.add('disabled');
-                a.addEventListener('click', blockIfNoScope);
-            } else {
-                a.classList.remove('disabled');
-                a.removeEventListener('click', blockIfNoScope);
-            }
-        });
-        if (eventsOnlyNote) eventsOnlyNote.style.display = scope.mode === 'events' ? '' : 'none';
-    }
+    // ====== Новый селектор отчётов: тип → поля → кнопки ======
+    var REPORT_URLS = {
+        periodExternal: '{% url "report_period_pdf" "external" %}',
+        periodInternal: '{% url "report_period_pdf" "internal" %}',
+        periodExcel: '{% url "report_period_export" %}',
+        bundle: '{% url "report_bundle" %}',
+        dobro: '{% url "report_dobro_export" %}',
+        complex: '{% url "report_complex_pdf" %}',
+        volunteersPdf: '{% url "report_volunteers_pdf" %}',
+        volunteersExcel: '{% url "report_volunteers_export" %}',
+        peopleSearch: '{% url "report_people_search" %}',
+        orgsSearch: '{% url "report_organizations_search" %}',
+        eventsSearch: '{% url "report_events_search" %}'
+    };
+    // person/organization/event требуют id цели — URL строится JS-ом (см. buildReport).
+
+    var selectedReportType = 'period';
+    var timeScopeMode = 'period'; // period | all — только для person/volunteers/organization
+    var chosenPersonId = null, chosenOrgId = null, chosenEventId = null;
+
+    var reportTypeBtns = document.querySelectorAll('.report-type');
+    var rfTimeScope = document.getElementById('rf-time-scope');
+    var rfPersonPick = document.getElementById('rf-person-pick');
+    var rfOrgPick = document.getElementById('rf-org-pick');
+    var rfEventPick = document.getElementById('rf-event-pick');
+    var rfPeriodVariant = document.getElementById('rf-period-variant');
+    var primaryBtn = document.getElementById('report-primary-btn');
+    var secondaryBtn = document.getElementById('report-secondary-btn');
+    var reportHint = document.getElementById('report-hint');
+
     function blockIfNoScope(e) {
         e.preventDefault();
         alert('Сначала выберите хотя бы одно мероприятие — нажмите «Выбрать мероприятия…».');
     }
+
+    // Показать/скрыть поля под выбранный тип.
+    function updateReportFields() {
+        var supportsTimeScope = (selectedReportType === 'person' || selectedReportType === 'volunteers' || selectedReportType === 'organization');
+        rfTimeScope.style.display = supportsTimeScope ? '' : 'none';
+        rfPersonPick.style.display = (selectedReportType === 'person') ? '' : 'none';
+        rfOrgPick.style.display = (selectedReportType === 'organization') ? '' : 'none';
+        rfEventPick.style.display = (selectedReportType === 'event') ? '' : 'none';
+        rfPeriodVariant.style.display = (selectedReportType === 'period') ? '' : 'none';
+        buildReport();
+    }
+
+    // Собрать href кнопок по типу + охвату + цели.
+    function buildReport() {
+        var scope = currentScopeQuery();
+        // Для отчётов с охватом «всё время» параметры дат не передаём.
+        var timeQuery = '';
+        if (timeScopeMode === 'period') {
+            timeQuery = 'date_from=' + toISO(rangeStart) + '&date_to=' + toISO(rangeEnd);
+        }
+        secondaryBtn.style.display = 'none';
+        reportHint.textContent = '';
+        primaryBtn.classList.remove('disabled');
+        primaryBtn.removeEventListener('click', blockIfNoScope);
+
+        if (selectedReportType === 'period') {
+            var variant = document.querySelector('input[name="period-variant"]:checked').value;
+            var base = (variant === 'external') ? REPORT_URLS.periodExternal : REPORT_URLS.periodInternal;
+            primaryBtn.href = base + '?' + scope.query;
+            primaryBtn.textContent = 'Скачать DOCX';
+            secondaryBtn.style.display = '';
+            secondaryBtn.href = REPORT_URLS.periodExcel + '?' + scope.query;
+            if (!scope.hasScope) disablePrimaryNoScope();
+        } else if (selectedReportType === 'complex') {
+            primaryBtn.href = REPORT_URLS.complex + '?' + scope.query;
+            primaryBtn.textContent = 'Скачать DOCX';
+            if (!scope.hasScope) disablePrimaryNoScope();
+        } else if (selectedReportType === 'volunteers') {
+            primaryBtn.href = REPORT_URLS.volunteersPdf + (timeQuery ? '?' + timeQuery : '');
+            primaryBtn.textContent = 'Скачать DOCX';
+            secondaryBtn.style.display = '';
+            secondaryBtn.href = REPORT_URLS.volunteersExcel + (timeQuery ? '?' + timeQuery : '');
+        } else if (selectedReportType === 'person') {
+            if (chosenPersonId) {
+                primaryBtn.href = '/reports/person/' + chosenPersonId + '/pdf/' + (timeQuery ? '?' + timeQuery : '');
+                primaryBtn.textContent = 'Скачать DOCX';
+            } else {
+                primaryBtn.href = '#'; primaryBtn.classList.add('disabled');
+                reportHint.textContent = 'Выберите человека выше.';
+            }
+        } else if (selectedReportType === 'organization') {
+            if (chosenOrgId) {
+                primaryBtn.href = '/reports/organization/' + chosenOrgId + '/pdf/' + (timeQuery ? '?' + timeQuery : '');
+                primaryBtn.textContent = 'Скачать DOCX';
+            } else {
+                primaryBtn.href = '#'; primaryBtn.classList.add('disabled');
+                reportHint.textContent = 'Выберите организацию выше.';
+            }
+        } else if (selectedReportType === 'event') {
+            if (chosenEventId) {
+                primaryBtn.href = '/reports/event/' + chosenEventId + '/pdf/';
+                primaryBtn.textContent = 'Скачать DOCX';
+                secondaryBtn.style.display = '';
+                secondaryBtn.href = '/reports/event/' + chosenEventId + '/export/';
+            } else {
+                primaryBtn.href = '#'; primaryBtn.classList.add('disabled');
+                reportHint.textContent = 'Выберите мероприятие выше.';
+            }
+        } else if (selectedReportType === 'dobro') {
+            primaryBtn.href = REPORT_URLS.dobro + '?' + scope.query;
+            primaryBtn.textContent = '⬇ Excel Добро.ру';
+            primaryBtn.removeAttribute('target');
+            if (!scope.hasScope) disablePrimaryNoScope();
+            return;
+        }
+        primaryBtn.setAttribute('target', '_blank');
+    }
+    function disablePrimaryNoScope() {
+        primaryBtn.classList.add('disabled');
+        reportHint.textContent = 'Выберите хотя бы одно мероприятие в хедере.';
+    }
+    // Совместимость: старые места вызывают updateReportFormatLinks().
+    function updateReportFormatLinks() { buildReport(); }
+
+    // Скачать отчёт, если кнопка активна (не .disabled и href задан). Возвращает true,
+    // если скачивание запущено. Используется и по клику на кнопку, и по двойному клику
+    // на карточку типа отчёта.
+    function triggerPrimaryDownload() {
+        var href = primaryBtn.getAttribute('href');
+        if (primaryBtn.classList.contains('disabled') || !href || href === '#') {
+            return false;
+        }
+        if (primaryBtn.getAttribute('target') === '_blank') {
+            window.open(href, '_blank');
+        } else {
+            window.location.href = href;
+        }
+        return true;
+    }
+
+    reportTypeBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            selectedReportType = btn.getAttribute('data-type');
+            reportTypeBtns.forEach(function (b) { b.classList.toggle('active', b === btn); });
+            updateReportFields();
+        });
+        // Двойной клик по карточке = «Скачать отчёт», но только если кнопка горит
+        // (для отчётов, требующих выбор цели/охвата, двойной клик неактивен).
+        btn.addEventListener('dblclick', function () {
+            selectedReportType = btn.getAttribute('data-type');
+            reportTypeBtns.forEach(function (b) { b.classList.toggle('active', b === btn); });
+            updateReportFields();
+            triggerPrimaryDownload();
+        });
+    });
+
+    document.querySelectorAll('input[name="period-variant"]').forEach(function (r) {
+        r.addEventListener('change', buildReport);
+    });
+    document.querySelectorAll('#rf-time-scope .ts-btn').forEach(function (b) {
+        b.addEventListener('click', function () {
+            timeScopeMode = b.getAttribute('data-ts');
+            document.querySelectorAll('#rf-time-scope .ts-btn').forEach(function (x) { x.classList.toggle('active', x === b); });
+            buildReport();
+        });
+    });
+
+    // Живой поиск цели (человек / организация / мероприятие) через JSON-эндпоинты.
+    // По клику/фокусу сразу показываем список (базовая выдача при пустом запросе —
+    // бэкенд без `q` отдаёт первые записи), ввод текста дальше фильтрует эту же выдачу.
+    function wireTargetSearch(inputId, resultsId, chosenId, searchUrl, onPick) {
+        var input = document.getElementById(inputId);
+        var results = document.getElementById(resultsId);
+        var chosen = document.getElementById(chosenId);
+        if (!input) return;
+        var timer = null;
+        function doFetch(q) {
+            fetch(searchUrl + '?q=' + encodeURIComponent(q))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    var items = data.users || data.organizations || data.events || [];
+                    results.innerHTML = '';
+                    items.forEach(function (it) {
+                        var label = it.name || it.title;
+                        var div = document.createElement('div');
+                        div.className = 'target-result';
+                        div.textContent = label + (it.telegram ? ' (@' + it.telegram + ')' : '') + (it.date ? ' — ' + it.date : '');
+                        div.addEventListener('click', function () {
+                            onPick(it.id, label);
+                            chosen.textContent = label;
+                            chosen.classList.add('set');
+                            results.classList.remove('open');
+                            input.value = label;
+                            buildReport();
+                        });
+                        results.appendChild(div);
+                    });
+                    results.classList.toggle('open', items.length > 0);
+                });
+        }
+        input.addEventListener('input', function () {
+            clearTimeout(timer);
+            var q = input.value.trim();
+            timer = setTimeout(function () { doFetch(q); }, 250);
+        });
+        // Клик/фокус в пустое поле сразу открывает базовую выдачу (не только после
+        // того, как пользователь что-то ввёл и стёр).
+        input.addEventListener('focus', function () { if (!input.value.trim()) doFetch(''); });
+        input.addEventListener('click', function () { if (!input.value.trim()) doFetch(''); });
+        document.addEventListener('click', function (e) {
+            if (!input.contains(e.target) && !results.contains(e.target)) results.classList.remove('open');
+        });
+    }
+    wireTargetSearch('person-search-input', 'person-results', 'person-chosen', REPORT_URLS.peopleSearch, function (id) { chosenPersonId = id; });
+    wireTargetSearch('org-search-input', 'org-results', 'org-chosen', REPORT_URLS.orgsSearch, function (id) { chosenOrgId = id; });
+    wireTargetSearch('event-search-input', 'event-results', 'event-chosen', REPORT_URLS.eventsSearch, function (id) { chosenEventId = id; });
 
     function updateEventsLinks() {
         var ids = Array.from(selectedEventIds).join(',');
@@ -811,6 +1075,28 @@
     if (modalClose) modalClose.addEventListener('click', function () { modalBackdrop.classList.remove('open'); });
     if (modalBackdrop) modalBackdrop.addEventListener('click', function (e) { if (e.target === modalBackdrop) modalBackdrop.classList.remove('open'); });
     if (modalDone) modalDone.addEventListener('click', function () { modalBackdrop.classList.remove('open'); renderChips(); });
+    if (modalPickUnlogged) {
+        modalPickUnlogged.addEventListener('click', function () {
+            // Добавляет к текущему выбору все мероприятия, у которых учёт часов на
+            // Добро.ру ведётся, но ещё не проставлен (dobro_unlogged) — быстрый охват
+            // для отчёта Добро.ру без ручного просмотра каждого мероприятия.
+            var added = 0;
+            recentEvents.forEach(function (ev) {
+                if (ev.dobro_unlogged && !selectedEventIds.has(ev.id)) {
+                    selectedEventIds.add(ev.id);
+                    selectedEventTitles[ev.id] = ev.title;
+                    added++;
+                }
+            });
+            if (!added) {
+                alert('Мероприятий с непроставленными часами на Добро.ру не найдено (среди видимых в списке).');
+                return;
+            }
+            modalSearch.value = '';
+            renderPickList(recentEvents, false);
+            modalCount.textContent = selectedEventIds.size + ' выбрано';
+        });
+    }
     if (modalSearch) {
         modalSearch.addEventListener('input', function () {
             clearTimeout(searchTimer);
@@ -831,7 +1117,7 @@
 
     renderChips();
     if (compareSelect) compareSelect.addEventListener('change', updateReportFormatLinks);
-    updateReportFormatLinks();
+    updateReportFields();
 
     // --------------------------------------------------------------
     // Графики: нормализация высоты столбцов на клиенте (без доп. запросов)

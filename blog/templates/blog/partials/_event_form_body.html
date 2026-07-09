@@ -29,6 +29,19 @@
     </div>
 
     <div class="field">
+        <label>Требования к волонтёрам</label>
+        <div class="category-chips" data-chip-select="{{ form.requirements.id_for_label }}" data-chip-empty="Требований нет">
+            <div class="cat-chips-row" data-chips-selected></div>
+            <div class="cat-chips-available-wrap">
+                <div class="cat-chips-available-label">Доступные требования — нажмите, чтобы добавить:</div>
+                <div class="cat-chips-row" data-chips-available></div>
+                <button type="button" class="btn secondary btn-sm add-ref-btn" data-add-ref="requirement" data-target="{{ form.requirements.id_for_label }}" style="margin-top:8px;">＋ Новое требование</button>
+            </div>
+        </div>
+        {{ form.requirements }}
+    </div>
+
+    <div class="field">
         <label>Тим-лидеры</label>
         <div class="category-chips" data-chip-select="{{ form.team_leads.id_for_label }}" data-chip-empty="Тим-лидеры не назначены">
             <div class="cat-chips-row" data-chips-selected></div>

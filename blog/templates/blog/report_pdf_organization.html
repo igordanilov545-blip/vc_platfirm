@@ -1,0 +1,74 @@
+<!-- PDF-отчёт по организации (reports_template.md «Отчёт по организации»): профиль,
+     контакты, статистика, все мероприятия подряд, история взаимодействия. WeasyPrint. -->
+<meta charset="utf-8">
+<title>Отчёт по организации — {{ organization.name }}</title>
+{% include 'blog/_report_pdf_base.html' %}
+
+<div class="brand">
+    <div class="logo">ВОЛОНТЁРСКИЙ ЦЕНТР</div>
+    <h1>Отчёт по организации</h1>
+    <div class="subtitle">
+        {{ organization.name }}
+        · Охват: {% if scope.scoped %}{{ scope.date_from|date:"d.m.Y" }} — {{ scope.date_to|date:"d.m.Y" }}{% else %}за всё время{% endif %}
+        · Сформирован: {{ generated_at|date:"d.m.Y H:i" }}
+    </div>
+</div>
+
+<h2>A. Профиль организации</h2>
+<table class="kv">
+    <tr><td class="k">Название</td><td>{{ organization.name }}</td></tr>
+    <tr><td class="k">Описание</td><td>{{ organization.description|default:"—" }}</td></tr>
+    <tr><td class="k">Внутренний рейтинг</td><td>{% if organization.internal_rating is not None %}{{ organization.internal_rating }}/10{% else %}—{% endif %}</td></tr>
+    <tr><td class="k">В базе с</td><td>{{ organization.created_at|date:"d.m.Y" }}</td></tr>
+    <tr><td class="k">Категории/тематики</td><td>{{ categories|join:", "|default:"—" }}</td></tr>
+    <tr><td class="k">Внутренние комментарии</td><td>{{ organization.comment|default:"—" }}</td></tr>
+</table>
+
+<h2>B. Контактные лица (организаторы)</h2>
+<table class="data">
+    <thead><tr><th>ФИО</th><th>Телефон</th><th>Email</th><th>Telegram</th><th>VK / WhatsApp</th></tr></thead>
+    <tbody>
+    {% for link in contacts %}
+        {% with o=link.organizer %}
+        <tr><td>{{ o.first_name }} {{ o.last_name }}</td><td>{{ o.phone|default:"—" }}</td><td>{{ o.email|default:"—" }}</td>
+            <td>{% if o.telegram_username %}@{{ o.telegram_username }}{% else %}—{% endif %}</td>
+            <td>{{ o.VK_username|default:"—" }} / {{ o.whatsapp|default:"—" }}</td></tr>
+        {% endwith %}
+    {% empty %}<tr><td colspan="5">Контактные лица не указаны.</td></tr>{% endfor %}
+    </tbody>
+</table>
+
+<h2>C. Статистика</h2>
+<table class="kv">
+    <tr><td class="k">Мероприятий проведено</td><td>{{ stats.events_count }}</td></tr>
+    <tr><td class="k">Уникальных волонтёров</td><td>{{ stats.unique_volunteers }}</td></tr>
+    <tr><td class="k">Закрытых смен</td><td>{{ stats.closed_shifts }}</td></tr>
+    <tr><td class="k">Всего волонтёро-часов</td><td>{{ stats.total_hours }}</td></tr>
+    <tr><td class="k">Людям помогли (сумма)</td><td>{{ stats.people_helped }}</td></tr>
+    <tr><td class="k">Средний рейтинг меро</td><td>{{ stats.avg_rating|default:"—" }}</td></tr>
+</table>
+
+{% if categories_chart %}<div class="chart-block"><img src="{{ categories_chart }}" alt="Меро по категориям"></div>{% endif %}
+
+<h2>D. Все мероприятия организации</h2>
+<table class="data">
+    <thead><tr><th>Мероприятие</th><th>Даты</th><th>Статус</th><th class="num">Волонтёров</th><th class="num">Рейтинг</th></tr></thead>
+    <tbody>
+    {% for e in events %}
+        <tr><td>{{ e.event.title }}</td>
+            <td class="mono">{% if e.date_from %}{{ e.date_from|date:"d.m.Y" }}{% if e.date_to != e.date_from %}—{{ e.date_to|date:"d.m.Y" }}{% endif %}{% else %}—{% endif %}</td>
+            <td>{{ e.status }}</td><td class="num">{{ e.volunteers_count }}</td><td class="num">{{ e.rating|default:"—" }}</td></tr>
+    {% empty %}<tr><td colspan="5">Мероприятий в охвате нет.</td></tr>{% endfor %}
+    </tbody>
+</table>
+
+<h2>E. История взаимодействия</h2>
+<table class="data">
+    <thead><tr><th>Дата</th><th>Тип</th><th>Автор</th><th>Заметка</th></tr></thead>
+    <tbody>
+    {% for i in interactions %}
+        <tr><td class="mono">{{ i.created_at|date:"d.m.Y" }}</td><td>{{ i.get_contact_type_display }}</td>
+            <td>{{ i.author.full_name|default:"—" }}</td><td>{{ i.note|default:"—" }}</td></tr>
+    {% empty %}<tr><td colspan="4">Записей о взаимодействии нет.</td></tr>{% endfor %}
+    </tbody>
+</table>

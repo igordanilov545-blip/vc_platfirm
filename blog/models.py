@@ -597,6 +597,11 @@ class Application(models.Model):
     cancelled_at = models.DateTimeField(blank=True, null=True)
     cancel_reason = models.TextField(blank=True, null=True)
 
+    # Если заявка при подаче автоматически ушла в резерв из-за несоответствия
+    # требованиям меро (blog.services.requirements) — здесь человекочитаемая причина
+    # (для менеджера/ТЛ на странице меро); пусто, если решение было обычным ручным.
+    auto_reject_reason = models.TextField(blank=True, null=True)
+
     class Meta:
         db_table = 'applications'
         verbose_name = 'Заявка'
@@ -769,10 +774,27 @@ class EventFeedback(models.Model):
 
 
 class EventRequirement(models.Model):
-    """Справочник требований к волонтерам."""
+    """Справочник требований к волонтерам (напр. «18+», «Уверенное владение русским
+    языком»). Исходим из того, что ВСЕ волонтёры по умолчанию соответствуют ВСЕМ
+    требованиям — несоответствие фиксируется явно, точечно (см. UserRequirementException),
+    белым списком «кто НЕ соответствует», а не наоборот.
+
+    CHECK_TYPE_CHOICES:
+    - 'manual' — соответствие/несоответствие проставляет менеджер вручную в профиле
+      волонтёра (UserRequirementException). Так для большинства требований.
+    - 'age' — проверяется автоматически по `users.birthday` при подаче заявки (см.
+      blog.services.requirements.check_application_requirements). Ровно одно требование
+      в системе должно иметь этот тип — «18+»; проверка не завязана на конкретный title,
+      чтобы менеджер мог переименовать требование, не ломая логику."""
+    CHECK_TYPE_CHOICES = [
+        ('manual', 'Вручную (менеджер отмечает исключения)'),
+        ('age', 'Автоматически по дате рождения (18+)'),
+    ]
+
     id = models.AutoField(primary_key=True)
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
+    check_type = models.CharField(max_length=20, choices=CHECK_TYPE_CHOICES, default='manual')
 
     class Meta:
         db_table = 'event_requirements'
@@ -828,6 +850,120 @@ class BotOutbox(models.Model):
         verbose_name_plural = 'Исходящие сообщения бота'
         indexes = [
             models.Index(fields=['status', 'created_at']),
+        ]
+
+
+class SystemDowntime(models.Model):
+    """Ручная отметка периода простоя (техадмин заполняет через админку/команду) —
+    рисуется как красная («сбой») или жёлтая («плановое отключение») зона на графиках
+    онлайна дашборда аналитики. Нет автоматического мониторинга аптайма — источник
+    правды здесь исключительно человек, который знает, что реально произошло."""
+    KIND_CHOICES = [('crash', 'Сбой'), ('planned', 'Плановое отключение')]
+
+    id = models.AutoField(primary_key=True)
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES, default='crash')
+    started_at = models.DateTimeField(db_index=True)
+    ended_at = models.DateTimeField(db_index=True)
+    comment = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'analytics_system_downtimes'
+        verbose_name = 'Простой системы'
+        verbose_name_plural = 'Простои системы'
+        ordering = ['-started_at']
+        indexes = [
+            models.Index(fields=['started_at', 'ended_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.get_kind_display()}: {self.started_at:%d.%m %H:%M} — {self.ended_at:%d.%m %H:%M}'
+
+
+class WebSession(models.Model):
+    """Одна вкладка/сессия веб-пользователя — источник для графика «онлайн по минутам»
+    и для расчёта времени, проведённого на страницах (см. documentation по аналитике).
+    Обновляется middleware `ActivityTrackingMiddleware` и heartbeat-запросами с фронта.
+    """
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='web_sessions')
+    session_key = models.CharField(max_length=100, db_index=True)
+    role_snapshot = models.CharField(max_length=20, default='volunteer')
+    started_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    last_seen_at = models.DateTimeField(db_index=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        db_table = 'analytics_web_sessions'
+        verbose_name = 'Веб-сессия'
+        verbose_name_plural = 'Веб-сессии'
+        indexes = [
+            models.Index(fields=['last_seen_at']),
+            models.Index(fields=['session_key']),
+        ]
+
+
+class WebPageView(models.Model):
+    """Один просмотр страницы: время ответа сервера (`load_ms`) и время, проведённое
+    пользователем на странице (`duration_ms`, обновляется heartbeat/beacon с фронта)."""
+    id = models.AutoField(primary_key=True)
+    session = models.ForeignKey(WebSession, on_delete=models.CASCADE, related_name='page_views')
+    path = models.CharField(max_length=255, db_index=True)
+    view_name = models.CharField(max_length=100, blank=True, db_index=True)
+    load_ms = models.IntegerField(null=True, blank=True)
+    entered_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    duration_ms = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'analytics_web_page_views'
+        verbose_name = 'Просмотр страницы'
+        verbose_name_plural = 'Просмотры страниц'
+        indexes = [
+            models.Index(fields=['entered_at']),
+            models.Index(fields=['view_name']),
+        ]
+
+
+class ButtonClickEvent(models.Model):
+    """Клик по кнопке/команде — общий журнал для веба и Telegram-бота (различаются
+    полем `source`). `action_key` — машиночитаемый идентификатор для группировки на
+    графике, `label` — человекочитаемая подпись для легенды."""
+    SOURCE_CHOICES = [('web', 'Веб'), ('bot', 'Telegram-бот')]
+
+    id = models.AutoField(primary_key=True)
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, db_index=True)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    web_session = models.ForeignKey(
+        'WebSession', on_delete=models.SET_NULL, null=True, blank=True, related_name='click_events'
+    )
+    role_snapshot = models.CharField(max_length=20, default='volunteer', db_index=True)
+    action_key = models.CharField(max_length=150, db_index=True)
+    label = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = 'analytics_button_clicks'
+        verbose_name = 'Клик по кнопке'
+        verbose_name_plural = 'Клики по кнопкам'
+        indexes = [
+            models.Index(fields=['created_at']),
+            models.Index(fields=['source', 'role_snapshot', 'created_at']),
+        ]
+
+
+class BotSessionPing(models.Model):
+    """Heartbeat активности в Telegram-боте — создаётся на каждый апдейт (сообщение
+    или callback) от пользователя, источник для графика «онлайн по минутам» бота."""
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = 'analytics_bot_pings'
+        verbose_name = 'Пинг активности бота'
+        verbose_name_plural = 'Пинги активности бота'
+        indexes = [
+            models.Index(fields=['created_at']),
         ]
 
 

@@ -243,20 +243,29 @@ def apply_to_event(user_id: int, event_id: int):
     if existing:
         return existing, 'already_applied'
 
+    # Требования меро (db.md правило 6) — та же логика, что и на веб-подаче: если
+    # волонтёр не соответствует хотя бы одному, заявка сразу уходит в резерв, без
+    # особого сообщения пользователю (обычное «заявка отправлена»).
+    from blog.services.requirements import check_application_requirements
+    req_check = check_application_requirements(event, user)
+
     application = dc.create_application(
         event=event,
         user=user,
         first_name=user.first_name or '',
         last_name=user.last_name,
+        middle_name=user.middle_name,
         telegram_username=user.telegram_username,
         phone=user.phone,
         submitted_at=timezone.now(),
-        status='new',
+        status='rejected' if req_check['auto_reject'] else 'new',
+        auto_reject_reason='; '.join(req_check['reasons']) if req_check['auto_reject'] else None,
     )
-    notify_application_submitted(application)
+    notify_application_submitted(application, unknown_age=req_check['unknown_age'])
     logger.info(
-        'Заявка подана из бота: application=%s event=%s by=%s',
+        'Заявка подана из бота: application=%s event=%s by=%s%s',
         application.id, event_id, actor(user),
+        f' auto_reject={application.auto_reject_reason!r}' if application.auto_reject_reason else '',
     )
     return application, None
 
@@ -328,19 +337,24 @@ def edit_own_application(user_id: int, application_id: int, functions: str = Non
         return None, 'not_found'
     user = get_user(user_id)
 
+    from blog.services.requirements import check_application_requirements
+    req_check = check_application_requirements(old.event, user)
+
     new_application = dc.create_application(
         event=old.event,
         user=user,
         first_name=old.first_name,
         last_name=old.last_name,
+        middle_name=old.middle_name,
         telegram_username=old.telegram_username,
         phone=old.phone,
         functions=functions if functions is not None else old.functions,
         role_in_event=role_in_event if role_in_event is not None else old.role_in_event,
         submitted_at=timezone.now(),
-        status='new',
+        status='rejected' if req_check['auto_reject'] else 'new',
+        auto_reject_reason='; '.join(req_check['reasons']) if req_check['auto_reject'] else None,
     )
-    notify_application_submitted(new_application)
+    notify_application_submitted(new_application, unknown_age=req_check['unknown_age'])
     return new_application, None
 
 

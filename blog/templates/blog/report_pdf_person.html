@@ -1,0 +1,17 @@
+<!-- PDF-отчёт по человеку (reports_template.md «Отчёт по человеку»). Серверный
+     рендер WeasyPrint. Блоки A-D + E/F при наличии ролей — в partials/_person_card.html. -->
+<meta charset="utf-8">
+<title>Отчёт по человеку — {{ user.full_name }}</title>
+{% include 'blog/_report_pdf_base.html' %}
+
+<div class="brand">
+    <div class="logo">ВОЛОНТЁРСКИЙ ЦЕНТР</div>
+    <h1>Отчёт по человеку</h1>
+    <div class="subtitle">
+        {{ user.full_name }}{% if user.telegram_username %} · @{{ user.telegram_username }}{% endif %}
+        · Охват: {% if scope.scoped %}{{ scope.date_from|date:"d.m.Y" }} — {{ scope.date_to|date:"d.m.Y" }}{% else %}за всё время{% endif %}
+        · Сформирован: {{ generated_at|date:"d.m.Y H:i" }}
+    </div>
+</div>
+
+{% include 'blog/partials/_person_card.html' with rep=rep with_charts=True %}

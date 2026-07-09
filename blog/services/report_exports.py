@@ -469,41 +469,176 @@ def build_event_workbook(event_id):
     return wb
 
 
-def build_dobro_workbook(date_from, date_to, event_ids, show_logged=False):
-    """Книга простановки часов на Добро.ру в двух разрезах + сводка
-    (reports_template.md §5)."""
-    from openpyxl import Workbook
+def dobro_matrix_data(date_from=None, date_to=None, event_ids=None, show_logged=False):
+    """Данные для матричных листов простановки Добро.ру (reports_template.md,
+    «Отчёт простановки часов на Добро.ру»): часы каждого человека по каждому
+    мероприятию (сумма по всем сменам) + группировка мероприятий по ссылкам.
 
-    rep = dobro_logging_report(date_from, date_to, event_ids, show_logged)
+    Возвращает:
+      users        — [{'user_id','name','telegram'}], по алфавиту;
+      events       — [{'event_id','title','url','link_key','link_title'}], по названию;
+      links        — {link_key: {'title','url','kind','event_ids':[...]}};
+      hours[(user_id, event_id)] — часы (сумма по сменам) на пересечении;
+      flat         — построчные записи для страницы 3.
+    """
+    events_qs = reports_service._events_in_scope(date_from, date_to, event_ids).exclude(
+        dobro_ru_link_kind='none'
+    ).select_related('dobro_ru_shared_link')
+
+    parts_qs = Participation.objects.filter(
+        event_day__event__in=events_qs, status='attended', hours__gt=0,
+    ).select_related('user', 'event_day', 'event_day__event', 'event_day__event__dobro_ru_shared_link')
+    if not show_logged:
+        parts_qs = parts_qs.filter(dobro_ru_logged=False)
+
+    users = {}
+    events = {}
+    links = {}
+    hours = {}
+    flat = []
+
+    # Наличие заявки этого человека на это меро (для чекбокса на странице 3).
+    applied = set(
+        Application.objects.filter(event__in=events_qs, user__isnull=False)
+        .values_list('user_id', 'event_id')
+    )
+
+    for p in parts_qs:
+        event = p.event_day.event
+        uid, eid = p.user_id, event.id
+
+        if event.dobro_ru_link_kind == 'unique':
+            link_key = f'event:{eid}'
+            link_url = event.dobro_ru_link or '—'
+            link_title = event.title
+        else:  # shared
+            shared = event.dobro_ru_shared_link
+            link_key = f'shared:{shared.id}' if shared else 'shared:none'
+            link_url = shared.url if shared else '—'
+            link_title = shared.title if shared else 'Общая ссылка (не задана)'
+
+        users.setdefault(uid, {'user_id': uid, 'name': p.user.full_name, 'telegram': p.user.telegram_username or ''})
+        events.setdefault(eid, {
+            'event_id': eid, 'title': event.title, 'url': event.dobro_ru_link or link_url,
+            'link_key': link_key, 'link_title': link_title, 'kind': event.dobro_ru_link_kind,
+        })
+        link = links.setdefault(link_key, {'title': link_title, 'url': link_url, 'kind': event.dobro_ru_link_kind, 'event_ids': set()})
+        link['event_ids'].add(eid)
+
+        hours[(uid, eid)] = hours.get((uid, eid), 0) + p.hours
+        flat.append({
+            'event': event.title, 'event_url': event.dobro_ru_link or link_url,
+            'user': p.user.full_name, 'hours': p.hours, 'logged': p.dobro_ru_logged,
+            'applied': (uid, eid) in applied,
+        })
+
+    users_sorted = sorted(users.values(), key=lambda u: u['name'].lower())
+    events_sorted = sorted(events.values(), key=lambda e: e['title'].lower())
+    return {
+        'users': users_sorted,
+        'events': events_sorted,
+        'links': links,
+        'hours': hours,
+        'flat': flat,
+    }
+
+
+def build_dobro_workbook(date_from, date_to, event_ids, show_logged=False):
+    """Книга простановки часов на Добро.ру — 4 листа (reports_template.md,
+    «Отчёт простановки часов на Добро.ру»):
+      1. Матрица «человек × ссылка» (ссылко-ориентированная): в шапке колонки —
+         ссылка + через запятую все меро под ней; на пересечении — сумма часов
+         человека по всем меро этой ссылки. Колонки «часов в сумме»/«меро в сумме» —
+         формулами СУММ/СЧЁТ.
+      2. Матрица «человек × мероприятие» (меро-ориентированная): одна колонка = одно
+         меро + ссылка на него; общая ссылка повторяется на каждом своём меро.
+      3. Плоская таблица: меро · ссылка · человек · часы · [проставлено] · [подавал заявку].
+      4. Сводка.
+    """
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+
+    data = dobro_matrix_data(date_from, date_to, event_ids, show_logged)
+    users = data['users']
+    events = data['events']
+    links = data['links']
+    hours = data['hours']
+
     wb = Workbook()
 
-    ws_sum = wb.active
-    ws_sum.title = 'Сводка'
-    ws_sum.append(['Показатель', 'Значение'])
-    ws_sum.append(['Участий к простановке', rep['summary']['to_log']])
-    ws_sum.append(['Уже проставлено', rep['summary']['logged']])
-    ws_sum.append(['Меро исключено (нет ссылки)', rep['summary']['excluded_none']])
+    # ---- Лист 1: человек × ссылка (ссылко-ориентированный) ----
+    ws1 = wb.active
+    ws1.title = '1. По ссылкам'
+    link_items = sorted(links.items(), key=lambda kv: kv[1]['title'].lower())
+    # Заголовок: ФИО | часов в сумме | меро в сумме | <ссылка: меро1, меро2, ...> ...
+    header = ['ФИО', 'Часов в сумме', 'Мероприятий в сумме']
+    for _, link in link_items:
+        titles = ', '.join(e['title'] for e in events if e['event_id'] in link['event_ids'])
+        header.append(f"{link['url']}\n({titles})")
+    ws1.append(header)
 
-    ws_link = wb.create_sheet('По ссылке')
-    for link in rep['by_link']:
-        ws_link.append([
-            f"🔗 {link['title']}", link['url'], f"[{link['kind']}]",
-            f"проставлено {link['logged_count']}/{len(link['rows'])}", f"{link['total_hours']} ч",
-        ])
-        ws_link.append(['Волонтёр', 'Мероприятие · день', 'Часы', 'Проставлено'])
-        for r in link['rows']:
-            ws_link.append([r['user'], f"{r['event']} · {r['day'].isoformat()}", r['hours'], 'да' if r['logged'] else 'нет'])
-        ws_link.append([])
+    first_link_col = 4  # D
+    last_link_col = first_link_col + len(link_items) - 1
+    for ui, u in enumerate(users):
+        row_excel = ui + 2
+        row = [u['name'], None, None]
+        for _, link in link_items:
+            total = sum(hours.get((u['user_id'], eid), 0) for eid in link['event_ids'])
+            row.append(total or None)
+        ws1.append(row)
+        if link_items:
+            rng = f"{get_column_letter(first_link_col)}{row_excel}:{get_column_letter(last_link_col)}{row_excel}"
+            ws1.cell(row=row_excel, column=2).value = f"=SUM({rng})"
+            ws1.cell(row=row_excel, column=3).value = f"=COUNT({rng})"
 
-    ws_person = wb.create_sheet('По человеку')
-    for person in rep['by_person']:
-        ws_person.append([
-            f"{person['name']} ({person['telegram'] or '—'})",
-            f"{len(person['rows'])} участий", f"{person['total_hours']} ч",
+    # ---- Лист 2: человек × мероприятие (меро-ориентированный) ----
+    ws2 = wb.create_sheet('2. По мероприятиям')
+    header2 = ['ФИО', 'Часов в сумме', 'Мероприятий в сумме']
+    for e in events:
+        header2.append(f"{e['title']}\n{e['url']}")
+    ws2.append(header2)
+    last_ev_col = first_link_col + len(events) - 1
+    for ui, u in enumerate(users):
+        row_excel = ui + 2
+        row = [u['name'], None, None]
+        for e in events:
+            row.append(hours.get((u['user_id'], e['event_id'])) or None)
+        ws2.append(row)
+        if events:
+            rng = f"{get_column_letter(first_link_col)}{row_excel}:{get_column_letter(last_ev_col)}{row_excel}"
+            ws2.cell(row=row_excel, column=2).value = f"=SUM({rng})"
+            ws2.cell(row=row_excel, column=3).value = f"=COUNT({rng})"
+
+    # ---- Лист 3: плоская таблица с чекбоксом «Проставлено» ----
+    # «Проставлено» — булев чекбокс: значение ячейки ИСТИНА/ЛОЖЬ (кликается, сортируется),
+    # а выпадающий список Excel (data validation) ограничивает ввод TRUE/FALSE — менеджер
+    # кликает ячейку и переключает галочку прямо в файле.
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    ws3 = wb.create_sheet('3. Список')
+    ws3.append(['Мероприятие', 'Ссылка на меро', 'ФИО', 'Часы', 'Проставлено'])
+    flat_sorted = sorted(data['flat'], key=lambda x: (x['event'].lower(), x['user'].lower()))
+    for r in flat_sorted:
+        ws3.append([
+            r['event'], r['event_url'], r['user'], r['hours'],
+            bool(r['logged']),
         ])
-        ws_person.append(['Ссылка', 'Мероприятие · день', 'Часы', 'Проставлено'])
-        for r in person['rows']:
-            ws_person.append([r['link_url'], f"{r['event']} · {r['day'].isoformat()}", r['hours'], 'да' if r['logged'] else 'нет'])
-        ws_person.append([])
+    if flat_sorted:
+        checkbox_col = 'E'
+        dv = DataValidation(type='list', formula1='"TRUE,FALSE"', allow_blank=False)
+        dv.add(f'{checkbox_col}2:{checkbox_col}{len(flat_sorted) + 1}')
+        ws3.add_data_validation(dv)
+
+    # ---- Лист 4: сводка ----
+    ws4 = wb.create_sheet('4. Сводка')
+    ws4.append(['Показатель', 'Значение'])
+    ws4.append(['Человек в отчёте', len(users)])
+    ws4.append(['Мероприятий в отчёте', len(events)])
+    ws4.append(['Ссылок Добро.ру', len(links)])
+    ws4.append([])
+    ws4.append(['Мероприятие', 'Людей на мероприятии'])
+    for e in events:
+        people = sum(1 for u in users if (u['user_id'], e['event_id']) in hours)
+        ws4.append([e['title'], people])
 
     return wb

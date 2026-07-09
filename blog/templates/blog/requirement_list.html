@@ -1,0 +1,89 @@
+{% extends 'blog/base.html' %}
+{% block title %}Требования{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Требования к волонтёрам</h1>
+    <a href="{% url 'requirement_create' %}" class="btn" data-modal data-modal-title="Новое требование">+ Новое требование</a>
+</div>
+<p style="color:var(--text-secondary);">
+    По умолчанию все волонтёры соответствуют всем требованиям. Ниже — те, кто отмечен как
+    <b>несоответствующий</b> (белый список исключений). При подаче заявки на меро с этим требованием
+    их заявка автоматически уходит в резерв.
+</p>
+
+{% for s in sections %}
+<div class="card" style="padding:0; overflow:hidden;">
+    <div style="padding:20px 20px 0; display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+        <div>
+            <h3 style="margin:0 0 4px;">{{ s.requirement.title }}</h3>
+            {% if s.requirement.description %}<p style="color:var(--text-secondary); font-size:13px; margin:0;">{{ s.requirement.description }}</p>{% endif %}
+            {% if s.requirement.check_type == 'age' %}
+                <span class="pill info" style="margin-top:6px;"><span class="dot"></span>Проверяется автоматически по дате рождения</span>
+            {% endif %}
+        </div>
+        <div style="display:flex; gap:6px; flex-shrink:0;">
+            <a href="{% url 'requirement_edit' s.requirement.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Редактировать: {{ s.requirement.title }}">Изменить</a>
+            <form method="post" action="{% url 'requirement_delete' s.requirement.id %}" class="inline" data-confirm="Удалить требование «{{ s.requirement.title }}»? Оно будет снято со всех мероприятий и волонтёров.">
+                {% csrf_token %}
+                <button type="submit" class="btn danger btn-sm">Удалить</button>
+            </form>
+        </div>
+    </div>
+
+    <div style="padding:16px 20px;">
+        {% if s.requirement.check_type != 'age' %}
+        <details>
+            <summary style="cursor:pointer; color:var(--text-secondary); font-size:13px;">
+                Не соответствуют ({{ s.exceptions.count }}) — раскрыть список
+            </summary>
+            <div style="margin-top:10px;">
+                <table class="responsive-table" style="margin-bottom:12px;">
+                    <thead><tr><th>Волонтёр</th><th>Причина</th><th></th></tr></thead>
+                    <tbody>
+                    {% for exc in s.exceptions %}
+                        <tr>
+                            <td data-label="Волонтёр"><a href="{% url 'profile_detail' exc.user_id %}">{{ exc.user.full_name }}</a></td>
+                            <td data-label="Причина">{{ exc.reason|default:"—" }}</td>
+                            <td data-label="">
+                                <form method="post" action="{% url 'requirement_exception_remove' exc.id %}" class="inline" data-confirm="Снять отметку «не соответствует» для {{ exc.user.full_name }}?">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn secondary btn-sm">Снять</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="3">Пока никто не отмечен.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+
+                <form method="post" action="{% url 'requirement_exception_add' s.requirement.id %}">
+                    {% csrf_token %}
+                    <div class="field">
+                        <label>Волонтёр</label>
+                        <div class="category-chips" data-user-picker data-mode="single" data-field-name="user" data-empty-text="Волонтёр не выбран" data-linkable>
+                            <div class="cat-chips-search">
+                                <input type="text" placeholder="Начните вводить имя или фамилию…" data-chips-search readonly>
+                            </div>
+                            <div class="cat-chips-row" data-chips-selected></div>
+                        </div>
+                    </div>
+                    <div class="field" style="max-width:280px;">
+                        <label>Причина</label>
+                        {{ s.exception_form.reason }}
+                    </div>
+                    <button type="submit" class="btn secondary btn-sm">Добавить в исключения</button>
+                </form>
+            </div>
+        </details>
+        {% else %}
+        <p style="color:var(--text-secondary); font-size:13px; margin:0;">
+            Возраст проверяется автоматически по дате рождения в профиле — вручную отмечать исключения не нужно.
+        </p>
+        {% endif %}
+    </div>
+</div>
+{% empty %}
+<div class="card"><p>Требований пока нет.</p></div>
+{% endfor %}
+{% endblock %}

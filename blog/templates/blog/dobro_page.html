@@ -3,15 +3,21 @@
 {% block content %}
 <div class="page-header">
     <h1>Добро.ру</h1>
-    <div style="display:flex; gap:0.5rem;">
+    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
         {% if only_unlogged %}
         <a href="{% url 'dobro_page' %}" class="btn secondary">Показать все</a>
         {% else %}
         <a href="{% url 'dobro_page' %}?only_unlogged=1" class="btn">Только не проставленные</a>
         {% endif %}
+        {% if unlogged_event_ids %}
+        <a href="{% url 'report_dobro_export' %}?scope=events&event_ids={{ unlogged_event_ids|join:',' }}" class="btn secondary" title="Excel-отчёт по всем завершённым мероприятиям с непроставленными часами">⬇ Скачать отчёт Добро.ру</a>
+        {% endif %}
     </div>
 </div>
 <p style="color:var(--text-secondary);">Все ссылки Добро.ру, их тип, привязанные мероприятия и статус простановки часов.{% if only_unlogged %} <b>Показаны только ссылки с непроставленными часами.</b>{% endif %}</p>
+{% if unlogged_event_ids %}
+<p style="color:var(--text-tertiary); font-size:13px;">Кнопка «Скачать отчёт Добро.ру» соберёт данные по {{ unlogged_event_ids|length }} завершённым мероприятиям с непроставленными часами.</p>
+{% endif %}
 
 <div class="card" style="padding:0; overflow:hidden;">
     <table class="responsive-table">

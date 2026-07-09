@@ -1,28 +1,32 @@
 import datetime
 import random
+from pathlib import Path
 from urllib.parse import quote
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db.models import Avg, Q
-from django.http import JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 
-from blog.decorators import manager_required
+from blog.decorators import manager_required, tech_admin_required
 from blog.forms import (
     ApplicationCancelForm, ApplicationForm, ConstForm, EventCommentForm, EventShiftForm, EventFeedbackForm, EventForm,
     ExcelImportForm, ExternalExperienceForm, LocationForm, LoginForm, OrganizationForm, OrganizerForm, ProfileCompletionForm,
     ProfileForm, ParticipationForm, QuickCategoryForm, QuickLocationForm, QuickOrganizationForm, QuickOrganizerForm,
-    RoleUsersForm, SeasonForm, UserCommentForm,
+    QuickRequirementForm, RequirementForm, RequirementEditForm, RequirementExceptionForm, RoleUsersForm, SeasonForm, UserCommentForm,
 )
 from blog.models import (
     Application, ApplicationShiftDecision, Const, DobroRuSharedLink, Event, EventCategory, EventComment, EventShift, EventFeedback, EventStaff,
+    EventRequirement, UserRequirementException,
     Location, Manager, Organization, Organizer, Participation, Season, TeamLeader, User,
 )
 from blog.services import import_applications as import_service
@@ -38,6 +42,15 @@ from blog.services.roles import (
     is_manager, is_team_leader, role_label,
 )
 from blog.services.stats import recalc_user_aggregates
+from blog.services import charts as charts_service
+from blog.services import event_timeline as event_timeline_service
+from blog.services import organization_report as organization_report_service
+from blog.services import person_report as person_report_service
+from blog.services import volunteers_report as volunteers_report_service
+from blog.services import report_builders as report_builders_service
+from blog.services.docx_report import docx_response
+from blog.services import analytics as analytics_service
+from blog.models import ButtonClickEvent, SystemDowntime, WebPageView, WebSession
 from blog.logging_utils import get_web_logger, actor
 
 logger = get_web_logger(__name__)
@@ -120,6 +133,17 @@ def quick_create_category(request):
     return JsonResponse({'errors': form.errors}, status=400)
 
 
+@manager_required
+def quick_create_requirement(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Метод не поддерживается.'}, status=405)
+    form = QuickRequirementForm(request.POST)
+    if form.is_valid():
+        requirement = form.save()
+        return JsonResponse({'id': requirement.id, 'label': requirement.title})
+    return JsonResponse({'errors': form.errors}, status=400)
+
+
 # ---------------------------------------------------------------------------
 # Аутентификация
 # ---------------------------------------------------------------------------
@@ -134,6 +158,23 @@ def _safe_next(request, default='dashboard'):
         next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
     ):
         return next_url
+    return reverse(default)
+
+
+def _referer_or(request, default='dashboard'):
+    """Страница, с которой пришёл AJAX-запрос модалки (HTTP_REFERER) — используется как
+    success_redirect для форм, открытых поверх карточки меро/профиля (заявка подана/
+    изменена/отменена), чтобы после сабмита модалка закрылась ОБНОВЛЕНИЕМ ТОЙ ЖЕ
+    страницы, а не переходом на dashboard: пользователь должен остаться там, где был,
+    и увидеть актуальное состояние (кнопка сменилась на «Моя заявка» и т.п.).
+    Referer проверяется так же строго, как next в _safe_next (защита от open-redirect)."""
+    from django.utils.http import url_has_allowed_host_and_scheme
+
+    referer = request.META.get('HTTP_REFERER')
+    if referer and url_has_allowed_host_and_scheme(
+        referer, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return referer
     return reverse(default)
 
 
@@ -522,12 +563,16 @@ def event_detail(request, event_id):
     shifts.sort(key=lambda s: (s.day < today, s.day))
     team_leads = event.staff.filter(staff_role='team_lead').select_related('user')
     categories = EventCategory.objects.filter(event_map__event=event).order_by('name')
+    requirements = EventRequirement.objects.filter(event_map__event=event).order_by('title')
     can_manage_applications = can_process_applications(request.user, event.id)
     # Мероприятие завершено — заявки/явку менять больше нельзя нигде (ни в вебе, ни
     # через клики по таблице); данные показываются только для просмотра.
     is_finished = event.event_status == 'finished'
 
-    has_open_recruitment = any(s.recruit_status == 'open' for s in shifts)
+    # Кнопка «Подать заявку» доступна только на ОПУБЛИКОВАННОЕ меро с открытым набором —
+    # до публикации у смен recruit_status='open' по умолчанию, но подавать заявку ещё
+    # нельзя (публикация — это то, что открывает набор для волонтёров).
+    has_open_recruitment = bool(event.published_at) and any(s.recruit_status == 'open' for s in shifts)
     my_active_application = Application.objects.filter(
         user=request.user, event=event, status__in=['new', 'approved'],
     ).first()
@@ -537,6 +582,7 @@ def event_detail(request, event_id):
         'shifts': shifts,
         'team_leads': team_leads,
         'categories': categories,
+        'requirements': requirements,
         'share_url': request.build_absolute_uri(
             reverse('public_event_detail', args=[event.public_token])
         ),
@@ -1170,15 +1216,26 @@ def application_create(request):
         application.middle_name = request.user.middle_name
         application.telegram_username = request.user.telegram_username
         application.phone = request.user.phone
+
+        # Требования меро (db.md правило 6): если волонтёр не соответствует хотя бы
+        # одному — заявка сразу уходит в резерв, без особого сообщения пользователю
+        # (обычное «заявка отправлена»); причина — в уведомлении тим-лидеру.
+        from blog.services.requirements import check_application_requirements
+        req_check = check_application_requirements(application.event, request.user)
+        if req_check['auto_reject']:
+            application.status = 'rejected'
+            application.auto_reject_reason = '; '.join(req_check['reasons'])
+
         application.save()
         _fill_application_shifts(application, form.cleaned_data.get('selected_shifts'))
-        notifications_service.notify_application_submitted(application)
+        notifications_service.notify_application_submitted(application, unknown_age=req_check['unknown_age'])
         logger.info(
-            'Заявка подана через веб: application=%s event=%s by=%s',
+            'Заявка подана через веб: application=%s event=%s by=%s%s',
             application.id, application.event_id, actor(request.user),
+            f' auto_reject={application.auto_reject_reason!r}' if application.auto_reject_reason else '',
         )
         messages.success(request, 'Заявка отправлена.')
-        return modal_form_response(request, None, None, success_redirect=reverse('dashboard'))
+        return modal_form_response(request, None, None, success_redirect=_referer_or(request))
     return modal_form_response(
         request, 'blog/application_form.html',
         {'form': form, 'title': 'Подать заявку на мероприятие', 'submit_label': 'Отправить заявку'},
@@ -1200,7 +1257,7 @@ def application_edit(request, application_id):
         application.save()
         _fill_application_shifts(application, form.cleaned_data.get('selected_shifts'))
         messages.success(request, 'Заявка обновлена.')
-        return modal_form_response(request, None, None, success_redirect=reverse('dashboard'))
+        return modal_form_response(request, None, None, success_redirect=_referer_or(request))
     return modal_form_response(
         request, 'blog/application_form.html',
         {'form': form, 'title': 'Редактировать заявку', 'submit_label': 'Сохранить', 'application': application},
@@ -1231,7 +1288,7 @@ def application_cancel(request, application_id):
     if request.method == 'POST' and form.is_valid():
         cancel_application(application, form.cleaned_data['reason'])
         messages.success(request, 'Заявка отменена.')
-        return modal_form_response(request, None, None, success_redirect=reverse('dashboard'))
+        return modal_form_response(request, None, None, success_redirect=_referer_or(request))
     return modal_form_response(
         request, 'blog/application_cancel_form.html',
         {'form': form, 'title': f'Отменить заявку на «{application.event.title}»', 'submit_label': 'Отменить заявку', 'application': application},
@@ -1618,7 +1675,7 @@ def _report_period_range(request):
         except ValueError:
             pass
 
-    period = request.GET.get('period', 'month')
+    period = request.GET.get('period', 'season')
     if period == 'yesterday':
         date_from = date_to = today - datetime.timedelta(days=1)
         return period, date_from, date_to
@@ -1641,8 +1698,9 @@ def _report_period_range(request):
             return period, previous.start_season, previous.end_season or (current.start_season - datetime.timedelta(days=1) if current else today)
         return period, today - datetime.timedelta(days=240), today - datetime.timedelta(days=120)
 
-    period = 'month'
-    return period, today - datetime.timedelta(days=30), today
+    # Фоллбэк, если сезонов в базе ещё нет вовсе.
+    period = 'season'
+    return period, today - datetime.timedelta(days=120), today
 
 
 def _report_scope(request):
@@ -1680,13 +1738,25 @@ def report_period(request):
 
     def _event_brief(event):
         first_shift_day = event.shifts.order_by('day').values_list('day', flat=True).first()
-        return {'id': event.id, 'title': event.title, 'date': first_shift_day.strftime('%d.%m.%Y') if first_shift_day else None}
+        return {
+            'id': event.id, 'title': event.title,
+            'date': first_shift_day.strftime('%d.%m.%Y') if first_shift_day else None,
+            # Часы на Добро.ру НЕ проставлены и меро ведёт учёт (не 'none') — нужно
+            # для кнопки «Выбрать все с непроставленными часами» в модалке выбора.
+            'dobro_unlogged': event.dobro_ru_link_kind != 'none' and not event.dobro_ru_hours_logged,
+        }
 
     selected_events = []
     if event_ids:
         selected_events = list(Event.objects.filter(id__in=event_ids).order_by('-created_at'))
 
-    recent_events = [_event_brief(e) for e in Event.objects.order_by('-created_at')[:15]]
+    # Модалка выбора мероприятий грузит ВЕСЬ список одним запросом (мероприятий —
+    # десятки/сотни, не тысячи, поэтому проблема производительности неактуальна, в
+    # отличие от списка волонтёров) — раньше здесь были только «последние 15», из-за
+    # чего пользователь физически не мог увидеть и выбрать более старые мероприятия
+    # без явного поиска по названию, и путал этот урезанный список с полным списком
+    # на странице «Мероприятия».
+    recent_events = [_event_brief(e) for e in Event.objects.order_by('-created_at')]
 
     context = {
         'scope_mode': scope_mode,
@@ -1710,17 +1780,21 @@ def report_period(request):
 
 @manager_required
 def report_events_search(request):
-    """Поиск/список мероприятий для модалки выбора охвата «по мероприятиям»
-    (reports_template.md: последние 15 сразу, остальное — по запросу с поиском)."""
+    """Поиск мероприятий для модалки выбора охвата «по мероприятиям» (reports_template.md).
+    Полный список без поиска теперь грузится сразу со страницей (report_period,
+    recent_events_json) — этот эндпоинт используется только при вводе текста в поиск."""
     query = request.GET.get('q', '').strip()
     events = Event.objects.order_by('-created_at')
     if query:
         events = events.filter(title__icontains=query)
-    events = events[:50]
 
     def _brief(event):
         day = event.shifts.order_by('day').values_list('day', flat=True).first()
-        return {'id': event.id, 'title': event.title, 'date': day.strftime('%d.%m.%Y') if day else None}
+        return {
+            'id': event.id, 'title': event.title,
+            'date': day.strftime('%d.%m.%Y') if day else None,
+            'dobro_unlogged': event.dobro_ru_link_kind != 'none' and not event.dobro_ru_hours_logged,
+        }
 
     return JsonResponse({'events': [_brief(e) for e in events]})
 
@@ -1751,10 +1825,9 @@ def report_period_export(request):
 
 @manager_required
 def report_period_pdf(request, variant):
-    """Печатный HTML-отчёт за охват (reports_template.md §1). variant='external' — §1A
-    (обезличенный, для руководства), 'internal' — §1B (с именами/операционкой).
-    Открывается как страница со стилями @media print и кнопкой «Скачать PDF»
-    (браузерная печать → Save as PDF; серверная PDF-библиотека не требуется)."""
+    """PDF-отчёт за охват (reports_template.md, «Отчёт за период (общий)»).
+    variant='external' — обезличенный (для руководства), 'internal' — с именами
+    и операционными данными (нагрузка персонала, retention/churn, проблемные зоны)."""
     if variant not in ('external', 'internal'):
         raise PermissionDenied('Неизвестная вариация отчёта.')
 
@@ -1771,6 +1844,7 @@ def report_period_pdf(request, variant):
     efficiency = reports_service.recruitment_efficiency(date_from, date_to, event_ids=event_ids)
     timing = reports_service.application_timing(date_from, date_to, event_ids=event_ids)
     post_timing = reports_service.post_publication_timing(date_from, date_to, event_ids=event_ids)
+    weekly = reports_service.weekly_dynamics(date_from, date_to, event_ids=event_ids)
 
     context = {
         'variant': variant,
@@ -1787,7 +1861,37 @@ def report_period_pdf(request, variant):
     }
     if variant == 'internal':
         context['staff'] = reports_service.staff_load(date_from, date_to, event_ids=event_ids)
-    return render(request, 'blog/report_pdf_period.html', context)
+
+    if data['category_breakdown']:
+        context['category_chart'] = charts_service.bar_chart(
+            [c['name'] or 'Без категории' for c in data['category_breakdown']],
+            [c['volunteers'] for c in data['category_breakdown']],
+            title='Распределение по категориям', ylabel='Волонтёров',
+        )
+    context['funnel_chart'] = charts_service.funnel_chart([
+        ('Подано', data['funnel']['submitted']),
+        ('Одобрено', data['funnel']['approved']),
+        ('Явка', data['funnel']['attended']),
+        ('Неявка без предупр.', data['funnel']['unexcused']),
+    ])
+    if weekly:
+        context['weekly_chart'] = charts_service.bar_chart(
+            [w['from'].strftime('%d.%m') for w in weekly], [w['hours'] for w in weekly],
+            title='Динамика по неделям', ylabel='Часы',
+        )
+    if timing['density']:
+        context['timing_chart'] = charts_service.bar_chart(
+            [d['label'] for d in timing['density']], [d['count'] for d in timing['density']],
+            title='Отклик на мероприятие', ylabel='Заявок',
+        )
+    if variant == 'internal':
+        context['churn_chart'] = charts_service.histogram_chart(
+            [b['label'] for b in data['churn_histogram']], [b['count'] for b in data['churn_histogram']],
+            title='Распределение churn_score',
+        )
+
+    builder = report_builders_service.build_period_report(context)
+    return docx_response(builder, f'period_report_{variant}.docx')
 
 
 @manager_required
@@ -1800,11 +1904,261 @@ def report_event_export(request, event_id):
 
 @manager_required
 def report_event_pdf(request, event_id):
-    """Печатный HTML-отчёт по одному мероприятию (reports_template.md §4)."""
+    """PDF-отчёт по одному мероприятию (reports_template.md §4), включая график
+    «Жизнь мероприятия» (события меро засечками + заявки точками, кластеризация)."""
     event = get_object_or_404(Event, pk=event_id)
     rep = report_exports.event_report(event.id)
     rep['generated_at'] = timezone.now()
-    return render(request, 'blog/report_pdf_event.html', rep)
+
+    timeline = event_timeline_service.event_timeline_data(event)
+    rep['timeline_chart'] = charts_service.event_timeline_chart(
+        timeline['milestones'], timeline['applications']
+    )
+    builder = report_builders_service.build_event_report(rep)
+    return docx_response(builder, f'event_{event.id}_report.docx')
+
+
+def _person_report_context(user_id, date_from, date_to):
+    rep = person_report_service.person_report(user_id, date_from, date_to)
+    charts = {}
+    if rep['scope']['scoped'] and rep['participations']:
+        by_month = {}
+        for p in rep['participations']:
+            key = p['day'].strftime('%Y-%m') if p['day'] else '—'
+            by_month[key] = by_month.get(key, 0) + (p['hours'] or 0)
+        months = sorted(by_month.keys())
+        charts['activity_chart'] = charts_service.bar_chart(
+            months, [by_month[m] for m in months], title='Часы по месяцам', ylabel='Часы',
+        )
+    if rep['internal']['churn_history']:
+        seasons = [h.season.start_season.strftime('%d.%m.%Y') for h in rep['internal']['churn_history']]
+        scores = [h.churn_score for h in rep['internal']['churn_history']]
+        charts['churn_chart'] = charts_service.line_chart(
+            seasons, scores, title='Churn по сезонам', ylabel='Churn score',
+        )
+    rep.update(charts)
+    return rep
+
+
+@manager_required
+def report_person_pdf(request, user_id):
+    """PDF-отчёт по человеку (reports_template.md «Отчёт по человеку»): блоки A-D
+    у всех, E/F добавляются автоматически при наличии активной роли ТЛ/менеджера.
+    Охват — «за всё время» (без параметров) либо «за период» (date_from/date_to)."""
+    date_from = date_to = None
+    raw_from, raw_to = request.GET.get('date_from'), request.GET.get('date_to')
+    if raw_from and raw_to:
+        date_from = datetime.date.fromisoformat(raw_from)
+        date_to = datetime.date.fromisoformat(raw_to)
+
+    rep = _person_report_context(user_id, date_from, date_to)
+    context = {
+        'rep': rep,
+        'user': rep['user'],
+        'scope': rep['scope'],
+        'generated_at': timezone.now(),
+    }
+    builder = report_builders_service.build_person_report(rep)
+    return docx_response(builder, f'person_{user_id}_report.docx')
+
+
+@manager_required
+def report_volunteers_pdf(request):
+    """PDF-отчёт по волонтёрам: сводка сверху + карточки подряд по алфавиту
+    (reports_template.md «Отчёт по волонтёрам»). Охват — всё время/период,
+    выборка — по умолчанию все с хотя бы одной заявкой, либо явный список ?user_ids=."""
+    date_from = date_to = None
+    raw_from, raw_to = request.GET.get('date_from'), request.GET.get('date_to')
+    if raw_from and raw_to:
+        date_from = datetime.date.fromisoformat(raw_from)
+        date_to = datetime.date.fromisoformat(raw_to)
+
+    raw_ids = request.GET.get('user_ids', '').strip()
+    user_ids = [int(x) for x in raw_ids.split(',') if x.strip().isdigit()] if raw_ids else None
+
+    rep = volunteers_report_service.volunteers_report(date_from, date_to, user_ids=user_ids)
+    if rep['hours_distribution']:
+        rep['hours_hist_chart'] = charts_service.histogram_chart(
+            [str(i) for i in range(len(rep['hours_distribution']))],
+            sorted(rep['hours_distribution'], reverse=True),
+            title='Распределение часов волонтёров (по убыванию)',
+        )
+    if rep['top_volunteers']:
+        rep['top_chart'] = charts_service.funnel_chart(
+            [(f"{v['user'].full_name}", v['hours'] or 0) for v in rep['top_volunteers']],
+            title='Топ-10 волонтёров по часам',
+        )
+    rep['churn_chart'] = charts_service.histogram_chart(
+        [b['label'] for b in rep['churn_histogram']],
+        [b['count'] for b in rep['churn_histogram']],
+        title='Распределение churn_score',
+    )
+    rep['generated_at'] = timezone.now()
+    builder = report_builders_service.build_volunteers_report(rep)
+    return docx_response(builder, 'volunteers_report.docx')
+
+
+@manager_required
+def report_volunteers_export(request):
+    """Excel-отчёт по волонтёрам: лист «Сводка» + лист «Волонтёры» + лист «Участия»."""
+    from openpyxl import Workbook
+
+    date_from = date_to = None
+    raw_from, raw_to = request.GET.get('date_from'), request.GET.get('date_to')
+    if raw_from and raw_to:
+        date_from = datetime.date.fromisoformat(raw_from)
+        date_to = datetime.date.fromisoformat(raw_to)
+
+    rep = volunteers_report_service.volunteers_report(date_from, date_to)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Сводка'
+    ws.append(['Показатель', 'Значение'])
+    for key, label in [
+        ('total_volunteers', 'Всего волонтёров'), ('total_hours', 'Суммарно часов'),
+        ('total_events', 'Суммарно участий'), ('avg_hours', 'Ср. часов на волонтёра'),
+        ('new_count', 'Новых за охват'), ('star_count', 'Со звёздочкой ПГАС'),
+        ('blacklisted_count', 'В блэклисте'), ('at_risk_count', 'На грани блэклиста'),
+    ]:
+        ws.append([label, rep['summary'][key]])
+
+    ws_v = wb.create_sheet('Волонтёры')
+    ws_v.append(['ФИО', 'Telegram', 'Телефон', 'Часов', 'Мероприятий', 'Заявок', 'Конверсия %', 'Churn', 'Статус'])
+    for card in rep['cards']:
+        u = card['user']
+        stats = card['stats']
+        ws_v.append([
+            u.full_name, u.telegram_username or '—', u.phone or '—',
+            stats['scoped_hours'] if rep['scope']['scoped'] else stats['total_hours'],
+            stats['scoped_events'] if rep['scope']['scoped'] else stats['total_events'],
+            card['applications_summary']['total'], card['applications_summary']['conversion_pct'],
+            round(u.churn_score or 0, 2), u.get_status_display(),
+        ])
+
+    ws_p = wb.create_sheet('Участия')
+    ws_p.append(['Волонтёр', 'Мероприятие', 'Дата', 'Статус', 'Часы'])
+    for card in rep['cards']:
+        u = card['user']
+        for p in card['participations']:
+            ws_p.append([u.full_name, p['event'], p['day'].isoformat() if p['day'] else '—', p['status'], p['hours']])
+
+    return _xlsx_response(wb, 'volunteers_report.xlsx')
+
+
+@manager_required
+def report_organization_pdf(request, org_id):
+    """PDF-отчёт по организации (reports_template.md «Отчёт по организации»):
+    профиль, контакты, статистика, все мероприятия подряд, история взаимодействия."""
+    date_from = date_to = None
+    raw_from, raw_to = request.GET.get('date_from'), request.GET.get('date_to')
+    if raw_from and raw_to:
+        date_from = datetime.date.fromisoformat(raw_from)
+        date_to = datetime.date.fromisoformat(raw_to)
+
+    rep = organization_report_service.organization_report(org_id, date_from, date_to)
+    if rep['categories_breakdown']:
+        rep['categories_chart'] = charts_service.bar_chart(
+            [c[0] for c in rep['categories_breakdown']], [c[1] for c in rep['categories_breakdown']],
+            title='Мероприятия по категориям',
+        )
+    rep['generated_at'] = timezone.now()
+    builder = report_builders_service.build_organization_report(rep)
+    return docx_response(builder, f'organization_{org_id}_report.docx')
+
+
+@manager_required
+def report_people_search(request):
+    """Поиск человека для карточки выбора отчёта «по человеку» (по ФИО/username)."""
+    query = request.GET.get('q', '').strip()
+    users = User.objects.all()
+    if query:
+        users = users.filter(
+            Q(first_name__icontains=query) | Q(last_name__icontains=query)
+            | Q(telegram_username__icontains=query)
+        )
+    users = users.order_by('last_name', 'first_name')[:30]
+    return JsonResponse({'users': [
+        {'id': u.id, 'name': u.full_name, 'telegram': u.telegram_username or ''} for u in users
+    ]})
+
+
+@manager_required
+def report_organizations_search(request):
+    """Поиск организации для карточки выбора отчёта «по организации»."""
+    query = request.GET.get('q', '').strip()
+    orgs = Organization.objects.all()
+    if query:
+        orgs = orgs.filter(name__icontains=query)
+    orgs = orgs.order_by('name')[:30]
+    return JsonResponse({'organizations': [{'id': o.id, 'name': o.name} for o in orgs]})
+
+
+@manager_required
+def report_complex_pdf(request):
+    """Комплексный отчёт за период (PDF-пакет, reports_template.md): часть 1 —
+    сводная аналитика (переиспользует данные report_period_pdf/internal), часть 2 —
+    все мероприятия периода подряд с таймлайнами, часть 3 — таблица работы с
+    заявками за период, часть 4 — карточки волонтёров периода подряд по алфавиту."""
+    scope_mode, period, date_from, date_to, event_ids = _report_scope(request)
+    compare_mode = request.GET.get('compare', 'adjacent')
+    if compare_mode not in ('adjacent', 'year_ago'):
+        compare_mode = 'adjacent'
+
+    prev_from = prev_to = None
+    if scope_mode == 'period':
+        prev_from, prev_to = reports_service.previous_period_range(date_from, date_to, compare_mode)
+
+    data = reports_service.period_report(date_from, date_to, prev_from, prev_to, event_ids=event_ids)
+    efficiency = reports_service.recruitment_efficiency(date_from, date_to, event_ids=event_ids)
+    staff = reports_service.staff_load(date_from, date_to, event_ids=event_ids)
+    timing = reports_service.application_timing(date_from, date_to, event_ids=event_ids)
+    post_timing = reports_service.post_publication_timing(date_from, date_to, event_ids=event_ids)
+    weekly = reports_service.weekly_dynamics(date_from, date_to, event_ids=event_ids)
+
+    events_scope = reports_service._events_in_scope(date_from, date_to, event_ids)
+    events_reports = []
+    for event in events_scope.order_by('shifts__day').distinct():
+        rep = report_exports.event_report(event.id)
+        timeline = event_timeline_service.event_timeline_data(event)
+        rep['timeline_chart'] = charts_service.event_timeline_chart(
+            timeline['milestones'], timeline['applications']
+        )
+        events_reports.append(rep)
+
+    applications_rows = report_exports.applications_rows(date_from, date_to, event_ids)
+    lags = [
+        (row['assigned_at'] - row['created_at']).total_seconds() / 3600
+        for row in applications_rows if row.get('assigned_at') and row.get('created_at')
+    ]
+    applications_summary = {
+        'total': len(applications_rows),
+        'approved': sum(1 for r in applications_rows if r['status'] == 'Одобрена'),
+        'rejected': sum(1 for r in applications_rows if r['status'] == 'Отклонена/резерв'),
+        'new': sum(1 for r in applications_rows if r['status'] == 'Новая'),
+        'avg_lag_hours': round(sum(lags) / len(lags), 1) if lags else None,
+    }
+
+    volunteers = volunteers_report_service.volunteers_report(date_from, date_to, user_ids=None)
+
+    context = {
+        'scope_mode': scope_mode,
+        'date_from': date_from,
+        'date_to': date_to,
+        'generated_at': timezone.now(),
+        'report': data,
+        'efficiency': efficiency,
+        'staff': staff,
+        'timing': timing,
+        'post_timing': post_timing,
+        'weekly': weekly,
+        'events_reports': events_reports,
+        'applications_rows': applications_rows,
+        'applications_summary': applications_summary,
+        'volunteers': volunteers,
+    }
+    builder = report_builders_service.build_complex_report(context)
+    return docx_response(builder, 'complex_report.docx')
 
 
 @manager_required
@@ -1858,8 +2212,18 @@ def dobro_page(request):
         # а также ссылки вообще без привязанных меро скрываем — по ним закрывать нечего.
         rows = [r for r in rows if r['events'] and not r['all_logged']]
 
+    # Для кнопки «Скачать отчёт Добро.ру» — id мероприятий с непроставленными часами.
+    # Только ЗАВЕРШЁННЫЕ (event_status='finished'): отчёт Добро.ру (report_dobro_export)
+    # в принципе не берёт незавершённые меро в охват (_events_in_scope), поэтому включать
+    # их в готовую ссылку смысла нет — молча выпадут и создадут видимость пустого отчёта.
+    unlogged_event_ids = sorted({
+        e.id for r in rows if not r['all_logged']
+        for e in r['events'] if e.event_status == 'finished' and not e.dobro_ru_hours_logged
+    })
+
     return render(request, 'blog/dobro_page.html', {
         'rows': rows, 'only_unlogged': only_unlogged,
+        'unlogged_event_ids': unlogged_event_ids,
     })
 
 
@@ -1875,13 +2239,11 @@ def report_dobro_export(request):
 
 @manager_required
 def report_bundle(request):
-    """Комплексный отчёт (reports_template.md §3): ZIP из внешнего PDF, внутреннего PDF
-    (как самостоятельные .html для печати) и Excel-книги. PDF отдаём печатным HTML,
-    т.к. серверной PDF-библиотеки в проекте нет (по договорённости)."""
+    """Комплексный отчёт (reports_template.md §3): ZIP из внешнего DOCX, внутреннего DOCX
+    и Excel-книги за охват."""
     import io
     import zipfile
     from django.http import HttpResponse
-    from django.template.loader import render_to_string
 
     scope_mode, period, date_from, date_to, event_ids = _report_scope(request)
     compare_mode = request.GET.get('compare', 'adjacent')
@@ -1900,15 +2262,14 @@ def report_bundle(request):
         'scope_mode': scope_mode, 'date_from': date_from, 'date_to': date_to,
         'compare_mode': compare_mode, 'generated_at': timezone.now(),
         'report': data, 'efficiency': efficiency, 'timing': timing, 'post_timing': post_timing,
-        'standalone': True,
     }
-    external_html = render_to_string('blog/report_pdf_period.html', {
+    external_docx = report_builders_service.build_period_report({
         **base_ctx, 'variant': 'external', 'is_internal': False,
-    }, request=request)
-    internal_html = render_to_string('blog/report_pdf_period.html', {
+    }).build_bytes()
+    internal_docx = report_builders_service.build_period_report({
         **base_ctx, 'variant': 'internal', 'is_internal': True,
         'staff': reports_service.staff_load(date_from, date_to, event_ids=event_ids),
-    }, request=request)
+    }).build_bytes()
 
     wb = report_exports.build_period_workbook(date_from, date_to, event_ids, scope_mode, compare_mode)
     xlsx_buf = io.BytesIO()
@@ -1918,8 +2279,8 @@ def report_bundle(request):
 
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f'report_external_{scope_slug}.html', external_html)
-        zf.writestr(f'report_internal_{scope_slug}.html', internal_html)
+        zf.writestr(f'report_external_{scope_slug}.docx', external_docx)
+        zf.writestr(f'report_internal_{scope_slug}.docx', internal_docx)
         zf.writestr(f'report_{scope_slug}.xlsx', xlsx_buf.getvalue())
     zip_buf.seek(0)
 
@@ -2019,6 +2380,35 @@ def organization_detail(request, org_id):
 # ---------------------------------------------------------------------------
 # Пользователи, организаторы, настройки
 # ---------------------------------------------------------------------------
+
+@manager_required
+def users_picker_data(request):
+    """Компактный JSON-список всех пользователей (id + ФИО + флаги активных ролей) для
+    JS-виджета выбора волонтёра (data-user-picker, base.html) — единственный источник
+    данных для ЛЮБОГО количества таких виджетов на любой странице: страница требований
+    (список исключений на каждое требование) и страница настроек (назначение/снятие
+    ролей) раньше рендерили серверный <select> со ВСЕМИ пользователями на КАЖДЫЙ такой
+    блок — при нескольких тысячах пользователей и нескольких блоков на странице это
+    давало десятки тысяч <option> в HTML и заметно тормозило загрузку. Теперь список
+    запрашивается один раз (JS кэширует на странице) и рендерится на клиенте.
+
+    Флаги is_team_lead/is_manager нужны, чтобы виджет мог на клиенте отфильтровать
+    список под конкретный блок (напр. «снять роль ТЛ» — показывать только действующих
+    ТЛ), не делая для этого отдельный серверный запрос/queryset на каждый блок."""
+    tl_ids = set(TeamLeader.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
+    mgr_ids = set(Manager.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
+    users = User.objects.order_by('last_name', 'first_name').values('id', 'first_name', 'last_name')
+    data = [
+        {
+            'id': u['id'],
+            'label': f"{u['last_name'] or ''} {u['first_name'] or ''}".strip() or f"#{u['id']}",
+            'is_team_lead': u['id'] in tl_ids,
+            'is_manager': u['id'] in mgr_ids,
+        }
+        for u in users
+    ]
+    return JsonResponse({'users': data})
+
 
 @manager_required
 def user_list(request):
@@ -2239,4 +2629,336 @@ def settings_view(request):
         'seasons': seasons,
         'season_form': season_form,
         'role_sections': role_sections,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Требования к волонтёрам (db.md правило 6): справочник + белый список исключений
+# «кто НЕ соответствует». По умолчанию все волонтёры соответствуют всем требованиям.
+# ---------------------------------------------------------------------------
+
+@manager_required
+def requirement_list(request):
+    """Список требований: описание + компактный список тех, кто не соответствует
+    (не грузим весь список волонтёров на экран — только тех, кто в исключениях, плюс
+    маленькая форма добавления с поиском по select)."""
+    requirements = EventRequirement.objects.order_by('title')
+    sections = []
+    for req in requirements:
+        exceptions = req.user_exceptions.select_related('user').order_by('-created_at')
+        sections.append({
+            'requirement': req,
+            'exceptions': exceptions,
+            'exception_form': RequirementExceptionForm(requirement=req),
+        })
+
+    return render(request, 'blog/requirement_list.html', {
+        'sections': sections,
+        'requirement_form': RequirementForm(),
+    })
+
+
+@manager_required
+def requirement_create(request):
+    form = RequirementForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Требование добавлено.')
+        return modal_form_response(request, None, None, success_redirect=reverse('requirement_list'))
+    return modal_form_response(
+        request, 'blog/requirement_form.html',
+        {'form': form, 'title': 'Новое требование', 'submit_label': 'Добавить'},
+    )
+
+
+@manager_required
+def requirement_edit(request, requirement_id):
+    requirement = get_object_or_404(EventRequirement, pk=requirement_id)
+    form = RequirementEditForm(request.POST or None, instance=requirement)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Требование обновлено.')
+        return modal_form_response(request, None, None, success_redirect=reverse('requirement_list'))
+    return modal_form_response(
+        request, 'blog/requirement_form.html',
+        {'form': form, 'title': f'Редактировать: {requirement.title}', 'submit_label': 'Сохранить'},
+    )
+
+
+@manager_required
+def requirement_delete(request, requirement_id):
+    requirement = get_object_or_404(EventRequirement, pk=requirement_id)
+    if request.method == 'POST':
+        requirement.delete()
+        messages.success(request, f'Требование «{requirement.title}» удалено.')
+    return redirect('requirement_list')
+
+
+@manager_required
+def requirement_exception_add(request, requirement_id):
+    """Отметить волонтёра как НЕ соответствующего требованию (белый список исключений,
+    db.md правило 6) — освобождает тим-лидеров от повторной обработки его заявок:
+    при подаче на меро с этим требованием заявка сразу уйдёт в резерв."""
+    requirement = get_object_or_404(EventRequirement, pk=requirement_id)
+    if request.method == 'POST':
+        form = RequirementExceptionForm(request.POST, requirement=requirement)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'{form.instance.user.full_name}: отмечен(а) как не соответствующий(ая) требованию «{requirement.title}».')
+        else:
+            messages.error(request, 'Не удалось добавить — выберите волонтёра из списка.')
+    return redirect('requirement_list')
+
+
+@manager_required
+def requirement_exception_remove(request, exception_id):
+    exception = get_object_or_404(UserRequirementException.objects.select_related('user', 'requirement'), pk=exception_id)
+    if request.method == 'POST':
+        name = exception.user.full_name
+        title = exception.requirement.title
+        exception.delete()
+        messages.success(request, f'{name}: отметка о несоответствии требованию «{title}» снята.')
+        return redirect('requirement_list')
+    return redirect('requirement_list')
+
+
+# ---------------------------------------------------------------------------
+# Аналитика: приём событий с фронта (доступно всем аутентифицированным и
+# гостям — пишем активность независимо от роли)
+# ---------------------------------------------------------------------------
+
+@require_POST
+def analytics_ping(request):
+    """Heartbeat активной вкладки — обновляет last_seen_at сессии и duration_ms
+    текущего просмотра страницы. Вызывается раз в ~20с, пока вкладка видима."""
+    session_key = request.session.session_key
+    if not session_key:
+        return JsonResponse({'ok': False}, status=204)
+    page_view_id = request.POST.get('page_view_id')
+    duration_ms = request.POST.get('duration_ms')
+
+    now = timezone.now()
+    WebSession.objects.filter(session_key=session_key).update(last_seen_at=now)
+    if page_view_id and duration_ms and duration_ms.isdigit():
+        WebPageView.objects.filter(pk=page_view_id, session__session_key=session_key).update(
+            duration_ms=int(duration_ms)
+        )
+    return JsonResponse({'ok': True})
+
+
+@require_POST
+def analytics_leave(request):
+    """Финальная длительность просмотра при уходе со страницы (sendBeacon)."""
+    session_key = request.session.session_key
+    page_view_id = request.POST.get('page_view_id')
+    duration_ms = request.POST.get('duration_ms')
+    if session_key and page_view_id and duration_ms and duration_ms.isdigit():
+        WebPageView.objects.filter(pk=page_view_id, session__session_key=session_key).update(
+            duration_ms=int(duration_ms)
+        )
+    return JsonResponse({'ok': True})
+
+
+@require_POST
+def analytics_click(request):
+    """Клик по элементу с data-track (или кнопке/ссылке) — фиксируем для дашборда.
+    Привязываем к текущей WebSession (по session_key), чтобы позже можно было
+    восстановить последовательность действий гостя, у которого нет user_id."""
+    action_key = (request.POST.get('action_key') or '').strip()[:150]
+    if not action_key:
+        return JsonResponse({'ok': False}, status=400)
+    label = (request.POST.get('label') or '').strip()[:200]
+    user = request.user if request.user.is_authenticated else None
+    web_session = WebSession.objects.filter(session_key=request.session.session_key).first()
+    ButtonClickEvent.objects.create(
+        source='web',
+        user=user,
+        web_session=web_session,
+        role_snapshot=roles_service.role_slug(user) if user else 'guest',
+        action_key=action_key,
+        label=label,
+    )
+    return JsonResponse({'ok': True})
+
+
+# ---------------------------------------------------------------------------
+# Аналитика: дашборд менеджера
+# ---------------------------------------------------------------------------
+
+def _analytics_period(request):
+    """Читает date_from/date_to из query (ISO-даты) с фолбэком на последние 7 дней."""
+    raw_from = request.GET.get('date_from')
+    raw_to = request.GET.get('date_to')
+    date_to = timezone.now()
+    date_from = date_to - datetime.timedelta(days=7)
+    if raw_from:
+        try:
+            date_from = datetime.datetime.fromisoformat(raw_from)
+            if timezone.is_naive(date_from):
+                date_from = timezone.make_aware(date_from)
+        except ValueError:
+            pass
+    if raw_to:
+        try:
+            date_to = datetime.datetime.fromisoformat(raw_to)
+            if timezone.is_naive(date_to):
+                date_to = timezone.make_aware(date_to)
+        except ValueError:
+            pass
+    return date_from, date_to
+
+
+@tech_admin_required
+def analytics_dashboard(request):
+    return render(request, 'blog/analytics_dashboard.html', {})
+
+
+@tech_admin_required
+def analytics_online_data(request):
+    source = request.GET.get('source', 'web')
+    minutes = min(int(request.GET.get('minutes', 60)), 24 * 60)
+    if source == 'bot':
+        data = analytics_service.online_series_bot(minutes=minutes)
+    else:
+        data = analytics_service.online_series_web(minutes=minutes)
+    return JsonResponse(data)
+
+
+@tech_admin_required
+def analytics_clicks_data(request):
+    """`source` обязателен ('web' или 'bot') — веб и бот показываются двумя отдельными
+    графиками (разный функционал, разные кнопки), общий график не имеет смысла."""
+    date_from, date_to = _analytics_period(request)
+    source = request.GET.get('source')
+    if source not in ('web', 'bot'):
+        return JsonResponse({'error': 'source must be web or bot'}, status=400)
+    role = request.GET.get('role') or None
+    data = analytics_service.click_distribution(source=source, role=role, date_from=date_from, date_to=date_to)
+    return JsonResponse(data)
+
+
+@tech_admin_required
+def analytics_load_data(request):
+    date_from, date_to = _analytics_period(request)
+    data = analytics_service.page_load_stats(date_from=date_from, date_to=date_to)
+    return JsonResponse(data)
+
+
+@tech_admin_required
+def analytics_duration_data(request):
+    date_from, date_to = _analytics_period(request)
+    data = analytics_service.page_duration_histogram(date_from=date_from, date_to=date_to)
+    return JsonResponse(data)
+
+
+@tech_admin_required
+def analytics_top_pages_data(request):
+    date_from, date_to = _analytics_period(request)
+    data = analytics_service.top_pages(date_from=date_from, date_to=date_to)
+    return JsonResponse(data)
+
+
+@tech_admin_required
+def analytics_top_bot_commands_data(request):
+    date_from, date_to = _analytics_period(request)
+    data = analytics_service.top_bot_commands(date_from=date_from, date_to=date_to)
+    return JsonResponse(data)
+
+
+@tech_admin_required
+def analytics_downtimes_data(request):
+    """Периоды простоя (для красных/жёлтых зон на графиках онлайна) за последние `hours`."""
+    hours = min(int(request.GET.get('hours', 24)), 24 * 30)
+    since = timezone.now() - datetime.timedelta(hours=hours)
+    downtimes = SystemDowntime.objects.filter(ended_at__gte=since).order_by('started_at')
+    return JsonResponse({
+        'downtimes': [
+            {
+                'kind': d.kind,
+                'started_at': d.started_at.isoformat(),
+                'ended_at': d.ended_at.isoformat(),
+                'comment': d.comment,
+            }
+            for d in downtimes
+        ],
+    })
+
+
+@manager_required
+@require_POST
+def analytics_downtime_add(request):
+    kind = request.POST.get('kind')
+    if kind not in ('crash', 'planned'):
+        return JsonResponse({'error': 'kind must be crash or planned'}, status=400)
+    started_raw = request.POST.get('started_at')
+    ended_raw = request.POST.get('ended_at')
+    started = datetime.datetime.fromisoformat(started_raw) if started_raw else None
+    ended = datetime.datetime.fromisoformat(ended_raw) if ended_raw else None
+    if not started or not ended:
+        return JsonResponse({'error': 'started_at/ended_at обязательны (ISO 8601)'}, status=400)
+    if timezone.is_naive(started):
+        started = timezone.make_aware(started)
+    if timezone.is_naive(ended):
+        ended = timezone.make_aware(ended)
+    if ended <= started:
+        return JsonResponse({'error': 'ended_at должен быть позже started_at'}, status=400)
+
+    downtime = SystemDowntime.objects.create(
+        kind=kind, started_at=started, ended_at=ended,
+        comment=(request.POST.get('comment') or '').strip()[:255],
+    )
+    return JsonResponse({'ok': True, 'id': downtime.id})
+
+
+@manager_required
+@require_POST
+def analytics_downtime_delete(request, downtime_id):
+    SystemDowntime.objects.filter(pk=downtime_id).delete()
+    return JsonResponse({'ok': True})
+
+
+# ---------------------------------------------------------------------------
+# Аналитика: просмотр и скачивание файловых логов (web.log/bot.log/db.log)
+# ---------------------------------------------------------------------------
+
+LOG_CHANNELS = {'web': 'web.log', 'bot': 'bot.log', 'db': 'db.log'}
+LOG_TAIL_BATCH = 150
+
+
+def _log_file_path(channel):
+    filename = LOG_CHANNELS.get(channel)
+    if not filename:
+        raise Http404('Неизвестный канал логов.')
+    path = Path(settings.LOG_DIR) / filename
+    if not path.exists():
+        raise Http404('Файл лога ещё не создан.')
+    return path
+
+
+@tech_admin_required
+def analytics_log_download(request, channel):
+    path = _log_file_path(channel)
+    return FileResponse(open(path, 'rb'), as_attachment=True, filename=path.name)
+
+
+@tech_admin_required
+def analytics_log_tail(request, channel):
+    """Батч из LOG_TAIL_BATCH строк лога, читаемый с конца файла (для infinite scroll
+    снизу вверх). `before_line` — курсор: номер строки (с конца, 0-based), с которой
+    продолжать чтение более старых строк; без параметра отдаёт самый свежий батч."""
+    path = _log_file_path(channel)
+    with open(path, encoding='utf-8', errors='replace') as f:
+        all_lines = f.readlines()
+
+    total = len(all_lines)
+    before_line = request.GET.get('before_line')
+    end_offset = int(before_line) if before_line and before_line.isdigit() else 0
+    start_index = max(total - end_offset - LOG_TAIL_BATCH, 0)
+    end_index = total - end_offset
+    batch = all_lines[start_index:end_index]
+
+    return JsonResponse({
+        'lines': [line.rstrip('\n') for line in batch],
+        'next_cursor': total - start_index,
+        'has_more': start_index > 0,
     })

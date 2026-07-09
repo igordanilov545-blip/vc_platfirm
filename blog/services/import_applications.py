@@ -320,6 +320,13 @@ def commit_import(rows: list) -> dict:
                     if match_key:
                         new_users_cache[match_key] = user
 
+            # Требования меро (db.md правило 6) — тот же порядок, что и на веб/бот-подаче:
+            # не соответствует → сразу в резерв. Excel-импорт — типичный случай «заявка
+            # без авторизации»: у только что созданного пользователя дата рождения
+            # неизвестна, поэтому по требованию «18+» будет unknown_age, а не auto_reject.
+            from blog.services.requirements import check_application_requirements
+            req_check = check_application_requirements(event, user)
+
             application = Application.objects.create(
                 event=event,
                 user=user,
@@ -333,13 +340,18 @@ def commit_import(rows: list) -> dict:
                 role_in_event=row.get('role_in_event'),
                 user_status=row.get('user_status'),
                 submitted_at=row.get('submitted_at') or timezone.now(),
-                status='new',
+                status='rejected' if req_check['auto_reject'] else 'new',
+                auto_reject_reason='; '.join(req_check['reasons']) if req_check['auto_reject'] else None,
             )
             existing_by_event[event.id][person_key] = application
             name = f'{application.first_name} {application.last_name or ""}'.strip()
+            # Массовый импорт намеренно не шлёт уведомление тим-лидеру на КАЖДУЮ новую
+            # заявку (иначе сотни строк — сотни сообщений); auto_reject_reason всё равно
+            # сохраняется на заявке и виден менеджеру на странице меро.
             ApplicationChangeLog.objects.create(
                 event=event, application=application, kind='new',
-                text=f'{name} подал(а) новую заявку.',
+                text=f'{name} подал(а) новую заявку.'
+                + (f' Автоматически в резерв: {application.auto_reject_reason}.' if application.auto_reject_reason else ''),
             )
             created += 1
             continue

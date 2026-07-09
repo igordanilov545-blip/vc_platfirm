@@ -1,0 +1,37 @@
+<!-- PDF-отчёт по волонтёрам (reports_template.md «Отчёт по волонтёрам»): сводка
+     сверху + карточки подряд по алфавиту. Серверный рендер WeasyPrint. -->
+<meta charset="utf-8">
+<title>Отчёт по волонтёрам</title>
+{% include 'blog/_report_pdf_base.html' %}
+
+<div class="brand">
+    <div class="logo">ВОЛОНТЁРСКИЙ ЦЕНТР</div>
+    <h1>Отчёт по волонтёрам</h1>
+    <div class="subtitle">
+        Охват: {% if scope.scoped %}{{ scope.date_from|date:"d.m.Y" }} — {{ scope.date_to|date:"d.m.Y" }}{% else %}за всё время{% endif %}
+        · Волонтёров: {{ count }} · Сформирован: {{ generated_at|date:"d.m.Y H:i" }}
+    </div>
+</div>
+
+<h2>Сводка по выборке</h2>
+<table class="kv">
+    <tr><td class="k">Всего волонтёров</td><td>{{ summary.total_volunteers }}</td></tr>
+    <tr><td class="k">Суммарно часов</td><td>{{ summary.total_hours }}</td></tr>
+    <tr><td class="k">Суммарно участий</td><td>{{ summary.total_events }}</td></tr>
+    <tr><td class="k">Ср. часов на волонтёра</td><td>{{ summary.avg_hours }}</td></tr>
+    <tr><td class="k">Новых за охват</td><td>{{ summary.new_count }}</td></tr>
+    <tr><td class="k">Со «Звёздочкой» ПГАС</td><td>{{ summary.star_count }}</td></tr>
+    <tr><td class="k">В блэклисте</td><td>{{ summary.blacklisted_count }}</td></tr>
+    <tr><td class="k">На грани блэклиста</td><td>{{ summary.at_risk_count }}</td></tr>
+</table>
+
+{% if hours_hist_chart %}<div class="chart-block"><img src="{{ hours_hist_chart }}" alt="Распределение часов"></div>{% endif %}
+{% if top_chart %}<div class="chart-block"><img src="{{ top_chart }}" alt="Топ по часам"></div>{% endif %}
+{% if churn_chart %}<div class="chart-block"><img src="{{ churn_chart }}" alt="Распределение churn"></div>{% endif %}
+
+<h2>Карточки волонтёров (по алфавиту)</h2>
+{% for card in cards %}
+    {% include 'blog/partials/_person_card.html' with rep=card with_charts=False %}
+{% empty %}
+    <p class="note">В выборку не попал ни один волонтёр.</p>
+{% endfor %}

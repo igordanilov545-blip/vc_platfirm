@@ -208,3 +208,42 @@ async def cmd_appnotify(message: Message):
 async def cb_dismiss(callback: CallbackQuery, state: FSMContext):
     await state.update_data(pending_event_id=None)
     await callback.answer('Хорошо, вернёшься к этому позже.')
+
+
+# ---------------------------------------------------------------------------
+# Fallback: любое сообщение/callback, не пойманное ни одним хендлером выше (во всех
+# роутерах — common подключается последним, см. tg_bot/bot.py). Без этого бот на любой
+# "не команде" просто молчал — теперь показывает меню/подсказку вместо тишины.
+# ---------------------------------------------------------------------------
+
+@router.message()
+async def fallback_message(message: Message, state: FSMContext):
+    # Если пользователь сейчас в разгаре FSM-диалога (регистрация и т.п.), но прислал
+    # что-то, что не подошло ни под один хендлер состояния — не грузим меню поверх
+    # диалога, а мягко просим повторить ожидаемый ответ.
+    current_state = await state.get_state()
+    if current_state:
+        await message.answer('Не совсем понял 🤔 Повтори, пожалуйста, предыдущий шаг.')
+        return
+
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        message.from_user.id, message.from_user.username
+    )
+    if await sync_to_async(services.is_guest)(user):
+        await message.answer(
+            '🤔 Не знаю такую команду. Вот что я умею:',
+            reply_markup=kb.guest_menu(),
+        )
+        return
+    is_tl, is_mgr = await _menu_for(user)
+    await message.answer(
+        '🤔 Не знаю такую команду. Вот что я умею — выбирай из меню ниже или набери /help.',
+        reply_markup=kb.main_menu(is_tl, is_mgr),
+    )
+
+
+@router.callback_query()
+async def fallback_callback(callback: CallbackQuery):
+    # Нажатие на кнопку из "остывшего" (снятого по времени) или уже обработанного
+    # сообщения — вместо тишины честно объясняем, что кнопка больше не действует.
+    await callback.answer('Эта кнопка уже не активна — обнови список командой из меню.', show_alert=True)

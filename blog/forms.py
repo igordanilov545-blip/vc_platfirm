@@ -6,6 +6,7 @@ from .models import (
     Event, EventComment, EventShift, Participation, Application, UserComment, EventFeedback,
     Const, Season, Organization, Organizer, User, EventStaff, Location,
     EventCategory, EventCategoryMap, TeamLeader, ExternalExperience,
+    EventRequirement, EventRequirementMap, UserRequirementException,
 )
 
 
@@ -62,6 +63,78 @@ class QuickCategoryForm(forms.ModelForm):
         labels = {'name': 'Название категории'}
 
 
+class QuickRequirementForm(forms.ModelForm):
+    """Мини-форма быстрого создания требования прямо из формы мероприятия. check_type
+    не запрашивается — быстро создаются только обычные («вручную проверяемые») требования;
+    автоматическая проверка по возрасту настраивается отдельно на странице требований."""
+    class Meta:
+        model = EventRequirement
+        fields = ['title', 'description']
+        labels = {'title': 'Название требования', 'description': 'Описание'}
+
+
+class RequirementForm(forms.ModelForm):
+    """Создание требования на странице «Требования» — тип проверки в форме не
+    показывается, новые требования всегда создаются как 'manual' (значение по
+    умолчанию в модели). Автоматическая проверка по возрасту («18+») — служебный тип,
+    заведённый через seed-миграцию; переключать его на другое требование через это
+    UI не предполагается (см. RequirementEditForm)."""
+    class Meta:
+        model = EventRequirement
+        fields = ['title', 'description']
+        labels = {'title': 'Название', 'description': 'Описание'}
+        widgets = {'description': forms.Textarea(attrs={'rows': 2})}
+
+
+class RequirementEditForm(RequirementForm):
+    """Редактирование существующего требования — в отличие от формы создания, здесь
+    check_type виден и редактируем (на случай, если понадобится вручную перенести
+    автопроверку возраста на другое требование)."""
+    class Meta(RequirementForm.Meta):
+        fields = ['title', 'description', 'check_type']
+        labels = {**RequirementForm.Meta.labels, 'check_type': 'Тип проверки'}
+
+
+class RequirementExceptionForm(forms.ModelForm):
+    """Добавление волонтёра в список «не соответствует требованию». Пользователь НЕ
+    выбирается через серверный <select> (при тысячах волонтёров рендер queryset'а в
+    <option> — сам по себе главная причина медленной загрузки страницы требований).
+    Вместо этого — скрытое числовое поле `user`, заполняемое JS-виджетом «пикер
+    волонтёров» (data-user-picker, base.html): список пользователей грузится через
+    один общий на всю страницу AJAX-запрос (см. users_picker_data), кэшируется на
+    клиенте и переиспользуется всеми такими виджетами страницы без повторных загрузок."""
+    user = forms.IntegerField(widget=forms.HiddenInput, label='Волонтёр')
+
+    class Meta:
+        model = UserRequirementException
+        fields = ['reason']
+        labels = {'reason': 'Причина'}
+        widgets = {'reason': forms.TextInput(attrs={'placeholder': 'Необязательно'})}
+
+    def __init__(self, *args, requirement=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.requirement = requirement
+
+    def clean_user(self):
+        user_id = self.cleaned_data['user']
+        user = User.objects.filter(pk=user_id).first()
+        if not user:
+            raise forms.ValidationError('Выберите волонтёра из списка.')
+        if self.requirement is not None and UserRequirementException.objects.filter(
+            user=user, requirement=self.requirement
+        ).exists():
+            raise forms.ValidationError('Этот волонтёр уже отмечен как несоответствующий требованию.')
+        return user
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.user = self.cleaned_data['user']
+        instance.requirement = self.requirement
+        if commit:
+            instance.save()
+        return instance
+
+
 class TeamLeadChoiceField(forms.ModelMultipleChoiceField):
     """Выбор тим-лидеров: показываем только «Фамилия Имя», без telegram."""
     def label_from_instance(self, obj):
@@ -81,6 +154,12 @@ class EventForm(forms.ModelForm):
         queryset=EventCategory.objects.order_by('name'),
         required=False,
         label='Категории',
+        widget=forms.SelectMultiple,
+    )
+    requirements = forms.ModelMultipleChoiceField(
+        queryset=EventRequirement.objects.order_by('title'),
+        required=False,
+        label='Требования к волонтёрам',
         widget=forms.SelectMultiple,
     )
     team_leads = TeamLeadChoiceField(
@@ -167,6 +246,9 @@ class EventForm(forms.ModelForm):
             self.fields['categories'].initial = EventCategory.objects.filter(
                 event_map__event=self.instance
             )
+            self.fields['requirements'].initial = EventRequirement.objects.filter(
+                event_map__event=self.instance
+            )
             self.fields['team_leads'].initial = User.objects.filter(
                 staff_assignments__event=self.instance,
                 staff_assignments__staff_role='team_lead',
@@ -217,6 +299,7 @@ class EventForm(forms.ModelForm):
         if commit:
             event.save()
             self._save_categories(event)
+            self._save_requirements(event)
             self._save_team_leads(event)
             if self.require_shift:
                 for shift_form in self.shift_forms:
@@ -230,6 +313,12 @@ class EventForm(forms.ModelForm):
         EventCategoryMap.objects.filter(event=event).exclude(category__in=selected).delete()
         for category in selected:
             EventCategoryMap.objects.get_or_create(event=event, category=category)
+
+    def _save_requirements(self, event):
+        selected = self.cleaned_data.get('requirements', EventRequirement.objects.none())
+        EventRequirementMap.objects.filter(event=event).exclude(requirement__in=selected).delete()
+        for requirement in selected:
+            EventRequirementMap.objects.get_or_create(event=event, requirement=requirement)
 
     def _save_team_leads(self, event):
         """Приводит назначения тим-лидеров к ровно выбранному набору пользователей.
@@ -428,6 +517,11 @@ class ProfileForm(forms.ModelForm):
     остальное (юзернейм для системы, почта, дата рождения, о себе, ссылка на ВК) —
     по желанию.
 
+    Telegram-username сюда НЕ входит: он подтягивается автоматически только при входе
+    через Telegram-бота (data_controller.get_or_create_user_by_telegram_id) — так
+    гарантируется, что это реальный привязанный аккаунт, а не произвольный текст,
+    который пользователь мог бы вписать руками через веб-форму.
+
     Дата рождения — как и везде в проекте, красивый календарь (data-datepicker), а не
     нативный type=date."""
     first_name = forms.CharField(label='Имя', max_length=100, required=True)
@@ -437,7 +531,7 @@ class ProfileForm(forms.ModelForm):
     class Meta:
         model = User
         fields = [
-            'first_name', 'last_name', 'middle_name', 'system_username', 'telegram_username',
+            'first_name', 'last_name', 'middle_name', 'system_username',
             'phone', 'email', 'birthday', 'about', 'VK_username',
         ]
         widgets = {
@@ -449,7 +543,6 @@ class ProfileForm(forms.ModelForm):
         }
         labels = {
             'system_username': 'Юзернейм для системы',
-            'telegram_username': 'Telegram-юзернейм',
             'phone': 'Номер телефона',
             'email': 'Почта',
             'birthday': 'Дата рождения',
@@ -461,7 +554,6 @@ class ProfileForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         # Обязательные для подачи заявки поля помечаем required на форме — визуально
         # (звёздочка) и на уровне валидации.
-        self.fields['telegram_username'].required = True
         self.fields['phone'].required = True
 
     def clean_first_name(self):
@@ -469,9 +561,6 @@ class ProfileForm(forms.ModelForm):
         if not value:
             raise forms.ValidationError('Укажите имя — оно обязательно для подачи заявки.')
         return value
-
-    def clean_telegram_username(self):
-        return (self.cleaned_data.get('telegram_username') or '').strip().lstrip('@') or None
 
     def save(self, commit=True):
         user = super().save(commit=False)
@@ -563,14 +652,47 @@ class CaptchaForm(forms.Form):
             self.fields['answer'].label = f'Решите пример: {question} = ?'
 
 
+class MultipleHiddenIntegerField(forms.Field):
+    """Список id, приходящий из JS-пикера волонтёров как несколько скрытых
+    input[name=...] с одинаковым именем (аналог ModelMultipleChoiceField, но БЕЗ
+    рендера queryset'а в <option> — при тысячах пользователей это и было главной
+    причиной медленной загрузки страниц настроек/требований, см. RequirementExceptionForm).
+
+    Виджет — SelectMultiple без options: он не рендерится (поле выводится JS-пикером
+    отдельно), но его value_from_datadict корректно делает QueryDict.getlist, забирая
+    ВСЕ значения одноимённого поля, а не только последнее (как было бы у HiddenInput)."""
+    widget = forms.SelectMultiple
+
+    def to_python(self, value):
+        if not value:
+            return []
+        try:
+            return [int(v) for v in value]
+        except (TypeError, ValueError):
+            raise forms.ValidationError('Некорректный список пользователей.')
+
+    def validate(self, value):
+        if self.required and not value:
+            raise forms.ValidationError('Выберите хотя бы одного пользователя.')
+
+
 class RoleUsersForm(forms.Form):
-    """Выбор пользователей для назначения/снятия роли (настройки, chip-select с поиском)."""
-    users = TeamLeadChoiceField(queryset=User.objects.none(), required=True, label='Волонтёры')
+    """Выбор пользователей для назначения/снятия роли (настройки) — id приходят от
+    JS-пикера волонтёров (data-user-picker) скрытыми полями `<prefix->users`,
+    без серверного рендера queryset'а в <select> (тысячи пользователей иначе грузятся
+    на каждую из нескольких секций страницы)."""
+    users = MultipleHiddenIntegerField(required=True, label='Волонтёры')
 
     def __init__(self, *args, queryset=None, **kwargs):
         super().__init__(*args, **kwargs)
-        if queryset is not None:
-            self.fields['users'].queryset = queryset
+        self.allowed_queryset = queryset if queryset is not None else User.objects.none()
+
+    def clean_users(self):
+        ids = self.cleaned_data['users']
+        users = list(self.allowed_queryset.filter(id__in=ids))
+        if not users:
+            raise forms.ValidationError('Выберите хотя бы одного пользователя из допустимого списка.')
+        return users
 
 
 class ConstForm(forms.ModelForm):

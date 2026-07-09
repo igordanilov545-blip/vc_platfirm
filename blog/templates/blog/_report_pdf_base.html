@@ -1,0 +1,40 @@
+{% comment %}
+Общие стили PDF-отчётов (WeasyPrint, blog/services/pdf.py). Подключается include-ом
+в начале каждого PDF-шаблона. WeasyPrint не исполняет JS и хуже дружит с grid —
+используем таблицы и flex.
+{% endcomment %}
+<style>
+    :root {
+        --accent: #7C3AED; --ink: #2B2B33; --muted: #83838f; --faint: #9A9AA5;
+        --line: #E3E3E8; --card: #F7F6FA; --mono: 'JetBrains Mono','Consolas',monospace;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system,'Segoe UI',Roboto,Arial,sans-serif; color: var(--ink); margin: 0; padding: 32px 40px; line-height: 1.5; background: #fff; }
+    h1 { font-size: 23px; margin: 0 0 4px; }
+    h2 { font-size: 16px; margin: 22px 0 8px; padding-bottom: 6px; border-bottom: 2px solid var(--accent); }
+    h3 { font-size: 13px; margin: 14px 0 4px; color: var(--muted); }
+    .subtitle { color: var(--muted); font-size: 13px; }
+    .brand { border-bottom: 3px solid var(--accent); padding-bottom: 14px; margin-bottom: 12px; }
+    .logo { font-weight: 700; font-size: 14px; color: var(--accent); }
+    .tag { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); }
+
+    table.data { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0; }
+    table.data th, table.data td { text-align: left; padding: 5px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    table.data th { color: var(--muted); font-weight: 600; font-size: 12px; }
+    td.num, th.num { text-align: right; font-family: var(--mono); }
+    .mono { font-family: var(--mono); }
+
+    table.kv { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0; }
+    table.kv td { border: none; padding: 3px 0; }
+    table.kv .k { color: var(--muted); width: 210px; }
+
+    .card { background: var(--card); border-radius: 10px; padding: 12px 14px; margin: 8px 0; }
+    .chart-block img { width: 100%; margin: 8px 0; }
+    .note { color: var(--faint); font-size: 12px; }
+    .pill { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px; background: var(--card); color: var(--muted); }
+    .pill.warn { background: #fbe6e0; color: #c9503f; }
+    .pill.ok { background: #e2f3ec; color: #1d6b47; }
+    .person-card { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 12px 0; page-break-inside: avoid; }
+    .person-card h3.name { font-size: 15px; color: var(--ink); margin: 0 0 6px; }
+    .event-report { page-break-before: always; }
+</style>

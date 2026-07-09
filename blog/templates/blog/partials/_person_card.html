@@ -1,0 +1,94 @@
+{% comment %}
+Карточка человека (блоки A-D «Отчёта по человеку», reports_template.md) — используется
+в отчёте по человеку, по волонтёрам и в комплексном. Ожидает переменную `rep`
+(результат person_report_service.person_report). Флаг `with_charts` включает графики.
+{% endcomment %}
+{% with user=rep.user %}
+<div class="person-card">
+    <h3 class="name">{{ user.full_name }}
+        {% if user.telegram_username %}<span class="note">@{{ user.telegram_username }}</span>{% endif %}
+        {% if rep.is_star %}<span class="pill ok">⭐ ПГАС</span>{% endif %}
+        {% if user.status == 'blacklisted' %}<span class="pill warn">блэклист</span>{% endif %}
+    </h3>
+
+    <!-- A. Профиль -->
+    <table class="kv">
+        <tr><td class="k">Контакты</td><td>{{ user.phone|default:"—" }} · {{ user.email|default:"—" }} · {% if user.VK_username %}VK: {{ user.VK_username }}{% else %}—{% endif %}</td></tr>
+        <tr><td class="k">Дата регистрации</td><td>{{ user.created_at|date:"d.m.Y" }}</td></tr>
+        <tr><td class="k">Последнее участие</td><td>{{ user.last_event_at|date:"d.m.Y"|default:"—" }}</td></tr>
+        <tr><td class="k">Статус</td><td>{{ user.get_status_display }}</td></tr>
+    </table>
+
+    <!-- B. Волонтёрская статистика -->
+    <table class="kv">
+        <tr><td class="k">Часов (всего / сезон{% if rep.scope.scoped %} / охват{% endif %})</td>
+            <td>{{ rep.stats.total_hours }} / {{ rep.stats.season_hours }}{% if rep.scope.scoped %} / <b>{{ rep.stats.scoped_hours }}</b>{% endif %}</td></tr>
+        <tr><td class="k">Мероприятий (всего / сезон{% if rep.scope.scoped %} / охват{% endif %})</td>
+            <td>{{ rep.stats.total_events }} / {{ rep.stats.season_events }}{% if rep.scope.scoped %} / <b>{{ rep.stats.scoped_events }}</b>{% endif %}</td></tr>
+        <tr><td class="k">Ср. часов на меро</td><td>{{ rep.stats.avg_hours_per_event }}</td></tr>
+        <tr><td class="k">Любимые категории</td><td>{% for c in rep.top_categories %}{{ c.name }} ({{ c.count }}){% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td></tr>
+    </table>
+
+    {% if rep.participations %}
+    <table class="data">
+        <thead><tr><th>Мероприятие</th><th>Дата</th><th>Явка</th><th class="num">Часы</th></tr></thead>
+        <tbody>
+        {% for p in rep.participations %}
+            <tr><td>{{ p.event }}</td><td class="mono">{{ p.day|date:"d.m.Y" }}</td><td>{{ p.status }}</td><td class="num">{{ p.hours }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <!-- C. Заявки -->
+    {% if rep.applications %}
+    <h3>Заявки (конверсия {{ rep.applications_summary.conversion_pct }}%)</h3>
+    <table class="data">
+        <thead><tr><th>Мероприятие</th><th>Подана</th><th>Статус</th><th>Обработана</th></tr></thead>
+        <tbody>
+        {% for a in rep.applications %}
+            <tr><td>{{ a.event }}</td><td class="mono">{{ a.submitted_at|date:"d.m.Y H:i" }}</td><td>{{ a.status }}</td><td class="mono">{{ a.assigned_at|date:"d.m.Y H:i"|default:"—" }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <!-- D. Внутреннее -->
+    <table class="kv">
+        <tr><td class="k">Churn score (сейчас)</td><td>{{ rep.internal.churn_score|floatformat:2 }}</td></tr>
+        <tr><td class="k">Неявок без предупреждения</td><td>{{ rep.internal.unexcused_count }}</td></tr>
+        {% if rep.internal.exceptions %}
+        <tr><td class="k">Исключения из требований</td><td>{% for ex in rep.internal.exceptions %}{{ ex.requirement.title }}{% if ex.reason %} ({{ ex.reason }}){% endif %}{% if not forloop.last %}; {% endif %}{% endfor %}</td></tr>
+        {% endif %}
+    </table>
+    {% if rep.internal.comments %}
+    <h3>Внутренние комментарии</h3>
+    {% for c in rep.internal.comments %}
+        <div class="note">{{ c.created_at|date:"d.m.Y" }}{% if c.event %} · {{ c.event.title }}{% endif %}: {{ c.text }}</div>
+    {% endfor %}
+    {% endif %}
+
+    <!-- E/F. Дополнения ТЛ / менеджера -->
+    {% if rep.team_leader %}
+    <h3>🧑‍🏫 Дополнение тим-лидера</h3>
+    <table class="kv">
+        <tr><td class="k">Меро как ТЛ (всего / сезон)</td><td>{{ rep.team_leader.total_events }} / {{ rep.team_leader.season_events }}</td></tr>
+        <tr><td class="k">Дата назначения</td><td>{{ rep.team_leader.assigned_at|date:"d.m.Y" }}</td></tr>
+        <tr><td class="k">Заявок обработано / ср. время</td><td>{{ rep.team_leader.applications_processed }} / {{ rep.team_leader.avg_processing_hours|default:"—" }} ч</td></tr>
+    </table>
+    {% endif %}
+    {% if rep.manager %}
+    <h3>🧑‍💼 Дополнение менеджера</h3>
+    <table class="kv">
+        <tr><td class="k">Меро под управлением (всего / сезон)</td><td>{{ rep.manager.total_events }} / {{ rep.manager.season_events }}</td></tr>
+        <tr><td class="k">Дата назначения</td><td>{{ rep.manager.assigned_at|date:"d.m.Y" }}{% if rep.manager.assigned_by %} (назначил {{ rep.manager.assigned_by.full_name }}){% endif %}</td></tr>
+        <tr><td class="k">Заявок обработано / ср. время</td><td>{{ rep.manager.applications_processed }} / {{ rep.manager.avg_processing_hours|default:"—" }} ч</td></tr>
+    </table>
+    {% endif %}
+
+    {% if with_charts %}
+        {% if rep.activity_chart %}<div class="chart-block"><img src="{{ rep.activity_chart }}" alt="Динамика активности"></div>{% endif %}
+        {% if rep.churn_chart %}<div class="chart-block"><img src="{{ rep.churn_chart }}" alt="Churn по сезонам"></div>{% endif %}
+    {% endif %}
+</div>
+{% endwith %}

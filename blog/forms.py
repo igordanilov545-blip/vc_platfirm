@@ -513,14 +513,14 @@ class ApplicationCancelForm(forms.Form):
 
 class ProfileForm(forms.ModelForm):
     """Личный кабинет: редактирование своих данных пользователем. Обязательны для
-    подачи заявки — ФИО (имя), Telegram-username и телефон (см. roles.account_is_complete);
+    подачи заявки — ФИО (имя), Telegram и телефон (см. roles.account_is_complete);
     остальное (юзернейм для системы, почта, дата рождения, о себе, ссылка на ВК) —
     по желанию.
 
-    Telegram-username сюда НЕ входит: он подтягивается автоматически только при входе
-    через Telegram-бота (data_controller.get_or_create_user_by_telegram_id) — так
-    гарантируется, что это реальный привязанный аккаунт, а не произвольный текст,
-    который пользователь мог бы вписать руками через веб-форму.
+    Telegram-username вводится вручную, как обычное поле: пользователь указывает свой
+    ник сам. (Раньше он подтягивался только при входе через бота; теперь ограничение
+    снято — при входе через бот username по-прежнему подставляется автоматически, но
+    веб-пользователь может ввести/поправить его руками.)
 
     Дата рождения — как и везде в проекте, красивый календарь (data-datepicker), а не
     нативный type=date."""
@@ -532,7 +532,7 @@ class ProfileForm(forms.ModelForm):
         model = User
         fields = [
             'first_name', 'last_name', 'middle_name', 'system_username',
-            'phone', 'email', 'birthday', 'about', 'VK_username',
+            'telegram_username', 'phone', 'email', 'birthday', 'about', 'VK_username',
         ]
         widgets = {
             'birthday': forms.DateInput(
@@ -543,11 +543,15 @@ class ProfileForm(forms.ModelForm):
         }
         labels = {
             'system_username': 'Юзернейм для системы',
+            'telegram_username': 'Telegram',
             'phone': 'Номер телефона',
             'email': 'Почта',
             'birthday': 'Дата рождения',
             'about': 'О себе',
             'VK_username': 'Ссылка на ВК',
+        }
+        help_texts = {
+            'telegram_username': 'Ваш ник в Telegram (можно с @ или без).',
         }
 
     def __init__(self, *args, **kwargs):
@@ -555,6 +559,12 @@ class ProfileForm(forms.ModelForm):
         # Обязательные для подачи заявки поля помечаем required на форме — визуально
         # (звёздочка) и на уровне валидации.
         self.fields['phone'].required = True
+        self.fields['telegram_username'].required = True
+
+    def clean_telegram_username(self):
+        # Нормализуем: убираем ведущий @ и пробелы, чтобы в БД лежал чистый username.
+        value = (self.cleaned_data.get('telegram_username') or '').strip()
+        return value.lstrip('@').strip()
 
     def clean_first_name(self):
         value = (self.cleaned_data.get('first_name') or '').strip()

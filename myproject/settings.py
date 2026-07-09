@@ -16,6 +16,28 @@ SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=[])
 
+# ---------------------------------------------------------------------------
+# Продакшн-настройки за обратным прокси (Beget / Passenger).
+#
+# На хостинге HTTPS терминируется фронтендом Beget, а до Django запрос доходит
+# по HTTP с заголовком X-Forwarded-Proto. Без этих настроек Django считает
+# соединение небезопасным и ломает secure-cookie, CSRF и редиректы.
+#
+# CSRF_TRUSTED_ORIGINS обязателен на Django 4+: для POST-форм и AJAX с HTTPS-домена
+# нужно явно перечислить схему+хост, иначе получаем 403 CSRF. Берётся из .env
+# (список полных origin'ов, напр. https://vc.iedanimk.beget.tech).
+# ---------------------------------------------------------------------------
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
+USE_X_FORWARDED_HOST = True
+
+if not DEBUG:
+    # Secure-cookie и HTTPS-редирект включаем только в проде, чтобы не мешать
+    # локальной разработке на http://127.0.0.1.
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=False)
+
 TG_BOT_TOKEN = env('TG_BOT_TOKEN', default='')
 # Username бота без ведущего @ — нужен для Telegram Login Widget и deep-link
 # «войти через бота» (t.me/<username>?start=weblogin) на странице входа.

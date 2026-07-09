@@ -1,0 +1,15 @@
+# Конфигурация Passenger для домена vc.iedanimk.beget.tech (Beget).
+# Этот файл кладётся в ~/vc.iedanimk.beget.tech/public_html/.htaccess
+#
+# PassengerAppRoot   — корень проекта (там лежит passenger_wsgi.py).
+# PassengerPython    — интерпретатор из нашего venv (создаётся при деплое).
+# PassengerAppType/StartupFile — WSGI-приложение через passenger_wsgi.py.
+
+RewriteEngine On
+
+PassengerEnabled On
+PassengerAppType wsgi
+PassengerStartupFile passenger_wsgi.py
+PassengerAppRoot /home/i/iedanimk/vc.iedanimk.beget.tech/vc_platform
+PassengerPython /home/i/iedanimk/vc.iedanimk.beget.tech/vc_platform/.venv/bin/python
+PassengerBaseURI /

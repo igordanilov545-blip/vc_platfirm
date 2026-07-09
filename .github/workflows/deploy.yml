@@ -16,18 +16,42 @@ jobs:
           username: ${{ secrets.BEGET_USER }}
           key: ${{ secrets.BEGET_SSH_KEY }}
           port: ${{ secrets.BEGET_SSH_PORT }}
+          command_timeout: "20m"
           script: |
-            set -e
-            cd ${{ secrets.BEGET_PROJECT_DIR }}
-            git pull origin main
+            set -euo pipefail
+
+            PROJECT_DIR="${{ secrets.BEGET_PROJECT_DIR }}"
+            REPO="git@github.com:Willi-Wonkaa/vc_platform.git"
+            PY=/usr/bin/python3.10
+
+            # 1) Клонируем репозиторий при первом деплое, дальше — обновляем.
+            if [ ! -d "$PROJECT_DIR/.git" ]; then
+              git clone "$REPO" "$PROJECT_DIR"
+            fi
+            cd "$PROJECT_DIR"
+            git fetch --all
+            git reset --hard origin/main
+
+            # 2) venv (на shared-хостинге создаётся с --copies, симлинки запрещены).
+            if [ ! -x ".venv/bin/python" ]; then
+              virtualenv --copies -p "$PY" .venv
+            fi
             source .venv/bin/activate
-            pip install -r requirements.txt
+            pip install --upgrade pip --quiet
+            pip install -r requirements.txt --quiet
+
+            # 3) Миграции и статика.
             python manage.py migrate --noinput
             python manage.py collectstatic --noinput
-            # Останавливаем бота, чтобы он перезапустился уже с новым кодом
-            # (иначе keepalive увидит "процесс жив" и не тронет старую версию).
+
+            # 4) Перезапуск веб-приложения (Passenger следит за tmp/restart.txt).
+            mkdir -p tmp
+            touch tmp/restart.txt
+
+            # 5) Перезапуск Telegram-бота с новым кодом.
+            #    Убиваем текущий процесс, keepalive поднимет свежий.
             if [ -f deploy/bot.pid ] && kill -0 "$(cat deploy/bot.pid)" 2>/dev/null; then
-              kill "$(cat deploy/bot.pid)"
+              kill "$(cat deploy/bot.pid)" || true
               sleep 2
             fi
             bash deploy/bot_keepalive.sh

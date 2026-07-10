@@ -142,6 +142,25 @@ class TeamLeadChoiceField(forms.ModelMultipleChoiceField):
         return name or (obj.telegram_username or str(obj.telegram_id))
 
 
+def _intervals_overlap(start_a, end_a, start_b, end_b):
+    """Пересекаются ли два полуинтервала времени [start, end). Смежные (конец одной =
+    начало другой) пересечением НЕ считаются — можно ставить смены встык."""
+    return start_a < end_b and start_b < end_a
+
+
+def _shifts_overlap(shifts):
+    """shifts — список кортежей (day, start_time, end_time). True, если хотя бы две
+    смены в один и тот же день пересекаются по времени. Используется и при создании
+    меро (несколько смен разом), и при добавлении/редактировании отдельной смены."""
+    for i in range(len(shifts)):
+        day_i, start_i, end_i = shifts[i]
+        for j in range(i + 1, len(shifts)):
+            day_j, start_j, end_j = shifts[j]
+            if day_i == day_j and _intervals_overlap(start_i, end_i, start_j, end_j):
+                return True
+    return False
+
+
 class EventForm(forms.ModelForm):
     """Форма создания/редактирования мероприятия.
 
@@ -288,6 +307,14 @@ class EventForm(forms.ModelForm):
             for shift_form in self.shift_forms:
                 if not shift_form.is_valid():
                     valid = False
+            # Смены одного мероприятия не должны пересекаться по времени в один день
+            # (нельзя создать две смены на одно и то же время — это ошибка ввода).
+            if valid and _shifts_overlap([
+                (f.cleaned_data['day'], f.cleaned_data['start_time'], f.cleaned_data['end_time'])
+                for f in self.shift_forms
+            ]):
+                self.add_error(None, 'Смены мероприятия пересекаются по времени. Проверьте даты и время смен.')
+                valid = False
         return valid
 
     def save(self, commit=True):
@@ -372,7 +399,11 @@ class EventShiftForm(forms.ModelForm):
             'volunteer_needed': forms.NumberInput(attrs={'min': 0}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, event=None, **kwargs):
+        # `event` передаётся при добавлении/редактировании отдельной смены — по нему
+        # проверяем пересечение по времени с уже существующими сменами того же меро.
+        # (При создании меро несколько смен проверяются в EventForm.is_valid.)
+        self.overlap_event = event
         super().__init__(*args, **kwargs)
         self.fields['location'].queryset = Location.objects.order_by('-id')
         if self.instance and self.instance.pk:
@@ -393,10 +424,26 @@ class EventShiftForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+        day = cleaned.get('day')
         start = cleaned.get('start_time')
         end = cleaned.get('end_time')
         if start and end and end <= start:
             self.add_error('end_time', 'Время окончания должно быть позже времени начала.')
+        # Пересечение с другими сменами того же меро в тот же день (add/edit одной смены).
+        if self.overlap_event is not None and day and start and end:
+            others = self.overlap_event.shifts.filter(day=day)
+            if self.instance and self.instance.pk:
+                others = others.exclude(pk=self.instance.pk)
+            for other in others:
+                o_start = timezone.localtime(other.start_time).time()
+                o_end = timezone.localtime(other.end_time).time()
+                if _intervals_overlap(start, end, o_start, o_end):
+                    self.add_error(
+                        None,
+                        'Смена пересекается по времени с уже существующей сменой этого '
+                        'мероприятия в тот же день.'
+                    )
+                    break
         return cleaned
 
     def save(self, commit=True):

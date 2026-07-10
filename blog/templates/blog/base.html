@@ -1467,17 +1467,51 @@
     }
 
     // ======================================================================
-    // Явка в таблице на странице мероприятия — без отдельной формы/подтверждения.
-    // Чекбокс «Явка» переключает был/не был (не был → «без предупреждения» по
-    // умолчанию); select «Статус» уточняет причину отсутствия. Оба контрола одной
-    // строки синхронизированы между собой и шлют один и тот же запрос на сервер.
+    // Явка прямо в объединённой таблице набора (страница мероприятия). Отдельного
+    // поля-статуса нет: чекбокс «Явка» переключает был/не был, а причина отсутствия
+    // (уважительно/без предупреждения) уточняется вторым компактным чекбоксом
+    // «уважит.», который появляется только когда волонтёр не пришёл. Итоговый статус
+    // виден ЦВЕТОМ ИМЕНИ (attendance-* классы), а не отдельным столбцом.
+    //   attended            — «Был» (имя зелёное)
+    //   absent_excused      — «Не был (уважит.)» (имя приглушённое)
+    //   absent_unexcused    — «Не был» (имя красное)
     // ======================================================================
-    function sendParticipationStatus(row, id, status) {
+    function applyAttendanceUI(row, status, hours) {
         var checkbox = row.querySelector('[data-attendance-checkbox]');
-        var select = row.querySelector('[data-attendance-status]');
-        if (checkbox) checkbox.disabled = true;
-        if (select) select.disabled = true;
+        if (checkbox) checkbox.checked = (status === 'attended');
+        // Ярлык рядом с чекбоксом.
+        var label = row.querySelector('[data-attendance-label]');
+        if (label) {
+            label.textContent = status === 'attended' ? 'Был'
+                : (status === 'absent_excused' ? 'Не был (уважит.)' : 'Не был');
+        }
+        // Показ/скрытие вторичного «уважит.» — только когда не пришёл.
+        var excusedWrap = row.querySelector('[data-excused-wrap]');
+        if (excusedWrap) excusedWrap.style.display = (status === 'attended') ? 'none' : '';
+        var excusedBox = row.querySelector('[data-attendance-excused]');
+        if (excusedBox) excusedBox.checked = (status === 'absent_excused');
+        // Цвет имени.
+        var name = row.querySelector('[data-name-for]');
+        if (name) {
+            name.classList.remove('attendance-attended', 'attendance-absent_excused', 'attendance-absent_unexcused');
+            name.classList.add('attendance-' + status);
+        }
+        // Часы: редактируются только у пришедших.
+        var hoursInput = row.querySelector('[data-attendance-hours]');
+        if (hoursInput) {
+            if (hours !== undefined && hours !== null) hoursInput.value = hours;
+            hoursInput.disabled = (status !== 'attended');
+        }
+        var hoursCell = row.querySelector('[data-hours-cell]');
+        if (hoursCell && hours !== undefined && hours !== null) hoursCell.setAttribute('data-sort-value', hours);
+        // Значение для сортировки колонки «Явка».
+        var attendanceCell = row.querySelector('td[data-label="Явка"]');
+        if (attendanceCell) attendanceCell.setAttribute('data-sort-value', status);
+    }
 
+    function sendParticipationStatus(row, id, status) {
+        var controls = row.querySelectorAll('[data-attendance-checkbox],[data-attendance-excused]');
+        controls.forEach(function (c) { c.disabled = true; });
         fetch('/participations/' + id + '/set-status/', {
             method: 'POST',
             headers: {
@@ -1487,41 +1521,56 @@
             body: 'status=' + encodeURIComponent(status) + '&csrfmiddlewaretoken=' + encodeURIComponent(getCsrfToken()),
         })
         .then(function (r) { return r.json(); })
-        .then(function (data) {
-            if (checkbox) checkbox.checked = (data.status === 'attended');
-            if (select) select.value = data.status;
-            var hoursInput = row.querySelector('[data-attendance-hours]');
-            if (hoursInput) {
-                hoursInput.value = data.hours;
-                // Часы редактируются только у присутствовавших — у отсутствовавших 0 и поле заблокировано.
-                hoursInput.disabled = (data.status !== 'attended');
-            } else {
-                var hoursCell = row.querySelector('[data-hours-cell]');
-                if (hoursCell) hoursCell.textContent = data.hours;
-            }
-        })
-        .catch(function () {
-            alert('Не удалось сохранить явку. Попробуйте ещё раз.');
-        })
-        .finally(function () {
-            if (checkbox) checkbox.disabled = false;
-            if (select) select.disabled = false;
-        });
+        .then(function (data) { applyAttendanceUI(row, data.status, data.hours); })
+        .catch(function () { alert('Не удалось сохранить явку. Попробуйте ещё раз.'); })
+        .finally(function () { controls.forEach(function (c) { c.disabled = false; }); });
     }
 
     document.querySelectorAll('[data-attendance-checkbox]').forEach(function (checkbox) {
         checkbox.addEventListener('change', function () {
             var id = checkbox.getAttribute('data-participation-id');
             var row = checkbox.closest('[data-participation-row]');
-            sendParticipationStatus(row, id, checkbox.checked ? 'attended' : 'absent_unexcused');
+            // «Был» → attended; «Не был» → сохраняем причину: если стоит «уважит.» —
+            // absent_excused, иначе absent_unexcused.
+            var excusedBox = row.querySelector('[data-attendance-excused]');
+            var absentStatus = (excusedBox && excusedBox.checked) ? 'absent_excused' : 'absent_unexcused';
+            sendParticipationStatus(row, id, checkbox.checked ? 'attended' : absentStatus);
         });
     });
 
-    document.querySelectorAll('[data-attendance-status]').forEach(function (select) {
-        select.addEventListener('change', function () {
-            var id = select.getAttribute('data-participation-id');
-            var row = select.closest('[data-participation-row]');
-            sendParticipationStatus(row, id, select.value);
+    // «Уважит.» имеет смысл только когда волонтёр не пришёл — переключает причину
+    // отсутствия между absent_excused и absent_unexcused.
+    document.querySelectorAll('[data-attendance-excused]').forEach(function (box) {
+        box.addEventListener('change', function () {
+            var id = box.getAttribute('data-participation-id');
+            var row = box.closest('[data-participation-row]');
+            sendParticipationStatus(row, id, box.checked ? 'absent_excused' : 'absent_unexcused');
+        });
+    });
+
+    // ======================================================================
+    // «Показать/скрыть резерв» на смене: строки резерва (data-reserve="<shiftId>")
+    // скрыты по умолчанию; кнопка [data-reserve-toggle="<shiftId>"] раскрывает их.
+    // ======================================================================
+    document.querySelectorAll('[data-reserve-toggle]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var shiftId = btn.getAttribute('data-reserve-toggle');
+            var rows = document.querySelectorAll('tr[data-reserve="' + shiftId + '"]');
+            var willShow = btn.getAttribute('aria-expanded') !== 'true';
+            rows.forEach(function (r) { r.hidden = !willShow; });
+            btn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
+            btn.textContent = (willShow ? 'Скрыть резерв (' : 'Показать резерв (') + rows.length + ')';
+        });
+    });
+
+    // ======================================================================
+    // Блокировка кнопки формы после первого клика (защита от двойной обработки):
+    // форма с data-disable-on-submit при отправке дизейблит свою submit-кнопку.
+    // ======================================================================
+    document.querySelectorAll('form[data-disable-on-submit]').forEach(function (form) {
+        form.addEventListener('submit', function () {
+            var btn = form.querySelector('button[type=submit]');
+            if (btn) { btn.disabled = true; btn.dataset.submitting = '1'; }
         });
     });
 

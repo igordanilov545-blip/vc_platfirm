@@ -53,13 +53,15 @@ _DOW_RU = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
 
 def _fmt_day(d):
-    return f'{d.day:02d}.{d.month:02d} ({_DOW_RU[d.weekday()]})'
+    # dd.mm.yy (день недели) — год показываем двумя цифрами (11.09.26), чтобы было
+    # видно год мероприятия, но компактно.
+    return f'{d.day:02d}.{d.month:02d}.{d.year % 100:02d} ({_DOW_RU[d.weekday()]})'
 
 
 @register.simple_tag
 def event_date_range(first_day, last_day):
-    """dd.mm (день недели) — для одного дня; dd.mm (день недели) - dd.mm (день недели)
-    для периода. Пусто, если у мероприятия нет ни одной смены."""
+    """dd.mm.yy (день недели) — для одного дня; dd.mm.yy (день недели) - dd.mm.yy
+    (день недели) для периода. Пусто, если у мероприятия нет ни одной смены."""
     if not first_day:
         return '—'
     if not last_day or first_day == last_day:

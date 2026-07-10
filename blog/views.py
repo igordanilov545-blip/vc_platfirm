@@ -622,55 +622,71 @@ def event_detail(request, event_id):
         for app in event.applications.exclude(status='cancelled').prefetch_related('selected_shifts', 'event__shifts'):
             ensure_shift_decisions(app)
 
-        shifts_with_applications = []
+        # Единая таблица набора + явки по сменам. Раньше это были две отдельные таблицы
+        # («Набор» и «Явка»); теперь на каждую смену — одна таблица со строками-заявками,
+        # где у ОДОБРЕННОЙ заявки прямо в строке отмечается явка (был/не был) и часы
+        # (Participation). Порядок строк на смене:
+        #   1) одобренные пришедшие, 2) одобренные не пришедшие (уходят вниз),
+        #   3) новые (необработанные), 4) резерв/отклонённые (скрыты по умолчанию, показ
+        #      по кнопке «показать резерв» на клиенте).
+        # Порядок сортировки задаём на сервере, а строки резерва помечаем data-reserve
+        # в шаблоне — скрытие/показ полностью клиентское.
+        parts_by_shift_user = {}
+        for p in Participation.objects.filter(event_day__in=shifts).select_related('user'):
+            parts_by_shift_user[(p.event_day_id, p.user_id)] = p
+
+        def _row_sort_key(row):
+            # Меньше — выше. Одобренные-пришедшие (0) → одобренные-не пришедшие (1) →
+            # новые (2) → резерв (3). Внутри группы — по фамилии/имени.
+            d = row['decision']
+            part = row['participation']
+            if d.status == 'approved':
+                group = 0 if (part and part.status == 'attended') else 1
+            elif d.status == 'new':
+                group = 2
+            else:
+                group = 3
+            app = d.application
+            return (group, (app.last_name or '').lower(), (app.first_name or '').lower())
+
+        shifts_with_recruitment = []
         approved_total = 0
         for shift in shifts:
             decisions = (
                 ApplicationShiftDecision.objects.filter(shift=shift)
                 .exclude(application__status='cancelled')
                 .select_related('application', 'application__user')
-                .order_by('-application__created_at')
             )
-            shift_approved = decisions.filter(status='approved').count()
-            shift_pending = decisions.filter(status='new').count()
+            rows = []
+            shift_approved = shift_pending = 0
+            for decision in decisions:
+                app = decision.application
+                participation = parts_by_shift_user.get((shift.id, app.user_id)) if app.user_id else None
+                rows.append({'decision': decision, 'participation': participation})
+                if decision.status == 'approved':
+                    shift_approved += 1
+                elif decision.status == 'new':
+                    shift_pending += 1
+            rows.sort(key=_row_sort_key)
             approved_total += shift_approved
-            shifts_with_applications.append({
+            shifts_with_recruitment.append({
                 'shift': shift,
-                'decisions': decisions,
+                'rows': rows,
                 'approved_count': shift_approved,
                 'pending_count': shift_pending,
                 'needed': shift.volunteer_needed,
                 'remaining': max(shift.volunteer_needed - shift_approved, 0),
+                # Кол-во строк в резерве — чтобы показать это на кнопке «показать резерв».
+                'reserve_count': sum(1 for r in rows if r['decision'].status == 'rejected'),
             })
 
         context.update({
-            'shifts_with_applications': shifts_with_applications,
+            'shifts_with_recruitment': shifts_with_recruitment,
             'needed': needed,
             'approved_count': approved_total,
             'remaining': max(needed - approved_total, 0),
             'pending_count': pending_count,
         })
-
-        # Явка по сменам: участники (Participation) создаются автоматически при approve
-        # заявки на смену (db.md, правило 4). В таблице явки показываем ТОЛЬКО волонтёров
-        # с одобренной заявкой на смену — если заявку на эту смену отклонили (резерв),
-        # волонтёр из явки пропадает. Участие удаляется при reject (см. applications.py),
-        # но на случай унаследованных данных дополнительно отфильтровываем тех, у кого
-        # решение по этой смене = 'rejected'.
-        shifts_with_participations = []
-        for shift in shifts:
-            rejected_user_ids = (
-                ApplicationShiftDecision.objects.filter(shift=shift, status='rejected')
-                .exclude(application__status='cancelled')
-                .values_list('application__user_id', flat=True)
-            )
-            participations = (
-                shift.participations.select_related('user')
-                .exclude(user_id__in=rejected_user_ids)
-                .order_by('user__last_name', 'user__first_name')
-            )
-            shifts_with_participations.append({'shift': shift, 'participations': participations})
-        context['shifts_with_participations'] = shifts_with_participations
 
     # 👥 Расширенная карточка — только для участников мероприятия
     # (reports.md раздел 4: подавших заявку или получивших участие).
@@ -789,6 +805,32 @@ def event_edit(request, event_id):
         {'form': form, 'title': f'Редактировать: {event.title}', 'submit_label': 'Сохранить'},
         partial_template='blog/partials/_event_form_body.html',
     )
+
+
+@manager_required
+@require_POST
+def event_delete(request, event_id):
+    """Полное удаление мероприятия менеджером. Каскадом удаляются смены, заявки,
+    решения по сменам, участия, комментарии и т.п. (FK on_delete=CASCADE).
+
+    Требуем явного подтверждения на клиенте (data-confirm). После удаления часы/меро
+    удалённых участий больше не должны «висеть» в агрегатах волонтёров — пересчитываем
+    статистику затронутых пользователей ДО удаления (после удаления связей уже не
+    достать), поэтому сначала собираем их, затем удаляем, затем пересчитываем."""
+    event = get_object_or_404(Event, pk=event_id)
+    affected_user_ids = list(
+        Participation.objects.filter(event_day__event=event)
+        .values_list('user_id', flat=True).distinct()
+    )
+    title = event.title
+    event.delete()
+    if affected_user_ids:
+        from blog.services.stats import recalc_user_aggregates
+        for user in User.objects.filter(id__in=affected_user_ids):
+            recalc_user_aggregates(user)
+    logger.info('Мероприятие удалено: event=%s title=%r by=%s', event_id, title, actor(request.user))
+    messages.success(request, f'Мероприятие «{title}» удалено.')
+    return redirect('event_list')
 
 
 @manager_required
@@ -955,7 +997,7 @@ def event_shift_add(request, event_id):
     event = get_object_or_404(Event, pk=event_id)
     if event.event_status == 'finished':
         raise PermissionDenied('Завершённое мероприятие нельзя редактировать.')
-    form = EventShiftForm(request.POST or None)
+    form = EventShiftForm(request.POST or None, event=event)
     if request.method == 'POST' and form.is_valid():
         shift = form.save(commit=False)
         shift.event = event
@@ -978,7 +1020,7 @@ def event_shift_edit(request, event_id, shift_id):
     if event.event_status == 'finished':
         raise PermissionDenied('Завершённое мероприятие нельзя редактировать.')
     shift = get_object_or_404(EventShift, pk=shift_id, event=event)
-    form = EventShiftForm(request.POST or None, instance=shift)
+    form = EventShiftForm(request.POST or None, instance=shift, event=event)
     if request.method == 'POST' and form.is_valid():
         form.save()
         messages.success(request, 'Смена мероприятия обновлена.')
@@ -1000,6 +1042,16 @@ def event_shift_delete(request, event_id, shift_id):
         raise PermissionDenied('Завершённое мероприятие нельзя редактировать.')
     shift = get_object_or_404(EventShift, pk=shift_id, event=event)
     if request.method == 'POST':
+        # Нельзя удалить последнюю смену: мероприятие без смен теряет смысл (нет набора,
+        # нет явки, нельзя вычислить статус по датам). Чтобы «убрать» такое меро —
+        # удаляют мероприятие целиком (event_delete).
+        if event.shifts.count() <= 1:
+            messages.error(
+                request,
+                'Нельзя удалить единственную смену мероприятия. Если мероприятие не нужно — '
+                'удалите его целиком кнопкой «Удалить».'
+            )
+            return redirect('event_detail', event_id=event.id)
         shift.delete()
         messages.success(request, 'Смена мероприятия удалена.')
     return redirect('event_detail', event_id=event.id)

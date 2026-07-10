@@ -34,6 +34,10 @@
             {% if closing_checklist.ready %}✅ Завершить мероприятие{% else %}Завершить мероприятие{% endif %}
         </a>
         {% endif %}
+        <form method="post" action="{% url 'event_delete' event.id %}" class="inline" data-confirm="Удалить мероприятие «{{ event.title }}» безвозвратно? Вместе с ним удалятся все смены, заявки и явка по нему.">
+            {% csrf_token %}
+            <button type="submit" class="btn danger">🗑 Удалить</button>
+        </form>
     </div>
     {% endif %}
     {% if has_open_recruitment and not is_finished %}
@@ -99,29 +103,6 @@
 </div>
 {% endif %}
 
-{% if can_manage_applications and comments %}
-<div class="card">
-    <h3>📝 Комментарии к мероприятию</h3>
-    {% for c in comments %}
-        <p style="border-bottom:1px solid var(--border-subtle); padding-bottom:8px; margin-bottom:8px;">
-            {{ c.text|linebreaksbr }}
-            <br><span class="mono" style="color:var(--text-tertiary); font-size:12px;">{{ c.created_at|date:"d.m.Y H:i" }}</span>
-        </p>
-    {% endfor %}
-</div>
-{% endif %}
-
-{% if comment_form %}
-<div class="card">
-    <h3>Добавить комментарий</h3>
-    <form method="post" action="{% url 'event_comment_add' event.id %}" style="max-width:500px;">
-        {% csrf_token %}
-        {{ comment_form.text }}
-        <button type="submit" class="btn secondary" style="margin-top:8px;">Добавить</button>
-    </form>
-</div>
-{% endif %}
-
 <div class="card">
     <p>{{ event.description|default:"Без описания" }}</p>
     <p style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
@@ -164,7 +145,7 @@
         {% for shift in shifts %}
             {% with shift_status=shift.compute_status %}
             <tr class="shift-row shift-row--{{ shift_status }}">
-                <td data-label="Дата" class="mono" data-sort-value="{{ shift.day|date:'Y-m-d' }}">{{ shift.day }}</td>
+                <td data-label="Дата" class="mono" data-sort-value="{{ shift.day|date:'Y-m-d' }}">{{ shift.day|date:"d.m.y" }}</td>
                 <td data-label="Начало" class="mono" data-sort-value="{{ shift.start_time|date:'U' }}">{{ shift.start_time|time:"H:i" }}</td>
                 <td data-label="Окончание" class="mono" data-sort-value="{{ shift.end_time|date:'U' }}">{{ shift.end_time|time:"H:i" }}</td>
                 <td data-label="Локация" data-sort-value="{{ shift.location.name }}">{{ shift.location.name|default:"—" }}</td>
@@ -184,10 +165,14 @@
                 {% if is_manager and event.event_status != 'finished' %}
                 <td data-label="" class="row-actions" style="white-space:nowrap;">
                     <a href="{% url 'event_shift_edit' event.id shift.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Редактировать смену: {{ event.title }}">Изменить</a>
-                    <form method="post" action="{% url 'event_shift_delete' event.id shift.id %}" class="inline" onsubmit="return confirm('Удалить эту смену мероприятия?');">
+                    {% if shifts|length > 1 %}
+                    {# Единственную смену удалить нельзя (мероприятие без смен не имеет смысла) —
+                       для таких меро есть удаление мероприятия целиком. #}
+                    <form method="post" action="{% url 'event_shift_delete' event.id shift.id %}" class="inline" data-confirm="Удалить эту смену мероприятия?">
                         {% csrf_token %}
                         <button type="submit" class="btn danger btn-sm">Удалить</button>
                     </form>
+                    {% endif %}
                 </td>
                 {% endif %}
             </tr>
@@ -201,67 +186,6 @@
         <div style="padding:16px 20px;"><a href="{% url 'event_shift_add' event.id %}" class="btn secondary" data-modal data-modal-title="Новая смена: {{ event.title }}">+ Добавить смену</a></div>
     {% endif %}
 </div>
-
-{% if can_manage_applications and shifts_with_participations %}
-<div class="card" style="padding:0; overflow:hidden;">
-    <h3 style="padding:20px 20px 0;">Явка</h3>
-    {% if can_edit_applications %}
-    <p style="padding:0 20px; color:var(--text-secondary); font-size:13px;">Все, кто подал заявку, по умолчанию считаются пришедшими. Отметьте, если было иначе — часы и статус обновятся сразу. Часы можно поправить вручную прямо в таблице.</p>
-    {% endif %}
-    {% for entry in shifts_with_participations %}
-        <div style="padding:0 20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-            <p style="color:var(--text-secondary); font-size:13px; margin:0;">{{ entry.shift.day }} ({{ entry.shift.start_time|time:"H:i" }}–{{ entry.shift.end_time|time:"H:i" }})</p>
-            {% if entry.shift.compute_status == 'passed' %}
-                {% if entry.shift.attendance_confirmed %}
-                    <span class="pill success"><span class="dot"></span>✅ Можно забирать</span>
-                    {% if can_edit_applications %}
-                    <form method="post" action="{% url 'shift_toggle_attendance_confirmed' event.id entry.shift.id %}" class="inline">
-                        {% csrf_token %}
-                        <button type="submit" class="btn secondary btn-sm">Снять отметку</button>
-                    </form>
-                    {% endif %}
-                {% elif can_edit_applications %}
-                    <form method="post" action="{% url 'shift_toggle_attendance_confirmed' event.id entry.shift.id %}" class="inline" data-confirm="Подтвердить, что явка и часы за смену «{{ entry.shift.day }}» актуализированы и данные можно забирать?">
-                        {% csrf_token %}
-                        <button type="submit" class="btn secondary btn-sm">☐ Можно забирать</button>
-                    </form>
-                {% endif %}
-            {% endif %}
-        </div>
-        <table class="responsive-table" data-sortable style="margin-bottom:16px;">
-            <thead><tr><th data-sort-key="name">Волонтёр</th><th style="width:70px;">Явка</th><th data-sort-key="hours" class="num">Часы</th><th data-sort-key="status">Статус</th></tr></thead>
-            <tbody>
-            {% for p in entry.participations %}
-                <tr data-participation-row="{{ p.id }}">
-                    <td data-label="Волонтёр" data-sort-value="{{ p.user.full_name }}"><a href="{% url 'profile_detail' p.user_id %}">{{ p.user.full_name }}</a></td>
-                    <td data-label="Явка">
-                        <input type="checkbox" data-attendance-checkbox data-participation-id="{{ p.id }}" {% if p.status == 'attended' %}checked{% endif %} {% if not can_edit_applications %}disabled{% endif %} style="width:18px; height:18px; margin:0;">
-                    </td>
-                    <td data-label="Часы" class="num mono" data-hours-cell data-sort-value="{{ p.hours }}">
-                        {% if can_edit_applications %}
-                        <input type="number" min="0" step="1" value="{{ p.hours }}" data-attendance-hours data-participation-id="{{ p.id }}" style="width:64px; text-align:right; padding:4px 6px;" {% if p.status != 'attended' %}disabled{% endif %}>
-                        {% else %}{{ p.hours }}{% endif %}
-                    </td>
-                    <td data-label="Статус" data-sort-value="{{ p.status }}">
-                        {% if can_edit_applications %}
-                        <select data-attendance-status data-participation-id="{{ p.id }}" class="attendance-status-select">
-                            <option value="attended" {% if p.status == 'attended' %}selected{% endif %}>Был</option>
-                            <option value="absent_excused" {% if p.status == 'absent_excused' %}selected{% endif %}>Отсутствовал уважительно</option>
-                            <option value="absent_unexcused" {% if p.status == 'absent_unexcused' %}selected{% endif %}>Отсутствовал без предупреждения</option>
-                        </select>
-                        {% else %}
-                        {{ p.get_status_display }}
-                        {% endif %}
-                    </td>
-                </tr>
-            {% empty %}
-                <tr><td colspan="4">Нет одобренных участников на эту смену.</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    {% endfor %}
-</div>
-{% endif %}
 
 <div class="card">
     <h3>Тим-лидеры</h3>
@@ -329,56 +253,149 @@
         {% endif %}
     </div>
 
-    {% for entry in shifts_with_applications %}
-    <div style="padding:20px 20px 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-        <h4 style="margin:0 0 4px;">Набор на смену «{{ entry.shift.day }}»: {{ entry.approved_count }} из {{ entry.needed }} (осталось {{ entry.remaining }})</h4>
-        {% if entry.pending_count and can_edit_applications %}
-        <form method="post" action="{% url 'shift_applications_approve_all' event.id entry.shift.id %}" class="inline" data-confirm="Принять все заявки ({{ entry.pending_count }}) на смену «{{ entry.shift.day }}»?">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-sm">Принять всех на смену ({{ entry.pending_count }})</button>
-        </form>
-        {% endif %}
+    {% for entry in shifts_with_recruitment %}
+    <div class="shift-recruit-head" style="padding:20px 20px 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <h4 style="margin:0 0 4px;">Набор на смену «{{ entry.shift.day|date:"d.m.y" }}»: {{ entry.approved_count }} из {{ entry.needed }} (осталось {{ entry.remaining }})</h4>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            {% if entry.reserve_count %}
+            {# Резерв/отклонённые скрыты по умолчанию — кнопка показывает/прячет их (клиентски). #}
+            <button type="button" class="btn secondary btn-sm" data-reserve-toggle="{{ entry.shift.id }}" aria-expanded="false">
+                Показать резерв ({{ entry.reserve_count }})
+            </button>
+            {% endif %}
+            {% comment %}«Можно забирать» — перенесено сюда из бывшей таблицы явки: доступно
+            для прошедшей смены, подтверждает, что явка/часы актуализированы.{% endcomment %}
+            {% if entry.shift.compute_status == 'passed' and can_edit_applications %}
+                {% if entry.shift.attendance_confirmed %}
+                <form method="post" action="{% url 'shift_toggle_attendance_confirmed' event.id entry.shift.id %}" class="inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn secondary btn-sm">✅ Можно забирать — снять</button>
+                </form>
+                {% else %}
+                <form method="post" action="{% url 'shift_toggle_attendance_confirmed' event.id entry.shift.id %}" class="inline" data-confirm="Подтвердить, что явка и часы за смену «{{ entry.shift.day|date:'d.m.y' }}» актуализированы и данные можно забирать?">
+                    {% csrf_token %}
+                    <button type="submit" class="btn secondary btn-sm">☐ Можно забирать</button>
+                </form>
+                {% endif %}
+            {% elif entry.shift.attendance_confirmed %}
+                <span class="pill success"><span class="dot"></span>✅ Можно забирать</span>
+            {% endif %}
+            {% if entry.pending_count and can_edit_applications %}
+            <form method="post" action="{% url 'shift_applications_approve_all' event.id entry.shift.id %}" class="inline" data-confirm="Принять все заявки ({{ entry.pending_count }}) на смену «{{ entry.shift.day|date:'d.m.y' }}»?">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm">Принять всех на смену ({{ entry.pending_count }})</button>
+            </form>
+            {% endif %}
+        </div>
     </div>
     <table class="responsive-table" data-sortable style="margin-bottom:8px;">
-        <thead><tr><th data-sort-key="name">ФИО</th><th data-sort-key="tg">Telegram</th><th data-sort-key="phone">Телефон</th><th data-sort-key="status">Статус</th><th data-sort-key="date">Подано</th><th></th></tr></thead>
+        <thead><tr>
+            <th data-sort-key="name">ФИО</th>
+            <th data-sort-key="tg">Telegram</th>
+            <th data-sort-key="phone">Телефон</th>
+            <th data-sort-key="status">Статус</th>
+            <th data-sort-key="attendance">Явка</th>
+            <th data-sort-key="hours" class="num">Часы</th>
+            <th></th>
+        </tr></thead>
         <tbody>
-        {% for decision in entry.decisions %}
-            {% with application=decision.application %}
-            <tr {% if application.user_id %}data-href="{% url 'profile_detail' application.user_id %}"{% endif %}>
-                <td data-label="ФИО" data-sort-value="{{ application.last_name }} {{ application.first_name }}">{{ application.first_name }}{% if application.last_name %} {{ application.last_name }}{% endif %}{% if application.middle_name %} {{ application.middle_name }}{% endif %}</td>
+        {% for row in entry.rows %}
+            {% with application=row.decision.application p=row.participation %}
+            {# Резерв/отклонённые прячем по умолчанию; показ — кнопкой «показать резерв». #}
+            <tr class="recruit-row{% if row.decision.status == 'attended' %}{% endif %}"
+                {% if application.user_id %}data-participation-row="{{ p.id }}"{% endif %}
+                {% if row.decision.status == 'rejected' %}data-reserve="{{ entry.shift.id }}" hidden{% endif %}>
+                <td data-label="ФИО" data-sort-value="{{ application.last_name }} {{ application.first_name }}">
+                    {# Имя окрашивается по явке (был — зелёный, не был — приглушённый/красный),
+                       поле статуса явки убрано, статус виден только цветом имени. #}
+                    <span class="volunteer-name{% if p %} attendance-{{ p.status }}{% endif %}"
+                          {% if application.user_id %}data-name-for="{{ p.id }}"{% endif %}>
+                        {% if application.user_id %}<a href="{% url 'profile_detail' application.user_id %}">{{ application.first_name }}{% if application.last_name %} {{ application.last_name }}{% endif %}{% if application.middle_name %} {{ application.middle_name }}{% endif %}</a>{% else %}{{ application.first_name }}{% if application.last_name %} {{ application.last_name }}{% endif %}{% endif %}
+                    </span>
+                </td>
                 <td data-label="Telegram" data-sort-value="{{ application.telegram_username }}">{{ application.telegram_username|default:"—" }}</td>
                 <td data-label="Телефон" class="mono" data-sort-value="{{ application.phone }}">{{ application.phone|default:"—" }}</td>
-                <td data-label="Статус" data-sort-value="{{ decision.status }}">
-                    {% if decision.status == 'approved' %}<span class="pill success"><span class="dot"></span>Одобрена</span>
-                    {% elif decision.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>Резерв/отклонена</span>
+                <td data-label="Статус" data-sort-value="{{ row.decision.status }}">
+                    {% if row.decision.status == 'approved' %}<span class="pill success"><span class="dot"></span>Одобрена</span>
+                    {% elif row.decision.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>Резерв/отклонена</span>
                     {% else %}<span class="pill warning"><span class="dot"></span>Новая</span>{% endif %}
                     {% if application.auto_reject_reason %}
                     <span class="pill danger" title="{{ application.auto_reject_reason }}" style="margin-left:4px;">⚠️ авто</span>
                     {% endif %}
                 </td>
-                <td data-label="Подано" class="mono" data-sort-value="{{ application.submitted_at|default:application.created_at|date:'U' }}">{{ application.submitted_at|default:application.created_at }}</td>
+                {# Явка: только для одобренной заявки с привязанным профилем (есть Participation).
+                   Чекбокс «был/не был» + компактная отметка «уважит.» когда не был. #}
+                <td data-label="Явка" data-sort-value="{% if p %}{{ p.status }}{% endif %}">
+                    {% if p %}
+                        {% if can_edit_applications %}
+                        <label class="attendance-toggle" title="Отметьте, если волонтёр был на смене">
+                            <input type="checkbox" data-attendance-checkbox data-participation-id="{{ p.id }}" {% if p.status == 'attended' %}checked{% endif %} style="width:18px; height:18px; margin:0; vertical-align:middle;">
+                            <span data-attendance-label="{{ p.id }}">{% if p.status == 'attended' %}Был{% elif p.status == 'absent_excused' %}Не был (уважит.){% else %}Не был{% endif %}</span>
+                        </label>
+                        <label class="attendance-excused" data-excused-wrap="{{ p.id }}" style="{% if p.status == 'attended' %}display:none;{% endif %} font-size:12px; color:var(--text-secondary);">
+                            <input type="checkbox" data-attendance-excused data-participation-id="{{ p.id }}" {% if p.status == 'absent_excused' %}checked{% endif %} style="width:14px; height:14px; margin:0 3px 0 8px; vertical-align:middle;">уважит.
+                        </label>
+                        {% else %}{{ p.get_status_display }}{% endif %}
+                    {% else %}—{% endif %}
+                </td>
+                <td data-label="Часы" class="num mono" data-hours-cell data-sort-value="{% if p %}{{ p.hours }}{% endif %}">
+                    {% if p %}
+                        {% if can_edit_applications %}
+                        <input type="number" min="0" step="1" value="{{ p.hours }}" data-attendance-hours data-participation-id="{{ p.id }}" style="width:64px; text-align:right; padding:4px 6px;" {% if p.status != 'attended' %}disabled{% endif %}>
+                        {% else %}{{ p.hours }}{% endif %}
+                    {% else %}—{% endif %}
+                </td>
                 <td data-label="">
-                    {% if can_edit_applications %}
-                    <form method="post" action="{% url 'application_shift_process' application.id entry.shift.id %}" class="inline">
+                    {% if can_edit_applications and row.decision.status != 'approved' %}
+                    {# Кнопки обработки: после клика форма блокирует кнопку (data-disable-on-submit),
+                       чтобы нельзя было принять/отклонить одну заявку несколько раз подряд. #}
+                    <form method="post" action="{% url 'application_shift_process' application.id entry.shift.id %}" class="inline" data-disable-on-submit>
                         {% csrf_token %}
                         <input type="hidden" name="status" value="approved">
-                        <button type="submit" class="btn" style="padding:6px 12px;">Принять</button>
+                        <button type="submit" class="btn btn-sm">Принять</button>
                     </form>
-                    <form method="post" action="{% url 'application_shift_process' application.id entry.shift.id %}" class="inline">
+                    {% endif %}
+                    {% if can_edit_applications and row.decision.status != 'rejected' %}
+                    <form method="post" action="{% url 'application_shift_process' application.id entry.shift.id %}" class="inline" data-disable-on-submit>
                         {% csrf_token %}
                         <input type="hidden" name="status" value="rejected">
-                        <button type="submit" class="btn danger" style="padding:6px 12px;">Отклонить</button>
+                        <button type="submit" class="btn danger btn-sm">{% if row.decision.status == 'approved' %}В резерв{% else %}Отклонить{% endif %}</button>
                     </form>
                     {% endif %}
                 </td>
             </tr>
             {% endwith %}
         {% empty %}
-            <tr><td colspan="6">Заявок на эту смену пока нет.</td></tr>
+            <tr><td colspan="7">Заявок на эту смену пока нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>
     {% endfor %}
+</div>
+{% endif %}
+
+{% comment %}Блок комментариев к мероприятию — внизу страницы (после набора/явки),
+чтобы не оттеснять оперативную работу с заявками наверх.{% endcomment %}
+{% if can_manage_applications and comments %}
+<div class="card">
+    <h3>📝 Комментарии к мероприятию</h3>
+    {% for c in comments %}
+        <p style="border-bottom:1px solid var(--border-subtle); padding-bottom:8px; margin-bottom:8px;">
+            {{ c.text|linebreaksbr }}
+            <br><span class="mono" style="color:var(--text-tertiary); font-size:12px;">{{ c.created_at|date:"d.m.Y H:i" }}</span>
+        </p>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if comment_form %}
+<div class="card">
+    <h3>Добавить комментарий</h3>
+    <form method="post" action="{% url 'event_comment_add' event.id %}" style="max-width:500px;">
+        {% csrf_token %}
+        {{ comment_form.text }}
+        <button type="submit" class="btn secondary" style="margin-top:8px;">Добавить</button>
+    </form>
 </div>
 {% endif %}
 {% endblock %}

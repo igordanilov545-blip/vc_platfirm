@@ -438,6 +438,13 @@ th.hideable-th:hover .col-hide-btn { opacity: .65; }
 .col-reveal-btn:hover { background: var(--accent); color: #fff; }
 th.has-reveal, td.has-reveal { position: relative; }
 
+/* Цвет имени волонтёра по явке (объединённая таблица набора+явки на странице меро):
+   поле статуса убрано, статус показывается только цветом имени. */
+.volunteer-name.attendance-attended, .volunteer-name.attendance-attended a { color: var(--success); }
+.volunteer-name.attendance-absent_unexcused, .volunteer-name.attendance-absent_unexcused a { color: var(--danger); }
+.volunteer-name.attendance-absent_excused, .volunteer-name.attendance-absent_excused a { color: var(--text-secondary); }
+.attendance-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+
 .infinite-scroll-sentinel { height: 1px; }
 
 /* Карточки-строки на мобайле (таблица → стек) */

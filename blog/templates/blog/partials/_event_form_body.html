@@ -84,10 +84,11 @@
         {% if form.location.errors %}<div class="field-error">{{ form.location.errors|striptags }}</div>{% endif %}
     </div>
 
-    {# ─── Смены (обязательны при создании — без хотя бы одной смены меро не создать) ───
-       Добавленные смены показываются чипами сверху (как категории), с крестиком для
-       удаления. Ниже — поля одной новой смены + кнопка "➕ Добавить смену". Итоговый
-       список хранится в JSON (shift-chips.js ниже) и уходит на сервер в shifts_json. #}
+    {% comment %}Смены (обязательны при создании — без хотя бы одной смены меро не создать).
+    Добавленные смены показываются чипами сверху (как категории), с крестиком для удаления.
+    Ниже — поля одной новой смены + кнопка «＋». Итоговый список хранится в JSON и уходит
+    на сервер в shifts_json. Кнопка «Создать» блокируется на клиенте, пока смен нет или они
+    пересекаются по времени (initShiftChips в base.html).{% endcomment %}
     {% if form.require_shift %}
     <hr class="form-divider">
     <h3 style="margin-top:0;">Смены мероприятия</h3>
@@ -141,7 +142,7 @@
         {% if form.dobro_ru_link.errors %}<div class="field-error">{{ form.dobro_ru_link.errors|striptags }}</div>{% endif %}
     </div>
 
-    {# ─── Поля закрытия/пост-меро (только при редактировании) ─── #}
+    {% comment %}Поля закрытия/пост-меро (только при редактировании).{% endcomment %}
     {% if form.show_closing_fields %}
     <hr class="form-divider">
     <div class="field">{{ form.people_helped.label_tag }}{{ form.people_helped }}</div>

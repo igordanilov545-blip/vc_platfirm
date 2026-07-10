@@ -443,7 +443,31 @@ th.has-reveal, td.has-reveal { position: relative; }
 .volunteer-name.attendance-attended, .volunteer-name.attendance-attended a { color: var(--success); }
 .volunteer-name.attendance-absent_unexcused, .volunteer-name.attendance-absent_unexcused a { color: var(--danger); }
 .volunteer-name.attendance-absent_excused, .volunteer-name.attendance-absent_excused a { color: var(--text-secondary); }
-.attendance-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+
+/* Явка тремя кнопками (Был / Не был / Уважит.) — сегментированный переключатель,
+   активная кнопка окрашивается по смыслу статуса. */
+.attendance-btns { display: inline-flex; gap: 0; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border-subtle); }
+.att-btn {
+  border: none; background: var(--bg-card); color: var(--text-secondary);
+  padding: 5px 10px; font-family: inherit; font-size: 12px; cursor: pointer; white-space: nowrap;
+  border-right: 1px solid var(--border-subtle);
+}
+.att-btn:last-child { border-right: none; }
+.att-btn:hover { background: var(--bg-card-hover); }
+.att-btn.active { color: #fff; }
+.att-btn.att-attended.active { background: var(--success); }
+.att-btn.att-unexcused.active { background: var(--danger); }
+.att-btn.att-excused.active { background: var(--text-secondary); }
+.att-btn:disabled { opacity: .5; cursor: default; }
+
+/* Панель действий над мероприятием — ровный ряд кнопок (без «ёлочки» из-за разной
+   высоты форм/ссылок): все прямые дети и вложенные кнопки одной высоты и выравнены. */
+.event-toolbar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+.event-toolbar > form.inline { margin: 0; display: flex; }
+.event-toolbar > .btn, .event-toolbar > form.inline > .btn {
+  display: inline-flex; align-items: center; justify-content: center; margin: 0;
+}
+.event-toolbar .pill { align-self: center; }
 
 .infinite-scroll-sentinel { height: 1px; }
 

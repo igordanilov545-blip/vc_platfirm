@@ -5,7 +5,7 @@
 <div class="page-header">
     <h1>{{ event.title }}</h1>
     {% if is_manager %}
-    <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+    <div class="event-toolbar">
         {% if not event.published_at and event.event_status != 'finished' %}
         <form method="post" action="{% url 'event_publish' event.id %}" class="inline" data-confirm="Опубликовать мероприятие «{{ event.title }}»? После публикации откроется подача заявок.">
             {% csrf_token %}
@@ -28,7 +28,6 @@
         <a href="{% url 'event_edit' event.id %}" class="btn secondary" data-modal data-modal-title="Редактировать: {{ event.title }}">Редактировать</a>
         {% endif %}
         <a href="{% url 'report_event_pdf' event.id %}" class="btn secondary" target="_blank" title="Скачать DOCX-отчёт по мероприятию">📄 Отчёт (DOCX)</a>
-        <a href="{% url 'report_event_export' event.id %}" class="btn secondary" title="Скачать Excel-отчёт по мероприятию">📊 Отчёт (Excel)</a>
         {% if closing_checklist %}
         <a href="{% url 'event_close' event.id %}" class="btn {% if closing_checklist.ready %}danger{% else %}secondary{% endif %}">
             {% if closing_checklist.ready %}✅ Завершить мероприятие{% else %}Завершить мероприятие{% endif %}
@@ -165,9 +164,8 @@
                 {% if is_manager and event.event_status != 'finished' %}
                 <td data-label="" class="row-actions" style="white-space:nowrap;">
                     <a href="{% url 'event_shift_edit' event.id shift.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Редактировать смену: {{ event.title }}">Изменить</a>
+                    {% comment %}Единственную смену удалить нельзя — для таких меро есть удаление мероприятия целиком.{% endcomment %}
                     {% if shifts|length > 1 %}
-                    {# Единственную смену удалить нельзя (мероприятие без смен не имеет смысла) —
-                       для таких меро есть удаление мероприятия целиком. #}
                     <form method="post" action="{% url 'event_shift_delete' event.id shift.id %}" class="inline" data-confirm="Удалить эту смену мероприятия?">
                         {% csrf_token %}
                         <button type="submit" class="btn danger btn-sm">Удалить</button>
@@ -258,13 +256,11 @@
         <h4 style="margin:0 0 4px;">Набор на смену «{{ entry.shift.day|date:"d.m.y" }}»: {{ entry.approved_count }} из {{ entry.needed }} (осталось {{ entry.remaining }})</h4>
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             {% if entry.reserve_count %}
-            {# Резерв/отклонённые скрыты по умолчанию — кнопка показывает/прячет их (клиентски). #}
             <button type="button" class="btn secondary btn-sm" data-reserve-toggle="{{ entry.shift.id }}" aria-expanded="false">
                 Показать резерв ({{ entry.reserve_count }})
             </button>
             {% endif %}
-            {% comment %}«Можно забирать» — перенесено сюда из бывшей таблицы явки: доступно
-            для прошедшей смены, подтверждает, что явка/часы актуализированы.{% endcomment %}
+            {% comment %}«Можно забирать» — для прошедшей смены подтверждает, что явка/часы актуализированы.{% endcomment %}
             {% if entry.shift.compute_status == 'passed' and can_edit_applications %}
                 {% if entry.shift.attendance_confirmed %}
                 <form method="post" action="{% url 'shift_toggle_attendance_confirmed' event.id entry.shift.id %}" class="inline">
@@ -301,13 +297,12 @@
         <tbody>
         {% for row in entry.rows %}
             {% with application=row.decision.application p=row.participation %}
-            {# Резерв/отклонённые прячем по умолчанию; показ — кнопкой «показать резерв». #}
-            <tr class="recruit-row{% if row.decision.status == 'attended' %}{% endif %}"
+            {% comment %}Резерв/отклонённые прячем по умолчанию (hidden); показ — кнопкой «показать резерв».{% endcomment %}
+            <tr class="recruit-row"
                 {% if application.user_id %}data-participation-row="{{ p.id }}"{% endif %}
                 {% if row.decision.status == 'rejected' %}data-reserve="{{ entry.shift.id }}" hidden{% endif %}>
                 <td data-label="ФИО" data-sort-value="{{ application.last_name }} {{ application.first_name }}">
-                    {# Имя окрашивается по явке (был — зелёный, не был — приглушённый/красный),
-                       поле статуса явки убрано, статус виден только цветом имени. #}
+                    {% comment %}Имя окрашивается по явке (был — зелёный, не был — красный, уважит. — приглушённый).{% endcomment %}
                     <span class="volunteer-name{% if p %} attendance-{{ p.status }}{% endif %}"
                           {% if application.user_id %}data-name-for="{{ p.id }}"{% endif %}>
                         {% if application.user_id %}<a href="{% url 'profile_detail' application.user_id %}">{{ application.first_name }}{% if application.last_name %} {{ application.last_name }}{% endif %}{% if application.middle_name %} {{ application.middle_name }}{% endif %}</a>{% else %}{{ application.first_name }}{% if application.last_name %} {{ application.last_name }}{% endif %}{% endif %}
@@ -317,24 +312,23 @@
                 <td data-label="Телефон" class="mono" data-sort-value="{{ application.phone }}">{{ application.phone|default:"—" }}</td>
                 <td data-label="Статус" data-sort-value="{{ row.decision.status }}">
                     {% if row.decision.status == 'approved' %}<span class="pill success"><span class="dot"></span>Одобрена</span>
-                    {% elif row.decision.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>Резерв/отклонена</span>
+                    {% elif row.decision.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>резерв</span>
                     {% else %}<span class="pill warning"><span class="dot"></span>Новая</span>{% endif %}
                     {% if application.auto_reject_reason %}
                     <span class="pill danger" title="{{ application.auto_reject_reason }}" style="margin-left:4px;">⚠️ авто</span>
                     {% endif %}
                 </td>
-                {# Явка: только для одобренной заявки с привязанным профилем (есть Participation).
-                   Чекбокс «был/не был» + компактная отметка «уважит.» когда не был. #}
+                {% comment %}Явка тремя кнопками (Был / Не был / Уважит.) — единый стиль с
+                кнопками обработки заявок. Только для одобренной заявки с привязанным профилем
+                (есть Participation). Активная кнопка подсвечена.{% endcomment %}
                 <td data-label="Явка" data-sort-value="{% if p %}{{ p.status }}{% endif %}">
                     {% if p %}
                         {% if can_edit_applications %}
-                        <label class="attendance-toggle" title="Отметьте, если волонтёр был на смене">
-                            <input type="checkbox" data-attendance-checkbox data-participation-id="{{ p.id }}" {% if p.status == 'attended' %}checked{% endif %} style="width:18px; height:18px; margin:0; vertical-align:middle;">
-                            <span data-attendance-label="{{ p.id }}">{% if p.status == 'attended' %}Был{% elif p.status == 'absent_excused' %}Не был (уважит.){% else %}Не был{% endif %}</span>
-                        </label>
-                        <label class="attendance-excused" data-excused-wrap="{{ p.id }}" style="{% if p.status == 'attended' %}display:none;{% endif %} font-size:12px; color:var(--text-secondary);">
-                            <input type="checkbox" data-attendance-excused data-participation-id="{{ p.id }}" {% if p.status == 'absent_excused' %}checked{% endif %} style="width:14px; height:14px; margin:0 3px 0 8px; vertical-align:middle;">уважит.
-                        </label>
+                        <div class="attendance-btns" data-attendance-group="{{ p.id }}">
+                            <button type="button" class="att-btn att-attended{% if p.status == 'attended' %} active{% endif %}" data-attendance-set="attended" data-participation-id="{{ p.id }}">Был</button>
+                            <button type="button" class="att-btn att-unexcused{% if p.status == 'absent_unexcused' %} active{% endif %}" data-attendance-set="absent_unexcused" data-participation-id="{{ p.id }}">Не был</button>
+                            <button type="button" class="att-btn att-excused{% if p.status == 'absent_excused' %} active{% endif %}" data-attendance-set="absent_excused" data-participation-id="{{ p.id }}">Уважит.</button>
+                        </div>
                         {% else %}{{ p.get_status_display }}{% endif %}
                     {% else %}—{% endif %}
                 </td>
@@ -346,9 +340,9 @@
                     {% else %}—{% endif %}
                 </td>
                 <td data-label="">
+                    {% comment %}Кнопки обработки заявки: после клика форма блокирует кнопку
+                    (data-disable-on-submit) — нельзя принять/отклонить одну заявку несколько раз.{% endcomment %}
                     {% if can_edit_applications and row.decision.status != 'approved' %}
-                    {# Кнопки обработки: после клика форма блокирует кнопку (data-disable-on-submit),
-                       чтобы нельзя было принять/отклонить одну заявку несколько раз подряд. #}
                     <form method="post" action="{% url 'application_shift_process' application.id entry.shift.id %}" class="inline" data-disable-on-submit>
                         {% csrf_token %}
                         <input type="hidden" name="status" value="approved">

@@ -82,9 +82,9 @@
 {% endif %}
 
 {% if not user.is_authenticated %}
-{# Гостевой хедер: статус «Гость» слева (клик → вход) + кнопка «Войти».
-   Оформление — в классах nexus.css (.guest-header/.guest-account/…), а не инлайн,
-   чтобы использовать переменные темы и корректно работать в тёмной/светлой (hot_fix_1 §D). #}
+{% comment %}Гостевой хедер: статус «Гость» слева (клик → вход) + кнопка «Войти».
+Оформление — в классах nexus.css (.guest-header/.guest-account/…), а не инлайн, чтобы
+использовать переменные темы и корректно работать в тёмной/светлой (hot_fix_1 §D).{% endcomment %}
 <header class="guest-header">
     <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" class="guest-account" title="Войти в аккаунт">
         <span class="avatar-placeholder guest-avatar">👤</span>
@@ -129,8 +129,8 @@
     </div>
 </div>
 
-{# Вложенная модалка быстрого создания справочника (локация/организация/организатор) —
-   второй слой поверх формы мероприятия, чтобы не терять введённые в неё данные. #}
+{% comment %}Вложенная модалка быстрого создания справочника (локация/организация/организатор) —
+второй слой поверх формы мероприятия, чтобы не терять введённые в неё данные.{% endcomment %}
 <div class="quick-add-backdrop" id="quick-add-backdrop" hidden>
     <div class="quick-add-dialog">
         <div class="modal-header">
@@ -455,10 +455,31 @@
                 }));
             }
 
-            function sync() { render(); }
+            // Кнопка «Создать» блокируется, пока смен нет (require_shift) — так менеджер
+            // просто не может отправить форму без смены, вместо ошибки после сабмита.
+            var submitBtn = null;
+            var formEl = jsonInput.closest('form');
+            if (formEl) submitBtn = formEl.querySelector('button[type=submit]');
+            function updateSubmitState() {
+                if (!submitBtn) return;
+                var ok = shifts.length > 0;
+                submitBtn.disabled = !ok;
+                submitBtn.title = ok ? '' : 'Добавьте хотя бы одну смену';
+            }
+
+            function sync() { render(); updateSubmitState(); }
 
             var CHIP_COLORS = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7'];
             function shiftChipColor(idx) { return 'cat-chip--' + CHIP_COLORS[idx % CHIP_COLORS.length]; }
+
+            // Пересекается ли новая смена по времени с уже добавленными в тот же день
+            // (полуинтервалы [start,end); встык — не пересечение). Совпадает с серверной
+            // проверкой в forms._shifts_overlap.
+            function overlapsExisting(dayIso, start, end) {
+                return shifts.some(function (s) {
+                    return s.day === dayIso && start < s.end_time && s.start_time < end;
+                });
+            }
 
             function dpFmtLabel(iso) {
                 var p = iso.split('-');
@@ -484,6 +505,10 @@
                     showError('Время окончания должно быть позже времени начала.');
                     return;
                 }
+                if (overlapsExisting(dayIso, start, end)) {
+                    showError('Смена пересекается по времени с уже добавленной в этот день.');
+                    return;
+                }
                 showError('');
                 shifts.push({
                     day: dayIso,
@@ -495,7 +520,7 @@
                 sync();
             });
 
-            render();
+            sync();
         });
     }
 
@@ -1467,29 +1492,22 @@
     }
 
     // ======================================================================
-    // Явка прямо в объединённой таблице набора (страница мероприятия). Отдельного
-    // поля-статуса нет: чекбокс «Явка» переключает был/не был, а причина отсутствия
-    // (уважительно/без предупреждения) уточняется вторым компактным чекбоксом
-    // «уважит.», который появляется только когда волонтёр не пришёл. Итоговый статус
-    // виден ЦВЕТОМ ИМЕНИ (attendance-* классы), а не отдельным столбцом.
-    //   attended            — «Был» (имя зелёное)
-    //   absent_excused      — «Не был (уважит.)» (имя приглушённое)
-    //   absent_unexcused    — «Не был» (имя красное)
+    // Явка в объединённой таблице набора (страница мероприятия) — тремя кнопками
+    // «Был / Не был / Уважит.», в едином стиле с кнопками обработки заявок. Отдельного
+    // поля-статуса нет: активная кнопка подсвечена, а имя волонтёра дополнительно
+    // окрашивается по явке (attendance-* классы).
+    //   attended         — «Был» (имя зелёное)
+    //   absent_unexcused — «Не был» (имя красное)
+    //   absent_excused   — «Уважит.» (имя приглушённое)
     // ======================================================================
     function applyAttendanceUI(row, status, hours) {
-        var checkbox = row.querySelector('[data-attendance-checkbox]');
-        if (checkbox) checkbox.checked = (status === 'attended');
-        // Ярлык рядом с чекбоксом.
-        var label = row.querySelector('[data-attendance-label]');
-        if (label) {
-            label.textContent = status === 'attended' ? 'Был'
-                : (status === 'absent_excused' ? 'Не был (уважит.)' : 'Не был');
+        // Подсветка активной кнопки в группе.
+        var group = row.querySelector('[data-attendance-group]');
+        if (group) {
+            group.querySelectorAll('[data-attendance-set]').forEach(function (b) {
+                b.classList.toggle('active', b.getAttribute('data-attendance-set') === status);
+            });
         }
-        // Показ/скрытие вторичного «уважит.» — только когда не пришёл.
-        var excusedWrap = row.querySelector('[data-excused-wrap]');
-        if (excusedWrap) excusedWrap.style.display = (status === 'attended') ? 'none' : '';
-        var excusedBox = row.querySelector('[data-attendance-excused]');
-        if (excusedBox) excusedBox.checked = (status === 'absent_excused');
         // Цвет имени.
         var name = row.querySelector('[data-name-for]');
         if (name) {
@@ -1504,14 +1522,13 @@
         }
         var hoursCell = row.querySelector('[data-hours-cell]');
         if (hoursCell && hours !== undefined && hours !== null) hoursCell.setAttribute('data-sort-value', hours);
-        // Значение для сортировки колонки «Явка».
         var attendanceCell = row.querySelector('td[data-label="Явка"]');
         if (attendanceCell) attendanceCell.setAttribute('data-sort-value', status);
     }
 
     function sendParticipationStatus(row, id, status) {
-        var controls = row.querySelectorAll('[data-attendance-checkbox],[data-attendance-excused]');
-        controls.forEach(function (c) { c.disabled = true; });
+        var buttons = row.querySelectorAll('[data-attendance-set]');
+        buttons.forEach(function (b) { b.disabled = true; });
         fetch('/participations/' + id + '/set-status/', {
             method: 'POST',
             headers: {
@@ -1523,45 +1540,54 @@
         .then(function (r) { return r.json(); })
         .then(function (data) { applyAttendanceUI(row, data.status, data.hours); })
         .catch(function () { alert('Не удалось сохранить явку. Попробуйте ещё раз.'); })
-        .finally(function () { controls.forEach(function (c) { c.disabled = false; }); });
+        .finally(function () { buttons.forEach(function (b) { b.disabled = false; }); });
     }
 
-    document.querySelectorAll('[data-attendance-checkbox]').forEach(function (checkbox) {
-        checkbox.addEventListener('change', function () {
-            var id = checkbox.getAttribute('data-participation-id');
-            var row = checkbox.closest('[data-participation-row]');
-            // «Был» → attended; «Не был» → сохраняем причину: если стоит «уважит.» —
-            // absent_excused, иначе absent_unexcused.
-            var excusedBox = row.querySelector('[data-attendance-excused]');
-            var absentStatus = (excusedBox && excusedBox.checked) ? 'absent_excused' : 'absent_unexcused';
-            sendParticipationStatus(row, id, checkbox.checked ? 'attended' : absentStatus);
-        });
-    });
-
-    // «Уважит.» имеет смысл только когда волонтёр не пришёл — переключает причину
-    // отсутствия между absent_excused и absent_unexcused.
-    document.querySelectorAll('[data-attendance-excused]').forEach(function (box) {
-        box.addEventListener('change', function () {
-            var id = box.getAttribute('data-participation-id');
-            var row = box.closest('[data-participation-row]');
-            sendParticipationStatus(row, id, box.checked ? 'absent_excused' : 'absent_unexcused');
+    document.querySelectorAll('[data-attendance-set]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var id = btn.getAttribute('data-participation-id');
+            var row = btn.closest('[data-participation-row]');
+            sendParticipationStatus(row, id, btn.getAttribute('data-attendance-set'));
         });
     });
 
     // ======================================================================
     // «Показать/скрыть резерв» на смене: строки резерва (data-reserve="<shiftId>")
     // скрыты по умолчанию; кнопка [data-reserve-toggle="<shiftId>"] раскрывает их.
+    // Состояние «раскрыто» ЗАПОМИНАЕТСЯ (sessionStorage) и восстанавливается после
+    // перезагрузки — иначе при выводе кого-то из резерва (approve/reject → reload)
+    // резерв снова схлопывался бы, хотя пользователь его открывал.
     // ======================================================================
-    document.querySelectorAll('[data-reserve-toggle]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
+    var RESERVE_KEY = 'reserveOpen:' + location.pathname;
+    function reserveOpenSet() {
+        try { return new Set(JSON.parse(sessionStorage.getItem(RESERVE_KEY) || '[]')); }
+        catch (e) { return new Set(); }
+    }
+    function reserveSave(set) {
+        try { sessionStorage.setItem(RESERVE_KEY, JSON.stringify(Array.from(set))); } catch (e) {}
+    }
+    function setReserveState(btn, shiftId, show, store) {
+        var rows = document.querySelectorAll('tr[data-reserve="' + shiftId + '"]');
+        rows.forEach(function (r) { r.hidden = !show; });
+        btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+        btn.textContent = (show ? 'Скрыть резерв (' : 'Показать резерв (') + rows.length + ')';
+        if (store) {
+            var set = reserveOpenSet();
+            if (show) set.add(shiftId); else set.delete(shiftId);
+            reserveSave(set);
+        }
+    }
+    (function initReserveToggles() {
+        var open = reserveOpenSet();
+        document.querySelectorAll('[data-reserve-toggle]').forEach(function (btn) {
             var shiftId = btn.getAttribute('data-reserve-toggle');
-            var rows = document.querySelectorAll('tr[data-reserve="' + shiftId + '"]');
-            var willShow = btn.getAttribute('aria-expanded') !== 'true';
-            rows.forEach(function (r) { r.hidden = !willShow; });
-            btn.setAttribute('aria-expanded', willShow ? 'true' : 'false');
-            btn.textContent = (willShow ? 'Скрыть резерв (' : 'Показать резерв (') + rows.length + ')';
+            if (open.has(shiftId)) setReserveState(btn, shiftId, true, false);
+            btn.addEventListener('click', function () {
+                var show = btn.getAttribute('aria-expanded') !== 'true';
+                setReserveState(btn, shiftId, show, true);
+            });
         });
-    });
+    })();
 
     // ======================================================================
     // Блокировка кнопки формы после первого клика (защита от двойной обработки):

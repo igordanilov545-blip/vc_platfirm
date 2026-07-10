@@ -9,7 +9,7 @@ from django.contrib.auth import authenticate, login as auth_login, logout as aut
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
-from django.db.models import Avg, Q
+from django.db.models import Avg, Count, Q
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -522,9 +522,27 @@ def dashboard(request):
 @login_required
 def event_list(request):
     hide_passed = request.GET.get('hide_passed') == '1'
+    manager_view = is_manager(request.user)
     events = list(
         Event.objects.select_related('location', 'organization').prefetch_related('shifts')
     )
+
+    # Для вида менеджера — общая картина по каждому меро одним проходом (без N+1):
+    # тим-лидеры, сколько нужно волонтёров и процент набора (одобренные решения по сменам).
+    tl_by_event = {}
+    approved_by_event = {}
+    if manager_view:
+        from collections import defaultdict
+        tl_map = defaultdict(list)
+        for staff in EventStaff.objects.filter(staff_role='team_lead').select_related('user'):
+            tl_map[staff.event_id].append(staff.user.full_name)
+        tl_by_event = tl_map
+        appr = (
+            ApplicationShiftDecision.objects
+            .filter(status='approved').exclude(application__status='cancelled')
+            .values('shift__event_id').annotate(n=Count('id'))
+        )
+        approved_by_event = {r['shift__event_id']: r['n'] for r in appr}
 
     today = timezone.now().date()
     rows = []
@@ -537,6 +555,13 @@ def event_list(request):
             continue
         event.first_day = first_day
         event.last_day = last_day
+        if manager_view:
+            needed = sum(s.volunteer_needed for s in event.shifts.all())
+            approved = approved_by_event.get(event.id, 0)
+            event.needed_total = needed
+            event.approved_total = approved
+            event.recruit_percent = 100 if needed == 0 else min(100, round(approved * 100 / needed))
+            event.team_leads_str = ', '.join(tl_by_event.get(event.id, [])) or '—'
         rows.append(event)
 
     # Ранжирование по дате: сначала ближайшие предстоящие/идущие (по возрастанию даты),
@@ -550,6 +575,7 @@ def event_list(request):
 
     return render(request, 'blog/event_list.html', {
         'events': rows,
+        'manager_view': manager_view,
         'hide_passed': hide_passed,
     })
 

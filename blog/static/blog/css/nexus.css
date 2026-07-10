@@ -476,6 +476,8 @@ th.has-reveal, td.has-reveal { position: relative; }
 .event-dash-days { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-top: 12px; }
 .event-dash-day-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
 .event-dash-day-pct { font-size: 12px; margin-top: 3px; }
+.recruit-cell { display: flex; align-items: center; gap: 8px; }
+.recruit-cell .recruit-pct { font-size: 12px; white-space: nowrap; }
 
 /* Панель действий над мероприятием — ровный ряд кнопок (без «ёлочки» из-за разной
    высоты форм/ссылок): все прямые дети и вложенные кнопки одной высоты и выравнены. */

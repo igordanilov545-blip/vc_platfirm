@@ -19,18 +19,40 @@
     <table class="responsive-table" data-sortable data-hideable-columns id="events-table">
         <thead>
             <tr>
+                {% if manager_view %}<th data-sort-key="id">ID</th>{% endif %}
                 <th data-sort-key="title">Название</th>
+                {% if manager_view %}
+                <th data-sort-key="tl">Тим-лидер</th>
+                <th data-sort-key="date" data-sort-default="asc">Дата</th>
+                <th data-sort-key="status">Статус</th>
+                <th data-sort-key="needed" class="num">Нужно людей</th>
+                <th data-sort-key="recruit">Набор</th>
+                {% else %}
                 <th data-sort-key="location">Локация</th>
                 <th data-sort-key="date" data-sort-default="asc">Дата</th>
                 <th data-sort-key="status">Статус</th>
                 <th data-sort-key="recruit">Набор</th>
+                {% endif %}
                 <th></th>
             </tr>
         </thead>
         <tbody>
         {% for event in events %}
-            <tr data-href="{% url 'event_detail' event.id %}" data-search="{{ event.title }} {{ event.location.name }} {{ event.organization.name }}" data-passed="{% if event.compute_status == 'passed' or event.compute_status == 'finished' %}1{% else %}0{% endif %}">
+            <tr data-href="{% url 'event_detail' event.id %}" data-search="{{ event.title }} {% if manager_view %}{{ event.team_leads_str }}{% else %}{{ event.location.name }}{% endif %} {{ event.organization.name }}" data-passed="{% if event.compute_status == 'passed' or event.compute_status == 'finished' %}1{% else %}0{% endif %}">
+                {% if manager_view %}<td data-label="ID" class="mono" data-sort-value="{{ event.id }}">#{{ event.id }}</td>{% endif %}
                 <td data-label="Название" data-sort-value="{{ event.title }}"><a href="{% url 'event_detail' event.id %}">{{ event.title }}</a></td>
+                {% if manager_view %}
+                <td data-label="Тим-лидер" data-sort-value="{{ event.team_leads_str }}">{{ event.team_leads_str }}</td>
+                <td data-label="Дата" class="mono" data-sort-value="{{ event.first_day|date:'Y-m-d'|default:'' }}">{% event_date_range event.first_day event.last_day %}</td>
+                <td data-label="Статус" data-sort-value="{{ event.compute_status }}">{% event_status_pill event %}</td>
+                <td data-label="Нужно людей" class="num mono" data-sort-value="{{ event.needed_total }}">{{ event.needed_total }}</td>
+                <td data-label="Набор" data-sort-value="{{ event.recruit_percent }}">
+                    <div class="recruit-cell">
+                        <div class="recruit-bar" style="width:90px;"><span class="recruit-bar-fill" style="width:{{ event.recruit_percent }}%; --pct:{{ event.recruit_percent }}"></span></div>
+                        <span class="recruit-pct" style="--pct:{{ event.recruit_percent }}">{{ event.approved_total }}/{{ event.needed_total }} · {{ event.recruit_percent }}%</span>
+                    </div>
+                </td>
+                {% else %}
                 <td data-label="Локация" data-sort-value="{{ event.location.name }}">{{ event.location.name|default:"—" }}</td>
                 <td data-label="Дата" class="mono" data-sort-value="{{ event.first_day|date:'Y-m-d'|default:'' }}">{% event_date_range event.first_day event.last_day %}</td>
                 <td data-label="Статус" data-sort-value="{{ event.compute_status }}">{% event_status_pill event %}</td>
@@ -41,10 +63,11 @@
                         <span class="pill neutral"><span class="dot"></span>Закрыт</span>
                     {% endif %}
                 </td>
+                {% endif %}
                 <td data-label=""><a href="{% url 'event_detail' event.id %}">Подробнее →</a></td>
             </tr>
         {% empty %}
-            <tr><td colspan="6">Мероприятий пока нет.</td></tr>
+            <tr><td colspan="7">Мероприятий пока нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>

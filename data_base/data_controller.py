@@ -35,6 +35,7 @@ __all__ = [
     'create_event_shift', 'get_event_shifts',
     'assign_staff_to_event', 'get_event_staff',
     'create_application', 'get_applications', 'get_user_active_applications',
+    'count_applications', 'count_events_with_open_recruitment',
     'get_user_application_for_event', 'update_application_status',
     'create_participation', 'get_participations', 'update_participation_status',
     'mark_dobro_ru_logged',
@@ -557,6 +558,20 @@ def get_applications(
     if event_id:
         qs = qs.filter(event_id=event_id)
     return list(qs)
+
+def count_applications(status_filter: Optional[str] = None) -> int:
+    """Число заявок (опц. по статусу) — для сводок дашборда. Вынесено в контроллер,
+    чтобы веб не ходил в ORM напрямую (coding-principles §1, hot_fix_1 §E)."""
+    qs = Application.objects.all()
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    return qs.count()
+
+
+def count_events_with_open_recruitment() -> int:
+    """Число мероприятий, у которых хотя бы одна смена с открытым набором."""
+    return Event.objects.filter(shifts__recruit_status='open').distinct().count()
+
 
 def get_user_active_applications(user_id: int) -> List[Application]:
     """Активные заявки волонтёра — только new/approved (tg-bot.md §4.4), и только на

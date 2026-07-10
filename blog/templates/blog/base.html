@@ -14,6 +14,25 @@
                 document.documentElement.setAttribute('data-theme', theme);
             }
         })();
+
+        // Общие утилиты календаря — ЕДИНЫЙ источник истины для всех календарей проекта
+        // (одиночный data-datepicker и Date Range Picker в report_period.html). Определяем
+        // в <head>, чтобы объект был доступен и скриптам внутри блока content дочерних
+        // шаблонов, которые выполняются РАНЬШЕ основного скрипта base.html в конце body
+        // (hot_fix_1 §B).
+        window.CalendarUtils = window.CalendarUtils || {
+            MONTHS: ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'],
+            DOW: ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'],
+            parseISO: function (s) {
+                if (!s) return null;
+                var p = s.split('-');
+                if (p.length !== 3) return null;
+                return new Date(+p[0], +p[1] - 1, +p[2]);
+            },
+            toISO: function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); },
+            fmt: function (d) { return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear(); },
+            sameDay: function (a, b) { return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); },
+        };
     </script>
 </head>
 <body class="{% if request.COOKIES.sidebar_collapsed == '1' %}sidebar-collapsed{% endif %}"{% if analytics_page_view_id %} data-page-view-id="{{ analytics_page_view_id }}"{% endif %}>
@@ -63,20 +82,22 @@
 {% endif %}
 
 {% if not user.is_authenticated %}
-{# Гостевой хедер: статус «Гость» слева (клик → вход) + кнопка «Войти». #}
-<header class="guest-header" style="display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:0.6rem 1rem; border-bottom:1px solid var(--border, #e5e7eb);">
-    <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" style="display:flex; align-items:center; gap:0.5rem; text-decoration:none; color:inherit;" title="Войти в аккаунт">
-        <span class="avatar-placeholder" style="width:2rem; height:2rem; display:inline-flex; align-items:center; justify-content:center; border-radius:50%;">👤</span>
-        <span style="display:flex; flex-direction:column; line-height:1.1;">
-            <span style="font-weight:600;">Гость</span>
-            <span style="font-size:0.78rem; color:var(--text-secondary);">Войти в аккаунт</span>
+{# Гостевой хедер: статус «Гость» слева (клик → вход) + кнопка «Войти».
+   Оформление — в классах nexus.css (.guest-header/.guest-account/…), а не инлайн,
+   чтобы использовать переменные темы и корректно работать в тёмной/светлой (hot_fix_1 §D). #}
+<header class="guest-header">
+    <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" class="guest-account" title="Войти в аккаунт">
+        <span class="avatar-placeholder guest-avatar">👤</span>
+        <span class="guest-account-text">
+            <span class="guest-account-name">Гость</span>
+            <span class="guest-account-hint">Войти в аккаунт</span>
         </span>
     </a>
     <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" class="btn">Войти</a>
 </header>
 {% endif %}
 
-<div class="page-wrapper" style="{% if not user.is_authenticated %}margin-left:0;{% endif %}">
+<div class="page-wrapper{% if not user.is_authenticated %} page-wrapper-guest{% endif %}">
     <main>
         {% if messages %}
         <ul class="messages">
@@ -91,11 +112,11 @@
 
 {% if not user.is_authenticated %}
 {# Плашка «авторизуйтесь» снизу — для гостя (несанкционированный просмотр сайта). #}
-<div class="guest-banner" style="position:fixed; left:0; right:0; bottom:0; z-index:50; display:flex; align-items:center; justify-content:center; gap:0.75rem; flex-wrap:wrap; padding:0.7rem 1rem; background:var(--surface, #111827); color:#fff; box-shadow:0 -2px 12px rgba(0,0,0,0.25);">
+<div class="guest-banner">
     <span>Вы просматриваете сайт как гость.</span>
     <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" class="btn">Авторизуйтесь</a>
 </div>
-<div style="height:3.5rem;"></div>{# отступ, чтобы плашка не перекрывала контент #}
+<div class="guest-banner-spacer"></div>{# отступ, чтобы плашка не перекрывала контент #}
 {% endif %}
 
 <div class="modal-backdrop" id="modal-backdrop" hidden>
@@ -533,20 +554,16 @@
     // ======================================================================
     // Одиночный date-picker (brandbook §6.3): текстовое поле-триггер (data-datepicker)
     // раскрывает popover с одним месяцем; выбор даты закрывает popover сразу.
-    // Переиспользует .cal/.cal-grid стили из nexus.css (общие с Date Range Picker).
+    // Переиспользует .cal/.cal-grid стили из nexus.css (общие с Date Range Picker)
+    // и утилиты дат из window.CalendarUtils.
     // ======================================================================
-    var DP_MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
-    var DP_DOW = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+    var DP_MONTHS = window.CalendarUtils.MONTHS;
+    var DP_DOW = window.CalendarUtils.DOW;
 
-    function dpParseISO(s) {
-        if (!s) return null;
-        var p = s.split('-');
-        if (p.length !== 3) return null;
-        return new Date(+p[0], +p[1] - 1, +p[2]);
-    }
-    function dpToISO(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
-    function dpFmt(d) { return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear(); }
-    function dpSameDay(a, b) { return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+    var dpParseISO = window.CalendarUtils.parseISO;
+    var dpToISO = window.CalendarUtils.toISO;
+    var dpFmt = window.CalendarUtils.fmt;
+    var dpSameDay = window.CalendarUtils.sameDay;
 
     function initDatepickers(root) {
         root.querySelectorAll('[data-datepicker]').forEach(function (input) {
@@ -1129,6 +1146,171 @@
     initSortableTables(document);
 
     // ======================================================================
+    // Скрытие/возврат колонок в стиле Excel — таблица с data-hideable-columns.
+    //  - у каждого заголовка появляется кнопка-«глаз» 👁, прячущая колонку
+    //    (заголовок + все ячейки этого столбца во всех строках, включая
+    //    подгруженные позже infinite-scroll'ом);
+    //  - для каждого непрерывного «прогона» скрытых колонок на ближайшей видимой
+    //    границе (справа, иначе слева) рисуется стрелка-возврат ◂/▸ — клик по ней
+    //    возвращает ВСЕ скрытые между этими соседями колонки разом.
+    // Совместимо с data-sortable (индексы колонок не меняются — колонка лишь
+    // display:none) и data-infinite-scroll (applyHidden вызывается для новых строк).
+    // ======================================================================
+    function initHideableColumns(root) {
+        root.querySelectorAll('table[data-hideable-columns]').forEach(function (table) {
+            if (table.dataset.hideInit) return;
+            table.dataset.hideInit = '1';
+
+            var headRow = table.querySelector('thead tr');
+            var tbody = table.querySelector('tbody');
+            if (!headRow || !tbody) return;
+
+            var headers = Array.prototype.filter.call(headRow.children, function (el) {
+                return el.tagName === 'TH';
+            });
+            var hidden = {}; // индекс колонки -> true
+
+            // Проставляем индекс колонки на каждый заголовок и добавляем «глаз».
+            headers.forEach(function (th, index) {
+                th.dataset.col = index;
+                th.classList.add('hideable-th');
+                // Колонку без осмысленного заголовка (пустой th действий) прятать
+                // не даём — «глаз» вешаем только на именованные колонки.
+                if (!th.textContent.trim()) return;
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'col-hide-btn';
+                btn.title = 'Скрыть колонку';
+                btn.textContent = '👁';
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation(); // не триггерить сортировку заголовка
+                    hidden[index] = true;
+                    refresh();
+                });
+                th.appendChild(btn);
+            });
+
+            function bodyCells(index) {
+                // index-я ячейка каждой строки тела (по порядку колонок).
+                var cells = [];
+                Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function (tr) {
+                    var tds = tr.children;
+                    if (tds[index]) cells.push(tds[index]);
+                });
+                return cells;
+            }
+
+            function clearRevealMarkers() {
+                table.querySelectorAll('.col-reveal-btn').forEach(function (b) { b.remove(); });
+                table.querySelectorAll('.has-reveal').forEach(function (c) { c.classList.remove('has-reveal'); });
+            }
+
+            // Применяет текущее состояние hidden к заголовкам и телу (в т.ч. к строкам,
+            // добавленным после инициализации — вызывается и из infinite-scroll).
+            function applyHidden() {
+                headers.forEach(function (th, index) {
+                    var isHidden = !!hidden[index];
+                    th.classList.toggle('col-hidden', isHidden);
+                    bodyCells(index).forEach(function (cell) {
+                        cell.classList.toggle('col-hidden', isHidden);
+                    });
+                });
+            }
+
+            function revealRange(fromIndex, toIndex) {
+                for (var i = fromIndex; i <= toIndex; i++) { delete hidden[i]; }
+                refresh();
+            }
+
+            // Рисует стрелки-возврат: для каждого непрерывного прогона скрытых колонок
+            // ставит одну стрелку на ближайшей видимой соседней колонке.
+            function drawRevealMarkers() {
+                clearRevealMarkers();
+                var n = headers.length;
+                var i = 0;
+                while (i < n) {
+                    if (!hidden[i]) { i++; continue; }
+                    var start = i;
+                    while (i < n && hidden[i]) { i++; }
+                    var end = i - 1; // [start..end] — прогон скрытых колонок
+                    var rightVisible = i < n ? i : -1;        // ближайшая видимая справа
+                    var leftVisible = start - 1 >= 0 ? start - 1 : -1; // ближайшая видимая слева
+                    var anchorIndex, direction;
+                    if (rightVisible !== -1) { anchorIndex = rightVisible; direction = '◂'; }
+                    else if (leftVisible !== -1) { anchorIndex = leftVisible; direction = '▸'; }
+                    else { continue; } // скрыты все колонки — возвращать некуда (не бывает, «глаз» не у всех)
+
+                    placeReveal(headers[anchorIndex], direction, start, end);
+                    // Дублируем стрелку на первую ячейку тела той же колонки, чтобы
+                    // указатель был виден и в области данных, а не только в шапке.
+                    var anchorCells = bodyCells(anchorIndex);
+                    if (anchorCells.length) placeReveal(anchorCells[0], direction, start, end);
+                }
+            }
+
+            function placeReveal(anchorEl, direction, start, end) {
+                anchorEl.classList.add('has-reveal');
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'col-reveal-btn';
+                btn.title = 'Показать скрытые колонки';
+                btn.textContent = direction;
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    revealRange(start, end);
+                });
+                anchorEl.appendChild(btn);
+            }
+
+            function refresh() {
+                applyHidden();
+                drawRevealMarkers();
+            }
+
+            // Доступ извне: infinite-scroll после вставки новых строк вызывает это,
+            // чтобы к ним применилось текущее скрытие колонок.
+            table._applyHiddenColumns = refresh;
+
+            refresh();
+        });
+    }
+    initHideableColumns(document);
+
+    // ======================================================================
+    // Поиск/фильтрация строк таблицы — единый компонент вместо инлайновых
+    // скриптов на каждой странице-списке. Разметка: поле
+    //   <input type="search" data-table-filter="#users-table">
+    // прячет строки, у которых текст в data-search не содержит запрос. Фильтрация
+    // запускается через debounce (по умолчанию 1500 мс, как принято в проекте;
+    // переопределяется data-filter-debounce). Работает и по строкам, подгруженным
+    // позже infinite-scroll'ом (ищем строки на каждый ввод заново).
+    // ======================================================================
+    function initTableFilter(root) {
+        root.querySelectorAll('[data-table-filter]').forEach(function (input) {
+            if (input.dataset.filterInit) return;
+            input.dataset.filterInit = '1';
+
+            var table = document.querySelector(input.getAttribute('data-table-filter'));
+            if (!table) return;
+            var delay = parseInt(input.getAttribute('data-filter-debounce'), 10);
+            if (isNaN(delay)) delay = 1500;
+            var debounceTimer = null;
+
+            function apply() {
+                var query = input.value.trim().toLowerCase();
+                table.querySelectorAll('tbody tr[data-search]').forEach(function (row) {
+                    row.hidden = !!query && row.getAttribute('data-search').toLowerCase().indexOf(query) === -1;
+                });
+            }
+            input.addEventListener('input', function () {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(apply, delay);
+            });
+        });
+    }
+    initTableFilter(document);
+
+    // ======================================================================
     // Постепенная подгрузка списков вместо пролистывания по стрелочкам:
     // таблица с data-infinite-scroll="/url/" содержит <tbody data-rows
     // data-next-page="2"> (partial с сервера при первом рендере уже отдаёт номер
@@ -1169,6 +1351,8 @@
                         if (newBody && target) {
                             target.setAttribute('data-next-page', newBody.getAttribute('data-next-page') || '');
                             while (newBody.firstChild) target.appendChild(newBody.firstChild);
+                            // К новым строкам применяем текущее скрытие колонок (Excel-режим).
+                            if (table._applyHiddenColumns) table._applyHiddenColumns();
                         } else if (target) {
                             target.removeAttribute('data-next-page');
                         }

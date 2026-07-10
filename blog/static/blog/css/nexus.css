@@ -246,7 +246,28 @@ body.sidebar-collapsed .nav-link { justify-content: center; }
 .sidebar-toggle:hover, .theme-toggle:hover { background: var(--bg-card-hover); color: var(--text-primary); }
 
 .page-wrapper { margin-left: var(--sidebar-width); min-height: 100vh; transition: margin-left .2s ease; }
+.page-wrapper-guest { margin-left: 0; } /* у гостя нет сайдбара */
 main { max-width: 1100px; margin: 0 auto; padding: 1.75rem 1.5rem; }
+
+/* Гостевой контур (без входа): хедер сверху и плашка «авторизуйтесь» снизу.
+   Оформление на переменных темы (раньше было инлайн с хардкодом цветов) — hot_fix_1 §D. */
+.guest-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; padding: 0.6rem 1rem; border-bottom: 1px solid var(--border-subtle);
+}
+.guest-account { display: flex; align-items: center; gap: 0.5rem; text-decoration: none; color: inherit; }
+.guest-avatar { width: 2rem; height: 2rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; }
+.guest-account-text { display: flex; flex-direction: column; line-height: 1.1; }
+.guest-account-name { font-weight: 600; }
+.guest-account-hint { font-size: 0.78rem; color: var(--text-secondary); }
+.guest-banner {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  gap: 0.75rem; flex-wrap: wrap; padding: 0.7rem 1rem;
+  background: var(--accent); color: var(--accent-text-on);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.25);
+}
+.guest-banner-spacer { height: 3.5rem; }
 
 /* Мобайл: сайдбар скрыт, вместо него нижний таб-бар */
 .bottom-tabbar { display: none; }
@@ -385,6 +406,37 @@ th.sortable-th[data-sort-dir="asc"]::after {
 th.sortable-th[data-sort-dir="desc"]::after {
   opacity: 1; border-top: 5px solid var(--accent);
 }
+
+/* Скрытие/возврат колонок (как в Excel) — data-hideable-columns на таблице.
+   «Глаз» в заголовке прячет колонку; на границе между соседними видимыми
+   колонками, между которыми есть скрытые, появляется стрелка-возврат. */
+th.hideable-th { padding-right: 34px; }
+th.hideable-th.sortable-th { padding-right: 48px; }
+.col-hide-btn {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; padding: 0; line-height: 1;
+  border: none; background: transparent; cursor: pointer;
+  font-size: 12px; opacity: 0; transition: opacity .12s ease;
+  color: var(--text-secondary);
+}
+th.hideable-th { position: relative; }
+th.hideable-th:hover .col-hide-btn { opacity: .65; }
+.col-hide-btn:hover { opacity: 1 !important; color: var(--text-primary); }
+/* Скрытая колонка — сама ячейка/заголовок убираются из потока. */
+.col-hidden { display: none !important; }
+/* Кнопка-возврат скрытых колонок: тонкая зона на левом крае соседней видимой
+   колонки со стрелкой-указателем. Клик возвращает все скрытые между соседями. */
+.col-reveal-btn {
+  position: absolute; left: -1px; top: 0; bottom: 0;
+  width: 14px; padding: 0; border: none; cursor: pointer;
+  background: var(--accent-soft, rgba(124, 92, 255, .14));
+  color: var(--accent); font-size: 10px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-left: 2px solid var(--accent);
+}
+.col-reveal-btn:hover { background: var(--accent); color: #fff; }
+th.has-reveal, td.has-reveal { position: relative; }
 
 .infinite-scroll-sentinel { height: 1px; }
 

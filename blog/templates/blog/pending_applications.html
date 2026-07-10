@@ -14,12 +14,10 @@
     {% endif %}
 </div>
 
-<div class="card">
-    <input type="search" id="apps-search" placeholder="Поиск по мероприятию, ФИО, телефону, telegram…" style="margin:0;">
-</div>
+{% include 'blog/partials/_table_search.html' with search_target="#apps-table" search_placeholder="Поиск по мероприятию, ФИО, телефону, telegram…" %}
 
 <div class="card" style="padding:0; overflow:hidden;">
-    <table class="responsive-table" data-sortable id="apps-table">
+    <table class="responsive-table" data-sortable data-hideable-columns id="apps-table">
         <thead><tr><th data-sort-key="event">Мероприятие</th><th data-sort-key="name">ФИО</th><th data-sort-key="tg">Telegram</th><th data-sort-key="phone">Телефон</th><th data-sort-key="date" data-sort-default="desc">Подано</th><th></th></tr></thead>
         <tbody>
         {% for application in applications %}
@@ -50,21 +48,4 @@
         </tbody>
     </table>
 </div>
-
-<script>
-(function () {
-    var searchInput = document.getElementById('apps-search');
-    var rows = document.querySelectorAll('#apps-table tbody tr[data-href]');
-    var debounceTimer = null;
-    searchInput.addEventListener('input', function () {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(function () {
-            var query = searchInput.value.trim().toLowerCase();
-            rows.forEach(function (row) {
-                row.hidden = !!query && row.getAttribute('data-search').toLowerCase().indexOf(query) === -1;
-            });
-        }, 1500);
-    });
-})();
-</script>
 {% endblock %}

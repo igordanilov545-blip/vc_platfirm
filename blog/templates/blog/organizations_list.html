@@ -5,11 +5,9 @@
     <h1>Организации</h1>
     <a href="{% url 'organization_create' %}" class="btn" data-modal data-modal-title="Новая организация">+ Новая организация</a>
 </div>
-<div class="card">
-    <input type="search" id="orgs-search" placeholder="Поиск по названию…" style="margin:0;">
-</div>
+{% include 'blog/partials/_table_search.html' with search_target="#orgs-table" search_placeholder="Поиск по названию…" %}
 <div class="card" style="padding:0; overflow:hidden;">
-    <table class="responsive-table" data-sortable id="orgs-table">
+    <table class="responsive-table" data-sortable data-hideable-columns id="orgs-table">
         <thead><tr><th data-sort-key="name">Название</th><th data-sort-key="events" class="num">Мероприятий</th><th data-sort-key="volunteers" class="num">Волонтёров</th><th data-sort-key="rating" class="num">Рейтинг</th></tr></thead>
         <tbody>
         {% for org in organizations %}
@@ -25,19 +23,4 @@
         </tbody>
     </table>
 </div>
-<script>
-(function () {
-    var searchInput = document.getElementById('orgs-search');
-    var debounceTimer = null;
-    searchInput.addEventListener('input', function () {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(function () {
-            var query = searchInput.value.trim().toLowerCase();
-            document.querySelectorAll('#orgs-table tbody tr[data-href]').forEach(function (row) {
-                row.hidden = !!query && row.getAttribute('data-search').toLowerCase().indexOf(query) === -1;
-            });
-        }, 1500);
-    });
-})();
-</script>
 {% endblock %}

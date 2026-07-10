@@ -507,8 +507,11 @@ def dashboard(request):
         'is_team_leader': is_team_leader(user),
     }
     if is_manager(user):
-        context['new_applications_count'] = Application.objects.filter(status='new').count()
-        context['open_events_count'] = Event.objects.filter(shifts__recruit_status='open').distinct().count()
+        # Доступ к данным — через контроллер, а не прямым ORM (coding-principles §1,
+        # hot_fix_1 §E — постепенный перевод веба на data_controller).
+        from data_base import data_controller as dc
+        context['new_applications_count'] = dc.count_applications(status_filter='new')
+        context['open_events_count'] = dc.count_events_with_open_recruitment()
     return render(request, 'blog/dashboard.html', context)
 
 

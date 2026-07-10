@@ -6,12 +6,10 @@
     <a href="{% url 'location_create' %}" class="btn" data-modal data-modal-title="Новая локация">+ Новая локация</a>
 </div>
 
-<div class="card">
-    <input type="search" id="locations-search" placeholder="Поиск по названию, описанию…" style="margin:0;">
-</div>
+{% include 'blog/partials/_table_search.html' with search_target="#locations-table" search_placeholder="Поиск по названию, описанию…" %}
 
 <div class="card" style="padding:0; overflow:hidden;">
-    <table class="responsive-table" data-sortable id="locations-table">
+    <table class="responsive-table" data-sortable data-hideable-columns id="locations-table">
         <thead><tr><th data-sort-key="name">Название</th><th data-sort-key="description">Описание</th><th data-sort-key="map">Карта</th><th></th></tr></thead>
         <tbody>
         {% for location in locations %}
@@ -31,19 +29,4 @@
         </tbody>
     </table>
 </div>
-<script>
-(function () {
-    var searchInput = document.getElementById('locations-search');
-    var debounceTimer = null;
-    searchInput.addEventListener('input', function () {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(function () {
-            var query = searchInput.value.trim().toLowerCase();
-            document.querySelectorAll('#locations-table tbody tr[data-search]').forEach(function (row) {
-                row.hidden = !!query && row.getAttribute('data-search').toLowerCase().indexOf(query) === -1;
-            });
-        }, 1500);
-    });
-})();
-</script>
 {% endblock %}

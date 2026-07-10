@@ -6,12 +6,10 @@
     <a href="{% url 'organizer_create' %}" class="btn" data-modal data-modal-title="Новый организатор">+ Новый организатор</a>
 </div>
 
-<div class="card">
-    <input type="search" id="organizers-search" placeholder="Поиск по ФИО, телефону, telegram, email…" style="margin:0;">
-</div>
+{% include 'blog/partials/_table_search.html' with search_target="#organizers-table" search_placeholder="Поиск по ФИО, телефону, telegram, email…" %}
 
 <div class="card" style="padding:0; overflow:hidden;">
-    <table class="responsive-table" data-sortable id="organizers-table">
+    <table class="responsive-table" data-sortable data-hideable-columns id="organizers-table">
         <thead><tr><th data-sort-key="name">ФИО</th><th data-sort-key="phone">Телефон</th><th data-sort-key="tg">Telegram</th><th data-sort-key="email">Email</th></tr></thead>
         <tbody>
         {% for organizer in organizers %}
@@ -27,19 +25,4 @@
         </tbody>
     </table>
 </div>
-<script>
-(function () {
-    var searchInput = document.getElementById('organizers-search');
-    var debounceTimer = null;
-    searchInput.addEventListener('input', function () {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(function () {
-            var query = searchInput.value.trim().toLowerCase();
-            document.querySelectorAll('#organizers-table tbody tr[data-href]').forEach(function (row) {
-                row.hidden = !!query && row.getAttribute('data-search').toLowerCase().indexOf(query) === -1;
-            });
-        }, 1500);
-    });
-})();
-</script>
 {% endblock %}

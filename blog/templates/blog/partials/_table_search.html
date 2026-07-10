@@ -1,0 +1,14 @@
+{% comment %}
+Переиспользуемое поле поиска по таблице (agent-workflow.md §4). Фильтрацию выполняет
+общий компонент base.html::initTableFilter — прячет строки tbody tr[data-search], у
+которых data-search не содержит запрос. Инлайновый <script> на странице НЕ нужен.
+
+Ожидает переменные:
+  search_target   — CSS-селектор таблицы, напр. "#users-table" (обязательно)
+  search_placeholder — плейсхолдер поля (необязательно)
+Строки таблицы должны нести атрибут data-search="<текст для поиска>".
+{% endcomment %}
+<div class="card">
+    <input type="search" data-table-filter="{{ search_target }}"
+           placeholder="{{ search_placeholder|default:'Поиск…' }}" style="margin:0;">
+</div>

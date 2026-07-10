@@ -1,6 +1,6 @@
-{# Блок «Мой опыт» — системный (участия) + внешний (ExternalExperience) опыт.
-   Ожидает: experience (dict из build_experience), is_owner (bool), can_edit (bool).
-   На публичной странице is_owner/can_edit = False. #}
+{% comment %}Блок «Мой опыт» — системный (участия) + внешний (ExternalExperience) опыт.
+Ожидает: experience (dict из build_experience), is_owner (bool), can_edit (bool).
+На публичной странице is_owner/can_edit = False.{% endcomment %}
 <div class="card" id="experience" style="padding:0; overflow:hidden;">
     <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:20px 20px 0; flex-wrap:wrap;">
         <h3 style="margin:0;">🎖️ Волонтёрский опыт</h3>
@@ -18,8 +18,8 @@
         {% endif %}
     </div>
 
-    <table class="responsive-table">
-        <thead><tr><th>Мероприятие</th><th>Дата</th><th>Тип</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+    <table class="responsive-table" data-sortable data-collapse-rows="5">
+        <thead><tr><th data-sort-key="event">Мероприятие</th><th data-sort-key="date">Дата</th><th data-sort-key="kind">Тип</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
         <tbody>
         {% for item in experience.items %}
             <tr>

@@ -1771,13 +1771,13 @@ def profile_detail(request, user_id):
     if mgr_role:
         context['mgr_role'] = mgr_role
 
-    # Владельцу профиля показываем его собственные заявки (главное, что он хочет видеть
-    # в своём профиле), даже если у него нет расширенного доступа как у менеджера/ТЛ.
-    if is_owner:
-        context['my_applications'] = target.applications.select_related('event').order_by('-created_at')
+    # Единый список заявок для профиля (объединённый блок «Опыт и заявки»): виден
+    # владельцу (свои заявки) и менеджеру/ТЛ с расширенным доступом (чужие). Таблица
+    # на странице сворачивается до 5 строк (data-collapse-rows), поэтому лимит не нужен.
+    if is_owner or has_extended:
+        context['profile_applications'] = target.applications.select_related('event').order_by('-created_at')
 
     if has_extended:
-        context['applications'] = target.applications.select_related('event').order_by('-created_at')
         # Пул благодарственных писем: мероприятия с явкой и заданным шаблоном.
         context['letters_pool'] = (
             Event.objects.filter(

@@ -1396,6 +1396,50 @@
     initInfiniteScroll(document);
 
     // ======================================================================
+    // Сворачивание длинных таблиц: <table data-collapse-rows="5"> показывает первые
+    // 5 строк tbody, остальные прячет и добавляет кнопку «Показать все (N) / Свернуть».
+    // Переиспользуется на всех страницах, где нужно показывать только первые N записей
+    // (профиль: заявки/участия/опыт и т.п.). Совместимо с data-sortable/-hideable-columns.
+    // ======================================================================
+    function initCollapsibleTables(root) {
+        root.querySelectorAll('table[data-collapse-rows]').forEach(function (table) {
+            if (table.dataset.collapseInit) return;
+            table.dataset.collapseInit = '1';
+
+            var limit = parseInt(table.getAttribute('data-collapse-rows'), 10) || 5;
+            var tbody = table.querySelector('tbody');
+            if (!tbody) return;
+            var dataRows = Array.prototype.filter.call(tbody.querySelectorAll('tr'), function (tr) {
+                return tr.querySelector('td') && !tr.querySelector('td[colspan]');
+            });
+            if (dataRows.length <= limit) return; // сворачивать нечего
+
+            var expanded = false;
+            function apply() {
+                dataRows.forEach(function (tr, i) { tr.hidden = !expanded && i >= limit; });
+            }
+            apply();
+
+            // Кнопка-переключатель под таблицей.
+            var toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'btn secondary btn-sm table-collapse-toggle';
+            toggle.style.margin = '10px 20px 16px';
+            function label() {
+                toggle.textContent = expanded ? 'Свернуть' : ('Показать все (' + dataRows.length + ')');
+            }
+            label();
+            toggle.addEventListener('click', function () {
+                expanded = !expanded;
+                apply();
+                label();
+            });
+            table.parentNode.insertBefore(toggle, table.nextSibling);
+        });
+    }
+    initCollapsibleTables(document);
+
+    // ======================================================================
     // Универсальное подтверждение перед отправкой формы (защита от мисс-клика):
     // на форме указывается data-confirm="Текст вопроса"; при сабмите показываем
     // confirm() и прерываем отправку, если пользователь не подтвердил.

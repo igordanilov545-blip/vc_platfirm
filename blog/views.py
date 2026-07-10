@@ -565,6 +565,9 @@ def event_detail(request, event_id):
     today = timezone.now().date()
     shifts.sort(key=lambda s: (s.day < today, s.day))
     team_leads = event.staff.filter(staff_role='team_lead').select_related('user')
+    # Ответственный менеджер меро — назначение EventStaff со staff_role='manager'
+    # (мини-дашборд наверху страницы; менять может менеджер, см. event_set_manager).
+    event_manager_staff = event.staff.filter(staff_role='manager').select_related('user').first()
     categories = EventCategory.objects.filter(event_map__event=event).order_by('name')
     requirements = EventRequirement.objects.filter(event_map__event=event).order_by('title')
     can_manage_applications = can_process_applications(request.user, event.id)
@@ -597,6 +600,7 @@ def event_detail(request, event_id):
         'comment_form': EventCommentForm() if can_manage_applications else None,
         'has_open_recruitment': has_open_recruitment,
         'my_active_application': my_active_application,
+        'event_manager': event_manager_staff.user if event_manager_staff else None,
     }
 
     # Лента изменений по заявкам (повторный Excel-импорт: кто изменил/отказался/появился) —
@@ -669,6 +673,9 @@ def event_detail(request, event_id):
                     shift_pending += 1
             rows.sort(key=_row_sort_key)
             approved_total += shift_approved
+            # Процент набора смены (для мини-дашборда): если нужно 0 волонтёров —
+            # считаем смену укомплектованной (100%), иначе approved/needed, максимум 100.
+            pct = 100 if shift.volunteer_needed == 0 else min(100, round(shift_approved * 100 / shift.volunteer_needed))
             shifts_with_recruitment.append({
                 'shift': shift,
                 'rows': rows,
@@ -676,6 +683,7 @@ def event_detail(request, event_id):
                 'pending_count': shift_pending,
                 'needed': shift.volunteer_needed,
                 'remaining': max(shift.volunteer_needed - shift_approved, 0),
+                'percent': pct,
                 # Кол-во строк в резерве — чтобы показать это на кнопке «показать резерв».
                 'reserve_count': sum(1 for r in rows if r['decision'].status == 'rejected'),
             })
@@ -686,6 +694,8 @@ def event_detail(request, event_id):
             'approved_count': approved_total,
             'remaining': max(needed - approved_total, 0),
             'pending_count': pending_count,
+            # Общий процент набора по меро (для мини-дашборда наверху).
+            'recruit_percent': 100 if needed == 0 else min(100, round(approved_total * 100 / needed)),
         })
 
     # 👥 Расширенная карточка — только для участников мероприятия
@@ -836,6 +846,32 @@ def event_edit(request, event_id):
         request, 'blog/event_form.html',
         {'form': form, 'title': title, 'submit_label': 'Сохранить'},
         partial_template='blog/partials/_event_form_body.html',
+    )
+
+
+@manager_required
+def event_set_manager(request, event_id):
+    """Смена ответственного менеджера мероприятия (мини-дашборд наверху страницы меро).
+    Менеджер выбирается пикером (single). Ответственность хранится как EventStaff со
+    staff_role='manager' — заменяем прежнее назначение на выбранное."""
+    event = get_object_or_404(Event, pk=event_id)
+    if request.method == 'POST':
+        user_id = request.POST.get('users') or request.POST.get('manager')
+        user = User.objects.filter(pk=user_id).first() if user_id else None
+        if not user or not is_manager(user):
+            messages.error(request, 'Выберите пользователя с ролью менеджера.')
+        else:
+            event.staff.filter(staff_role='manager').delete()
+            EventStaff.objects.get_or_create(event=event, user=user, staff_role='manager')
+            logger.info('Ответственный менеджер меро изменён: event=%s manager=%s by=%s',
+                        event.id, actor(user), actor(request.user))
+            messages.success(request, f'Ответственный менеджер: {user.full_name}.')
+        return modal_form_response(request, None, None, success_redirect=reverse('event_detail', args=[event.id]))
+
+    return modal_form_response(
+        request, 'blog/application_manual_form.html',  # хост не важен для AJAX
+        {'event': event, 'title': 'Сменить ответственного менеджера'},
+        partial_template='blog/partials/_event_manager_form_body.html',
     )
 
 

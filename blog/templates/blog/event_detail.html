@@ -49,6 +49,55 @@
 </div>
 {% endif %}
 
+{% comment %}Мини-дашборд менеджера — сводка по мероприятию вверху страницы: ID (виден
+только менеджеру), тим-лидеры, ответственный менеджер (+смена), общий % набора и по дням.{% endcomment %}
+{% if can_manage_applications %}
+<div class="card event-dashboard">
+    <div class="event-dash-grid">
+        <div class="event-dash-cell">
+            <div class="event-dash-label">ID мероприятия</div>
+            <div class="event-dash-value mono">#{{ event.id }}</div>
+        </div>
+        <div class="event-dash-cell">
+            <div class="event-dash-label">Тим-лидеры</div>
+            <div class="event-dash-value">
+                {% for staff in team_leads %}<a href="{% url 'profile_detail' staff.user_id %}">{{ staff.user.full_name }}</a>{% if not forloop.last %}, {% endif %}{% empty %}<span class="event-dash-muted">не назначен</span>{% endfor %}
+            </div>
+        </div>
+        <div class="event-dash-cell">
+            <div class="event-dash-label">Ответственный менеджер</div>
+            <div class="event-dash-value">
+                {% if event_manager %}<a href="{% url 'profile_detail' event_manager.id %}">{{ event_manager.full_name }}</a>{% else %}<span class="event-dash-muted">не назначен</span>{% endif %}
+                {% if is_manager and not is_finished %}<a href="{% url 'event_set_manager' event.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Сменить менеджера" style="margin-left:6px;">сменить</a>{% endif %}
+            </div>
+        </div>
+        <div class="event-dash-cell">
+            <div class="event-dash-label">Статус</div>
+            <div class="event-dash-value">{% event_status_pill event %}</div>
+        </div>
+    </div>
+
+    {% if needed %}
+    <div class="event-dash-recruit">
+        <div class="event-dash-recruit-head">
+            <span class="event-dash-label">Набор всего: {{ approved_count }} / {{ needed }}</span>
+            <span class="recruit-pct" style="--pct:{{ recruit_percent }}">{{ recruit_percent }}%</span>
+        </div>
+        <div class="recruit-bar"><span class="recruit-bar-fill" style="width:{{ recruit_percent }}%; --pct:{{ recruit_percent }}"></span></div>
+        <div class="event-dash-days">
+            {% for entry in shifts_with_recruitment %}
+            <div class="event-dash-day" title="{{ entry.shift.day|date:'d.m.y' }}: {{ entry.approved_count }} из {{ entry.needed }}">
+                <div class="event-dash-day-label mono">{{ entry.shift.day|date:"d.m" }}</div>
+                <div class="recruit-bar"><span class="recruit-bar-fill" style="width:{{ entry.percent }}%; --pct:{{ entry.percent }}"></span></div>
+                <div class="event-dash-day-pct" style="--pct:{{ entry.percent }}">{{ entry.approved_count }}/{{ entry.needed }} · {{ entry.percent }}%</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
 {% comment %}Часы на Добро.ру — статус и переключатель, только менеджеру и только после
 завершения мероприятия. Для меро без учёта Добро.ру (kind='none') блок не показываем.{% endcomment %}
 {% if is_manager and is_finished and event.dobro_ru_link_kind != 'none' %}

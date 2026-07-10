@@ -19,6 +19,7 @@ urlpatterns = [
     path('events/<int:event_id>/', views.event_detail, name='event_detail'),
     path('events/<int:event_id>/edit/', views.event_edit, name='event_edit'),
     path('events/<int:event_id>/delete/', views.event_delete, name='event_delete'),
+    path('events/<int:event_id>/set-manager/', views.event_set_manager, name='event_set_manager'),
     path('events/<int:event_id>/publish/', views.event_publish, name='event_publish'),
     path('events/<int:event_id>/broadcast/', views.event_broadcast, name='event_broadcast'),
     path('events/<int:event_id>/close/', views.event_close, name='event_close'),

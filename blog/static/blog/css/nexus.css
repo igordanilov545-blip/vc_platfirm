@@ -460,6 +460,23 @@ th.has-reveal, td.has-reveal { position: relative; }
 .att-btn.att-excused.active { background: var(--text-secondary); }
 .att-btn:disabled { opacity: .5; cursor: default; }
 
+/* Мини-дашборд менеджера на странице мероприятия: компактная сводка + полосы набора.
+   Цвет процента/полосы — градиент по --pct: 0% красный → 100% зелёный (hue 0→120). */
+.event-dashboard { padding: 16px 20px; }
+.event-dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+.event-dash-cell { min-width: 0; }
+.event-dash-label { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-secondary); margin-bottom: 3px; }
+.event-dash-value { font-size: 14px; font-weight: 600; }
+.event-dash-muted { color: var(--text-secondary); font-weight: 400; }
+.event-dash-recruit { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+.event-dash-recruit-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.recruit-pct, .event-dash-day-pct { font-weight: 700; color: hsl(calc(var(--pct, 0) * 1.2), 65%, 42%); }
+.recruit-bar { height: 8px; border-radius: 999px; background: var(--bg-card-hover); overflow: hidden; }
+.recruit-bar-fill { display: block; height: 100%; border-radius: 999px; background: hsl(calc(var(--pct, 0) * 1.2), 70%, 45%); transition: width .3s ease; }
+.event-dash-days { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-top: 12px; }
+.event-dash-day-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+.event-dash-day-pct { font-size: 12px; margin-top: 3px; }
+
 /* Панель действий над мероприятием — ровный ряд кнопок (без «ёлочки» из-за разной
    высоты форм/ссылок): все прямые дети и вложенные кнопки одной высоты и выравнены. */
 .event-toolbar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }

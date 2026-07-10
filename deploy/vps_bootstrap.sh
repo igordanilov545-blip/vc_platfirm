@@ -4,6 +4,18 @@
 # Запуск от root:  bash deploy/vps_bootstrap.sh
 set -euo pipefail
 
+echo "==> Swap-файл (на VPS с малым RAM сборка образа/Postgres иначе упирается в память)"
+if ! swapon --show | grep -q swapfile && [ ! -f /swapfile ]; then
+  fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  echo "   swap 2G включён"
+else
+  echo "   swap уже есть"
+fi
+
 echo "==> Обновляю индекс пакетов"
 apt-get update -y
 

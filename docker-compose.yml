@@ -42,7 +42,10 @@ services:
     env_file: [.env]
     volumes:
       - static:/app/staticfiles
-      - ./logs:/app/logs
+      # Именованный том (а не bind-mount host-каталога): Docker инициализирует его из
+      # /app/logs образа, где владелец — appuser. Bind-mount ./logs с хоста ломал права
+      # (каталог принадлежит root → appuser не мог писать → ошибка handler 'bot_file').
+      - weblogs:/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -65,7 +68,7 @@ services:
       LOG_TO_STDOUT: "1"
     env_file: [.env]
     volumes:
-      - ./logs:/app/logs
+      - botlogs:/app/logs   # именованный том (права appuser), логи также в docker logs
     depends_on:
       db:
         condition: service_healthy
@@ -104,6 +107,8 @@ services:
 volumes:
   pgdata:        # данные Postgres переживают пересоздание контейнеров
   static:        # собранная статика, шарится между web и nginx
+  weblogs:       # логи web (том с правами appuser; дублируются в docker logs)
+  botlogs:       # логи bot
   certbot_conf:  # /etc/letsencrypt — сертификаты и аккаунт ACME
   certbot_www:   # webroot для ACME http-01 челленджа
 

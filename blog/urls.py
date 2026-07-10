@@ -38,6 +38,7 @@ urlpatterns = [
     path('participations/<int:participation_id>/set-hours/', views.participation_set_hours, name='participation_set_hours'),
 
     path('applications/new/', views.application_create, name='application_create'),
+    path('applications/manual-create/', views.application_manual_create, name='application_manual_create'),
     path('applications/<int:application_id>/edit/', views.application_edit, name='application_edit'),
     path('applications/<int:application_id>/cancel/', views.application_cancel, name='application_cancel'),
     path('applications/event-shifts/<int:event_id>/', views.event_shifts_json, name='event_shifts_json'),

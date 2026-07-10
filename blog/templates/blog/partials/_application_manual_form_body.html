@@ -1,0 +1,49 @@
+{% comment %}
+Модальная форма ручного добавления заявок волонтёров менеджером (application_manual_create).
+За раз — на одно меро, на нескольких волонтёров. Использует общий пикер волонтёров
+(data-user-picker, multiple) + поля ФИО для нового волонтёра. Мероприятие либо
+зафиксировано (fixed_event, кнопка со страницы меро), либо выбирается из списка.
+{% endcomment %}
+<form method="post" action="{% url 'application_manual_create' %}{% if fixed_event %}?event={{ fixed_event.id }}{% endif %}" data-modal-form>
+    {% csrf_token %}
+
+    {% if fixed_event %}
+        <input type="hidden" name="event" value="{{ fixed_event.id }}">
+        <p style="margin-top:0;">Мероприятие: <b>{{ fixed_event.title }}</b> — заявки будут добавлены именно на него.</p>
+    {% else %}
+        <div class="field">
+            <label>Мероприятие</label>
+            <select name="event" required>
+                <option value="">— выберите мероприятие —</option>
+                {% for e in events %}<option value="{{ e.id }}">{{ e.title }}</option>{% endfor %}
+            </select>
+        </div>
+    {% endif %}
+
+    <div class="field">
+        <label>Волонтёры</label>
+        <div class="category-chips" data-user-picker data-mode="multiple" data-field-name="users" data-empty-text="Волонтёры не выбраны" data-linkable>
+            <div class="cat-chips-search">
+                <input type="text" placeholder="Начните вводить имя или фамилию…" data-chips-search readonly>
+            </div>
+            <div class="cat-chips-row" data-chips-selected></div>
+        </div>
+    </div>
+
+    <hr class="form-divider">
+    <p class="field-hint" style="margin-top:0;">Нет волонтёра в списке? Впишите нового по ФИО — он будет создан и добавлен.</p>
+    <div class="field-row" style="display:flex; gap:10px; flex-wrap:wrap;">
+        <div class="field" style="flex:1; min-width:120px;">
+            <label>Имя нового</label>
+            <input type="text" name="new_first_name" autocomplete="off">
+        </div>
+        <div class="field" style="flex:1; min-width:120px;">
+            <label>Фамилия нового</label>
+            <input type="text" name="new_last_name" autocomplete="off">
+        </div>
+    </div>
+
+    <div class="modal-footer-actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
+        <button type="submit" class="btn">{{ submit_label|default:'Добавить' }}</button>
+    </div>
+</form>

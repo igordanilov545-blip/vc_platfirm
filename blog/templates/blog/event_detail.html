@@ -235,15 +235,19 @@
 <div class="card" id="applications" style="padding:0; overflow:hidden;">
     <div style="padding:20px 20px 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <h3 style="padding:0; margin:0;">Набор: {{ approved_count }} из {{ needed }} (осталось {{ remaining }})</h3>
-        {% if pending_count and can_edit_applications %}
-        <div style="display:flex; align-items:center; gap:10px;">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            {% if can_edit_applications %}
+            {% comment %}Ручное добавление волонтёров — зафиксировано на текущем меро (?event=).{% endcomment %}
+            <a href="{% url 'application_manual_create' %}?event={{ event.id }}" class="btn secondary btn-sm" data-modal data-modal-title="Добавить волонтёров">➕ Добавить волонтёров</a>
+            {% endif %}
+            {% if pending_count and can_edit_applications %}
             <span class="pill warning"><span class="dot"></span>Осталось обработать: {{ pending_count }}</span>
             <form method="post" action="{% url 'event_application_process_all' event.id %}" class="inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm">Принять всех</button>
             </form>
+            {% endif %}
         </div>
-        {% endif %}
     </div>
 
     {% for entry in shifts_with_recruitment %}

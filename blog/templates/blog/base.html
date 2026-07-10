@@ -52,8 +52,7 @@
 
     {% if is_manager %}
     <div class="nav-section-title">Управление</div>
-    <a href="{% url 'pending_applications' %}" data-track="nav:pending_applications" class="nav-link {% if request.resolver_match.url_name == 'pending_applications' %}active{% endif %}" title="Необработанные заявки"><span class="icon">🕓</span><span class="nav-label"> Необработанные заявки</span></a>
-    <a href="{% url 'import_preview' %}" data-track="nav:import_preview" class="nav-link {% if request.resolver_match.url_name in 'import_preview,import_commit' %}active{% endif %}" title="Импорт заявок"><span class="icon">📥</span><span class="nav-label"> Импорт заявок</span></a>
+    <a href="{% url 'pending_applications' %}" data-track="nav:pending_applications" class="nav-link {% if request.resolver_match.url_name in 'pending_applications,import_preview,import_commit' %}active{% endif %}" title="Заявки"><span class="icon">🕓</span><span class="nav-label"> Заявки</span></a>
     <a href="{% url 'user_list' %}" data-track="nav:user_list" class="nav-link {% if request.resolver_match.url_name == 'user_list' %}active{% endif %}" title="Пользователи"><span class="icon">👥</span><span class="nav-label"> Пользователи</span></a>
     <a href="{% url 'organizations_list' %}" data-track="nav:organizations_list" class="nav-link {% if request.resolver_match.url_name in 'organizations_list,organization_detail,organization_create' %}active{% endif %}" title="Организации"><span class="icon">🏢</span><span class="nav-label"> Организации</span></a>
     <a href="{% url 'organizer_list' %}" data-track="nav:organizer_list" class="nav-link {% if request.resolver_match.url_name in 'organizer_list,organizer_detail,organizer_create' %}active{% endif %}" title="Организаторы"><span class="icon">🤝</span><span class="nav-label"> Организаторы</span></a>

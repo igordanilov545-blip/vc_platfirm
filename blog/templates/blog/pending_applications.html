@@ -1,18 +1,23 @@
 {% extends 'blog/base.html' %}
-{% block title %}Необработанные заявки{% endblock %}
+{% block title %}Заявки{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-    <h1>Необработанные заявки</h1>
-    {% if pending_count %}
-    <div style="display:flex; align-items:center; gap:10px;">
-        <span class="pill warning"><span class="dot"></span>Осталось обработать: {{ pending_count }}</span>
-        <form method="post" action="{% url 'application_process_all' %}" class="inline">
-            {% csrf_token %}
-            <button type="submit" class="btn">Обработать все заявки</button>
-        </form>
+<div class="page-header">
+    <h1>Заявки</h1>
+    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <a href="{% url 'application_manual_create' %}" class="btn secondary" data-modal data-modal-title="Добавить заявки волонтёров">➕ Добавить заявки</a>
+        <a href="{% url 'import_preview' %}" class="btn secondary">📥 Загрузить из Excel</a>
     </div>
-    {% endif %}
 </div>
+
+{% if pending_count %}
+<div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+    <span class="pill warning"><span class="dot"></span>Осталось обработать: {{ pending_count }}</span>
+    <form method="post" action="{% url 'application_process_all' %}" class="inline">
+        {% csrf_token %}
+        <button type="submit" class="btn">Обработать все заявки</button>
+    </form>
+</div>
+{% endif %}
 
 {% include 'blog/partials/_table_search.html' with search_target="#apps-table" search_placeholder="Поиск по мероприятию, ФИО, телефону, telegram…" %}
 

@@ -1,7 +1,10 @@
 {% extends 'blog/base.html' %}
-{% block title %}Превью импорта{% endblock %}
+{% block title %}Загрузка заявок из Excel{% endblock %}
 {% block content %}
-<h1>Превью импорта</h1>
+<div class="page-header">
+    <h1>Загрузка заявок из Excel</h1>
+    <a href="{% url 'pending_applications' %}" class="btn secondary">← К заявкам</a>
+</div>
 
 {% if errors %}
 <div class="card">

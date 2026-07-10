@@ -245,6 +245,70 @@ def cancel_application(application: Application, reason: str) -> Application:
     return application
 
 
+@transaction.atomic
+def create_manual_application(event: Event, user: User, created_by: User, shifts=None):
+    """Ручное добавление заявки волонтёра менеджером/ТЛ (пайплайн как у веб-подачи/импорта:
+    сразу создаётся Application со status='new'). `shifts` — список EventShift (если не
+    задан, берутся все смены меро с открытым набором, как при обычной подаче).
+
+    Дубли не плодим: если у волонтёра уже есть активная (new/approved) заявка на это
+    меро — возвращаем её, не создавая вторую. Возвращает (application, created: bool)."""
+    existing = Application.objects.filter(
+        event=event, user=user, status__in=['new', 'approved']
+    ).first()
+    if existing:
+        return existing, False
+
+    from blog.services.requirements import check_application_requirements
+    req_check = check_application_requirements(event, user)
+
+    application = Application.objects.create(
+        event=event,
+        user=user,
+        first_name=user.first_name or '',
+        last_name=user.last_name,
+        middle_name=user.middle_name,
+        telegram_username=user.telegram_username,
+        phone=user.phone,
+        submitted_at=timezone.now(),
+        status='rejected' if req_check['auto_reject'] else 'new',
+        auto_reject_reason='; '.join(req_check['reasons']) if req_check['auto_reject'] else None,
+    )
+    # Смены заявки: выбранные, либо все смены меро с открытым набором.
+    from blog.models import EventShift
+    if shifts:
+        application.selected_shifts.set(shifts)
+        application.shifts = ', '.join(s.day.isoformat() for s in sorted(shifts, key=lambda s: s.day))
+    else:
+        all_shifts = list(event.shifts.filter(recruit_status='open').order_by('day'))
+        application.selected_shifts.set(all_shifts)
+        application.shifts = 'Все смены'
+    application.save(update_fields=['shifts'])
+
+    logger.info(
+        'Заявка добавлена вручную: application=%s event=%s by=%s subject=%s%s',
+        application.id, event.id, actor(created_by), actor(user),
+        f" auto_reject={application.auto_reject_reason!r}" if application.auto_reject_reason else '',
+    )
+    from blog.services.notifications import notify_application_submitted
+    notify_application_submitted(application, unknown_age=req_check['unknown_age'])
+    return application, True
+
+
+def create_volunteer_by_name(first_name: str, last_name: str = '', middle_name: str = '') -> User:
+    """Создаёт «служебного» волонтёра по одному ФИО (когда менеджер вписывает человека,
+    которого ещё нет в системе). Telegram-id служебный (manual:<uuid>) — такому нельзя
+    слать в Telegram, но по нему можно проставлять явку (Participation привязан к User),
+    как у импортных заявок (db.md — у импортной заявки всегда есть User)."""
+    import uuid
+    return User.objects.create_user(
+        telegram_id=f"manual:{uuid.uuid4()}",
+        first_name=(first_name or '').strip(),
+        last_name=(last_name or '').strip(),
+        middle_name=(middle_name or '').strip(),
+    )
+
+
 def event_closing_checklist(event: Event) -> dict:
     """Список условий для завершения мероприятия (cjm-event-lifecycle.md, этап 8).
 

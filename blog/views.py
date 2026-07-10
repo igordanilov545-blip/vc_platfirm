@@ -1343,6 +1343,67 @@ def application_create(request):
     )
 
 
+@manager_required
+def application_manual_create(request):
+    """Ручное добавление заявок волонтёров менеджером (пайплайн как у веб-подачи/импорта).
+    За раз — на ОДНО мероприятие, но сразу на нескольких волонтёров. Волонтёры выбираются
+    пикером (data-user-picker, multiple); можно также вписать НОВОГО волонтёра по ФИО —
+    он создаётся служебным аккаунтом (create_volunteer_by_name).
+
+    Мероприятие: если пришло `?event=<id>` (кнопка на странице меро) — оно зафиксировано
+    и не выбирается; иначе (страница заявок) — выбирается из списка."""
+    from blog.services.applications import create_manual_application, create_volunteer_by_name
+
+    fixed_event_id = request.GET.get('event') or request.POST.get('event')
+    fixed_event = Event.objects.filter(pk=fixed_event_id).first() if fixed_event_id else None
+
+    if request.method == 'POST':
+        event = fixed_event or Event.objects.filter(pk=request.POST.get('event')).first()
+        if not event:
+            return JsonResponse({'errors': {'event': ['Выберите мероприятие.']}}, status=400)
+
+        user_ids = request.POST.getlist('users')
+        new_first = (request.POST.get('new_first_name') or '').strip()
+        new_last = (request.POST.get('new_last_name') or '').strip()
+
+        if not user_ids and not new_first:
+            return JsonResponse({'errors': {'users': ['Выберите хотя бы одного волонтёра или впишите ФИО нового.']}}, status=400)
+
+        targets = list(User.objects.filter(id__in=user_ids))
+        if new_first:
+            targets.append(create_volunteer_by_name(new_first, new_last))
+
+        created = 0
+        skipped = 0
+        for user in targets:
+            _, was_created = create_manual_application(event, user, created_by=request.user)
+            if was_created:
+                created += 1
+            else:
+                skipped += 1
+
+        msg = f'Добавлено заявок: {created}.'
+        if skipped:
+            msg += f' Пропущено (уже есть активная заявка): {skipped}.'
+        messages.success(request, msg)
+        # Возврат туда, откуда пришли (страница меро или заявок).
+        redirect_url = reverse('event_detail', args=[event.id]) if fixed_event else _referer_or(request, default='pending_applications')
+        return modal_form_response(request, None, None, success_redirect=redirect_url)
+
+    # GET → форма в модалке. Список меро для выбора (если не зафиксировано).
+    events = None if fixed_event else Event.objects.order_by('-created_at')
+    return modal_form_response(
+        request, 'blog/application_manual_form.html',
+        {
+            'fixed_event': fixed_event,
+            'events': events,
+            'title': ('Добавить волонтёров на «%s»' % fixed_event.title) if fixed_event else 'Добавить заявки волонтёров',
+            'submit_label': 'Добавить',
+        },
+        partial_template='blog/partials/_application_manual_form_body.html',
+    )
+
+
 @login_required
 def application_edit(request, application_id):
     """Редактирование своей заявки (смены/функция/роль) — вместо создания дубля."""

@@ -789,48 +789,93 @@ def event_create(request):
 
 @manager_required
 def event_edit(request, event_id):
+    """Редактирование мероприятия. Завершённое (finished) меро редактировать МОЖНО, но
+    только после двухфакторного подтверждения (капча x+y, общий render_captcha_modal):
+    первый заход по завершённому меро показывает окно капчи, верный ответ ставит
+    краткоживущий флаг в сессии, после чего открывается обычная форма редактирования."""
     event = get_object_or_404(Event, pk=event_id)
-    if event.event_status == 'finished':
-        raise PermissionDenied('Завершённое мероприятие нельзя редактировать.')
+    is_finished = event.event_status == 'finished'
+    unlock_key = f'edit_finished_ok_{event.id}'
+    captcha_key = f'captcha_event_edit_{event.id}'
+
+    # Для завершённого меро требуем капчу, пока в сессии нет флага разблокировки.
+    if is_finished and not request.session.get(unlock_key):
+        if request.method == 'POST' and 'captcha_answer' in request.POST:
+            if _check_captcha(request, captcha_key, request.POST.get('captcha_answer')):
+                request.session[unlock_key] = True
+                # Капча пройдена — отдаём саму форму редактирования (перерисовка модалки).
+                form = EventForm(instance=event, show_closing_fields=True, assigned_by=request.user)
+                return modal_form_response(
+                    request, 'blog/event_form.html',
+                    {'form': form, 'title': f'Редактировать (завершённое): {event.title}', 'submit_label': 'Сохранить'},
+                    partial_template='blog/partials/_event_form_body.html',
+                )
+            messages.error(request, 'Неверный ответ на пример.')
+        return render_captcha_modal(
+            request,
+            session_key=captcha_key,
+            action_url=reverse('event_edit', args=[event.id]),
+            confirm_text='Это мероприятие уже завершено. Подтвердите, что действительно хотите его редактировать.',
+            submit_label='Разблокировать редактирование',
+            title=f'Редактирование завершённого: {event.title}',
+        )
+
     form = EventForm(request.POST or None, instance=event, show_closing_fields=True, assigned_by=request.user)
     if request.method == 'POST' and form.is_valid():
         form.save()
+        # Разблокировка одноразовая — снимаем флаг после успешного сохранения.
+        request.session.pop(unlock_key, None)
         messages.success(request, 'Мероприятие обновлено.')
         return modal_form_response(
             request, None, None,
             success_redirect=reverse('event_detail', args=[event.id]),
         )
+    title = (f'Редактировать (завершённое): {event.title}' if is_finished
+             else f'Редактировать: {event.title}')
     return modal_form_response(
         request, 'blog/event_form.html',
-        {'form': form, 'title': f'Редактировать: {event.title}', 'submit_label': 'Сохранить'},
+        {'form': form, 'title': title, 'submit_label': 'Сохранить'},
         partial_template='blog/partials/_event_form_body.html',
     )
 
 
 @manager_required
-@require_POST
 def event_delete(request, event_id):
-    """Полное удаление мероприятия менеджером. Каскадом удаляются смены, заявки,
+    """Полное удаление мероприятия менеджером — с двухфакторным подтверждением (капча
+    x+y, общий компонент render_captcha_modal). Каскадом удаляются смены, заявки,
     решения по сменам, участия, комментарии и т.п. (FK on_delete=CASCADE).
 
-    Требуем явного подтверждения на клиенте (data-confirm). После удаления часы/меро
-    удалённых участий больше не должны «висеть» в агрегатах волонтёров — пересчитываем
-    статистику затронутых пользователей ДО удаления (после удаления связей уже не
-    достать), поэтому сначала собираем их, затем удаляем, затем пересчитываем."""
+    GET (AJAX) → окно капчи в модалке. POST с верной капчей → удаление. Агрегаты
+    затронутых волонтёров пересчитываются после удаления (сначала собираем их id)."""
     event = get_object_or_404(Event, pk=event_id)
-    affected_user_ids = list(
-        Participation.objects.filter(event_day__event=event)
-        .values_list('user_id', flat=True).distinct()
+    session_key = f'captcha_event_delete_{event.id}'
+
+    if request.method == 'POST':
+        if not _check_captcha(request, session_key, request.POST.get('captcha_answer')):
+            messages.error(request, 'Неверный ответ на пример — удаление отменено. Попробуйте ещё раз.')
+            return modal_form_response(request, None, None, success_redirect=reverse('event_detail', args=[event.id]))
+        affected_user_ids = list(
+            Participation.objects.filter(event_day__event=event)
+            .values_list('user_id', flat=True).distinct()
+        )
+        title = event.title
+        event.delete()
+        if affected_user_ids:
+            from blog.services.stats import recalc_user_aggregates
+            for user in User.objects.filter(id__in=affected_user_ids):
+                recalc_user_aggregates(user)
+        logger.info('Мероприятие удалено: event=%s title=%r by=%s', event_id, title, actor(request.user))
+        messages.success(request, f'Мероприятие «{title}» удалено.')
+        return modal_form_response(request, None, None, success_redirect=reverse('event_list'))
+
+    return render_captcha_modal(
+        request,
+        session_key=session_key,
+        action_url=reverse('event_delete', args=[event.id]),
+        confirm_text=f'Удалить мероприятие «{event.title}» безвозвратно? Вместе с ним удалятся все смены, заявки и явка по нему.',
+        submit_label='Удалить мероприятие',
+        title=f'Удаление: {event.title}',
     )
-    title = event.title
-    event.delete()
-    if affected_user_ids:
-        from blog.services.stats import recalc_user_aggregates
-        for user in User.objects.filter(id__in=affected_user_ids):
-            recalc_user_aggregates(user)
-    logger.info('Мероприятие удалено: event=%s title=%r by=%s', event_id, title, actor(request.user))
-    messages.success(request, f'Мероприятие «{title}» удалено.')
-    return redirect('event_list')
 
 
 @manager_required
@@ -2548,6 +2593,26 @@ def _check_captcha(request, session_key, answer_raw):
         return expected is not None and int(answer_raw) == expected
     except (TypeError, ValueError):
         return False
+
+
+def render_captcha_modal(request, *, session_key, action_url, confirm_text=None,
+                         submit_label='Подтвердить', extra_hidden=None, title='Подтверждение'):
+    """Отдаёт переиспользуемое окно капчи-2FA (partials/_captcha_confirm.html) в модалку.
+    Генерирует новый пример x+y и кладёт ответ в сессию под session_key. Используется
+    для «двухфакторного» подтверждения опасных действий (удаление меро, редактирование
+    завершённого меро и т.п.) — см. _captcha_confirm.html."""
+    context = {
+        'captcha_question': _new_captcha(request, session_key),
+        'action_url': action_url,
+        'confirm_text': confirm_text,
+        'submit_label': submit_label,
+        'extra_hidden': extra_hidden or [],
+        'title': title,
+    }
+    if is_ajax(request):
+        return render(request, 'blog/partials/_captcha_confirm.html', context)
+    # Не-AJAX запасной вариант — та же форма на отдельной странице через общий _modal_form хост.
+    return render(request, 'blog/const_form.html', context)
 
 
 # Секции назначения/снятия ролей в настройках: (action, role kind, глагол для сообщений).

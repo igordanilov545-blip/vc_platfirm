@@ -1,0 +1,25 @@
+{% comment %}
+Переиспользуемое окно-подтверждение с капчей-2FA (решить пример x+y). Загружается в общую
+модалку (data-modal) по GET-эндпоинту, который кладёт ответ в сессию и отдаёт этот partial.
+Сабмит POST'ит captcha_answer на action_url; вьюха действия проверяет капчу через
+_check_captcha и, если верно, выполняет действие и отвечает JSON {"redirect": ...}.
+
+Ожидает в контексте:
+  captcha_question — строка примера, напр. "3 + (-5)"
+  action_url       — куда POST'ить подтверждение
+  confirm_text     — пояснение, что произойдёт (необязательно)
+  submit_label     — текст кнопки (необязательно)
+  extra_hidden     — список готовых hidden-input'ов (необязательно, напр. status)
+{% endcomment %}
+<form method="post" action="{{ action_url }}" data-modal-form class="captcha-confirm">
+    {% csrf_token %}
+    {% for h in extra_hidden %}{{ h }}{% endfor %}
+    {% if confirm_text %}<p style="margin-top:0;">{{ confirm_text }}</p>{% endif %}
+    <div class="field">
+        <label>Подтвердите действие — решите пример: <b>{{ captcha_question }}</b> =</label>
+        <input type="number" name="captcha_answer" required autocomplete="off" autofocus>
+    </div>
+    <div class="modal-footer-actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
+        <button type="submit" class="btn danger">{{ submit_label|default:'Подтвердить' }}</button>
+    </div>
+</form>

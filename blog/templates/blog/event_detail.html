@@ -24,19 +24,14 @@
         {% if event.published_at %}
         <button type="button" class="btn secondary" data-share-url="{{ share_url }}">🔗 Поделиться</button>
         {% endif %}
-        {% if event.event_status != 'finished' %}
-        <a href="{% url 'event_edit' event.id %}" class="btn secondary" data-modal data-modal-title="Редактировать: {{ event.title }}">Редактировать</a>
-        {% endif %}
+        <a href="{% url 'event_edit' event.id %}" class="btn secondary" data-modal data-modal-title="Редактировать: {{ event.title }}">{% if event.event_status == 'finished' %}Редактировать (завершённое){% else %}Редактировать{% endif %}</a>
         <a href="{% url 'report_event_pdf' event.id %}" class="btn secondary" target="_blank" title="Скачать DOCX-отчёт по мероприятию">📄 Отчёт (DOCX)</a>
         {% if closing_checklist %}
         <a href="{% url 'event_close' event.id %}" class="btn {% if closing_checklist.ready %}danger{% else %}secondary{% endif %}">
             {% if closing_checklist.ready %}✅ Завершить мероприятие{% else %}Завершить мероприятие{% endif %}
         </a>
         {% endif %}
-        <form method="post" action="{% url 'event_delete' event.id %}" class="inline" data-confirm="Удалить мероприятие «{{ event.title }}» безвозвратно? Вместе с ним удалятся все смены, заявки и явка по нему.">
-            {% csrf_token %}
-            <button type="submit" class="btn danger">🗑 Удалить</button>
-        </form>
+        <a href="{% url 'event_delete' event.id %}" class="btn danger" data-modal data-modal-title="Удаление мероприятия">🗑 Удалить</a>
     </div>
     {% endif %}
     {% if has_open_recruitment and not is_finished %}

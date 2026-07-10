@@ -1,8 +1,14 @@
-# Конфигурация Passenger для домена vc.iedanimk.beget.tech (Beget).
-# Этот файл кладётся в ~/vc.iedanimk.beget.tech/public_html/.htaccess
+# Конфигурация Passenger для домена vc-platform.ru (Beget).
+# Кладётся в ~/vc-platform.ru/public_html/.htaccess
+#
+# ВАЖНО (особенность Beget): каждый домен запускается под своим системным
+# пользователем и НЕ имеет доступа к каталогам другого домена. Поэтому
+# PassengerAppRoot обязан лежать ВНУТРИ каталога этого же домена
+# (~/vc-platform.ru/vc_platform), а не ссылаться на проект другого домена —
+# иначе Passenger падает с «Web application could not be started … wrong permissions».
 #
 # PassengerAppRoot   — корень проекта (там лежит passenger_wsgi.py).
-# PassengerPython    — интерпретатор из нашего venv (создаётся при деплое).
+# PassengerPython    — интерпретатор из venv проекта (создаётся при деплое).
 # PassengerAppType/StartupFile — WSGI-приложение через passenger_wsgi.py.
 
 RewriteEngine On
@@ -10,6 +16,6 @@ RewriteEngine On
 PassengerEnabled On
 PassengerAppType wsgi
 PassengerStartupFile passenger_wsgi.py
-PassengerAppRoot /home/i/iedanimk/vc.iedanimk.beget.tech/vc_platform
-PassengerPython /home/i/iedanimk/vc.iedanimk.beget.tech/vc_platform/.venv/bin/python
+PassengerAppRoot /home/i/iedanimk/vc-platform.ru/vc_platform
+PassengerPython /home/i/iedanimk/vc-platform.ru/vc_platform/.venv/bin/python
 PassengerBaseURI /

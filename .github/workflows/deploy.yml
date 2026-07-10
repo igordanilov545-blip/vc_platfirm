@@ -20,7 +20,15 @@ jobs:
           script: |
             set -euo pipefail
 
+            # Прод переехал на домен vc-platform.ru (с SSL). Проект живёт ВНУТРИ
+            # каталога этого домена — на Beget каждый домен запускается под своим
+            # пользователем и не имеет доступа к каталогам другого домена.
+            # BEGET_PROJECT_DIR (секрет) может переопределить путь; иначе — новый домен.
+            DOMAIN_DIR="$HOME/vc-platform.ru"
             PROJECT_DIR="${{ secrets.BEGET_PROJECT_DIR }}"
+            if [ -z "$PROJECT_DIR" ]; then
+              PROJECT_DIR="$DOMAIN_DIR/vc_platform"
+            fi
             REPO="git@github.com:Willi-Wonkaa/vc_platform.git"
             PY=/usr/bin/python3.10
 
@@ -31,6 +39,12 @@ jobs:
             cd "$PROJECT_DIR"
             git fetch --all
             git reset --hard origin/main
+
+            # 1b) Passenger-конфиг домена: держим .htaccess в актуальном виде из репо
+            #     (AppRoot обязан указывать внутрь этого домена — см. deploy/htaccess.public_html).
+            if [ -d "$DOMAIN_DIR/public_html" ] && [ -f deploy/htaccess.public_html ]; then
+              cp -f deploy/htaccess.public_html "$DOMAIN_DIR/public_html/.htaccess"
+            fi
 
             # 2) venv (на shared-хостинге создаётся с --copies, симлинки запрещены).
             if [ ! -x ".venv/bin/python" ]; then

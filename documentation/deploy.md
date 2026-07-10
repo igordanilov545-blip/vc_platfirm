@@ -1,7 +1,15 @@
 # Деплой на Beget + CI/CD
 
-Прод-домен: **https://vc.iedanimk.beget.tech**
+Прод-домен: **https://vc-platform.ru** (SSL, Let's Encrypt). Старый домен
+`vc.iedanimk.beget.tech` оставлен как резерв/совместимость и указывает на прежний
+инстанс.
 Хостинг: Beget shared («Python-сайт» на Passenger), Python 3.10, SQLite.
+
+> ⚠️ **Особенность Beget при нескольких доменах:** каждый домен запускается под своим
+> системным пользователем и НЕ имеет доступа к каталогам другого домена. Поэтому
+> проект каждого домена (и его `PassengerAppRoot`) должен лежать **внутри каталога
+> этого домена**. Нельзя направлять `.htaccess` одного домена на `AppRoot` другого —
+> Passenger упадёт с «Web application could not be started … wrong permissions».
 
 ## Архитектура на shared-хостинге
 
@@ -19,13 +27,15 @@
 ## Каталоги на сервере
 
 ```
-~/vc.iedanimk.beget.tech/
-  ├── public_html/.htaccess     # конфиг Passenger (см. deploy/htaccess.public_html)
-  └── vc_platform/              # git-репозиторий проекта (BEGET_PROJECT_DIR)
+~/vc-platform.ru/                # ОСНОВНОЙ прод-домен
+  ├── public_html/.htaccess     # конфиг Passenger (AppRoot → ../vc_platform, см. deploy/htaccess.public_html)
+  └── vc_platform/              # git-репозиторий проекта (PROJECT_DIR деплоя)
       ├── .venv/                # virtualenv --copies -p /usr/bin/python3.10
       ├── .env                  # прод-конфиг (НЕ в git)
       ├── tmp/restart.txt       # touch → рестарт Passenger
       └── staticfiles/          # collectstatic
+
+~/vc.iedanimk.beget.tech/        # старый домен (резерв) — свой отдельный vc_platform
 ```
 
 ## CI/CD (GitHub Actions)
@@ -46,16 +56,24 @@ Actions заходит по SSH на Beget → `git reset --hard origin/main` �
 ## Первичная настройка (однократно)
 
 1. **SSL**: панель Beget → SSL-сертификаты → выпустить бесплатный Let's Encrypt для
-   `vc.iedanimk.beget.tech`. Без HTTPS не работают secure-cookie, Mini App и webhook.
-2. **.env на сервере** — заполнить (`DEBUG=False`, домен, `TG_WEBHOOK_SECRET` и т.д.).
-3. **Passenger**: положить `deploy/htaccess.public_html` в `public_html/.htaccess`.
+   `vc-platform.ru`. Без HTTPS не работают secure-cookie, Mini App и webhook.
+2. **.env на сервере** — заполнить (`DEBUG=False`, домены, `WEBAPP_URL=https://vc-platform.ru`,
+   `COOKIE_SECURE=True`, `SECURE_SSL_REDIRECT=True`, `TG_WEBHOOK_SECRET` и т.д.).
+3. **Passenger**: положить `deploy/htaccess.public_html` в `~/vc-platform.ru/public_html/.htaccess`
+   (AppRoot указывает внутрь `~/vc-platform.ru/vc_platform`).
 4. **Данные**: `migrate`, при необходимости `seed_data` + `seed_report_demo`,
    `create_manager --login … --password …`.
 5. **Webhook**: `python manage.py set_webhook` (нужен HTTPS в `WEBAPP_URL`).
-6. **Cron панели Beget** (раз в минуту), команда:
+6. **Telegram Login Widget**: в @BotFather → `/setdomain` указать `vc-platform.ru`
+   (иначе браузерный вход через кнопку Telegram шлёт данные на старый домен). Делается
+   только в @BotFather — из кода/сервера не настраивается.
+7. **Cron панели Beget** (раз в минуту), команда:
    ```
-   cd ~/vc.iedanimk.beget.tech/vc_platform && .venv/bin/python manage.py process_notifications >> logs/cron.log 2>&1
+   cd ~/vc-platform.ru/vc_platform && .venv/bin/python manage.py process_notifications >> logs/cron.log 2>&1
    ```
+
+> Если раньше cron был настроен на старый путь `~/vc.iedanimk.beget.tech/vc_platform` —
+> обновите его на новый, иначе исходящие уведомления будут обрабатываться старым инстансом.
 
 ## Полезные команды
 

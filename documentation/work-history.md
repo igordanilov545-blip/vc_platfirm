@@ -202,3 +202,35 @@ origin/main` и стёр бы такие правки. SSH доступен (SSH
 staff_role='manager'). Новые переиспользуемые компоненты: капча-2FA-модалка, сворачивание
 таблиц, ручное добавление заявок. Каждая пачка — отдельный коммит с проверкой manage.py
 check + тест-клиент + node --check JS перед push.
+
+---
+
+## 2026-07-10 · Opus 4.8 · ветка `main` (прямой деплой)
+
+**Промт:**
+> Куплен домен vc-platform.ru с SSL (тоже на Beget), перенести проект туда.
+
+**Тудушник:**
+- [x] Проверить HTTPS/SSL нового домена.
+- [x] Развернуть инстанс проекта внутри ~/vc-platform.ru/vc_platform (clone/venv/env/db/static).
+- [x] Passenger .htaccess нового домена → локальный AppRoot.
+- [x] Серверный .env: домены в ALLOWED_HOSTS/CSRF, WEBAPP_URL, COOKIE_SECURE=True, SECURE_SSL_REDIRECT=True.
+- [x] Telegram webhook → vc-platform.ru.
+- [x] Обновить репо: .env.example, deploy/htaccess.public_html, deploy.yml (PROJECT_DIR по умолчанию — новый домен), deploy.md.
+
+**Итог:**
+Перенос выполнен как отдельный инстанс под новым доменом (проект старого домена не тронут).
+Ключевой подводный камень Beget: каждый домен запускается под своим системным пользователем
+и не имеет доступа к каталогам другого домена — первый вариант «оба домена на один AppRoot»
+падал с «Web application could not be started … wrong permissions». Решение: проект лежит
+ВНУТРИ каталога домена (~/vc-platform.ru/vc_platform). Проверено снаружи: https://vc-platform.ru/login/
+→ 200 с формой входа, /static/…/nexus.css → 200, www → 200, публичная витрина → 200.
+Webhook getWebhookInfo: url=vc-platform.ru, pending=0, ошибок нет.
+БД скопирована со старого инстанса (sqlite) — данные сохранены.
+
+**Осталось за пользователем (нельзя из кода/сервера):**
+- @BotFather → /setdomain → vc-platform.ru (для браузерного Telegram Login Widget).
+- Проверить GitHub Secret BEGET_PROJECT_DIR: если он всё ещё указывает на старый путь,
+  автодеплой продолжит катиться в старый инстанс. Либо очистить секрет (тогда workflow
+  сам возьмёт ~/vc-platform.ru/vc_platform), либо выставить его на новый путь.
+- Обновить cron панели Beget (process_notifications) на новый путь.

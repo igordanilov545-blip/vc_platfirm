@@ -10,6 +10,7 @@ urlpatterns = [
     path('profile/complete/', views.complete_profile, name='complete_profile'),
     path('profile/edit/', views.profile_edit, name='profile_edit'),
     path('', views.dashboard, name='dashboard'),
+    path('healthz/', views.healthz, name='healthz'),
 
     path('webapp/', views.webapp_entry, name='webapp_entry'),
     path('webapp/auth/', views.webapp_auth, name='webapp_auth'),

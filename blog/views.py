@@ -64,6 +64,20 @@ def is_ajax(request) -> bool:
     return request.headers.get('X-Requested-With') == 'XMLHttpRequest'
 
 
+def healthz(request):
+    """Liveness/readiness-проба для Docker/оркестратора: 200, если процесс жив и БД
+    отвечает; 503 иначе. Без аутентификации и без обращения к тяжёлым сервисам —
+    только быстрый SELECT 1, чтобы healthcheck был дешёвым."""
+    from django.db import connection
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+            cursor.fetchone()
+        return JsonResponse({'status': 'ok'})
+    except Exception:
+        return JsonResponse({'status': 'db_unavailable'}, status=503)
+
+
 def modal_form_response(request, template_name, context, *, success_redirect=None, partial_template=None):
     """Рендерит форму для AJAX-модалки/bottom sheet (`base.html`, `modal.js`).
 

@@ -289,6 +289,10 @@ LOGGING = {
 }
 
 # В режиме отладки дублируем всё в консоль — удобно при локальной разработке.
-if DEBUG:
-    for _logger in ('vc.web', 'vc.bot', 'vc.db'):
-        LOGGING['loggers'][_logger]['handlers'].append('console')
+# В контейнерах (LOG_TO_STDOUT=1) — тоже: тогда `docker logs <service>` показывает
+# логи приложения, а файловые обработчики остаются для совместимости/ротации.
+if DEBUG or env.bool('LOG_TO_STDOUT', default=False):
+    for _logger in ('vc.web', 'vc.bot', 'vc.db', 'django', 'aiogram'):
+        handlers = LOGGING['loggers'][_logger]['handlers']
+        if 'console' not in handlers:
+            handlers.append('console')

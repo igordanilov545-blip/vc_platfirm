@@ -234,3 +234,67 @@ Webhook getWebhookInfo: url=vc-platform.ru, pending=0, ошибок нет.
   автодеплой продолжит катиться в старый инстанс. Либо очистить секрет (тогда workflow
   сам возьмёт ~/vc-platform.ru/vc_platform), либо выставить его на новый путь.
 - Обновить cron панели Beget (process_notifications) на новый путь.
+
+---
+
+## 2026-07-10 · Opus 4.8 · ветка `main` (прямой деплой)
+
+**Промт:**
+> Уйти от cron-архитектуры. Написать ресурсы сервера (RAM/GPU/CPU). Можем ли обернуть в
+> отдельные Docker-контейнеры (упал бот — web жив, и наоборот), БД тоже отдельным
+> контейнером, чтобы бот имел доступ к данным даже если Django лёг.
+
+**Тудушник:**
+- [x] Собрать ресурсы сервера и проверить доступность Docker (факты, не догадки).
+- [x] Объяснить, что на shared-хостинге Docker невозможен (нет root/docker-демона).
+- [x] Дать минимальные характеристики VPS.
+- [x] Подготовить Docker-обвязку: Dockerfile, docker-compose (db/web/bot/nginx),
+      entrypoint, nginx.conf, healthz, LOG_TO_STDOUT, миграция SQLite→Postgres, доки.
+
+**Вопросы + ответы:**
+- В: инфраструктура → О: пользователь берёт VPS, я готовлю docker-compose.
+- В: СУБД → О: PostgreSQL в отдельном контейнере.
+- В: режим бота → О: long polling (независимый контейнер).
+
+**Итог:**
+Проверено по SSH: shared-хостинг Beget (uid=1882, не root; docker.sock → permission
+denied; нет systemd --user; crontab только через панель) — контейнеры технически
+невозможны. Ресурсы ноды (128 vCPU / 754 ГБ) — общие на весь shared, не квота аккаунта.
+Рекомендация VPS: 2 vCPU / 2 ГБ / 25–30 ГБ NVMe / Ubuntu 22.04, без GPU.
+Добавлена Docker-обвязка (не трогает текущий прод): `Dockerfile`, `docker-compose.yml`
+(db postgres + web gunicorn + bot polling+notifier + nginx; restart: unless-stopped;
+bot зависит только от db), `deploy/docker-entrypoint.sh` (wait-for-db/migrate/collectstatic),
+`deploy/nginx.conf`, `deploy/migrate_sqlite_to_postgres.sh`, `.dockerignore`,
+`.env.docker.example`, эндпоинт `/healthz/` (blog/views + urls), `LOG_TO_STDOUT` в settings,
+`documentation/docker-deploy.md`. Локально Docker недоступен — проверено что можно без него:
+manage.py check чисто, compose YAML валиден, shell-скрипты `bash -n` ок, healthz→200,
+LOG_TO_STDOUT добавляет console-хендлер. Полный `docker compose up` прогоняется на VPS.
+Notifier уже встроен в run_bot — на VPS cron не нужен вообще.
+
+---
+
+## 2026-07-10 · Opus 4.8 · ветка `main` (подготовка VPS-инфраструктуры)
+
+**Промт:**
+> Есть VPS с root (IP/логин/пароль). Подготовить всю инфраструктуру для перехода;
+> SSH к VPS пока нестабилен — довести обвязку, потом развернём.
+
+**Тудушник:**
+- [x] Добавить в compose сервис certbot + тома Let's Encrypt (certbot_conf/certbot_www).
+- [x] nginx.conf: ACME webroot + HTTPS по пути live/<домен> (bootstrap через self-signed).
+- [x] deploy/vps_bootstrap.sh — установка Docker Engine+compose на чистый Ubuntu + ufw.
+- [x] deploy/init_letsencrypt.sh — первичный выпуск сертификата (self-signed → настоящий).
+- [x] Обновить docker-deploy.md под поток bootstrap → up → cert → up.
+
+**Вопросы + ответы:**
+- Не задавал новых. Отмечен риск безопасности: пароль root прислан в чате — после
+  развёртывания сменить пароль и перейти на вход по SSH-ключу.
+
+**Итог:**
+SSH к VPS (159.194.228.46) пока нестабилен (таймаут banner exchange / connection closed —
+похоже, сервер ещё инициализируется или фильтр провайдера). Пока не развёрнуто на VPS.
+Инфраструктура доведена до «одной командой»: `deploy/vps_bootstrap.sh` (Docker+порты),
+`deploy/init_letsencrypt.sh` (Let's Encrypt), certbot-сервис в compose (автопродление
+каждые 12ч), nginx с ACME. Проверено локально: compose config — 5 сервисов/4 тома,
+`bash -n` всех скриптов ок, django check чист. Когда SSH оживёт — bootstrap → .env →
+up db/web/bot → (миграция sqlite→pg) → init_letsencrypt → up.

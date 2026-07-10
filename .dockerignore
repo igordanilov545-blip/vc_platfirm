@@ -1,0 +1,23 @@
+# Не тащим в образ локальное окружение, секреты и артефакты.
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.github/
+.idea/
+.vscode/
+.claude/
+logs/
+staticfiles/
+tmp/
+db.sqlite3
+*.sqlite3
+.env
+.env.*
+!.env.docker.example
+deploy/certs/
+documentation/
+*.md
+!README.md
+render.xlsx

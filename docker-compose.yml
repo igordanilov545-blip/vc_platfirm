@@ -1,0 +1,111 @@
+# Продакшн-обвязка для VPS (root, Docker Engine). Четыре независимых сервиса:
+#
+#   db    — PostgreSQL, ОТДЕЛЬНЫЙ контейнер со своим volume. Веб и бот подключаются
+#           к нему по сети compose. Падение web/bot НЕ трогает БД; бот сохраняет
+#           доступ к данным, даже если Django лёг (и наоборот).
+#   web   — Django под gunicorn. Применяет миграции и собирает статику на старте.
+#   bot   — Telegram-бот (long polling) + встроенный notifier-цикл (уходим от cron).
+#           Зависит ТОЛЬКО от db, не от web — поэтому независим от веба.
+#   nginx — reverse-proxy: TLS, отдача статики, проксирование на web.
+#
+# У каждого сервиса restart: unless-stopped — упавший контейнер поднимается сам,
+# независимо от остальных. Это и даёт требуемую изоляцию отказов.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Пока БД не готова принимать соединения — web/bot не стартуют (depends_on).
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Наружу порт НЕ публикуем: БД доступна только сервисам внутри сети compose.
+    networks: [internal]
+
+  web:
+    build: .
+    restart: unless-stopped
+    command: ["gunicorn", "myproject.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120"]
+    environment:
+      WAIT_FOR_DB: "1"
+      RUN_MIGRATIONS: "1"     # миграции применяет ТОЛЬКО web (единая точка)
+      COLLECT_STATIC: "1"
+      LOG_TO_STDOUT: "1"      # логи в docker logs, а не только в файлы
+    env_file: [.env]
+    volumes:
+      - static:/app/staticfiles
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks: [internal]
+
+  bot:
+    build: .
+    restart: unless-stopped
+    command: ["python", "manage.py", "run_bot"]
+    environment:
+      WAIT_FOR_DB: "1"
+      RUN_MIGRATIONS: "0"     # бот НЕ мигрирует — только web
+      COLLECT_STATIC: "0"
+      LOG_TO_STDOUT: "1"
+    env_file: [.env]
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+    # ВАЖНО: bot зависит ТОЛЬКО от db, не от web — падение web не роняет бота.
+    networks: [internal]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - static:/app/staticfiles:ro
+      # Сертификаты Let's Encrypt и webroot для ACME-челленджа — общие с certbot.
+      - certbot_conf:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    depends_on:
+      - web
+    networks: [internal]
+
+  # Certbot: выпускает и продлевает сертификат Let's Encrypt (webroot-режим через nginx).
+  # Первый выпуск — скриптом deploy/init_letsencrypt.sh; дальше контейнер сам продлевает
+  # раз в 12 часов. До первого выпуска nginx работает по HTTP (см. deploy/nginx.conf).
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    # Периодическая попытка продления; ключи/сертификаты — в общем томе с nginx.
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done'
+    networks: [internal]
+
+volumes:
+  pgdata:        # данные Postgres переживают пересоздание контейнеров
+  static:        # собранная статика, шарится между web и nginx
+  certbot_conf:  # /etc/letsencrypt — сертификаты и аккаунт ACME
+  certbot_www:   # webroot для ACME http-01 челленджа
+
+networks:
+  internal:

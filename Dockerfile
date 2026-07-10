@@ -35,7 +35,10 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY . .
 
 # Непривилегированный пользователь — не гоняем контейнеры от root.
-RUN useradd --create-home --uid 10001 appuser \
+# chmod на entrypoint: executable-бит может теряться при копировании/архивации кода,
+# поэтому выставляем его явно в образе, а не полагаемся на права из git.
+RUN chmod +x /app/deploy/docker-entrypoint.sh \
+    && useradd --create-home --uid 10001 appuser \
     && mkdir -p /app/logs /app/staticfiles \
     && chown -R appuser:appuser /app
 USER appuser

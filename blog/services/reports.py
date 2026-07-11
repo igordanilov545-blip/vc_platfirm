@@ -16,7 +16,10 @@ from datetime import date, timedelta
 
 from django.db.models import Avg, Count, Max, Min, Q, Sum
 
-from blog.models import Application, Event, EventShift, Participation, Season, User
+# Доступ к строкам БД — только через контроллер (agent-workflow.md §5): контроллер отдаёт
+# базовые queryset'ы (*_qs), а вся агрегация/бизнес-логика остаётся здесь, в сервисе
+# (coding-principles §1). Прямого `Model.objects` в этом модуле быть не должно.
+from data_base import data_controller as dc
 
 # Режимы статус-фильтра пула мероприятий (под-переключатель над чипами охвата).
 EVENT_SCOPE_MODES = ('all', 'ongoing', 'past')
@@ -35,7 +38,7 @@ def events_pool(date_from, date_to, status_mode='all', exclude_ids=None):
     системе десятки/сотни, поэтому compute_status в Python здесь допустим (не тысячи)."""
     exclude_ids = set(exclude_ids or [])
     qs = (
-        Event.objects.filter(shifts__day__gte=date_from, shifts__day__lte=date_to)
+        dc.events_qs().filter(shifts__day__gte=date_from, shifts__day__lte=date_to)
         .distinct()
         .prefetch_related('shifts')
     )
@@ -55,21 +58,21 @@ def _events_in_scope(date_from=None, date_to=None, event_ids=None):
     """Мероприятия охвата — по явному списку id (см. events_pool) либо, как запасной
     вариант, все меро со сменами в периоде (без ограничения на статус)."""
     if event_ids is not None:
-        return Event.objects.filter(id__in=event_ids).distinct()
-    return Event.objects.filter(shifts__day__gte=date_from, shifts__day__lte=date_to).distinct()
+        return dc.events_qs().filter(id__in=event_ids).distinct()
+    return dc.events_qs().filter(shifts__day__gte=date_from, shifts__day__lte=date_to).distinct()
 
 
 def _shifts_in_scope(date_from=None, date_to=None, event_ids=None):
     if event_ids is not None:
-        return EventShift.objects.filter(event_id__in=event_ids)
-    return EventShift.objects.filter(day__gte=date_from, day__lte=date_to)
+        return dc.event_shifts_qs().filter(event_id__in=event_ids)
+    return dc.event_shifts_qs().filter(day__gte=date_from, day__lte=date_to)
 
 
 def period_report(date_from=None, date_to=None, prev_from=None, prev_to=None, event_ids=None):
     events = _events_in_scope(date_from, date_to, event_ids)
     shifts = _shifts_in_scope(date_from, date_to, event_ids)
 
-    participations = Participation.objects.filter(event_day__in=shifts)
+    participations = dc.participations_qs().filter(event_day__in=shifts)
     attended = participations.filter(status='attended')
 
     total_hours = attended.aggregate(s=Sum('hours'))['s'] or 0
@@ -82,7 +85,7 @@ def period_report(date_from=None, date_to=None, prev_from=None, prev_to=None, ev
     # --- Дополнительные KPI (плитки дашборда) ---
     total_shifts = shifts.count()  # число СМЕН в охвате (не человеко-смен)
     # Заявки охвата: обработано (assigned) из общего числа поданных.
-    apps_all = Application.objects.filter(event__in=events)
+    apps_all = dc.applications_qs().filter(event__in=events)
     applications_total = apps_all.count()
     applications_processed = apps_all.filter(assigned_at__isnull=False).count()
     # Средние: смен и часов на одного пришедшего волонтёра; людей помогли на меро.
@@ -116,7 +119,7 @@ def period_report(date_from=None, date_to=None, prev_from=None, prev_to=None, ev
     top_categories = [{'event_day__event__category_map__category__name': c['name'], 'count': c['volunteers']} for c in category_breakdown[:10]]
 
     # Воронка набора (охват — всегда список меро)
-    apps_scope = Application.objects.filter(event__in=events)
+    apps_scope = dc.applications_qs().filter(event__in=events)
     submitted = apps_scope.count()
     approved = apps_scope.filter(status='approved').count()
     rejected = apps_scope.filter(status='rejected').count()
@@ -147,20 +150,18 @@ def period_report(date_from=None, date_to=None, prev_from=None, prev_to=None, ev
     # retention, сравнение убраны из UI), но их читают генераторы DOCX/Excel-отчётов
     # (report_builders/report_exports). Оставлены ради обратной совместимости экспорта —
     # финальный вид скачиваемых документов не меняем. ---
-    from blog.models import Const
-    threshold = Const.objects.filter(name='churn_blacklist_threshold').first()
-    threshold_value = threshold.value if threshold else 5
-    active_total = User.objects.filter(status='active').count() or 1
-    churned = User.objects.filter(churn_score__gte=threshold_value).count()
+    threshold_value = dc.get_const('churn_blacklist_threshold', default=5)
+    active_total = dc.users_qs().filter(status='active').count() or 1
+    churned = dc.users_qs().filter(churn_score__gte=threshold_value).count()
     churn_rate = churned / active_total * 100
     if event_ids is not None:
         new_blacklisted = 0
     else:
-        new_blacklisted = User.objects.filter(
+        new_blacklisted = dc.users_qs().filter(
             status='blacklisted', created_at__date__gte=date_from, created_at__date__lte=date_to,
         ).count()
     at_risk_users = list(
-        User.objects.filter(churn_score__gte=threshold_value * 0.8)
+        dc.users_qs().filter(churn_score__gte=threshold_value * 0.8)
         .values('id', 'telegram_username', 'first_name', 'last_name', 'churn_score')
         .order_by('-churn_score')[:20]
     )
@@ -223,8 +224,7 @@ def period_report(date_from=None, date_to=None, prev_from=None, prev_to=None, ev
 def _ratings_distribution(events):
     """Распределение оценок мероприятий охвата по значениям 0–10 + средняя и число
     отзывов (график 11). Средняя — по всем отзывам меро охвата."""
-    from blog.models import EventFeedback
-    feedbacks = EventFeedback.objects.filter(event__in=events)
+    feedbacks = dc.feedbacks_qs().filter(event__in=events)
     total = feedbacks.count()
     avg = feedbacks.aggregate(a=Avg('rating'))['a']
     by_value = {row['rating']: row['n'] for row in feedbacks.values('rating').annotate(n=Count('id'))}
@@ -253,7 +253,7 @@ def _new_volunteers_count(date_from, date_to, event_ids):
     # список меро), поэтому «новых волонтёров» считаем по датам создания аккаунта.
     if not date_from or not date_to:
         return 0
-    return User.objects.filter(created_at__date__gte=date_from, created_at__date__lte=date_to).count()
+    return dc.users_qs().filter(created_at__date__gte=date_from, created_at__date__lte=date_to).count()
 
 
 def _churn_histogram(threshold_value, bucket_size=1.0, max_buckets=8):
@@ -264,10 +264,10 @@ def _churn_histogram(threshold_value, bucket_size=1.0, max_buckets=8):
         low = i * bucket_size
         high = low + bucket_size
         if i == max_buckets - 1:
-            count = User.objects.filter(churn_score__gte=low).count()
+            count = dc.users_qs().filter(churn_score__gte=low).count()
             label = f'{low:g}+'
         else:
-            count = User.objects.filter(churn_score__gte=low, churn_score__lt=high).count()
+            count = dc.users_qs().filter(churn_score__gte=low, churn_score__lt=high).count()
             label = f'{low:g}–{high:g}'
         buckets.append({'label': label, 'low': low, 'high': high, 'count': count})
     return buckets
@@ -275,17 +275,17 @@ def _churn_histogram(threshold_value, bucket_size=1.0, max_buckets=8):
 
 def period_report_basic(date_from, date_to):
     """Облегчённая версия для сравнения с предыдущим периодом (без рекурсии)."""
-    attended = Participation.objects.filter(
+    attended = dc.participations_qs().filter(
         event_day__day__gte=date_from, event_day__day__lte=date_to, status='attended',
         event_day__event__event_status='finished',
     )
     return {
         'total_hours': attended.aggregate(s=Sum('hours'))['s'] or 0,
-        'total_events': Event.objects.filter(
+        'total_events': dc.events_qs().filter(
             shifts__day__gte=date_from, shifts__day__lte=date_to, event_status='finished',
         ).distinct().count(),
         'unique_volunteers': attended.values('user').distinct().count(),
-        'new_volunteers': User.objects.filter(
+        'new_volunteers': dc.users_qs().filter(
             created_at__date__gte=date_from, created_at__date__lte=date_to
         ).count(),
     }
@@ -320,7 +320,7 @@ def weekly_dynamics(date_from=None, date_to=None, event_ids=None):
     cursor = date_from
     while cursor <= date_to:
         week_end = min(cursor + timedelta(days=6), date_to)
-        attended = Participation.objects.filter(
+        attended = dc.participations_qs().filter(
             event_day__day__gte=cursor, event_day__day__lte=week_end, status='attended',
             event_day__event__event_status='finished',
         )
@@ -352,7 +352,7 @@ def dynamics(date_from, date_to, event_ids=None):
     Каждая корзина: сумма часов attended и число человеко-смен. Ограничен охватом меро
     (event_ids), если он задан. Возвращает {granularity, buckets:[{label, hours, shifts, pct}]}.
     """
-    base = Participation.objects.filter(status='attended')
+    base = dc.participations_qs().filter(status='attended')
     if event_ids is not None:
         base = base.filter(event_day__event_id__in=event_ids)
 
@@ -400,7 +400,7 @@ def recruitment_efficiency(date_from=None, date_to=None, event_ids=None):
     avg_recruit_days = []
     for shift in shifts:
         needed = shift.volunteer_needed or 0
-        attended = Participation.objects.filter(event_day=shift, status='attended').count()
+        attended = dc.participations_qs().filter(event_day=shift, status='attended').count()
         pct = (attended / needed * 100) if needed else 0
         result.append({
             'event_id': shift.event_id,
@@ -413,7 +413,7 @@ def recruitment_efficiency(date_from=None, date_to=None, event_ids=None):
             'understaffed': needed > 0 and (attended / needed) < 0.8,
         })
 
-        last_approved = Application.objects.filter(
+        last_approved = dc.applications_qs().filter(
             event=shift.event, status='approved', assigned_at__isnull=False,
         ).order_by('-assigned_at').first()
         if last_approved and last_approved.assigned_at:
@@ -474,7 +474,7 @@ def _volunteer_activity_metrics(user_ids):
 
     if not user_ids:
         return {}
-    users = User.objects.filter(id__in=user_ids).values(
+    users = dc.users_qs().filter(id__in=user_ids).values(
         'id', 'first_name', 'last_name', 'middle_name', 'telegram_username', 'phone',
         'total_hours', 'season_hours', 'total_event_count', 'season_event_count',
         'churn_score', 'created_at',
@@ -496,7 +496,7 @@ def _volunteer_activity_metrics(user_ids):
 
     # Все участия этих пользователей (attended) — для смен, длительностей, дат.
     parts = (
-        Participation.objects.filter(user_id__in=user_ids, status='attended')
+        dc.participations_qs().filter(user_id__in=user_ids, status='attended')
         .select_related('event_day')
         .values('user_id', 'hours', 'event_day__day', 'event_day__start_time', 'event_day__end_time')
     )
@@ -515,15 +515,15 @@ def _volunteer_activity_metrics(user_ids):
 
     # Число меро (distinct) по каждому пользователю.
     ev_counts = (
-        Participation.objects.filter(user_id__in=user_ids, status='attended')
+        dc.participations_qs().filter(user_id__in=user_ids, status='attended')
         .values('user_id').annotate(n=Count('event_day__event', distinct=True))
     )
     ev_by_user = {r['user_id']: r['n'] for r in ev_counts}
     # Смены за сезон — по кэш-полю нет, считаем participations в текущем сезоне.
-    current_season = Season.objects.filter(start_season__lte=timezone.now().date()).order_by('-start_season').first()
+    current_season = dc.get_current_season()
     season_shift_counts = {}
     if current_season:
-        sq = Participation.objects.filter(
+        sq = dc.participations_qs().filter(
             user_id__in=user_ids, status='attended',
             event_day__day__gte=current_season.start_season,
         )
@@ -534,7 +534,7 @@ def _volunteer_activity_metrics(user_ids):
 
     # Дата последней заявки по каждому пользователю.
     last_apps = (
-        Application.objects.filter(user_id__in=user_ids)
+        dc.applications_qs().filter(user_id__in=user_ids)
         .values('user_id').annotate(last=Max('created_at'))
     )
     last_app_by_user = {r['user_id']: r['last'] for r in last_apps}
@@ -567,7 +567,7 @@ def volunteers_table(date_from=None, date_to=None, event_ids=None):
     характеристика человека), а список волонтёров — те, кто пришёл в охват."""
     shifts = _shifts_in_scope(date_from, date_to, event_ids)
     scope_user_ids = list(
-        Participation.objects.filter(event_day__in=shifts, status='attended')
+        dc.participations_qs().filter(event_day__in=shifts, status='attended')
         .values_list('user_id', flat=True).distinct()
     )
     metrics = _volunteer_activity_metrics(scope_user_ids)
@@ -595,7 +595,7 @@ def events_table(date_from=None, date_to=None, event_ids=None):
         shifts = sorted(event.shifts.all(), key=lambda s: (s.day, s.start_time))
         max_shifts = max(max_shifts, len(shifts))
         needed = sum(s.volunteer_needed or 0 for s in shifts)
-        apps = Application.objects.filter(event=event)
+        apps = dc.applications_qs().filter(event=event)
         submitted = apps.count()
         approved = apps.filter(status='approved').count()
         rejected = apps.filter(status='rejected').count()
@@ -636,28 +636,25 @@ def _role_table(role, date_from, date_to, event_ids):
     в роли», первое/последнее меро в роли и «сколько дней назад», сумма и среднее людей
     на его меро, обработано/принято/отклонено заявок на его меро) + волонтёрские метрики
     (те же, что в таблице волонтёров) — через _volunteer_activity_metrics."""
-    from blog.models import EventStaff, Manager, TeamLeader
-    from django.utils import timezone
-
     events = _events_in_scope(date_from, date_to, event_ids)
     # Пользователи, которые в охвате были в этой роли.
-    staff_qs = EventStaff.objects.filter(staff_role=role, event__in=events).values_list('user_id', flat=True)
+    staff_qs = dc.event_staff_qs().filter(staff_role=role, event__in=events).values_list('user_id', flat=True)
     user_ids = list(dict.fromkeys(staff_qs))  # уникальные, стабильный порядок
     if not user_ids:
         return []
 
     vol_metrics = _volunteer_activity_metrics(user_ids)
-    role_model = TeamLeader if role == 'team_lead' else Manager
+    role_qs = dc.team_leaders_qs() if role == 'team_lead' else dc.managers_qs()
 
     # Дата назначения ролью (самая ранняя активная запись роли).
     assign_dates = {}
-    for r in role_model.objects.filter(user_id__in=user_ids).values('user_id').annotate(first=Min('assigned_at')):
+    for r in role_qs.filter(user_id__in=user_ids).values('user_id').annotate(first=Min('assigned_at')):
         assign_dates[r['user_id']] = r['first']
 
     # Все меро пользователя в этой роли (за всё время) — для первого/последнего меро в роли,
     # суммы/среднего людей на меро, дат.
     all_staff = (
-        EventStaff.objects.filter(staff_role=role, user_id__in=user_ids)
+        dc.event_staff_qs().filter(staff_role=role, user_id__in=user_ids)
         .select_related('event')
         .prefetch_related('event__shifts')
     )
@@ -667,7 +664,7 @@ def _role_table(role, date_from, date_to, event_ids):
 
     # Заявки на меро пользователя-в-роли: обработано/принято/отклонено (по его меро в охвате).
     rows = []
-    current_season = Season.objects.filter(start_season__lte=timezone.now().date()).order_by('-start_season').first()
+    current_season = dc.get_current_season()
     for uid in user_ids:
         m = dict(vol_metrics.get(uid, {'user_id': uid, 'name': f'#{uid}'}))
         revents = role_events[uid]
@@ -678,7 +675,7 @@ def _role_table(role, date_from, date_to, event_ids):
             first_day = min((s.day for s in ev.shifts.all()), default=None)
             if first_day:
                 ev_days.append(first_day)
-            people_sum += Participation.objects.filter(event_day__event=ev, status='attended').count()
+            people_sum += dc.participations_qs().filter(event_day__event=ev, status='attended').count()
         ev_days.sort()
         m['role_events_total'] = len(revents)
         # Меро в роли за сезон.
@@ -699,7 +696,7 @@ def _role_table(role, date_from, date_to, event_ids):
         m['role_people_avg'] = round(people_sum / len(revents), 1) if revents else 0
         # Заявки на его меро (в роли, за всё время его меро).
         his_events = [ev.id for ev in revents]
-        his_apps = Application.objects.filter(event_id__in=his_events)
+        his_apps = dc.applications_qs().filter(event_id__in=his_events)
         m['role_apps_processed'] = his_apps.filter(assigned_at__isnull=False).count()
         m['role_apps_approved'] = his_apps.filter(status='approved').count()
         m['role_apps_rejected'] = his_apps.filter(status='rejected').count()
@@ -737,7 +734,7 @@ def applications_table(date_from=None, date_to=None, event_ids=None):
     место появления в системе (бот/веб/Excel-выгрузка)."""
     events = _events_in_scope(date_from, date_to, event_ids)
     apps = (
-        Application.objects.filter(event__in=events)
+        dc.applications_qs().filter(event__in=events)
         .select_related('event', 'user', 'assigned_by')
         .order_by('-created_at')
     )
@@ -777,10 +774,8 @@ def staff_load(date_from=None, date_to=None, event_ids=None):
     """Нагрузка персонала: меро/заявки на менеджера и тим-лидера за охват —
     обработка заявок считается и для менеджеров, и для тим-лидеров (reports.md).
     Используется генератором Excel-экспорта (лист «Персонал» не показывается на экране)."""
-    from blog.models import EventStaff
-
     events = _events_in_scope(date_from, date_to, event_ids)
-    apps_scope = Application.objects.filter(event__in=events)
+    apps_scope = dc.applications_qs().filter(event__in=events)
 
     processed_apps = list(
         apps_scope.filter(assigned_by__isnull=False, assigned_at__isnull=False)
@@ -798,7 +793,7 @@ def staff_load(date_from=None, date_to=None, event_ids=None):
 
     def _staff_with_apps(role):
         staff = list(
-            EventStaff.objects.filter(staff_role=role, event__in=events)
+            dc.event_staff_qs().filter(staff_role=role, event__in=events)
             .values('user__id', 'user__first_name', 'user__last_name')
             .annotate(event_count=Count('event', distinct=True))
         )
@@ -845,7 +840,7 @@ def application_timing(date_from=None, date_to=None, event_ids=None, bucket_hour
             'zero_is': 'post' if event.post_published_at == zero else 'announce',
         }
 
-    apps = Application.objects.filter(event_id__in=per_event_zero.keys(), submitted_at__isnull=False)
+    apps = dc.applications_qs().filter(event_id__in=per_event_zero.keys(), submitted_at__isnull=False)
     for app in apps:
         zero = per_event_zero[app.event_id]['zero']
         delta_h = (app.submitted_at - zero).total_seconds() / 3600

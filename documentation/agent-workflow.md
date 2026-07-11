@@ -212,6 +212,16 @@
   фильтры. Матчинг, пересчёты, ACL — в `blog/services/*` (см.
   [coding-principles.md](coding-principles.md) §1), но сам доступ к строкам они получают
   через контроллер.
+- **Тяжёлая аналитика (annotate/aggregate) — через `*_qs()`-аксессоры контроллера.**
+  Отчёты (`blog/services/reports.py`, `report_exports.py`) не зашивают агрегацию в
+  контроллер (иначе он перестанет быть тонким) и не пишут `Model.objects` (иначе обходят
+  правило). Контроллер отдаёт **базовые ленивые queryset'ы** — `events_qs()`,
+  `event_shifts_qs()`, `participations_qs()`, `applications_qs()`, `event_staff_qs()`,
+  `users_qs()`, `feedbacks_qs()`, `managers_qs()`, `team_leaders_qs()`,
+  `dobro_ru_shared_links_qs()` (+ скаляры `get_current_season()`, `get_event_by_id()`), а
+  сервис строит `.filter().annotate().aggregate()` поверх них. Именование `*_qs` (в
+  отличие от материализующих `get_*`, возвращающих `list`) — сигнал «ленивый queryset для
+  композиции». Новую аналитику пиши так же, а не через прямой ORM.
 - **Изменяющая операция логируется** (шапка контроллера, [logging.md](logging.md)):
   `INSERT/UPDATE`, с `actor` (кто) и субъектом (над кем).
 - Бот и `tg_bot/services.py` — **уже** обязаны ходить только через контроллер

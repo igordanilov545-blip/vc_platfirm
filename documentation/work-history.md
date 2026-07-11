@@ -995,3 +995,35 @@ runserver: `?period=week&scope_partial=1` возвращает пресет «Н
 исторически total_hours не привязан к охвату); место появления заявки определяется эвристикой
 по telegram_id (`import:*`→Excel, цифровой→бот/веб по наличию username) — для точности стоило
 бы хранить source явным полем (техдолг).
+
+---
+
+## Отчёты · рефактор доступа к БД через data_controller
+
+**Промт.** Переделать код отчётов так, чтобы соблюдался паттерн «доступ к БД только через
+data_controller» — убрать прямые `from blog.models import ...` / `Model.objects` (сделать
+до UI-изменений, отдельным коммитом).
+
+**Решение.** Отчёты — тяжёлая агрегация (annotate/aggregate), которую нельзя зашивать в
+тонкий контроллер и нельзя писать прямым ORM. Компромисс (agent-workflow.md §5): контроллер
+отдаёт БАЗОВЫЕ ленивые queryset'ы (`*_qs()`), а вся математика остаётся в сервисе.
+
+**Итог.** `data_base/data_controller.py`: новая секция «ЧАСТЬ 2b» — `events_qs`,
+`event_shifts_qs`, `participations_qs`, `applications_qs`, `event_staff_qs`, `users_qs`,
+`feedbacks_qs`, `managers_qs`, `team_leaders_qs`, `dobro_ru_shared_links_qs` (+ скаляры
+`get_current_season`, `get_event_by_id`), добавлены в `__all__`. `blog/services/reports.py`:
+убран `from blog.models import ...`, все `Model.objects` → `dc.*_qs()`, `Const.objects` →
+`dc.get_const(...)`, `Season.objects...first()` → `dc.get_current_season()`,
+`TeamLeader/Manager` → `dc.team_leaders_qs()/managers_qs()`; удалены in-function
+`from blog.models import`. `blog/services/report_exports.py`: аналогично — `from blog.models`
+заменён на `dc`, все `Model.objects` → `dc.*_qs()`. `blog/views.py`: report/dobro-вьюхи
+(`_report_event_chips`, `report_events_search`, `report_people_search`,
+`report_organizations_search`, `_dobro_rows`) переведены на `dc.*_qs()`/`dc.get_organizations`
+(локальный `from data_base import data_controller as dc`, как в остальных вьюхах). Прочие
+70+ ORM-вызовов в views.py (event_detail/applications/participations и т.п.) — легаси вне
+охвата задачи (hot_fix_1), не трогал. Дока — `agent-workflow.md §5` дополнена паттерном
+`*_qs`. `manage.py check` чист; прогон runserver под менеджером: поведение идентично
+(KPI 643 ч/13 меро/15 смен/63 волонтёра/183 заявки — как до рефактора), все 7 панелей 200,
+Excel-экспорт 200 и тот же размер 46062 Б, PDF/dobro-экспорт 200, `dc.events_qs().count()=33`
+в shell. Затронуты: `data_base/data_controller.py`, `blog/services/reports.py`,
+`blog/services/report_exports.py`, `blog/views.py`, `documentation/agent-workflow.md`.

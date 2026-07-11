@@ -2200,10 +2200,11 @@ def _report_event_chips(date_from, date_to, event_status, exclude_ids):
     """Данные для чипов охвата (выбор/убирание мероприятий, как чипы категорий): весь пул
     периода данного статус-режима, с флагом excluded по каждому. Пользователь «убирает»
     ненужные — их id уходят в ?exclude=."""
+    from data_base import data_controller as dc
     exclude_set = set(exclude_ids or [])
     pool_all = reports_service.events_pool(date_from, date_to, event_status, exclude_ids=None)
     chips = []
-    for event in Event.objects.filter(id__in=pool_all).prefetch_related('shifts'):
+    for event in dc.events_qs().filter(id__in=pool_all).prefetch_related('shifts'):
         first_day = event.shifts.order_by('day').values_list('day', flat=True).first()
         chips.append({
             'id': event.id,
@@ -2356,8 +2357,9 @@ def report_events_search(request):
     """Поиск мероприятий для модалки выбора охвата «по мероприятиям» (reports_template.md).
     Полный список без поиска теперь грузится сразу со страницей (report_period,
     recent_events_json) — этот эндпоинт используется только при вводе текста в поиск."""
+    from data_base import data_controller as dc
     query = request.GET.get('q', '').strip()
-    events = Event.objects.order_by('-created_at')
+    events = dc.events_qs().order_by('-created_at')
     if query:
         events = events.filter(title__icontains=query)
 
@@ -2643,8 +2645,9 @@ def report_organization_pdf(request, org_id):
 @manager_required
 def report_people_search(request):
     """Поиск человека для карточки выбора отчёта «по человеку» (по ФИО/username)."""
+    from data_base import data_controller as dc
     query = request.GET.get('q', '').strip()
-    users = User.objects.all()
+    users = dc.users_qs()
     if query:
         users = users.filter(
             Q(first_name__icontains=query) | Q(last_name__icontains=query)
@@ -2659,11 +2662,9 @@ def report_people_search(request):
 @manager_required
 def report_organizations_search(request):
     """Поиск организации для карточки выбора отчёта «по организации»."""
+    from data_base import data_controller as dc
     query = request.GET.get('q', '').strip()
-    orgs = Organization.objects.all()
-    if query:
-        orgs = orgs.filter(name__icontains=query)
-    orgs = orgs.order_by('name')[:30]
+    orgs = sorted(dc.get_organizations(name_filter=query or None), key=lambda o: o.name)[:30]
     return JsonResponse({'organizations': [{'id': o.id, 'name': o.name} for o in orgs]})
 
 
@@ -2777,8 +2778,9 @@ def _dobro_rows(only_unlogged=False, event_ids=None):
     строка попадает в таблицу только если у неё остались привязанные меро ИЗ охвата
     (остальные меро строки просто не показываются, а не прячут всю строку — общая
     ссылка часто привязана к меро за пределами текущего периода)."""
+    from data_base import data_controller as dc
     rows = []
-    for link in DobroRuSharedLink.objects.order_by('-created_at'):
+    for link in dc.dobro_ru_shared_links_qs().order_by('-created_at'):
         events = list(link.events.filter(dobro_ru_link_kind='shared').order_by('-created_at'))
         if event_ids is not None:
             events = [e for e in events if e.id in event_ids]
@@ -2788,7 +2790,7 @@ def _dobro_rows(only_unlogged=False, event_ids=None):
             'events': events,
             'all_logged': bool(events) and all(e.dobro_ru_hours_logged for e in events),
         })
-    unique_events = Event.objects.filter(dobro_ru_link_kind='unique').order_by('-created_at')
+    unique_events = dc.events_qs().filter(dobro_ru_link_kind='unique').order_by('-created_at')
     if event_ids is not None:
         unique_events = unique_events.filter(id__in=event_ids)
     for event in unique_events:

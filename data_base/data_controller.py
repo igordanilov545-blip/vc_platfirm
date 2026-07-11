@@ -48,6 +48,10 @@ __all__ = [
     'create_user_exception', 'get_user_exceptions',
     'create_season', 'get_seasons',
     'get_const', 'get_all_consts',
+    # Базовые queryset'ы для аналитики (отчёты) + скалярные срезы.
+    'events_qs', 'event_shifts_qs', 'participations_qs', 'applications_qs',
+    'event_staff_qs', 'users_qs', 'feedbacks_qs', 'managers_qs', 'team_leaders_qs',
+    'dobro_ru_shared_links_qs', 'get_current_season', 'get_event_by_id',
     'get_full_table', 'create_record_generic'
 ]
 
@@ -741,6 +745,66 @@ def get_const(name: str, default: Optional[float] = None) -> float:
 
 def get_all_consts() -> List[Const]:
     return list(Const.objects.all().order_by('name'))
+
+
+# ==============================================================================
+# ЧАСТЬ 2b: БАЗОВЫЕ QUERYSET'Ы ДЛЯ АНАЛИТИКИ (READ, ленивые)
+# ==============================================================================
+# Отчёты (blog/services/reports.py, report_exports.py) строят тяжёлые агрегаты
+# (annotate/aggregate/сложные фильтры), которые невозможно и не нужно зашивать в
+# контроллер (он тонкий — coding-principles §1). Но и прямой `Model.objects` в сервисах
+# отчётов нарушает правило «доступ к данным — через контроллер» (agent-workflow.md §5).
+# Компромисс: контроллер отдаёт БАЗОВЫЕ ленивые queryset'ы (не list!), а бизнес-агрегация
+# остаётся в сервисе. Так единая точка доступа к строкам — здесь, а математика — в services.
+# Именование `*_qs`, чтобы отличать от материализующих `get_*`, возвращающих list.
+
+def events_qs():
+    return Event.objects.all()
+
+
+def event_shifts_qs():
+    return EventShift.objects.all()
+
+
+def participations_qs():
+    return Participation.objects.all()
+
+
+def applications_qs():
+    return Application.objects.all()
+
+
+def event_staff_qs():
+    return EventStaff.objects.all()
+
+
+def users_qs():
+    return User.objects.all()
+
+
+def feedbacks_qs():
+    return EventFeedback.objects.all()
+
+
+def managers_qs():
+    return Manager.objects.all()
+
+
+def team_leaders_qs():
+    return TeamLeader.objects.all()
+
+
+def dobro_ru_shared_links_qs():
+    return DobroRuSharedLink.objects.all()
+
+
+def get_current_season():
+    """Текущий сезон (последний начавшийся) или None — для сезонных срезов отчётов."""
+    return Season.objects.filter(start_season__lte=timezone.now().date()).order_by('-start_season').first()
+
+
+def get_event_by_id(event_id: int) -> Optional[Event]:
+    return Event.objects.filter(pk=event_id).first()
 
 
 # ==============================================================================

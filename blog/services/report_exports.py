@@ -8,9 +8,9 @@
 """
 from django.db.models import Avg, Count, Sum
 
-from blog.models import (
-    Application, Event, EventShift, EventStaff, Participation,
-)
+# Доступ к строкам БД — через контроллер (agent-workflow.md §5). Построчные выгрузки
+# берут базовые queryset'ы из контроллера, форматирование/сборку книг делают здесь.
+from data_base import data_controller as dc
 from blog.services import reports as reports_service
 
 
@@ -37,9 +37,9 @@ def applications_rows(date_from=None, date_to=None, event_ids=None):
     (participations). new/rejected/cancelled — одна строка без участия."""
     events = reports_service._events_in_scope(date_from, date_to, event_ids)
     if event_ids:
-        apps = Application.objects.filter(event__in=events)
+        apps = dc.applications_qs().filter(event__in=events)
     else:
-        apps = Application.objects.filter(
+        apps = dc.applications_qs().filter(
             created_at__date__gte=date_from, created_at__date__lte=date_to,
         )
     apps = apps.select_related('event', 'user', 'assigned_by').prefetch_related('selected_shifts')
@@ -66,7 +66,7 @@ def applications_rows(date_from=None, date_to=None, event_ids=None):
         parts = []
         if app.user_id:
             parts = list(
-                Participation.objects.filter(user_id=app.user_id, event_day__event=app.event)
+                dc.participations_qs().filter(user_id=app.user_id, event_day__event=app.event)
                 .select_related('event_day')
             )
         if parts:
@@ -97,10 +97,10 @@ def events_rows(date_from=None, date_to=None, event_ids=None):
         shifts = list(event.shifts.all())
         days = [s.day for s in shifts]
         needed = sum(s.volunteer_needed or 0 for s in shifts)
-        attended = Participation.objects.filter(event_day__event=event, status='attended')
+        attended = dc.participations_qs().filter(event_day__event=event, status='attended')
         attended_count = attended.count()
         total_hours = attended.aggregate(s=Sum('hours'))['s'] or 0
-        apps = Application.objects.filter(event=event)
+        apps = dc.applications_qs().filter(event=event)
         rating = event.feedbacks.aggregate(a=Avg('rating'), c=Count('id'))
         categories = ', '.join(m.category.name for m in event.category_map.all()) or '—'
         locations = ', '.join(sorted({s.location.name for s in shifts if s.location_id})) or '—'
@@ -134,7 +134,7 @@ def events_rows(date_from=None, date_to=None, event_ids=None):
 
 def event_report(event_id):
     """Данные для отчёта по одному мероприятию (reports_template.md §4)."""
-    event = Event.objects.select_related('organization', 'organizer', 'letter').prefetch_related(
+    event = dc.events_qs().select_related('organization', 'organizer', 'letter').prefetch_related(
         'shifts__location', 'category_map__category', 'staff__user'
     ).get(pk=event_id)
 
@@ -145,10 +145,10 @@ def event_report(event_id):
     shifts_data = []
     for shift in event.shifts.all().order_by('day', 'start_time'):
         participants = []
-        parts = Participation.objects.filter(event_day=shift).select_related('user')
+        parts = dc.participations_qs().filter(event_day=shift).select_related('user')
         for p in parts:
             app = (
-                Application.objects.filter(event=event, user=p.user)
+                dc.applications_qs().filter(event=event, user=p.user)
                 .order_by('-created_at').first()
             )
             participants.append({
@@ -168,8 +168,8 @@ def event_report(event_id):
             'participants': participants,
         })
 
-    apps = Application.objects.filter(event=event)
-    attended = Participation.objects.filter(event_day__event=event, status='attended')
+    apps = dc.applications_qs().filter(event=event)
+    attended = dc.participations_qs().filter(event_day__event=event, status='attended')
     needed_total = sum(s.volunteer_needed or 0 for s in event.shifts.all())
     attended_count = attended.count()
     rating = event.feedbacks.aggregate(a=Avg('rating'), c=Count('id'))
@@ -202,7 +202,7 @@ def dobro_logging_report(date_from=None, date_to=None, event_ids=None, show_logg
         dobro_ru_link_kind='none'
     ).select_related('dobro_ru_shared_link')
 
-    parts_qs = Participation.objects.filter(
+    parts_qs = dc.participations_qs().filter(
         event_day__event__in=events, status='attended', hours__gt=0,
     ).select_related('user', 'event_day', 'event_day__event', 'event_day__event__dobro_ru_shared_link')
     if not show_logged:
@@ -258,7 +258,7 @@ def dobro_logging_report(date_from=None, date_to=None, event_ids=None, show_logg
         dobro_ru_link_kind='none'
     ).count()
 
-    all_parts = Participation.objects.filter(
+    all_parts = dc.participations_qs().filter(
         event_day__event__in=events, status='attended', hours__gt=0,
     )
     return {
@@ -431,7 +431,7 @@ def dobro_matrix_data(date_from=None, date_to=None, event_ids=None, show_logged=
         dobro_ru_link_kind='none'
     ).select_related('dobro_ru_shared_link')
 
-    parts_qs = Participation.objects.filter(
+    parts_qs = dc.participations_qs().filter(
         event_day__event__in=events_qs, status='attended', hours__gt=0,
     ).select_related('user', 'event_day', 'event_day__event', 'event_day__event__dobro_ru_shared_link')
     if not show_logged:
@@ -445,7 +445,7 @@ def dobro_matrix_data(date_from=None, date_to=None, event_ids=None, show_logged=
 
     # Наличие заявки этого человека на это меро (для чекбокса на странице 3).
     applied = set(
-        Application.objects.filter(event__in=events_qs, user__isnull=False)
+        dc.applications_qs().filter(event__in=events_qs, user__isnull=False)
         .values_list('user_id', 'event_id')
     )
 

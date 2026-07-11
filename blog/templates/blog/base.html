@@ -1109,6 +1109,13 @@
                 ensurePickerModal().open(widgetState);
             });
 
+            // Предвыбор значения, поставленный инлайновым <script> в разметке ДО того,
+            // как этот виджет успел инициализироваться (напр. форма меро визуально
+            // предвыбирает создателя ответственным менеджером) — см. widget._pickerPreselect.
+            if (widget._pickerPreselect) {
+                widgetState.selected.set(widget._pickerPreselect.id, widget._pickerPreselect.label);
+            }
+
             renderSelected();
 
             if (form) {

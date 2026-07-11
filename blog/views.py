@@ -738,7 +738,8 @@ def event_detail(request, event_id):
     shifts.sort(key=lambda s: (s.day < today, s.day))
     team_leads = event.staff.filter(staff_role='team_lead').select_related('user')
     # Ответственный менеджер меро — назначение EventStaff со staff_role='manager'
-    # (мини-дашборд наверху страницы; менять может менеджер, см. event_set_manager).
+    # (мини-дашборд наверху страницы; меняется только через редактирование меро,
+    # EventForm.manager — единая точка назначения, как и у тим-лидеров).
     event_manager_staff = event.staff.filter(staff_role='manager').select_related('user').first()
     categories = EventCategory.objects.filter(event_map__event=event).order_by('name')
     requirements = EventRequirement.objects.filter(event_map__event=event).order_by('title')
@@ -1022,30 +1023,6 @@ def event_edit(request, event_id):
     )
 
 
-@manager_required
-def event_set_manager(request, event_id):
-    """Смена ответственного менеджера мероприятия (мини-дашборд наверху страницы меро).
-    Менеджер выбирается пикером (single). Ответственность хранится как EventStaff со
-    staff_role='manager' — заменяем прежнее назначение на выбранное."""
-    event = get_object_or_404(Event, pk=event_id)
-    if request.method == 'POST':
-        user_id = request.POST.get('users') or request.POST.get('manager')
-        user = User.objects.filter(pk=user_id).first() if user_id else None
-        if not user or not is_manager(user):
-            messages.error(request, 'Выберите пользователя с ролью менеджера.')
-        else:
-            event.staff.filter(staff_role='manager').delete()
-            EventStaff.objects.get_or_create(event=event, user=user, staff_role='manager')
-            logger.info('Ответственный менеджер меро изменён: event=%s manager=%s by=%s',
-                        event.id, actor(user), actor(request.user))
-            messages.success(request, f'Ответственный менеджер: {user.full_name}.')
-        return modal_form_response(request, None, None, success_redirect=reverse('event_detail', args=[event.id]))
-
-    return modal_form_response(
-        request, 'blog/application_manual_form.html',  # хост не важен для AJAX
-        {'event': event, 'title': 'Сменить ответственного менеджера'},
-        partial_template='blog/partials/_event_manager_form_body.html',
-    )
 
 
 @manager_required

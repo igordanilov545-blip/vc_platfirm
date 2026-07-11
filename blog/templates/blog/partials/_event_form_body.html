@@ -56,6 +56,26 @@
         {% endif %}
     </div>
 
+    <div class="field">
+        <label>Ответственный менеджер</label>
+        <div class="category-chips" data-user-picker data-mode="single" data-field-name="manager" data-filter="manager" data-empty-text="Менеджер не выбран" data-linkable>
+            <div class="cat-chips-search">
+                <input type="text" placeholder="Начните вводить имя или фамилию…" data-chips-search readonly>
+            </div>
+            <div class="cat-chips-row" data-chips-selected></div>
+        </div>
+        {% if form.manager.initial %}
+        <script>
+            // Создатель (или текущий менеджер при редактировании) визуально предвыбран
+            // в пикере сразу при открытии формы — initUserPickers ждёт клика в поле
+            // поиска для загрузки списка, поэтому подставляем чип напрямую в DOM.
+            document.currentScript.closest('.field').querySelector('[data-user-picker]')
+                ._pickerPreselect = { id: {{ form.manager.initial.id }}, label: "{{ form.manager.initial.full_name|escapejs }}" };
+        </script>
+        {% endif %}
+        {% if form.manager.errors %}<div class="field-error">{{ form.manager.errors|striptags }}</div>{% endif %}
+    </div>
+
     {# ─── Организатор ─── #}
     <div class="field">
         {{ form.organization.label_tag }}

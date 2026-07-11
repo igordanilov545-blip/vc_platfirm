@@ -68,7 +68,6 @@
             <div class="event-dash-label">Ответственный менеджер</div>
             <div class="event-dash-value">
                 {% if event_manager %}<a href="{% url 'profile_detail' event_manager.id %}">{{ event_manager.full_name }}</a>{% else %}<span class="event-dash-muted">не назначен</span>{% endif %}
-                {% if is_manager and not is_finished %}<a href="{% url 'event_set_manager' event.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Сменить менеджера" style="margin-left:6px;">сменить</a>{% endif %}
             </div>
         </div>
         <div class="event-dash-cell">
@@ -227,15 +226,6 @@
     {% if is_manager and event.event_status != 'finished' %}
         <div style="padding:16px 20px;"><a href="{% url 'event_shift_add' event.id %}" class="btn secondary" data-modal data-modal-title="Новая смена: {{ event.title }}">+ Добавить смену</a></div>
     {% endif %}
-</div>
-
-<div class="card">
-    <h3>Тим-лидеры</h3>
-    {% for staff in team_leads %}
-        <span class="pill info"><span class="dot"></span>{{ staff.user.full_name }}</span>
-    {% empty %}
-        <p>Тим-лидер не назначен.{% if is_manager %} Назначьте через «Редактировать».{% endif %}</p>
-    {% endfor %}
 </div>
 
 {% if is_participant %}

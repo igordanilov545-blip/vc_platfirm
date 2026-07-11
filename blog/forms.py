@@ -4,7 +4,7 @@ from django import forms
 from django.utils import timezone
 from .models import (
     Event, EventComment, EventShift, Participation, Application, UserComment, EventFeedback,
-    Const, Season, Organization, Organizer, User, EventStaff, Location,
+    Const, Manager, Season, Organization, Organizer, User, EventStaff, Location,
     EventCategory, EventCategoryMap, TeamLeader, ExternalExperience,
     EventRequirement, EventRequirementMap, UserRequirementException,
 )
@@ -197,6 +197,13 @@ class TeamLeadChoiceField(forms.ModelMultipleChoiceField):
         return name or (obj.telegram_username or str(obj.telegram_id))
 
 
+class ManagerChoiceField(forms.ModelChoiceField):
+    """Выбор ответственного менеджера (ровно один) — та же подпись, что у ТЛ."""
+    def label_from_instance(self, obj):
+        name = f'{obj.last_name or ""} {obj.first_name or ""}'.strip()
+        return name or (obj.telegram_username or str(obj.telegram_id))
+
+
 def _intervals_overlap(start_a, end_a, start_b, end_b):
     """Пересекаются ли два полуинтервала времени [start, end). Смежные (конец одной =
     начало другой) пересечением НЕ считаются — можно ставить смены встык."""
@@ -248,6 +255,16 @@ class EventForm(forms.ModelForm):
         required=False,
         label='Тим-лидеры',
         widget=forms.SelectMultiple,
+    )
+    manager = ManagerChoiceField(
+        # Только активные менеджеры (managers, revoked_at IS NULL) — тот же паттерн
+        # фильтрации, что у team_leads (filter по id из Manager, не LEFT JOIN).
+        queryset=User.objects.filter(
+            id__in=Manager.objects.filter(revoked_at__isnull=True).values('user_id')
+        ).order_by('last_name', 'first_name'),
+        required=False,
+        label='Ответственный менеджер',
+        widget=forms.Select,
     )
 
     class Meta:
@@ -327,6 +344,14 @@ class EventForm(forms.ModelForm):
                 staff_assignments__event=self.instance,
                 staff_assignments__staff_role='team_lead',
             )
+            self.fields['manager'].initial = User.objects.filter(
+                staff_assignments__event=self.instance,
+                staff_assignments__staff_role='manager',
+            ).first()
+        elif self.assigned_by:
+            # Создание нового меро — создатель визуально предвыбран ответственным
+            # менеджером в пикере (можно сменить прямо здесь же, до сохранения).
+            self.fields['manager'].initial = self.assigned_by
 
     def _build_shift_forms(self):
         """Разбирает JSON-массив смен из скрытого поля `shifts_json` (собирается на
@@ -383,6 +408,7 @@ class EventForm(forms.ModelForm):
             self._save_categories(event)
             self._save_requirements(event)
             self._save_team_leads(event)
+            self._save_manager(event)
             if self.require_shift:
                 for shift_form in self.shift_forms:
                     shift = shift_form.save(commit=False)
@@ -418,6 +444,18 @@ class EventForm(forms.ModelForm):
             EventStaff.objects.get_or_create(event=event, user=user, staff_role='team_lead')
             if not TeamLeader.objects.filter(user=user, revoked_at__isnull=True).exists():
                 TeamLeader.objects.create(user=user, assigned_by=self.assigned_by)
+
+    def _save_manager(self, event):
+        """Ровно один ответственный менеджер. Без явного выбора при СОЗДАНИИ —
+        назначается создатель (тот же принцип, что у ТЛ); при редактировании пустой
+        выбор снимает менеджера (на форме поле визуально предвыбрано создателем/
+        текущим менеджером, так что случайно "снять" можно только явной очисткой)."""
+        selected = self.cleaned_data.get('manager')
+        if not selected and self.require_shift and self.assigned_by:
+            selected = self.assigned_by
+        event.staff.filter(staff_role='manager').exclude(user=selected).delete()
+        if selected:
+            EventStaff.objects.get_or_create(event=event, user=selected, staff_role='manager')
 
 
 class EventShiftForm(forms.ModelForm):

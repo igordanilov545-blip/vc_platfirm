@@ -864,6 +864,45 @@ input:focus, select:focus, textarea:focus {
     .shift-table.responsive-table tbody tr.shift-row { border-left-width: 4px; }
 }
 
+/* Список мероприятий (вид менеджера, event_list.html): каждая ячейка колонок
+   «Смены»/«Набор»/«Заявок» показывает одну строку на смену мероприятия — смены
+   везде в одном порядке, поэтому визуально строки трёх колонок стоят друг
+   напротив друга. Высота строки унифицирована с recruit-cell (24px), чтобы не
+   было дрожания при разном контенте (бейдж набора vs. прогресс-бар). */
+.shift-stack { display: flex; flex-direction: column; gap: 6px; }
+.shift-stack-item { min-height: 24px; display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
+.shift-stack-item--ongoing { color: var(--info); }
+.shift-stack-item--upcoming { color: var(--success); }
+.shift-stack-item--passed { color: var(--text-secondary); }
+.shift-recruit-pill { padding: 2px 8px 2px 6px; font-size: 11px; }
+
+/* Перенабор (approved > needed, >100%) — отдельная подсветка вместо hue-градиента
+   recruit-bar, который "заканчивается" на 120° (зелёный) и не может показать
+   разницу между 100% и 200%. */
+.recruit-bar-fill--over { background: var(--accent); }
+.recruit-pct--over { color: var(--accent); }
+
+/* Статус мероприятия — цветная обводка вокруг названия в списке (замена
+   отдельной колонки «Статус»), тот же язык, что role-badge у пользователей. */
+.event-status-badge { font-weight: 600; }
+.event-status-badge--upcoming { background: var(--success-soft); color: var(--success); border-color: var(--success); }
+.event-status-badge--ongoing { background: var(--info-soft); color: var(--info); border-color: var(--info); }
+.event-status-badge--passed { background: var(--warning-soft); color: var(--warning); border-color: var(--warning); }
+.event-status-badge--finished { background: var(--neutral-soft); color: var(--neutral); border-color: var(--neutral); }
+
+/* Статус ссылки Добро.ру — одна буква/индекс в колонке ❤️: «-» нет ссылки
+   (красная обводка), «У» уникальная, «О»/«О_n» общая (n — id общей ссылки,
+   чтобы различать разные общие ссылки между мероприятиями). */
+.dobro-status {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 28px; padding: 2px 6px; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+  border: 1px solid transparent;
+}
+.dobro-status--missing { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
+.dobro-status--unique { color: var(--success); border-color: var(--success); background: var(--success-soft); }
+.dobro-status--shared { color: var(--info); border-color: var(--info); background: var(--info-soft); }
+
 /* ==========================================================================
    Пикер волонтёра (data-user-picker, base.html): поле поиска — только триггер,
    сам выбор происходит во всплывающей модалке с виртуальным скроллом. z-index

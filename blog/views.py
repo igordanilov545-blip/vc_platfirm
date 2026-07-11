@@ -538,44 +538,98 @@ def event_list(request):
     hide_passed = request.GET.get('hide_passed') == '1'
     manager_view = is_manager(request.user)
     events = list(
-        Event.objects.select_related('location', 'organization').prefetch_related('shifts')
+        Event.objects.select_related('location', 'organization', 'dobro_ru_shared_link')
+        .prefetch_related('shifts')
     )
 
     # Для вида менеджера — общая картина по каждому меро одним проходом (без N+1):
-    # тим-лидеры, сколько нужно волонтёров и процент набора (одобренные решения по сменам).
+    # тим-лидеры, ответственный менеджер, набор и заявки — per shift (см. event_detail —
+    # та же группировка ApplicationShiftDecision по shift, здесь только для списка).
     tl_by_event = {}
-    approved_by_event = {}
+    manager_by_event = {}
+    decisions_by_shift = {}
+    dobro_shared_usage = {}
     if manager_view:
         from collections import defaultdict
         tl_map = defaultdict(list)
         for staff in EventStaff.objects.filter(staff_role='team_lead').select_related('user'):
             tl_map[staff.event_id].append(staff.user.full_name)
         tl_by_event = tl_map
-        appr = (
+
+        for staff in EventStaff.objects.filter(staff_role='manager').select_related('user'):
+            manager_by_event.setdefault(staff.event_id, staff.user.full_name)
+
+        decisions = (
             ApplicationShiftDecision.objects
-            .filter(status='approved').exclude(application__status='cancelled')
-            .values('shift__event_id').annotate(n=Count('id'))
+            .exclude(application__status='cancelled')
+            .values('shift_id', 'status')
+            .annotate(n=Count('id'))
         )
-        approved_by_event = {r['shift__event_id']: r['n'] for r in appr}
+        for row in decisions:
+            bucket = decisions_by_shift.setdefault(row['shift_id'], {'approved': 0, 'total': 0, 'processed': 0})
+            bucket['total'] += row['n']
+            if row['status'] == 'approved':
+                bucket['approved'] += row['n']
+            if row['status'] != 'new':
+                bucket['processed'] += row['n']
+
+        # Сколько разных мероприятий использует каждую общую ссылку Добро.ру —
+        # чтобы отличить «эта общая ссылка используется только тут» от «шарится».
+        shared_usage = (
+            Event.objects.filter(dobro_ru_link_kind='shared', dobro_ru_shared_link__isnull=False)
+            .values('dobro_ru_shared_link_id').annotate(n=Count('id'))
+        )
+        dobro_shared_usage = {r['dobro_ru_shared_link_id']: r['n'] for r in shared_usage}
 
     today = timezone.now().date()
     rows = []
     for event in events:
-        days = sorted(s.day for s in event.shifts.all())
-        first_day = days[0] if days else None
-        last_day = days[-1] if days else None
+        shifts = sorted(event.shifts.all(), key=lambda s: s.day)
+        first_day = shifts[0].day if shifts else None
+        last_day = shifts[-1].day if shifts else None
         is_passed = event.compute_status() in ('passed', 'finished')
         if hide_passed and is_passed:
             continue
         event.first_day = first_day
         event.last_day = last_day
         if manager_view:
-            needed = sum(s.volunteer_needed for s in event.shifts.all())
-            approved = approved_by_event.get(event.id, 0)
-            event.needed_total = needed
-            event.approved_total = approved
-            event.recruit_percent = 100 if needed == 0 else min(100, round(approved * 100 / needed))
+            shift_rows = []
+            for shift in shifts:
+                bucket = decisions_by_shift.get(shift.id, {'approved': 0, 'total': 0, 'processed': 0})
+                needed = shift.volunteer_needed
+                if needed == 0:
+                    # 0 нужно волонтёров: набор укомплектован (100%), если никого не
+                    # одобрено — иначе любой approved уже перенабор (условный %, т.к.
+                    # знаменатель 0; approved=1 → 200%, чтобы сразу считалось overflow).
+                    recruit_percent = 100 if bucket['approved'] == 0 else 100 + bucket['approved'] * 100
+                else:
+                    recruit_percent = round(bucket['approved'] * 100 / needed)
+                shift_rows.append({
+                    'shift': shift,
+                    'status': shift.compute_status(),
+                    'recruit_status': shift.recruit_status,
+                    'needed': needed,
+                    'approved': bucket['approved'],
+                    'recruit_percent': recruit_percent,
+                    'recruit_overflow': recruit_percent > 100,
+                    'applications_total': bucket['total'],
+                    'applications_processed': bucket['processed'],
+                    'applications_percent': 100 if bucket['total'] == 0 else round(bucket['processed'] * 100 / bucket['total']),
+                })
+            event.shift_rows = shift_rows
             event.team_leads_str = ', '.join(tl_by_event.get(event.id, [])) or '—'
+            event.responsible_manager = manager_by_event.get(event.id, '—')
+
+            # Добро.ру: символ статуса + подпись (см. event_list.html §дизайн).
+            if event.dobro_ru_link_kind == 'unique':
+                event.dobro_symbol, event.dobro_caption, event.dobro_class = 'У', 'уникальная', 'unique'
+            elif event.dobro_ru_link_kind == 'shared' and event.dobro_ru_shared_link_id:
+                usage = dobro_shared_usage.get(event.dobro_ru_shared_link_id, 1)
+                event.dobro_symbol = f'О_{event.dobro_ru_shared_link_id}' if usage > 1 else 'О'
+                event.dobro_caption = 'общая' if usage > 1 else 'общая (единств.)'
+                event.dobro_class = 'shared'
+            else:
+                event.dobro_symbol, event.dobro_caption, event.dobro_class = '-', 'нет ссылки', 'missing'
         rows.append(event)
 
     # Ранжирование по дате: сначала ближайшие предстоящие/идущие (по возрастанию даты),

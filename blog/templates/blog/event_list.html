@@ -23,34 +23,68 @@
                 <th data-sort-key="title">Название</th>
                 {% if manager_view %}
                 <th data-sort-key="tl">Тим-лидер</th>
-                <th data-sort-key="date" data-sort-default="asc">Дата</th>
-                <th data-sort-key="status">Статус</th>
-                <th data-sort-key="needed" class="num">Нужно людей</th>
+                <th data-sort-key="manager">Менеджер</th>
+                <th data-sort-key="date" data-sort-default="asc">Смены</th>
                 <th data-sort-key="recruit">Набор</th>
+                <th data-sort-key="applications">Заявок</th>
+                <th data-sort-key="dobro" title="Добро.ру">❤️</th>
                 {% else %}
                 <th data-sort-key="location">Локация</th>
                 <th data-sort-key="date" data-sort-default="asc">Дата</th>
                 <th data-sort-key="status">Статус</th>
                 <th data-sort-key="recruit">Набор</th>
                 {% endif %}
-                <th></th>
             </tr>
         </thead>
         <tbody>
         {% for event in events %}
             <tr data-href="{% url 'event_detail' event.id %}" data-search="{{ event.title }} {% if manager_view %}{{ event.team_leads_str }}{% else %}{{ event.location.name }}{% endif %} {{ event.organization.name }}" data-passed="{% if event.compute_status == 'passed' or event.compute_status == 'finished' %}1{% else %}0{% endif %}">
                 {% if manager_view %}<td data-label="ID" class="mono" data-sort-value="{{ event.id }}">#{{ event.id }}</td>{% endif %}
-                <td data-label="Название" data-sort-value="{{ event.title }}"><a href="{% url 'event_detail' event.id %}">{{ event.title }}</a></td>
+                <td data-label="Название" data-sort-value="{{ event.title }}">
+                    <a href="{% url 'event_detail' event.id %}" class="role-badge event-status-badge event-status-badge--{{ event.compute_status }}">{{ event.title }}</a>
+                </td>
                 {% if manager_view %}
                 <td data-label="Тим-лидер" data-sort-value="{{ event.team_leads_str }}">{{ event.team_leads_str }}</td>
-                <td data-label="Дата" class="mono" data-sort-value="{{ event.first_day|date:'Y-m-d'|default:'' }}">{% event_date_range event.first_day event.last_day %}</td>
-                <td data-label="Статус" data-sort-value="{{ event.compute_status }}">{% event_status_pill event %}</td>
-                <td data-label="Нужно людей" class="num mono" data-sort-value="{{ event.needed_total }}">{{ event.needed_total }}</td>
-                <td data-label="Набор" data-sort-value="{{ event.recruit_percent }}">
-                    <div class="recruit-cell">
-                        <div class="recruit-bar" style="width:90px;"><span class="recruit-bar-fill" style="width:{{ event.recruit_percent }}%; --pct:{{ event.recruit_percent }}"></span></div>
-                        <span class="recruit-pct" style="--pct:{{ event.recruit_percent }}">{{ event.approved_total }}/{{ event.needed_total }} · {{ event.recruit_percent }}%</span>
+                <td data-label="Менеджер" data-sort-value="{{ event.responsible_manager }}">{{ event.responsible_manager }}</td>
+                <td data-label="Смены" class="mono" data-sort-value="{{ event.first_day|date:'Y-m-d'|default:'' }}">
+                    <div class="shift-stack">
+                    {% for row in event.shift_rows %}
+                        <div class="shift-stack-item shift-stack-item--{{ row.status }}">
+                            {{ row.shift.day|date:"d.m.y" }} {{ row.shift.start_time|time:"H:i" }}–{{ row.shift.end_time|time:"H:i" }}
+                            {% if row.recruit_status == 'open' %}<span class="pill success shift-recruit-pill"><span class="dot"></span>Открыт</span>
+                            {% else %}<span class="pill neutral shift-recruit-pill"><span class="dot"></span>Закрыт</span>{% endif %}
+                        </div>
+                    {% empty %}
+                        <span class="event-dash-muted">смены не заданы</span>
+                    {% endfor %}
                     </div>
+                </td>
+                <td data-label="Набор" data-sort-value="{{ event.recruit_percent }}">
+                    <div class="shift-stack">
+                    {% for row in event.shift_rows %}
+                        <div class="recruit-cell shift-stack-item">
+                            <div class="recruit-bar" style="width:70px;"><span class="recruit-bar-fill {% if row.recruit_overflow %}recruit-bar-fill--over{% endif %}" style="width:{% if row.recruit_overflow %}100{% else %}{{ row.recruit_percent }}{% endif %}%; --pct:{{ row.recruit_percent }}"></span></div>
+                            <span class="recruit-pct {% if row.recruit_overflow %}recruit-pct--over{% endif %}" style="--pct:{{ row.recruit_percent }}">{{ row.approved }}/{{ row.needed }} · {{ row.recruit_percent }}%</span>
+                        </div>
+                    {% empty %}
+                        <span class="event-dash-muted">—</span>
+                    {% endfor %}
+                    </div>
+                </td>
+                <td data-label="Заявок" data-sort-value="{{ event.recruit_percent }}">
+                    <div class="shift-stack">
+                    {% for row in event.shift_rows %}
+                        <div class="recruit-cell shift-stack-item">
+                            <div class="recruit-bar" style="width:70px;"><span class="recruit-bar-fill" style="width:{{ row.applications_percent }}%; --pct:{{ row.applications_percent }}"></span></div>
+                            <span class="recruit-pct" style="--pct:{{ row.applications_percent }}">{{ row.applications_processed }}/{{ row.applications_total }} · {{ row.applications_percent }}%</span>
+                        </div>
+                    {% empty %}
+                        <span class="event-dash-muted">—</span>
+                    {% endfor %}
+                    </div>
+                </td>
+                <td data-label="Добро.ру" data-sort-value="{{ event.dobro_ru_link_kind }}">
+                    <span class="dobro-status dobro-status--{{ event.dobro_class }}" title="{{ event.dobro_caption }}">{{ event.dobro_symbol }}</span>
                 </td>
                 {% else %}
                 <td data-label="Локация" data-sort-value="{{ event.location.name }}">{{ event.location.name|default:"—" }}</td>
@@ -64,10 +98,9 @@
                     {% endif %}
                 </td>
                 {% endif %}
-                <td data-label=""><a href="{% url 'event_detail' event.id %}">Подробнее →</a></td>
             </tr>
         {% empty %}
-            <tr><td colspan="7">Мероприятий пока нет.</td></tr>
+            <tr><td colspan="{% if manager_view %}8{% else %}5{% endif %}">Мероприятий пока нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>

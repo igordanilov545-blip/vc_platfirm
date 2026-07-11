@@ -1880,7 +1880,6 @@ def profile_detail(request, user_id):
         'is_manager': is_mgr,
         'has_extended_access': has_extended,
         'can_see_comments': can_see_comments,
-        'past_participations': target.participations.filter(status='attended').select_related('event_day__event').order_by('-event_day__day')[:50],
         'experience': experience,
         # Ссылка «Скопировать опыт» — публичная страница опыта по токену (раздел 4).
         'experience_share_url': request.build_absolute_uri(
@@ -1903,8 +1902,50 @@ def profile_detail(request, user_id):
     # Единый список заявок для профиля (объединённый блок «Опыт и заявки»): виден
     # владельцу (свои заявки) и менеджеру/ТЛ с расширенным доступом (чужие). Таблица
     # на странице сворачивается до 5 строк (data-collapse-rows), поэтому лимит не нужен.
+    #
+    # Раньше это были два раздельных блока (заявки / прошедшие мероприятия) — теперь
+    # одна строка на мероприятие: даты смен, статус заявки, статус явки (агрегат по
+    # сменам заявки — "был" если хоть на одной attended, иначе первый непустой статус;
+    # "-" если заявка отклонена/отменена, там являться было не на что) и сумма часов
+    # (0, если заявка отклонена/отменена/не был).
     if is_owner or has_extended:
-        context['profile_applications'] = target.applications.select_related('event').order_by('-created_at')
+        applications = list(
+            target.applications.select_related('event')
+            .prefetch_related('selected_shifts', 'event__shifts')
+            .order_by('-created_at')
+        )
+        shift_ids_by_app = {
+            app.id: [s.id for s in (app.selected_shifts.all() or app.event.shifts.all())]
+            for app in applications
+        }
+        all_shift_ids = {sid for ids in shift_ids_by_app.values() for sid in ids}
+        shifts_by_id = {s.id: s for s in EventShift.objects.filter(id__in=all_shift_ids)}
+        participations = Participation.objects.filter(
+            user=target, event_day_id__in=all_shift_ids,
+        ).select_related('event_day')
+        participation_by_shift = {p.event_day_id: p for p in participations}
+
+        attendance_labels = dict(Participation.STATUS_CHOICES)
+        rows = []
+        for app in applications:
+            shift_ids = shift_ids_by_app[app.id]
+            shifts = sorted((shifts_by_id[sid] for sid in shift_ids if sid in shifts_by_id), key=lambda s: s.day)
+            can_have_attended = app.status not in ('rejected', 'cancelled')
+            attendance_display = None
+            total_hours = 0
+            if can_have_attended:
+                shift_parts = [p for sid in shift_ids if (p := participation_by_shift.get(sid))]
+                total_hours = sum(p.hours for p in shift_parts)
+                if shift_parts:
+                    status = 'attended' if any(p.status == 'attended' for p in shift_parts) else shift_parts[0].status
+                    attendance_display = attendance_labels.get(status)
+            rows.append({
+                'application': app,
+                'shift_days': [s.day for s in shifts],
+                'attendance_display': attendance_display,
+                'total_hours': total_hours,
+            })
+        context['profile_experience_rows'] = rows
 
     if has_extended:
         # Пул благодарственных писем: мероприятия с явкой и заданным шаблоном.
@@ -2772,7 +2813,26 @@ def users_picker_data(request):
 
 @manager_required
 def user_list(request):
-    users = User.objects.order_by('-created_at')
+    from django.db.models import OuterRef, Subquery
+
+    # Дата последней заявки (любой статус) и дата последнего мероприятия, на котором
+    # человек реально был и получил часы (Participation.status='attended', hours>0) —
+    # считаем через Subquery по каждому пользователю страницы, а не в Python-цикле,
+    # чтобы не плодить N+1 при infinite-scroll подгрузке новых порций.
+    last_application_sq = (
+        Application.objects.filter(user=OuterRef('pk'))
+        .order_by('-submitted_at', '-created_at')
+        .values('submitted_at')[:1]
+    )
+    last_event_sq = (
+        Participation.objects.filter(user=OuterRef('pk'), status='attended', hours__gt=0)
+        .order_by('-event_day__day')
+        .values('event_day__day')[:1]
+    )
+    users = User.objects.order_by('-created_at').annotate(
+        last_application_at=Subquery(last_application_sq),
+        last_attended_day=Subquery(last_event_sq),
+    )
     paginator = Paginator(users, 40)
     page = paginator.get_page(request.GET.get('page'))
 

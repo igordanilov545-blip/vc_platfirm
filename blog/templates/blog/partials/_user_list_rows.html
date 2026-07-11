@@ -16,6 +16,9 @@
             {% endif %}
         </td>
         <td data-label="Telegram" data-sort-value="{{ u.telegram_username }}">{{ u.telegram_username|default:"—" }}</td>
+        <td data-label="Телефон" class="mono" data-sort-value="{{ u.phone }}">{{ u.phone|default:"—" }}</td>
+        <td data-label="Посл. заявка" class="mono" data-sort-value="{{ u.last_application_at|date:'Y-m-d'|default:'' }}">{{ u.last_application_at|date:"d.m.y"|default:"—" }}</td>
+        <td data-label="Посл. мероприятие" class="mono" data-sort-value="{{ u.last_attended_day|date:'Y-m-d'|default:'' }}">{{ u.last_attended_day|date:"d.m.y"|default:"—" }}</td>
         <td data-label="Часов (сезон / всё)" class="num mono" data-sort-value="{{ u.total_hours }}">{{ u.season_hours }} / {{ u.total_hours }}</td>
         <td data-label="Мероприятия (сезон / всё)" class="num mono" data-sort-value="{{ u.total_event_count }}">{{ u.season_event_count }} / {{ u.total_event_count }}</td>
     </tr>

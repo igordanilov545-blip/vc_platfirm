@@ -88,20 +88,34 @@
 
 {% if is_owner or has_extended_access %}
 <div class="card" style="padding:0; overflow:hidden;">
-    <h3 style="padding:20px 20px 0;">📝 Заявки</h3>
+    <h3 style="padding:20px 20px 0;">📝 Заявки и участия</h3>
     <table class="responsive-table" data-sortable data-collapse-rows="5">
-        <thead><tr><th data-sort-key="event">Мероприятие</th><th data-sort-key="date" data-sort-default="desc">Подана</th><th data-sort-key="status">Статус</th><th></th></tr></thead>
+        <thead>
+            <tr>
+                <th data-sort-key="event">Мероприятие</th>
+                <th data-sort-key="dates" data-sort-default="desc">Даты</th>
+                <th data-sort-key="app-status">Статус заявки</th>
+                <th data-sort-key="attendance">Присутствие</th>
+                <th data-sort-key="hours" class="num">Часы</th>
+                <th></th>
+            </tr>
+        </thead>
         <tbody>
-        {% for a in profile_applications %}
+        {% for row in profile_experience_rows %}
+            {% with a=row.application %}
             <tr {% if not is_owner %}data-href="{% url 'event_detail' a.event.id %}"{% endif %}>
                 <td data-label="Мероприятие" data-sort-value="{{ a.event.title }}"><a href="{% url 'event_detail' a.event.id %}">{{ a.event.title }}</a></td>
-                <td data-label="Подана" class="mono" data-sort-value="{{ a.submitted_at|default:a.created_at|date:'U' }}">{{ a.submitted_at|default:a.created_at }}</td>
-                <td data-label="Статус" data-sort-value="{{ a.status }}">
+                <td data-label="Даты" class="mono" data-sort-value="{{ row.shift_days.0|date:'Y-m-d' }}">
+                    {% for d in row.shift_days %}{{ d|date:"d.m.y" }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+                </td>
+                <td data-label="Статус заявки" data-sort-value="{{ a.status }}">
                     {% if a.status == 'approved' %}<span class="pill success"><span class="dot"></span>{{ a.get_status_display }}</span>
                     {% elif a.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>{{ a.get_status_display }}</span>
                     {% elif a.status == 'cancelled' %}<span class="pill danger"><span class="dot"></span>{{ a.get_status_display }}</span>
                     {% else %}<span class="pill warning"><span class="dot"></span>{{ a.get_status_display }}</span>{% endif %}
                 </td>
+                <td data-label="Присутствие" data-sort-value="{{ row.attendance_display|default:'' }}">{{ row.attendance_display|default:"—" }}</td>
+                <td data-label="Часы" class="num mono" data-sort-value="{{ row.total_hours }}">{{ row.total_hours }}</td>
                 <td data-label="">
                     {% if is_owner and a.status == 'new' or is_owner and a.status == 'approved' %}
                     <a href="{% url 'application_edit' a.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Редактировать заявку">Изменить</a>
@@ -109,31 +123,14 @@
                     {% endif %}
                 </td>
             </tr>
+            {% endwith %}
         {% empty %}
-            <tr><td colspan="4">{% if is_owner %}Вы ещё не подавали заявок. <a href="{% url 'application_create' %}">Подать заявку</a>.{% else %}Заявок нет.{% endif %}</td></tr>
+            <tr><td colspan="6">{% if is_owner %}Вы ещё не подавали заявок. <a href="{% url 'application_create' %}">Подать заявку</a>.{% else %}Заявок нет.{% endif %}</td></tr>
         {% endfor %}
         </tbody>
     </table>
 </div>
 {% endif %}
-
-<div class="card" style="padding:0; overflow:hidden;">
-    <h3 style="padding:20px 20px 0;">Прошедшие мероприятия</h3>
-    <table class="responsive-table" data-sortable data-collapse-rows="5">
-        <thead><tr><th data-sort-key="event">Мероприятие</th><th data-sort-key="date" data-sort-default="desc">Дата</th><th data-sort-key="hours" class="num">Часы</th></tr></thead>
-        <tbody>
-        {% for p in past_participations %}
-            <tr data-href="{% url 'event_detail' p.event_day.event.id %}">
-                <td data-label="Мероприятие" data-sort-value="{{ p.event_day.event.title }}">{{ p.event_day.event.title }}</td>
-                <td data-label="Дата" class="mono" data-sort-value="{{ p.event_day.day|date:'Y-m-d' }}">{{ p.event_day.day }}</td>
-                <td data-label="Часы" class="num mono" data-sort-value="{{ p.hours }}">{{ p.hours }}</td>
-            </tr>
-        {% empty %}
-            <tr><td colspan="3">Пока нет прошедших мероприятий.</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
-</div>
 
 {% comment %}Благодарственные письма — видны и владельцу (свои письма), и менеджеру/ТЛ,
 смотрящему чужой профиль с расширенным доступом.{% endcomment %}

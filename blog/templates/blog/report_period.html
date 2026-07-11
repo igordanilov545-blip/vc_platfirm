@@ -175,7 +175,7 @@
 
         function initPanel(root) {
             // Переиспользуем поведения таблиц/пикеров/подтверждений на свежем контенте.
-            ['initSortableTables', 'initHideableColumns', 'initTableFilter', 'initCharCounters',
+            ['initSortableTables', 'initReportTableTools', 'initTableFilter', 'initCharCounters',
              'bindConfirmForms'].forEach(function (fn) {
                 if (typeof window[fn] === 'function') window[fn](root);
             });

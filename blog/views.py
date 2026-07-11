@@ -2190,9 +2190,9 @@ REPORT_VIEWS = [
 REPORT_TABLES = [
     {'key': 'volunteers', 'title': 'Волонтёры'},
     {'key': 'events', 'title': 'Мероприятия'},
-    {'key': 'recruitment', 'title': 'Набор'},
-    {'key': 'staff', 'title': 'Персонал'},
-    {'key': 'timing', 'title': 'Тайминг заявок'},
+    {'key': 'teamleaders', 'title': 'Тим-лидеры'},
+    {'key': 'managers', 'title': 'Менеджеры'},
+    {'key': 'applications', 'title': 'Заявки'},
 ]
 
 
@@ -2318,13 +2318,19 @@ def _report_tables_panel(request, scope):
     if table_key == 'volunteers':
         context['rows'] = reports_service.volunteers_table(date_from, date_to, event_ids=event_ids)
     elif table_key == 'events':
-        context['rows'] = reports_service.events_table(date_from, date_to, event_ids=event_ids)
-    elif table_key == 'recruitment':
-        context['efficiency'] = reports_service.recruitment_efficiency(date_from, date_to, event_ids=event_ids)
-    elif table_key == 'staff':
-        context['staff'] = reports_service.staff_load(date_from, date_to, event_ids=event_ids)
-    elif table_key == 'timing':
-        context['timing'] = reports_service.application_timing(date_from, date_to, event_ids=event_ids)
+        rows, max_shifts = reports_service.events_table(date_from, date_to, event_ids=event_ids)
+        # Дополняем список смен до max_shifts пустыми ячейками — шаблон тогда просто
+        # итерирует по row.shift_cells и рисует ровно N колонок «Смена k» у всех строк.
+        for r in rows:
+            r['shift_cells'] = list(r['shift_cells']) + ['—'] * (max_shifts - len(r['shift_cells']))
+        context['rows'] = rows
+        context['shift_columns'] = range(1, max_shifts + 1)
+    elif table_key == 'teamleaders':
+        context['rows'] = reports_service.team_leaders_table(date_from, date_to, event_ids=event_ids)
+    elif table_key == 'managers':
+        context['rows'] = reports_service.managers_table(date_from, date_to, event_ids=event_ids)
+    elif table_key == 'applications':
+        context['rows'] = reports_service.applications_table(date_from, date_to, event_ids=event_ids)
     return render(request, 'blog/partials/_report_tables.html', context)
 
 
@@ -2378,15 +2384,15 @@ def _xlsx_response(workbook, filename):
 
 @manager_required
 def report_period_export(request):
-    """Excel-отчёт за охват (.xlsx) — reports_template.md §2: агрегатные листы
-    (дублируют внутренний PDF) + сырые построчные листы «Заявки» и «Мероприятия»."""
-    scope_mode, period, date_from, date_to, event_ids = _report_scope(request)
-    compare_mode = request.GET.get('compare', 'adjacent')
-    if compare_mode not in ('adjacent', 'year_ago'):
-        compare_mode = 'adjacent'
-
-    wb = report_exports.build_period_workbook(date_from, date_to, event_ids, scope_mode, compare_mode)
-    filename = f"report_{date_from}_{date_to}.xlsx" if scope_mode == 'period' else "report_events.xlsx"
+    """Excel-отчёт за охват (.xlsx): по листу на каждую экранную таблицу ERP-раздела
+    (Волонтёры / Мероприятия / Тим-лидеры / Менеджеры / Заявки). Охват — тот же, что на
+    экране (даты + статус-режим + убранные меро), поэтому парсим ERP-охват."""
+    scope = _report_erp_scope(request)
+    wb = report_exports.build_period_workbook(
+        scope['date_from'], scope['date_to'], scope['event_ids'],
+        scope_mode='events', compare_mode='adjacent',
+    )
+    filename = f"report_{scope['date_from']}_{scope['date_to']}.xlsx"
     return _xlsx_response(wb, filename)
 
 

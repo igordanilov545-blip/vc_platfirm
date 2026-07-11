@@ -1494,6 +1494,165 @@
     initHideableColumns(document);
 
     // ======================================================================
+    // Инструменты таблицы отчётов (data-report-tools): панель НАД таблицей с
+    //  1) переключателем колонок — чипы «показать/скрыть» по механике выбора смен
+    //     мероприятия (клик по чипу прячет/возвращает колонку целиком, без
+    //     перезагрузки; скрытая колонка = display:none у th и всех td);
+    //  2) фильтром-исключением значений по колонке (как автофильтр Excel): клик по
+    //     «▾» в заголовке открывает список уникальных значений колонки с галочками —
+    //     снятая галочка прячет строки с этим значением.
+    // Сортировка (data-sortable) продолжает работать: скрытие/фильтрация — это только
+    // display:none, индексы колонок и порядок строк не трогаются. Всё клиентское —
+    // строится из уже отрендеренной таблицы, никаких запросов на сервер.
+    // Разметка: <div data-report-tools data-table="#id"></div> прямо перед таблицей.
+    // ======================================================================
+    function initReportTableTools(root) {
+        root.querySelectorAll('[data-report-tools]').forEach(function (bar) {
+            if (bar.dataset.toolsInit) return;
+            bar.dataset.toolsInit = '1';
+            var table = document.querySelector(bar.getAttribute('data-table'));
+            if (!table) return;
+            var headRow = table.querySelector('thead tr');
+            var tbody = table.querySelector('tbody');
+            if (!headRow || !tbody) return;
+            var headers = Array.prototype.filter.call(headRow.children, function (el) { return el.tagName === 'TH'; });
+
+            // Множества исключённых значений по индексу колонки (для фильтра).
+            var excluded = {}; // colIndex -> Set(values)
+
+            function dataRows() {
+                return Array.prototype.filter.call(tbody.querySelectorAll('tr'), function (tr) {
+                    return tr.querySelector('td') && !tr.querySelector('td[colspan]');
+                });
+            }
+            function cellText(row, index) {
+                var cell = row.children[index];
+                if (!cell) return '';
+                return (cell.getAttribute('data-filter-value') || cell.textContent || '').trim();
+            }
+
+            // --- Скрытие колонок ---
+            function setColHidden(index, hidden) {
+                var th = headers[index];
+                if (th) th.classList.toggle('col-hidden', hidden);
+                dataRows().forEach(function (row) {
+                    if (row.children[index]) row.children[index].classList.toggle('col-hidden', hidden);
+                });
+            }
+
+            // --- Фильтрация строк по исключённым значениям ---
+            function applyFilters() {
+                dataRows().forEach(function (row) {
+                    var hide = false;
+                    Object.keys(excluded).forEach(function (idx) {
+                        if (excluded[idx].size && excluded[idx].has(cellText(row, +idx))) hide = true;
+                    });
+                    row.hidden = hide;
+                });
+            }
+
+            // Панель чипов-колонок.
+            var chipWrap = document.createElement('div');
+            chipWrap.className = 'rtt-cols';
+            var chipLabel = document.createElement('span');
+            chipLabel.className = 'rtt-label';
+            chipLabel.textContent = 'Колонки:';
+            chipWrap.appendChild(chipLabel);
+
+            headers.forEach(function (th, index) {
+                var name = (th.getAttribute('data-col-name') || th.textContent || '').trim();
+                if (!name) return; // безымянные (действия) не переключаем
+                var chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'rtt-col-chip active';
+                chip.textContent = name;
+                chip.addEventListener('click', function () {
+                    var nowHidden = chip.classList.toggle('rtt-off');
+                    chip.classList.toggle('active', !nowHidden);
+                    setColHidden(index, nowHidden);
+                });
+                chipWrap.appendChild(chip);
+
+                // Кнопка фильтра-исключения значений в заголовке колонки.
+                if (th.hasAttribute('data-filterable')) {
+                    var fbtn = document.createElement('button');
+                    fbtn.type = 'button';
+                    fbtn.className = 'rtt-filter-btn';
+                    fbtn.title = 'Фильтр значений';
+                    fbtn.textContent = '▾';
+                    fbtn.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        openFilterMenu(index, fbtn, name);
+                    });
+                    th.appendChild(fbtn);
+                }
+            });
+            bar.appendChild(chipWrap);
+
+            // Меню фильтра значений (одно на таблицу, переиспользуется).
+            var menu = null;
+            function openFilterMenu(index, anchor, name) {
+                closeFilterMenu();
+                var values = {};
+                dataRows().forEach(function (row) { values[cellText(row, index)] = true; });
+                var uniq = Object.keys(values).sort(function (a, b) { return a.localeCompare(b, 'ru'); });
+                excluded[index] = excluded[index] || new Set();
+
+                menu = document.createElement('div');
+                menu.className = 'rtt-filter-menu';
+                var head = document.createElement('div');
+                head.className = 'rtt-filter-head';
+                head.innerHTML = '<b>' + name + '</b>';
+                var actions = document.createElement('div');
+                actions.className = 'rtt-filter-actions';
+                var allBtn = document.createElement('button'); allBtn.type = 'button'; allBtn.textContent = 'Все';
+                var noneBtn = document.createElement('button'); noneBtn.type = 'button'; noneBtn.textContent = 'Снять все';
+                actions.appendChild(allBtn); actions.appendChild(noneBtn);
+                head.appendChild(actions);
+                menu.appendChild(head);
+
+                var list = document.createElement('div');
+                list.className = 'rtt-filter-list';
+                uniq.forEach(function (val) {
+                    var lab = document.createElement('label');
+                    var cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.checked = !excluded[index].has(val);
+                    cb.addEventListener('change', function () {
+                        if (cb.checked) excluded[index].delete(val); else excluded[index].add(val);
+                        applyFilters();
+                    });
+                    lab.appendChild(cb);
+                    lab.appendChild(document.createTextNode(' ' + (val || '(пусто)')));
+                    list.appendChild(lab);
+                });
+                menu.appendChild(list);
+                allBtn.addEventListener('click', function () {
+                    excluded[index].clear();
+                    list.querySelectorAll('input').forEach(function (c) { c.checked = true; });
+                    applyFilters();
+                });
+                noneBtn.addEventListener('click', function () {
+                    uniq.forEach(function (v) { excluded[index].add(v); });
+                    list.querySelectorAll('input').forEach(function (c) { c.checked = false; });
+                    applyFilters();
+                });
+
+                document.body.appendChild(menu);
+                var rect = anchor.getBoundingClientRect();
+                menu.style.left = Math.min(rect.left, window.innerWidth - 260) + 'px';
+                menu.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+                setTimeout(function () { document.addEventListener('click', outsideClose); }, 0);
+            }
+            function outsideClose(e) { if (menu && !menu.contains(e.target)) closeFilterMenu(); }
+            function closeFilterMenu() {
+                if (menu) { menu.remove(); menu = null; document.removeEventListener('click', outsideClose); }
+            }
+        });
+    }
+    initReportTableTools(document);
+
+    // ======================================================================
     // Поиск/фильтрация строк таблицы — единый компонент вместо инлайновых
     // скриптов на каждой странице-списке. Разметка: поле
     //   <input type="search" data-table-filter="#users-table">

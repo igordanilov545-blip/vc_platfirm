@@ -277,143 +277,89 @@ def dobro_logging_report(date_from=None, date_to=None, event_ids=None, show_logg
 # ---------------------------------------------------------------------------
 
 def build_period_workbook(date_from, date_to, event_ids, scope_mode, compare_mode):
-    """Полная книга отчёта за охват (reports_template.md §2): агрегатные листы
-    (дублируют внутренний PDF) + сырые построчные листы «Заявки» и «Мероприятия»."""
+    """Книга отчёта за охват: по ЛИСТУ на каждую экранную таблицу ERP-раздела
+    (Волонтёры / Мероприятия / Тим-лидеры / Менеджеры / Заявки) с теми же колонками,
+    что и на экране. Пользователь переключается между таблицами на странице, а скачивает
+    сразу всё за выбранный период — по листу на таблицу."""
     from openpyxl import Workbook
-
-    prev_from = prev_to = None
-    if scope_mode == 'period':
-        prev_from, prev_to = reports_service.previous_period_range(date_from, date_to, compare_mode)
-
-    data = reports_service.period_report(date_from, date_to, prev_from, prev_to, event_ids=event_ids)
-    efficiency = reports_service.recruitment_efficiency(date_from, date_to, event_ids=event_ids)
-    staff = reports_service.staff_load(date_from, date_to, event_ids=event_ids)
-    timing = reports_service.application_timing(date_from, date_to, event_ids=event_ids)
-    post_timing = reports_service.post_publication_timing(date_from, date_to, event_ids=event_ids)
-    weekly = reports_service.weekly_dynamics(date_from, date_to, event_ids=event_ids)
-
-    scope_label = (
-        f'{date_from} — {date_to}' if scope_mode == 'period'
-        else f'{len(event_ids)} выбранных мероприятий'
-    )
 
     wb = Workbook()
 
+    # --- Волонтёры ---
     ws = wb.active
-    ws.title = 'Обзор'
-    ws.append(['Отчёт за охват', scope_label])
-    ws.append([])
-    ws.append(['Показатель', 'Значение'])
-    ws.append(['Всего часов', data['total_hours']])
-    ws.append(['Всего мероприятий', data['total_events']])
-    ws.append(['Уникальных волонтёров', data['unique_volunteers']])
-    ws.append(['Закрытых смен', data['closed_shifts']])
-    ws.append(['Новых волонтёров', data['new_volunteers']])
-    ws.append(['Людей получили помощь', data['people_helped']])
-
-    ws_top = wb.create_sheet('Топы')
-    ws_top.append(['Тип', 'Позиция', 'Имя/категория', 'Значение'])
-    for i, v in enumerate(data['top_volunteers'], start=1):
-        ws_top.append(['Волонтёр', i, v['name'], v['hours']])
-    for i, c in enumerate(data['top_categories'], start=1):
-        ws_top.append(['Категория', i, c['event_day__event__category_map__category__name'] or '—', c['count']])
-
-    ws_cat = wb.create_sheet('Распределение по категориям')
-    ws_cat.append(['Категория', 'Волонтёров', 'Часов', 'Мероприятий'])
-    for c in data['category_breakdown']:
-        ws_cat.append([c['name'] or 'Без категории', c['volunteers'], c['hours'] or 0, c['events']])
-
-    ws_funnel = wb.create_sheet('Воронка')
-    ws_funnel.append(['Этап', 'Значение'])
-    ws_funnel.append(['Подано заявок', data['funnel']['submitted']])
-    ws_funnel.append(['Одобрено', data['funnel']['approved']])
-    ws_funnel.append(['Отклонено (резерв)', data['funnel']['rejected']])
-    ws_funnel.append(['Явка', data['funnel']['attended']])
-    ws_funnel.append(['Неявка без предупреждения', data['funnel']['unexcused']])
-    ws_funnel.append(['Конверсия подал → явка, %', data['funnel']['conversion_pct']])
-
-    ws_eff = wb.create_sheet('Эффективность набора')
-    ws_eff.append(['Мероприятие', 'Смена (день)', 'Нужно', 'Пришло', '% закрытия'])
-    for s in efficiency['shifts']:
-        ws_eff.append([s['title'], s['day'].isoformat(), s['needed'], s['attended'], s['pct_closed']])
-    ws_eff.append([])
-    ws_eff.append(['Среднее время набора (дн.)', efficiency['avg_recruit_days'] if efficiency['avg_recruit_days'] is not None else '—'])
-
-    ws_staff = wb.create_sheet('Нагрузка персонала')
-    ws_staff.append(['Роль', 'ФИО', 'Мероприятий', 'Заявок обработано', 'Ср. время обработки, ч'])
-    for m in staff['managers']:
-        ws_staff.append(['Менеджер', f"{m['user__first_name'] or ''} {m['user__last_name'] or ''}".strip(),
-                         m['event_count'], m['applications_processed'], m['avg_processing_hours']])
-    for t in staff['team_leads']:
-        ws_staff.append(['Тим-лидер', f"{t['user__first_name'] or ''} {t['user__last_name'] or ''}".strip(),
-                         t['event_count'], t['applications_processed'], t['avg_processing_hours']])
-
-    ws_ret = wb.create_sheet('Retention Churn')
-    ws_ret.append(['Показатель', 'Значение'])
-    ws_ret.append(['Churn rate, %', data['retention']['churn_rate_pct']])
-    ws_ret.append(['Новых в blacklist', data['retention']['new_blacklisted']])
-
-    ws_problems = wb.create_sheet('Проблемные зоны')
-    ws_problems.append(['Категория', 'Мероприятие/волонтёр', 'Метрика'])
-    for e in data['problem_zones']['low_rated_events']:
-        ws_problems.append(['Низкий рейтинг', e['title'], f"{e['avg_rating']:.1f} ({e['fb_count']} отзывов)"])
-    for u in data['problem_zones']['at_risk_users']:
-        name = f"{u['first_name'] or ''} {u['last_name'] or ''}".strip() or u['telegram_username'] or '—'
-        ws_problems.append(['На грани blacklist', name, round(u['churn_score'], 2)])
-
-    if data['comparison']:
-        ws_cmp = wb.create_sheet('Сравнение')
-        cmp = data['comparison']
-        ws_cmp.append([f"База: {cmp['date_from']} — {cmp['date_to']} ({'год назад' if compare_mode == 'year_ago' else 'смежный период'})"])
-        ws_cmp.append(['Метрика', 'Δ абс.', 'Δ %'])
-        ws_cmp.append(['Часы', cmp['hours_delta'], cmp['hours_delta_pct']])
-        ws_cmp.append(['Мероприятия', cmp['events_delta'], cmp['events_delta_pct']])
-        ws_cmp.append(['Уникальных волонтёров', cmp['volunteers_delta'], cmp['volunteers_delta_pct']])
-        ws_cmp.append(['Новых волонтёров', cmp['new_volunteers_delta'], cmp['new_volunteers_delta_pct']])
-
-    ws_charts = wb.create_sheet('Данные для графиков')
-    ws_charts.append(['График', 'Ключ', 'Значение'])
-    for d in timing['density']:
-        ws_charts.append(['Отклик на меро (плотность)', d['label'], d['count']])
-    for hour, count in enumerate(post_timing['by_hour']):
-        ws_charts.append(['Публикация постов (час)', f'{hour}:00', count])
-    for b in data['churn_histogram']:
-        ws_charts.append(['Распределение churn', b['label'], b['count']])
-    for w in weekly:
-        ws_charts.append(['Динамика по неделям', f"{w['from']}–{w['to']}", f"{w['hours']} ч / {w['shifts']} смен"])
-
-    # --- Сырые построчные листы (§2.1, §2.2) ---
-    ws_apps = wb.create_sheet('Заявки')
-    ws_apps.append([
-        'ID', 'Волонтёр', 'Telegram', 'Телефон', 'user_id', 'Мероприятие', 'Смена',
-        'Функция', 'Роль', 'Когда подал', 'Загружено', 'Статус', 'Кто обработал',
-        'Когда обработано', 'Пришёл?', 'Полная смена', 'Часы',
+    ws.title = 'Волонтёры'
+    ws.append([
+        'ФИО', 'Телефон', 'Telegram', 'Часы (охват)', 'Часы за сезон', 'Часы за всё время',
+        'Меро за сезон', 'Меро за всё время', 'Ср. часов на меро', 'Смен всего', 'Смен за сезон',
+        'Ср. длит. смены, ч', 'Первое меро', 'Дней с нами', 'Последнее меро', 'Последняя заявка',
+        'Дней с посл. меро', 'Churn',
     ])
-    for r in applications_rows(date_from, date_to, event_ids):
-        ws_apps.append([
-            r['id'], r['name'], r['telegram'], r['phone'], r['user_id'], r['event'],
-            r['shift_day'].isoformat() if r['shift_day'] else '—',
-            r['functions'], r['role'], _fmt_dt(r['submitted_at']), _fmt_dt(r['created_at']),
-            r['status'], r['assigned_by'], _fmt_dt(r['assigned_at']),
-            r['attended'], r['full_shift'], r['hours'],
+    for r in reports_service.volunteers_table(date_from, date_to, event_ids=event_ids):
+        ws.append([
+            r['name'], r['phone'], r['telegram'], r['hours_total'], r['hours_season'], r['hours_total'],
+            r['events_season'], r['events_attended'], r['avg_hours_per_event'], r['shifts_total'],
+            r['shifts_season'], r['avg_shift_hours'], r['first_event'],
+            r['days_with_us'] if r['days_with_us'] is not None else '—', r['last_event'],
+            r['last_application'], r['days_since_last_event'] if r['days_since_last_event'] is not None else '—',
+            r['churn'],
         ])
 
+    # --- Мероприятия (посменные колонки) ---
+    ev_rows, max_shifts = reports_service.events_table(date_from, date_to, event_ids=event_ids)
     ws_ev = wb.create_sheet('Мероприятия')
-    ws_ev.append([
-        'ID', 'Название', 'Организация', 'Организатор', 'Категории', 'Дата с', 'Дата по',
-        'Смен', 'Локации', 'Статус', 'Нужно', 'Подано', 'Одобрено', 'Явка', '% закрытия',
-        'Часов', 'Людей помогли', 'Рейтинг', 'Отзывов', 'Менеджеры', 'Тим-лидеры',
-        'Учёт Добро.ру', 'Часы проставлены',
+    ws_ev.append(
+        ['Название', 'Статус', 'Смен']
+        + [f'Смена {i}' for i in range(1, max_shifts + 1)]
+        + ['Нужно человек', 'Заявок', 'Принято', 'Отклонено', 'Осталось',
+           'Организация', 'Организатор', 'TG организатора', 'Телефон организатора']
+    )
+    for r in ev_rows:
+        cells = list(r['shift_cells']) + ['—'] * (max_shifts - len(r['shift_cells']))
+        ws_ev.append(
+            [r['title'], r['status_display'], r['shifts_count']]
+            + cells
+            + [r['needed'], r['submitted'], r['approved'], r['rejected'], r['remaining'],
+               r['organization'], r['organizer'], r['organizer_tg'], r['organizer_phone']]
+        )
+
+    # --- Тим-лидеры / Менеджеры ---
+    for sheet_name, builder, role_word in (
+        ('Тим-лидеры', reports_service.team_leaders_table, 'ТЛ'),
+        ('Менеджеры', reports_service.managers_table, 'менеджером'),
+    ):
+        ws_r = wb.create_sheet(sheet_name)
+        ws_r.append([
+            'ФИО', 'Телефон', 'Telegram', f'Меро {role_word} за сезон', f'Меро {role_word} всего',
+            'Назначен', 'Дней в роли', 'Первое меро в роли', 'Последнее меро в роли',
+            'Дней с первого меро', 'Дней с последнего меро', 'Людей на его меро (сумма)',
+            'Людей на меро (среднее)', 'Заявок обработано', 'Из них принято', 'Из них отклонено',
+            'Часы волонтёром (всё)', 'Часы волонтёром (сезон)', 'Меро волонтёром (всё)',
+            'Смен волонтёром', 'Churn',
+        ])
+        for r in builder(date_from, date_to, event_ids=event_ids):
+            def _d(key):
+                v = r.get(key)
+                return v if v is not None else '—'
+            ws_r.append([
+                r.get('name', '—'), r.get('phone', '—'), r.get('telegram', '—'),
+                r['role_events_season'], r['role_events_total'], r['role_assigned_at'],
+                _d('role_days_since_assigned'), r['role_first_event'], r['role_last_event'],
+                _d('role_days_since_first'), _d('role_days_since_last'), r['role_people_total'],
+                r['role_people_avg'], r['role_apps_processed'], r['role_apps_approved'],
+                r['role_apps_rejected'], r.get('hours_total', 0), r.get('hours_season', 0),
+                r.get('events_attended', 0), r.get('shifts_total', 0), r.get('churn', 0),
+            ])
+
+    # --- Заявки ---
+    ws_apps = wb.create_sheet('Заявки')
+    ws_apps.append([
+        'ID', 'ФИО', 'Телефон', 'Telegram', 'Мероприятие', 'Функция', 'Роль', 'Статус',
+        'Источник', 'Когда подал', 'Кто обработал', 'Когда обработано', 'Ожидание, ч',
     ])
-    for r in events_rows(date_from, date_to, event_ids):
-        ws_ev.append([
-            r['id'], r['title'], r['organization'], r['organizer'], r['categories'],
-            r['date_from'].isoformat() if r['date_from'] else '—',
-            r['date_to'].isoformat() if r['date_to'] else '—',
-            r['shift_count'], r['locations'], r['event_status'], r['needed'], r['submitted'],
-            r['approved'], r['attended'], r['pct_closed'], r['total_hours'], r['people_helped'],
-            r['rating'], r['rating_count'], r['managers'], r['team_leads'],
-            r['dobro_kind'], r['dobro_logged'],
+    for r in reports_service.applications_table(date_from, date_to, event_ids=event_ids):
+        ws_apps.append([
+            r['id'], r['name'], r['phone'], r['telegram'], r['event'], r['functions'], r['role'],
+            r['status'], r['source'], r['submitted_at'], r['assigned_by'], r['assigned_at'], r['wait_hours'],
         ])
 
     return wb

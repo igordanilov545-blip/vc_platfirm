@@ -14,9 +14,9 @@
 import math
 from datetime import date, timedelta
 
-from django.db.models import Avg, Count, Q, Sum
+from django.db.models import Avg, Count, Max, Min, Q, Sum
 
-from blog.models import Application, Event, EventShift, Participation, User
+from blog.models import Application, Event, EventShift, Participation, Season, User
 
 # Режимы статус-фильтра пула мероприятий (под-переключатель над чипами охвата).
 EVENT_SCOPE_MODES = ('all', 'ongoing', 'past')
@@ -445,63 +445,338 @@ def recruitment_efficiency(date_from=None, date_to=None, event_ids=None):
     return {'shifts': result, 'events': events_rollup, 'avg_recruit_days': avg_recruit_time}
 
 
+def _fmt_date(d):
+    return d.strftime('%d.%m.%Y') if d else '—'
+
+
+def _days_ago(d):
+    """Сколько дней назад была дата d (по дате смены/заявки). None → '—'."""
+    if not d:
+        return None
+    from django.utils import timezone
+    today = timezone.now().date()
+    if hasattr(d, 'date'):
+        d = d.date()
+    return (today - d).days
+
+
+def _volunteer_activity_metrics(user_ids):
+    """Общие «волонтёрские» метрики по каждому пользователю (используются в таблицах
+    волонтёров, тим-лидеров и менеджеров — чтобы не дублировать расчёт). Возвращает
+    dict user_id -> {...} со сводкой по ВСЕМ участиям пользователя (не только в охвате):
+    часы всего/за сезон, меро всего/за сезон, смены всего/за сезон, средняя длительность
+    смены, средняя явка на меро, даты первого/последнего меро и последней заявки.
+
+    Сезонные метрики берутся из кэш-полей User (season_hours/season_event_count) — они
+    поддерживаются пересчётом; «за всё время» считаем по participations напрямую."""
+    from django.utils import timezone
+    from django.db.models import Min, Max, DurationField, ExpressionWrapper, F
+
+    if not user_ids:
+        return {}
+    users = User.objects.filter(id__in=user_ids).values(
+        'id', 'first_name', 'last_name', 'middle_name', 'telegram_username', 'phone',
+        'total_hours', 'season_hours', 'total_event_count', 'season_event_count',
+        'churn_score', 'created_at',
+    )
+    metrics = {}
+    for u in users:
+        full = f"{u['last_name'] or ''} {u['first_name'] or ''} {u['middle_name'] or ''}".strip()
+        metrics[u['id']] = {
+            'user_id': u['id'],
+            'name': full or u['telegram_username'] or f"#{u['id']}",
+            'telegram': u['telegram_username'] or '—',
+            'phone': u['phone'] or '—',
+            'hours_total': u['total_hours'] or 0,
+            'hours_season': u['season_hours'] or 0,
+            'events_total': u['total_event_count'] or 0,
+            'events_season': u['season_event_count'] or 0,
+            'churn': round(u['churn_score'] or 0, 1),
+        }
+
+    # Все участия этих пользователей (attended) — для смен, длительностей, дат.
+    parts = (
+        Participation.objects.filter(user_id__in=user_ids, status='attended')
+        .select_related('event_day')
+        .values('user_id', 'hours', 'event_day__day', 'event_day__start_time', 'event_day__end_time')
+    )
+    agg = {uid: {'shifts': 0, 'dur_sum': 0.0, 'dur_n': 0, 'days': [], 'events': set()} for uid in metrics}
+    part_events = {uid: set() for uid in metrics}
+    for p in parts:
+        uid = p['user_id']
+        a = agg[uid]
+        a['shifts'] += 1
+        st, en = p['event_day__start_time'], p['event_day__end_time']
+        if st and en:
+            a['dur_sum'] += (en - st).total_seconds() / 3600
+            a['dur_n'] += 1
+        if p['event_day__day']:
+            a['days'].append(p['event_day__day'])
+
+    # Число меро (distinct) по каждому пользователю.
+    ev_counts = (
+        Participation.objects.filter(user_id__in=user_ids, status='attended')
+        .values('user_id').annotate(n=Count('event_day__event', distinct=True))
+    )
+    ev_by_user = {r['user_id']: r['n'] for r in ev_counts}
+    # Смены за сезон — по кэш-полю нет, считаем participations в текущем сезоне.
+    current_season = Season.objects.filter(start_season__lte=timezone.now().date()).order_by('-start_season').first()
+    season_shift_counts = {}
+    if current_season:
+        sq = Participation.objects.filter(
+            user_id__in=user_ids, status='attended',
+            event_day__day__gte=current_season.start_season,
+        )
+        if current_season.end_season:
+            sq = sq.filter(event_day__day__lte=current_season.end_season)
+        for r in sq.values('user_id').annotate(n=Count('id')):
+            season_shift_counts[r['user_id']] = r['n']
+
+    # Дата последней заявки по каждому пользователю.
+    last_apps = (
+        Application.objects.filter(user_id__in=user_ids)
+        .values('user_id').annotate(last=Max('created_at'))
+    )
+    last_app_by_user = {r['user_id']: r['last'] for r in last_apps}
+
+    for uid, m in metrics.items():
+        a = agg[uid]
+        days = sorted(a['days'])
+        first_day = days[0] if days else None
+        last_day = days[-1] if days else None
+        m['shifts_total'] = a['shifts']
+        m['shifts_season'] = season_shift_counts.get(uid, 0)
+        m['events_attended'] = ev_by_user.get(uid, 0)
+        m['avg_shift_hours'] = round(a['dur_sum'] / a['dur_n'], 1) if a['dur_n'] else 0
+        # Среднее время на мероприятии (часы / число меро).
+        m['avg_hours_per_event'] = round(m['hours_total'] / m['events_attended'], 1) if m['events_attended'] else 0
+        m['first_event'] = _fmt_date(first_day)
+        m['last_event'] = _fmt_date(last_day)
+        m['days_with_us'] = _days_ago(first_day)  # с первого меро
+        m['days_since_last_event'] = _days_ago(last_day)
+        last_app = last_app_by_user.get(uid)
+        m['last_application'] = _fmt_date(last_app.date() if last_app else None)
+        m['days_since_last_app'] = _days_ago(last_app)
+    return metrics
+
+
 def volunteers_table(date_from=None, date_to=None, event_ids=None):
     """Таблица «Волонтёры» ERP-раздела: по каждому пришедшему в охват волонтёру —
-    часы, число человеко-смен, число мероприятий и текущий churn_score. Сортируется по
-    часам (в UI доступна клиентская сортировка по любой колонке)."""
+    полная сводка (часы/сезон/всё время, меро, смены, средние, даты первого/последнего
+    касания, churn). Метрики «за всё время» и по сезону — не ограничены охватом (это
+    характеристика человека), а список волонтёров — те, кто пришёл в охват."""
     shifts = _shifts_in_scope(date_from, date_to, event_ids)
-    attended = Participation.objects.filter(event_day__in=shifts, status='attended')
-    rows = list(
-        attended.values('user__id', 'user__first_name', 'user__last_name', 'user__telegram_username', 'user__churn_score')
-        .annotate(
-            hours=Sum('hours'),
-            shifts_count=Count('id'),
-            events_count=Count('event_day__event', distinct=True),
-        )
-        .order_by('-hours')
+    scope_user_ids = list(
+        Participation.objects.filter(event_day__in=shifts, status='attended')
+        .values_list('user_id', flat=True).distinct()
     )
-    for r in rows:
-        full = f"{r['user__first_name'] or ''} {r['user__last_name'] or ''}".strip()
-        r['name'] = full or r['user__telegram_username'] or f"#{r['user__id']}"
-        r['churn_score'] = round(r['user__churn_score'] or 0, 1)
+    metrics = _volunteer_activity_metrics(scope_user_ids)
+    rows = list(metrics.values())
+    rows.sort(key=lambda r: r['hours_total'], reverse=True)
     return rows
 
 
 def events_table(date_from=None, date_to=None, event_ids=None):
-    """Таблица «Мероприятия» ERP-раздела: по каждому меро охвата — статус, набор
-    (нужно/пришло/%), число смен, часы, средняя оценка и статус часов Добро.ру."""
-    from blog.models import EventFeedback
-    events = _events_in_scope(date_from, date_to, event_ids).prefetch_related('shifts')
+    """Таблица «Мероприятия» ERP-раздела: по каждому меро охвата — название, статус,
+    число смен, ПЕРЕЧИСЛЕНИЕ смен (каждая смена — отдельная колонка, чтобы таблица не
+    ломалась под работу в Excel), плановая потребность, воронка заявок
+    (подано/принято/отклонено/осталось), организация и организатор с контактами.
+
+    Возвращает (rows, max_shifts) — max_shifts задаёт число динамических колонок смен
+    (шаблон рисует «Смена 1..N»; у меро с меньшим числом смен лишние колонки пустые)."""
+    events = (
+        _events_in_scope(date_from, date_to, event_ids)
+        .select_related('organization', 'organizer')
+        .prefetch_related('shifts')
+    )
     rows = []
+    max_shifts = 0
     for event in events:
-        shift_ids = [s.id for s in event.shifts.all()]
-        needed = sum(s.volunteer_needed or 0 for s in event.shifts.all())
-        attended = Participation.objects.filter(event_day_id__in=shift_ids, status='attended')
-        attended_count = attended.count()
-        hours = attended.aggregate(s=Sum('hours'))['s'] or 0
-        avg_rating = EventFeedback.objects.filter(event=event).aggregate(a=Avg('rating'))['a']
-        pct = round(attended_count / needed * 100, 1) if needed else None
+        shifts = sorted(event.shifts.all(), key=lambda s: (s.day, s.start_time))
+        max_shifts = max(max_shifts, len(shifts))
+        needed = sum(s.volunteer_needed or 0 for s in shifts)
+        apps = Application.objects.filter(event=event)
+        submitted = apps.count()
+        approved = apps.filter(status='approved').count()
+        rejected = apps.filter(status='rejected').count()
+        remaining = apps.filter(status='new').count()  # ещё не обработанные
+        org = event.organization
+        organizer = event.organizer
+        shift_cells = [
+            f"{s.day.strftime('%d.%m.%Y')} {s.start_time.strftime('%H:%M')}–{s.end_time.strftime('%H:%M')}"
+            + (f" ({s.volunteer_needed} чел.)" if s.volunteer_needed else '')
+            for s in shifts
+        ]
         rows.append({
             'id': event.id,
             'title': event.title,
             'status': event.compute_status(),
             'status_display': event.compute_status_display(),
-            'shifts_count': len(shift_ids),
+            'shifts_count': len(shifts),
+            'shift_cells': shift_cells,
             'needed': needed,
-            'attended': attended_count,
-            'pct_closed': pct,
-            'hours': hours,
-            'avg_rating': round(avg_rating, 1) if avg_rating is not None else None,
-            'dobro_kind': event.dobro_ru_link_kind,
-            'dobro_logged': event.dobro_ru_hours_logged,
+            'submitted': submitted,
+            'approved': approved,
+            'rejected': rejected,
+            'remaining': remaining,
+            'organization': org.name if org else '—',
+            'organizer': f"{organizer.first_name} {organizer.last_name}" if organizer else '—',
+            'organizer_tg': (organizer.telegram_username if organizer and organizer.telegram_username else '—'),
+            'organizer_phone': (organizer.phone if organizer and organizer.phone else '—'),
         })
     rows.sort(key=lambda r: r['title'].lower())
+    return rows, max_shifts
+
+
+def _role_table(role, date_from, date_to, event_ids):
+    """Общий построитель таблиц «Тим-лидеры» / «Менеджеры» (role = 'team_lead'|'manager').
+
+    Список — те, кто в охвате был назначен на меро в этой роли (EventStaff). По каждому:
+    ролевые метрики (меро в роли за сезон/всё время, дата назначения и «сколько с нами
+    в роли», первое/последнее меро в роли и «сколько дней назад», сумма и среднее людей
+    на его меро, обработано/принято/отклонено заявок на его меро) + волонтёрские метрики
+    (те же, что в таблице волонтёров) — через _volunteer_activity_metrics."""
+    from blog.models import EventStaff, Manager, TeamLeader
+    from django.utils import timezone
+
+    events = _events_in_scope(date_from, date_to, event_ids)
+    # Пользователи, которые в охвате были в этой роли.
+    staff_qs = EventStaff.objects.filter(staff_role=role, event__in=events).values_list('user_id', flat=True)
+    user_ids = list(dict.fromkeys(staff_qs))  # уникальные, стабильный порядок
+    if not user_ids:
+        return []
+
+    vol_metrics = _volunteer_activity_metrics(user_ids)
+    role_model = TeamLeader if role == 'team_lead' else Manager
+
+    # Дата назначения ролью (самая ранняя активная запись роли).
+    assign_dates = {}
+    for r in role_model.objects.filter(user_id__in=user_ids).values('user_id').annotate(first=Min('assigned_at')):
+        assign_dates[r['user_id']] = r['first']
+
+    # Все меро пользователя в этой роли (за всё время) — для первого/последнего меро в роли,
+    # суммы/среднего людей на меро, дат.
+    all_staff = (
+        EventStaff.objects.filter(staff_role=role, user_id__in=user_ids)
+        .select_related('event')
+        .prefetch_related('event__shifts')
+    )
+    role_events = {uid: [] for uid in user_ids}
+    for st in all_staff:
+        role_events[st.user_id].append(st.event)
+
+    # Заявки на меро пользователя-в-роли: обработано/принято/отклонено (по его меро в охвате).
+    rows = []
+    current_season = Season.objects.filter(start_season__lte=timezone.now().date()).order_by('-start_season').first()
+    for uid in user_ids:
+        m = dict(vol_metrics.get(uid, {'user_id': uid, 'name': f'#{uid}'}))
+        revents = role_events[uid]
+        # Даты меро в роли — по первой смене каждого меро.
+        ev_days = []
+        people_sum = 0
+        for ev in revents:
+            first_day = min((s.day for s in ev.shifts.all()), default=None)
+            if first_day:
+                ev_days.append(first_day)
+            people_sum += Participation.objects.filter(event_day__event=ev, status='attended').count()
+        ev_days.sort()
+        m['role_events_total'] = len(revents)
+        # Меро в роли за сезон.
+        season_n = 0
+        if current_season and ev_days:
+            for d in ev_days:
+                if d >= current_season.start_season and (not current_season.end_season or d <= current_season.end_season):
+                    season_n += 1
+        m['role_events_season'] = season_n
+        assigned = assign_dates.get(uid)
+        m['role_assigned_at'] = _fmt_date(assigned.date() if assigned else None)
+        m['role_days_since_assigned'] = _days_ago(assigned)
+        m['role_first_event'] = _fmt_date(ev_days[0] if ev_days else None)
+        m['role_last_event'] = _fmt_date(ev_days[-1] if ev_days else None)
+        m['role_days_since_first'] = _days_ago(ev_days[0]) if ev_days else None
+        m['role_days_since_last'] = _days_ago(ev_days[-1]) if ev_days else None
+        m['role_people_total'] = people_sum
+        m['role_people_avg'] = round(people_sum / len(revents), 1) if revents else 0
+        # Заявки на его меро (в роли, за всё время его меро).
+        his_events = [ev.id for ev in revents]
+        his_apps = Application.objects.filter(event_id__in=his_events)
+        m['role_apps_processed'] = his_apps.filter(assigned_at__isnull=False).count()
+        m['role_apps_approved'] = his_apps.filter(status='approved').count()
+        m['role_apps_rejected'] = his_apps.filter(status='rejected').count()
+        rows.append(m)
+    rows.sort(key=lambda r: r.get('role_events_total', 0), reverse=True)
     return rows
+
+
+def team_leaders_table(date_from=None, date_to=None, event_ids=None):
+    return _role_table('team_lead', date_from, date_to, event_ids)
+
+
+def managers_table(date_from=None, date_to=None, event_ids=None):
+    return _role_table('manager', date_from, date_to, event_ids)
+
+
+# Место появления заявки в системе — по служебному telegram_id (веб/бот) или import:* id.
+def _application_source(app):
+    """Откуда заявка: 'Бот' / 'Веб' / 'Excel-выгрузка'. Excel-импорт создаёт заявки с
+    привязкой к пользователю со служебным telegram_id вида 'import:*'; заявки без user
+    или с submitted_at, но без telegram — веб/бот различаем по наличию telegram_username."""
+    user = app.user
+    if user and (user.telegram_id or '').startswith('import:'):
+        return 'Excel-выгрузка'
+    # Заявка, поданная через бот, имеет telegram_username и реальный telegram_id.
+    if user and (user.telegram_id or '').isdigit():
+        return 'Бот' if app.telegram_username else 'Веб'
+    # Резерв: по наличию telegram_username в самой заявке.
+    return 'Бот' if app.telegram_username else 'Веб'
+
+
+def applications_table(date_from=None, date_to=None, event_ids=None):
+    """Таблица «Заявки» ERP-раздела: все заявки мероприятий охвата (перенос из БД) +
+    производные поля: кто обработал, когда, сколько прошло между подачей и обработкой,
+    место появления в системе (бот/веб/Excel-выгрузка)."""
+    events = _events_in_scope(date_from, date_to, event_ids)
+    apps = (
+        Application.objects.filter(event__in=events)
+        .select_related('event', 'user', 'assigned_by')
+        .order_by('-created_at')
+    )
+    rows = []
+    for app in apps:
+        name = f"{app.last_name or ''} {app.first_name or ''} {app.middle_name or ''}".strip() or '—'
+        wait_hours = None
+        if app.assigned_at and app.created_at:
+            wait_hours = round((app.assigned_at - app.created_at).total_seconds() / 3600, 1)
+        rows.append({
+            'id': app.id,
+            'name': name,
+            'telegram': app.telegram_username or '—',
+            'phone': app.phone or '—',
+            'event': app.event.title,
+            'event_id': app.event_id,
+            'functions': app.functions or '—',
+            'role': app.role_in_event or '—',
+            'status': app.get_status_display(),
+            'status_key': app.status,
+            'source': _application_source(app),
+            'submitted_at': _fmt_dt_local(app.submitted_at or app.created_at),
+            'assigned_by': app.assigned_by.full_name if app.assigned_by else '—',
+            'assigned_at': _fmt_dt_local(app.assigned_at),
+            'wait_hours': wait_hours if wait_hours is not None else '—',
+        })
+    return rows
+
+
+def _fmt_dt_local(value):
+    if not value:
+        return '—'
+    return value.strftime('%d.%m.%Y %H:%M')
 
 
 def staff_load(date_from=None, date_to=None, event_ids=None):
     """Нагрузка персонала: меро/заявки на менеджера и тим-лидера за охват —
-    обработка заявок считается и для менеджеров, и для тим-лидеров (reports.md)."""
+    обработка заявок считается и для менеджеров, и для тим-лидеров (reports.md).
+    Используется генератором Excel-экспорта (лист «Персонал» не показывается на экране)."""
     from blog.models import EventStaff
 
     events = _events_in_scope(date_from, date_to, event_ids)

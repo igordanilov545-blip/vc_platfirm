@@ -1,13 +1,15 @@
 {% comment %}
-Панель «Таблицы» (ERP) хаба отчётов: под-выбор конкретной таблицы (сегментированный
-переключатель) + сама таблица на общих компонентах проекта (data-sortable/-hideable-columns/
--table-filter). Каждая таблица считается на сервере лениво (по ?table=), переключение —
-AJAX через data-report-table (обработчик в report_period.html).
+Панель «Таблицы» (ERP) хаба отчётов: под-выбор таблицы (сегментированный переключатель) +
+панель инструментов НАД таблицей (переключатель колонок + фильтр значений, компонент
+initReportTableTools в base.html — без перезагрузки) + сама таблица на общих компонентах
+(data-sortable + data-report-tools). Каждая таблица считается лениво на сервере (?table=),
+переключение — AJAX (data-report-table, обработчик в report_period.html).
+Широкие таблицы прокручиваются по горизонтали (.table-scroll) — под работу в Excel.
 {% endcomment %}
 <div class="report-panel-head">
     <h2>Таблицы</h2>
     <div class="report-panel-actions">
-        <a class="btn secondary btn-sm" href="{% url 'report_period_export' %}?{{ scope_qs }}" title="Экспорт полного отчёта (Excel)">⬇ Excel</a>
+        <a class="btn secondary btn-sm" href="{% url 'report_period_export' %}?{{ scope_qs }}" title="Скачать все таблицы в Excel (по листу на таблицу)">⬇ Excel (все таблицы)</a>
     </div>
 </div>
 
@@ -19,151 +21,218 @@ AJAX через data-report-table (обработчик в report_period.html).
 
 {% if event_count == 0 %}
 <div class="card"><p style="margin:0; color:var(--text-secondary);">В охвате нет мероприятий.</p></div>
+
 {% elif active_table == 'volunteers' %}
-    {% include 'blog/partials/_table_search.html' with search_target="#rt-volunteers" search_placeholder="Поиск по имени…" %}
+    <div class="report-tools" data-report-tools data-table="#rt-volunteers"></div>
     <div class="card" style="padding:0; overflow:hidden;">
-        <table class="responsive-table" data-sortable data-hideable-columns id="rt-volunteers">
+        <div class="table-scroll">
+        <table class="responsive-table wide-table" data-sortable id="rt-volunteers">
             <thead><tr>
-                <th data-sort-key="name">Волонтёр</th>
-                <th data-sort-key="hours" class="num">Часы</th>
-                <th data-sort-key="shifts" class="num">Смен</th>
-                <th data-sort-key="events" class="num">Меро</th>
-                <th data-sort-key="churn" class="num">Churn</th>
+                <th data-sort-key="name" data-col-name="ФИО" data-filterable>ФИО</th>
+                <th data-col-name="Телефон">Телефон</th>
+                <th data-col-name="Telegram">Telegram</th>
+                <th data-sort-key="h" class="num" data-col-name="Часы (охват)">Часы (охват)</th>
+                <th data-sort-key="hs" class="num" data-col-name="Часы за сезон">Часы за сезон</th>
+                <th data-sort-key="ht" class="num" data-col-name="Часы за всё время">Часы за всё время</th>
+                <th data-sort-key="es" class="num" data-col-name="Меро за сезон">Меро за сезон</th>
+                <th data-sort-key="et" class="num" data-col-name="Меро за всё время">Меро за всё время</th>
+                <th data-sort-key="avh" class="num" data-col-name="Ср. часов на меро">Ср. часов на меро</th>
+                <th data-sort-key="sh" class="num" data-col-name="Смен всего">Смен всего</th>
+                <th data-sort-key="shs" class="num" data-col-name="Смен за сезон">Смен за сезон</th>
+                <th data-sort-key="avd" class="num" data-col-name="Ср. длит. смены">Ср. длит. смены, ч</th>
+                <th data-col-name="Первое меро">Первое меро</th>
+                <th data-sort-key="dwu" class="num" data-col-name="Дней с нами">Дней с нами</th>
+                <th data-col-name="Последнее меро">Последнее меро</th>
+                <th data-col-name="Последняя заявка">Последняя заявка</th>
+                <th data-sort-key="dsl" class="num" data-col-name="Дней с последнего меро">Дней с посл. меро</th>
+                <th data-sort-key="ch" class="num" data-col-name="Churn" data-filterable>Churn</th>
             </tr></thead>
             <tbody>
             {% for r in rows %}
-                <tr data-href="{% url 'profile_detail' r.user__id %}" data-search="{{ r.name }}">
-                    <td data-label="Волонтёр"><a href="{% url 'profile_detail' r.user__id %}">{{ r.name }}</a></td>
-                    <td data-label="Часы" class="num mono" data-sort-value="{{ r.hours }}">{{ r.hours }}</td>
-                    <td data-label="Смен" class="num mono" data-sort-value="{{ r.shifts_count }}">{{ r.shifts_count }}</td>
-                    <td data-label="Меро" class="num mono" data-sort-value="{{ r.events_count }}">{{ r.events_count }}</td>
-                    <td data-label="Churn" class="num mono" data-sort-value="{{ r.churn_score }}">{{ r.churn_score }}</td>
+                <tr data-href="{% url 'profile_detail' r.user_id %}">
+                    <td data-label="ФИО"><a href="{% url 'profile_detail' r.user_id %}">{{ r.name }}</a></td>
+                    <td data-label="Телефон" class="mono">{{ r.phone }}</td>
+                    <td data-label="Telegram">{{ r.telegram }}</td>
+                    <td data-label="Часы (охват)" class="num mono" data-sort-value="{{ r.hours_total }}">{{ r.hours_total }}</td>
+                    <td data-label="Часы за сезон" class="num mono" data-sort-value="{{ r.hours_season }}">{{ r.hours_season }}</td>
+                    <td data-label="Часы за всё время" class="num mono" data-sort-value="{{ r.hours_total }}">{{ r.hours_total }}</td>
+                    <td data-label="Меро за сезон" class="num mono" data-sort-value="{{ r.events_season }}">{{ r.events_season }}</td>
+                    <td data-label="Меро за всё время" class="num mono" data-sort-value="{{ r.events_attended }}">{{ r.events_attended }}</td>
+                    <td data-label="Ср. часов на меро" class="num mono" data-sort-value="{{ r.avg_hours_per_event }}">{{ r.avg_hours_per_event }}</td>
+                    <td data-label="Смен всего" class="num mono" data-sort-value="{{ r.shifts_total }}">{{ r.shifts_total }}</td>
+                    <td data-label="Смен за сезон" class="num mono" data-sort-value="{{ r.shifts_season }}">{{ r.shifts_season }}</td>
+                    <td data-label="Ср. длит. смены" class="num mono" data-sort-value="{{ r.avg_shift_hours }}">{{ r.avg_shift_hours }}</td>
+                    <td data-label="Первое меро" class="mono">{{ r.first_event }}</td>
+                    <td data-label="Дней с нами" class="num mono" data-sort-value="{{ r.days_with_us|default:-1 }}">{{ r.days_with_us|default:"—" }}</td>
+                    <td data-label="Последнее меро" class="mono">{{ r.last_event }}</td>
+                    <td data-label="Последняя заявка" class="mono">{{ r.last_application }}</td>
+                    <td data-label="Дней с посл. меро" class="num mono" data-sort-value="{{ r.days_since_last_event|default:-1 }}">{{ r.days_since_last_event|default:"—" }}</td>
+                    <td data-label="Churn" class="num mono" data-sort-value="{{ r.churn }}" data-filter-value="{{ r.churn }}">{{ r.churn }}</td>
                 </tr>
             {% empty %}
-                <tr><td colspan="5">В охвате нет пришедших волонтёров.</td></tr>
+                <tr><td colspan="18">В охвате нет пришедших волонтёров.</td></tr>
             {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
 
 {% elif active_table == 'events' %}
-    {% include 'blog/partials/_table_search.html' with search_target="#rt-events" search_placeholder="Поиск по названию…" %}
+    <div class="report-tools" data-report-tools data-table="#rt-events"></div>
     <div class="card" style="padding:0; overflow:hidden;">
-        <table class="responsive-table" data-sortable data-hideable-columns id="rt-events">
+        <div class="table-scroll">
+        <table class="responsive-table wide-table" data-sortable id="rt-events">
             <thead><tr>
-                <th data-sort-key="title">Мероприятие</th>
-                <th data-sort-key="status">Статус</th>
-                <th data-sort-key="shifts" class="num">Смен</th>
-                <th data-sort-key="recruit" class="num">Набор</th>
-                <th data-sort-key="hours" class="num">Часы</th>
-                <th data-sort-key="rating" class="num">Оценка</th>
-                <th data-sort-key="dobro">Добро.ру</th>
+                <th data-sort-key="title" data-col-name="Название" data-filterable>Название</th>
+                <th data-sort-key="status" data-col-name="Статус" data-filterable>Статус</th>
+                <th data-sort-key="sh" class="num" data-col-name="Смен">Смен</th>
+                {% for n in shift_columns %}<th data-col-name="Смена {{ n }}">Смена {{ n }}</th>{% endfor %}
+                <th data-sort-key="need" class="num" data-col-name="Нужно человек">Нужно человек</th>
+                <th data-sort-key="sub" class="num" data-col-name="Заявок">Заявок</th>
+                <th data-sort-key="apr" class="num" data-col-name="Принято">Принято</th>
+                <th data-sort-key="rej" class="num" data-col-name="Отклонено">Отклонено</th>
+                <th data-sort-key="rem" class="num" data-col-name="Осталось">Осталось</th>
+                <th data-col-name="Организация" data-filterable>Организация</th>
+                <th data-col-name="Организатор">Организатор</th>
+                <th data-col-name="TG организатора">TG организатора</th>
+                <th data-col-name="Телефон организатора">Телефон организатора</th>
             </tr></thead>
             <tbody>
             {% for r in rows %}
-                <tr data-href="{% url 'event_detail' r.id %}" data-search="{{ r.title }}">
-                    <td data-label="Мероприятие"><a href="{% url 'event_detail' r.id %}">{{ r.title }}</a></td>
-                    <td data-label="Статус" data-sort-value="{{ r.status }}">{{ r.status_display }}</td>
+                <tr data-href="{% url 'event_detail' r.id %}">
+                    <td data-label="Название"><a href="{% url 'event_detail' r.id %}">{{ r.title }}</a></td>
+                    <td data-label="Статус" data-sort-value="{{ r.status }}" data-filter-value="{{ r.status_display }}">{{ r.status_display }}</td>
                     <td data-label="Смен" class="num mono" data-sort-value="{{ r.shifts_count }}">{{ r.shifts_count }}</td>
-                    <td data-label="Набор" class="num mono" data-sort-value="{{ r.pct_closed|default:-1 }}">{% if r.pct_closed is not None %}{{ r.attended }}/{{ r.needed }} · {{ r.pct_closed }}%{% else %}—{% endif %}</td>
-                    <td data-label="Часы" class="num mono" data-sort-value="{{ r.hours }}">{{ r.hours }}</td>
-                    <td data-label="Оценка" class="num mono" data-sort-value="{{ r.avg_rating|default:-1 }}">{% if r.avg_rating is not None %}{{ r.avg_rating }}{% else %}—{% endif %}</td>
-                    <td data-label="Добро.ру" data-sort-value="{{ r.dobro_logged }}">
-                        {% if r.dobro_kind == 'none' %}<span style="color:var(--text-tertiary);">не ведётся</span>
-                        {% elif r.dobro_logged %}<span class="pill success"><span class="dot"></span>Часы есть</span>
-                        {% else %}<span class="pill danger"><span class="dot"></span>Нет часов</span>{% endif %}
-                    </td>
+                    {% for c in r.shift_cells %}<td data-label="Смена {{ forloop.counter }}" class="mono nowrap">{{ c }}</td>{% endfor %}
+                    <td data-label="Нужно человек" class="num mono" data-sort-value="{{ r.needed }}">{{ r.needed }}</td>
+                    <td data-label="Заявок" class="num mono" data-sort-value="{{ r.submitted }}">{{ r.submitted }}</td>
+                    <td data-label="Принято" class="num mono" data-sort-value="{{ r.approved }}">{{ r.approved }}</td>
+                    <td data-label="Отклонено" class="num mono" data-sort-value="{{ r.rejected }}">{{ r.rejected }}</td>
+                    <td data-label="Осталось" class="num mono" data-sort-value="{{ r.remaining }}">{{ r.remaining }}</td>
+                    <td data-label="Организация" data-filter-value="{{ r.organization }}">{{ r.organization }}</td>
+                    <td data-label="Организатор">{{ r.organizer }}</td>
+                    <td data-label="TG организатора">{{ r.organizer_tg }}</td>
+                    <td data-label="Телефон организатора" class="mono">{{ r.organizer_phone }}</td>
                 </tr>
             {% empty %}
-                <tr><td colspan="7">В охвате нет мероприятий.</td></tr>
+                <tr><td colspan="12">В охвате нет мероприятий.</td></tr>
             {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
 
-{% elif active_table == 'recruitment' %}
+{% elif active_table == 'teamleaders' or active_table == 'managers' %}
+    {% with role_word=active_table|slice:":0" %}{% endwith %}
+    <div class="report-tools" data-report-tools data-table="#rt-role"></div>
     <div class="card" style="padding:0; overflow:hidden;">
-        <table class="responsive-table" data-sortable data-hideable-columns id="rt-recruit">
+        <div class="table-scroll">
+        <table class="responsive-table wide-table" data-sortable id="rt-role">
             <thead><tr>
-                <th data-sort-key="title">Мероприятие</th>
-                <th data-sort-key="day">Смена</th>
-                <th data-sort-key="needed" class="num">Нужно</th>
-                <th data-sort-key="attended" class="num">Пришло</th>
-                <th data-sort-key="pct" class="num">% закрытия</th>
+                <th data-sort-key="name" data-col-name="ФИО" data-filterable>ФИО</th>
+                <th data-col-name="Телефон">Телефон</th>
+                <th data-col-name="Telegram">Telegram</th>
+                {% if active_table == 'teamleaders' %}
+                <th data-sort-key="res" class="num" data-col-name="Меро ТЛ за сезон">Меро ТЛ за сезон</th>
+                <th data-sort-key="ret" class="num" data-col-name="Меро ТЛ всего">Меро ТЛ всего</th>
+                <th data-col-name="Назначен ТЛ">Назначен ТЛ</th>
+                {% else %}
+                <th data-sort-key="res" class="num" data-col-name="Меро менеджером за сезон">Меро менеджером за сезон</th>
+                <th data-sort-key="ret" class="num" data-col-name="Меро менеджером всего">Меро менеджером всего</th>
+                <th data-col-name="Назначен менеджером">Назначен менеджером</th>
+                {% endif %}
+                <th data-sort-key="dsa" class="num" data-col-name="Дней в роли">Дней в роли</th>
+                <th data-col-name="Первое меро в роли">Первое меро в роли</th>
+                <th data-col-name="Последнее меро в роли">Последнее меро в роли</th>
+                <th data-sort-key="dsf" class="num" data-col-name="Дней с первого меро">Дней с первого меро</th>
+                <th data-sort-key="dsl" class="num" data-col-name="Дней с последнего меро">Дней с последнего меро</th>
+                <th data-sort-key="pt" class="num" data-col-name="Людей на его меро (сумма)">Людей на его меро (сумма)</th>
+                <th data-sort-key="pa" class="num" data-col-name="Людей на меро (среднее)">Людей на меро (среднее)</th>
+                <th data-sort-key="ap" class="num" data-col-name="Заявок обработано">Заявок обработано</th>
+                <th data-sort-key="aa" class="num" data-col-name="Из них принято">Из них принято</th>
+                <th data-sort-key="ar" class="num" data-col-name="Из них отклонено">Из них отклонено</th>
+                {# волонтёрские метрики (дублирование того, что у волонтёра) #}
+                <th data-sort-key="vht" class="num" data-col-name="Часы волонтёром (всё)">Часы волонтёром (всё)</th>
+                <th data-sort-key="vhs" class="num" data-col-name="Часы волонтёром (сезон)">Часы волонтёром (сезон)</th>
+                <th data-sort-key="vet" class="num" data-col-name="Меро волонтёром (всё)">Меро волонтёром (всё)</th>
+                <th data-sort-key="vsh" class="num" data-col-name="Смен волонтёром">Смен волонтёром</th>
+                <th data-sort-key="vch" class="num" data-col-name="Churn" data-filterable>Churn</th>
             </tr></thead>
             <tbody>
-            {% for s in efficiency.shifts %}
-                <tr data-href="{% url 'event_detail' s.event_id %}" class="{% if s.understaffed %}row-warn{% endif %}">
-                    <td data-label="Мероприятие"><a href="{% url 'event_detail' s.event_id %}">{{ s.title }}</a></td>
-                    <td data-label="Смена" class="mono" data-sort-value="{{ s.day|date:'Y-m-d' }}">{{ s.day|date:"d.m.Y" }}</td>
-                    <td data-label="Нужно" class="num mono" data-sort-value="{{ s.needed }}">{{ s.needed }}</td>
-                    <td data-label="Пришло" class="num mono" data-sort-value="{{ s.attended }}">{{ s.attended }}</td>
-                    <td data-label="% закрытия" class="num mono" data-sort-value="{{ s.pct_closed }}"><span class="recruit-pct" style="--pct:{{ s.pct_closed }};">{{ s.pct_closed }}%</span></td>
+            {% for r in rows %}
+                <tr {% if r.user_id %}data-href="{% url 'profile_detail' r.user_id %}"{% endif %}>
+                    <td data-label="ФИО">{% if r.user_id %}<a href="{% url 'profile_detail' r.user_id %}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</td>
+                    <td data-label="Телефон" class="mono">{{ r.phone|default:"—" }}</td>
+                    <td data-label="Telegram">{{ r.telegram|default:"—" }}</td>
+                    <td data-label="Меро в роли за сезон" class="num mono" data-sort-value="{{ r.role_events_season }}">{{ r.role_events_season }}</td>
+                    <td data-label="Меро в роли всего" class="num mono" data-sort-value="{{ r.role_events_total }}">{{ r.role_events_total }}</td>
+                    <td data-label="Назначен" class="mono">{{ r.role_assigned_at }}</td>
+                    <td data-label="Дней в роли" class="num mono" data-sort-value="{{ r.role_days_since_assigned|default:-1 }}">{{ r.role_days_since_assigned|default:"—" }}</td>
+                    <td data-label="Первое меро в роли" class="mono">{{ r.role_first_event }}</td>
+                    <td data-label="Последнее меро в роли" class="mono">{{ r.role_last_event }}</td>
+                    <td data-label="Дней с первого меро" class="num mono" data-sort-value="{{ r.role_days_since_first|default:-1 }}">{{ r.role_days_since_first|default:"—" }}</td>
+                    <td data-label="Дней с последнего меро" class="num mono" data-sort-value="{{ r.role_days_since_last|default:-1 }}">{{ r.role_days_since_last|default:"—" }}</td>
+                    <td data-label="Людей (сумма)" class="num mono" data-sort-value="{{ r.role_people_total }}">{{ r.role_people_total }}</td>
+                    <td data-label="Людей (среднее)" class="num mono" data-sort-value="{{ r.role_people_avg }}">{{ r.role_people_avg }}</td>
+                    <td data-label="Заявок обработано" class="num mono" data-sort-value="{{ r.role_apps_processed }}">{{ r.role_apps_processed }}</td>
+                    <td data-label="Принято" class="num mono" data-sort-value="{{ r.role_apps_approved }}">{{ r.role_apps_approved }}</td>
+                    <td data-label="Отклонено" class="num mono" data-sort-value="{{ r.role_apps_rejected }}">{{ r.role_apps_rejected }}</td>
+                    <td data-label="Часы волонтёром (всё)" class="num mono" data-sort-value="{{ r.hours_total|default:0 }}">{{ r.hours_total|default:0 }}</td>
+                    <td data-label="Часы волонтёром (сезон)" class="num mono" data-sort-value="{{ r.hours_season|default:0 }}">{{ r.hours_season|default:0 }}</td>
+                    <td data-label="Меро волонтёром (всё)" class="num mono" data-sort-value="{{ r.events_attended|default:0 }}">{{ r.events_attended|default:0 }}</td>
+                    <td data-label="Смен волонтёром" class="num mono" data-sort-value="{{ r.shifts_total|default:0 }}">{{ r.shifts_total|default:0 }}</td>
+                    <td data-label="Churn" class="num mono" data-sort-value="{{ r.churn|default:0 }}" data-filter-value="{{ r.churn|default:0 }}">{{ r.churn|default:0 }}</td>
                 </tr>
             {% empty %}
-                <tr><td colspan="5">Нет смен в охвате.</td></tr>
+                <tr><td colspan="21">В охвате нет {% if active_table == 'teamleaders' %}тим-лидеров{% else %}менеджеров{% endif %}.</td></tr>
             {% endfor %}
             </tbody>
         </table>
-    </div>
-    {% if efficiency.avg_recruit_days is not None %}<p class="chart-note" style="padding:0 4px;">Среднее время набора: {{ efficiency.avg_recruit_days }} дн.</p>{% endif %}
-
-{% elif active_table == 'staff' %}
-    <div class="card" style="padding:0; overflow:hidden;">
-        <h3 style="padding:16px 20px 0; margin:0;">Менеджеры</h3>
-        <table class="responsive-table" data-sortable id="rt-managers">
-            <thead><tr><th data-sort-key="name">Менеджер</th><th data-sort-key="events" class="num">Меро</th><th data-sort-key="apps" class="num">Обработано заявок</th><th data-sort-key="avg" class="num">Ср. время, ч</th></tr></thead>
-            <tbody>
-            {% for m in staff.managers %}
-                <tr>
-                    <td data-label="Менеджер">{{ m.name }}</td>
-                    <td data-label="Меро" class="num mono" data-sort-value="{{ m.event_count }}">{{ m.event_count }}</td>
-                    <td data-label="Обработано заявок" class="num mono" data-sort-value="{{ m.applications_processed }}">{{ m.applications_processed }}</td>
-                    <td data-label="Ср. время, ч" class="num mono" data-sort-value="{{ m.avg_processing_hours|default:-1 }}">{{ m.avg_processing_hours|default:"—" }}</td>
-                </tr>
-            {% empty %}
-                <tr><td colspan="4">Нет данных.</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    <div class="card" style="padding:0; overflow:hidden;">
-        <h3 style="padding:16px 20px 0; margin:0;">Тим-лидеры</h3>
-        <table class="responsive-table" data-sortable id="rt-tls">
-            <thead><tr><th data-sort-key="name">Тим-лидер</th><th data-sort-key="events" class="num">Меро</th><th data-sort-key="apps" class="num">Обработано заявок</th><th data-sort-key="avg" class="num">Ср. время, ч</th></tr></thead>
-            <tbody>
-            {% for m in staff.team_leads %}
-                <tr>
-                    <td data-label="Тим-лидер">{{ m.name }}</td>
-                    <td data-label="Меро" class="num mono" data-sort-value="{{ m.event_count }}">{{ m.event_count }}</td>
-                    <td data-label="Обработано заявок" class="num mono" data-sort-value="{{ m.applications_processed }}">{{ m.applications_processed }}</td>
-                    <td data-label="Ср. время, ч" class="num mono" data-sort-value="{{ m.avg_processing_hours|default:-1 }}">{{ m.avg_processing_hours|default:"—" }}</td>
-                </tr>
-            {% empty %}
-                <tr><td colspan="4">Нет данных.</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-{% elif active_table == 'timing' %}
-    <div class="card">
-        <h3 style="margin-top:0;">Тайминг заявок относительно публикации</h3>
-        {% if timing.total_applications %}
-        <p class="chart-note">Всего заявок с известным временем публикации: <b>{{ timing.total_applications }}</b>.</p>
-        <div class="barchart barchart--timing" style="--n:{{ timing.density|length }};">
-            {% with maxc=timing.total_applications %}
-            {% for d in timing.density %}
-            <div class="barchart-col" title="{{ d.label }}: {{ d.count }} заявок">
-                <div class="barchart-track"><div class="barchart-fill" style="height:{% if maxc %}{% widthratio d.count maxc 100 %}{% else %}0{% endif %}%;"></div></div>
-                <div class="barchart-x">{{ d.label }}</div>
-            </div>
-            {% endfor %}
-            {% endwith %}
         </div>
-        <div class="chart-note">Плотность подачи заявок по времени после публикации мероприятия.</div>
-        {% else %}
-        <p class="chart-empty">Нет заявок с известным временем публикации в охвате.</p>
-        {% endif %}
+    </div>
+
+{% elif active_table == 'applications' %}
+    <div class="report-tools" data-report-tools data-table="#rt-apps"></div>
+    <div class="card" style="padding:0; overflow:hidden;">
+        <div class="table-scroll">
+        <table class="responsive-table wide-table" data-sortable id="rt-apps">
+            <thead><tr>
+                <th data-sort-key="id" class="num" data-col-name="ID">ID</th>
+                <th data-sort-key="name" data-col-name="ФИО" data-filterable>ФИО</th>
+                <th data-col-name="Телефон">Телефон</th>
+                <th data-col-name="Telegram">Telegram</th>
+                <th data-sort-key="event" data-col-name="Мероприятие" data-filterable>Мероприятие</th>
+                <th data-col-name="Функция">Функция</th>
+                <th data-col-name="Роль">Роль</th>
+                <th data-sort-key="status" data-col-name="Статус" data-filterable>Статус</th>
+                <th data-col-name="Источник" data-filterable>Источник</th>
+                <th data-col-name="Когда подал">Когда подал</th>
+                <th data-col-name="Кто обработал" data-filterable>Кто обработал</th>
+                <th data-col-name="Когда обработано">Когда обработано</th>
+                <th data-sort-key="wait" class="num" data-col-name="Ожидание, ч">Ожидание, ч</th>
+            </tr></thead>
+            <tbody>
+            {% for r in rows %}
+                <tr data-href="{% url 'event_detail' r.event_id %}">
+                    <td data-label="ID" class="num mono" data-sort-value="{{ r.id }}">{{ r.id }}</td>
+                    <td data-label="ФИО">{{ r.name }}</td>
+                    <td data-label="Телефон" class="mono">{{ r.phone }}</td>
+                    <td data-label="Telegram">{{ r.telegram }}</td>
+                    <td data-label="Мероприятие"><a href="{% url 'event_detail' r.event_id %}">{{ r.event }}</a></td>
+                    <td data-label="Функция">{{ r.functions }}</td>
+                    <td data-label="Роль">{{ r.role }}</td>
+                    <td data-label="Статус" data-filter-value="{{ r.status }}">{{ r.status }}</td>
+                    <td data-label="Источник" data-filter-value="{{ r.source }}">{{ r.source }}</td>
+                    <td data-label="Когда подал" class="mono">{{ r.submitted_at }}</td>
+                    <td data-label="Кто обработал" data-filter-value="{{ r.assigned_by }}">{{ r.assigned_by }}</td>
+                    <td data-label="Когда обработано" class="mono">{{ r.assigned_at }}</td>
+                    <td data-label="Ожидание, ч" class="num mono" data-sort-value="{{ r.wait_hours|default:-1 }}">{{ r.wait_hours }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="13">В охвате нет заявок.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
     </div>
 {% endif %}

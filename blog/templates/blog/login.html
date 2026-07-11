@@ -12,27 +12,5 @@
         {{ form.password }}
         <button type="submit" class="btn">Войти</button>
     </form>
-
-    <div style="margin-top:1.5rem; border-top:1px solid var(--border, #e5e7eb); padding-top:1.25rem;">
-        <p style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:0.75rem;">
-            Или авторизуйтесь через Telegram:
-        </p>
-
-        {% if tg_bot_username %}
-        <a class="btn" style="display:inline-flex; align-items:center; gap:0.4rem;"
-           href="https://t.me/{{ tg_bot_username }}" target="_blank" rel="noopener">
-            <span>✈️</span> Авторизоваться через Telegram
-        </a>
-        <ol style="color:var(--text-secondary); font-size:0.82rem; margin-top:0.75rem; padding-left:1.1rem;">
-            <li>Откройте бота и нажмите <b>Старт</b>.</li>
-            <li>Нажмите кнопку <b>«🔐 Авторизоваться на сайте»</b>.</li>
-            <li>Перейдите по присланной ссылке — она действует 5 минут.</li>
-        </ol>
-        {% else %}
-        <p style="color:var(--text-secondary); font-size:0.85rem;">
-            Вход через Telegram временно недоступен (не настроен бот).
-        </p>
-        {% endif %}
-    </div>
 </div>
 {% endblock %}

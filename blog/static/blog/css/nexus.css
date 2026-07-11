@@ -408,6 +408,19 @@ th.num, td.num { text-align: right; }
 .th-sub { display: inline-block; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-tertiary); font-size: 11px; }
 td.mono, th.mono { font-family: var(--font-mono); }
 
+/* Широкая таблица (много колонок, напр. список мероприятий у менеджера) не должна
+   раздвигать всю страницу вбок — она скроллится по X внутри своей карточки, плавно
+   (включая touch/трекпад инерцию). Текстовые ячейки типа «Название» переносятся по
+   словам с ограничением ширины, а не тянут колонку до ширины самого длинного текста. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+}
+.table-scroll table { width: max-content; min-width: 100%; }
+.table-scroll td.wrap, .table-scroll th.wrap { white-space: normal; max-width: 260px; }
+
 /* Сортировка таблиц по клику на заголовок — стрелка справа снизу у активной колонки */
 th.sortable-th { cursor: pointer; user-select: none; position: relative; padding-right: 20px; }
 th.sortable-th:hover { color: var(--text-primary); }
@@ -512,6 +525,9 @@ th.has-reveal, td.has-reveal { position: relative; }
      полностью пустых страниц на мобильном: table.responsive-table тоже уходила в display:none). */
   table.responsive-table thead { display: none; }
   table.responsive-table { display: block; width: 100%; }
+  .table-scroll { overflow-x: visible; }
+  .table-scroll table.responsive-table { width: 100%; min-width: 0; }
+  .table-scroll td.wrap, .table-scroll th.wrap { max-width: none; }
   table.responsive-table tbody, table.responsive-table tr, table.responsive-table td { display: block; width: 100%; }
   table.responsive-table tr {
     background: var(--bg-card);

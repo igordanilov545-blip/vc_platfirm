@@ -1,11 +1,14 @@
-{% extends 'blog/base.html' %}
-{% block title %}Организации{% endblock %}
-{% block content %}
-<div class="page-header">
-    <h1>Организации</h1>
+{% comment %}
+Панель «Организации» внутри настроек (agent-workflow.md §4). Контент перенесён из
+organizations_list.html.
+{% endcomment %}
+<div class="settings-panel-head">
+    <h2>Организации</h2>
     <a href="{% url 'organization_create' %}" class="btn" data-modal data-modal-title="Новая организация">+ Новая организация</a>
 </div>
+
 {% include 'blog/partials/_table_search.html' with search_target="#orgs-table" search_placeholder="Поиск по названию…" %}
+
 <div class="card" style="padding:0; overflow:hidden;">
     <table class="responsive-table" data-sortable data-hideable-columns id="orgs-table">
         <thead><tr><th data-sort-key="name">Название</th><th data-sort-key="events" class="num">Мероприятий</th><th data-sort-key="volunteers" class="num">Волонтёров</th><th data-sort-key="rating" class="num">Рейтинг</th></tr></thead>
@@ -23,4 +26,3 @@
         </tbody>
     </table>
 </div>
-{% endblock %}

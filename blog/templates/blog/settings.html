@@ -1,69 +1,105 @@
 {% extends 'blog/base.html' %}
 {% block title %}Настройки{% endblock %}
 {% block content %}
+{# Хаб настроек: хедер-кнопки (визуальный язык .report-type со страницы отчётов) —
+   каждая открывает свою панель в блоке контента ниже. Панели локаций/организаторов/
+   организаций/требований подгружаются AJAX'ом со своих же вьюх (отдают partial при
+   X-Requested-With), панели констант/сезонов/ролей — с этой же вьюхи (?tab=…&partial=1).
+   Активная вкладка хранится в URL (?tab=…) для копируемых ссылок и кнопки «назад». #}
 <h1>Настройки</h1>
 
-<div class="card" style="padding:0; overflow:hidden;">
-    <h3 style="padding:20px 20px 0;">Константы системы</h3>
-    <p style="color:var(--text-secondary); font-size:0.85rem; padding:0 20px;">Изменение значения требует решения простого примера — он появляется только при попытке реально изменить значение.</p>
-    <table class="responsive-table">
-        <thead><tr><th>Название</th><th>Значение</th><th>Описание</th><th></th></tr></thead>
-        <tbody>
-        {% for const in consts %}
-            <tr>
-                <td data-label="Название" class="mono">{{ const.name }}</td>
-                <td data-label="Значение" class="mono">{{ const.value }}</td>
-                <td data-label="Описание" style="color:var(--text-secondary); font-size:0.85rem;">{{ const.description|default:"—" }}</td>
-                <td data-label="">
-                    <a href="{% url 'const_edit' const.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Изменить: {{ const.name }}">Изменить</a>
-                </td>
-            </tr>
-        {% empty %}
-            <tr><td colspan="4">Константы не заданы.</td></tr>
+<div class="card settings-hub-card">
+    <div class="report-types settings-tabs" id="settings-tabs">
+        {% for tab in tabs %}
+        <button type="button" class="report-type settings-tab {% if tab.key == active_tab %}active{% endif %}"
+                data-tab="{{ tab.key }}" data-url="{{ tab.url }}">
+            <span class="rt-icon">{{ tab.icon }}</span>
+            <span class="rt-title">{{ tab.title }}</span>
+            <span class="rt-desc">{{ tab.desc }}</span>
+        </button>
         {% endfor %}
-        </tbody>
-    </table>
+    </div>
 </div>
 
-<div class="card">
-    <h3>Сезоны</h3>
-    <p style="color:var(--text-secondary); font-size:0.85rem;">Закрытие сезона фиксирует churn в истории (carryover), обнуляет сезонные счётчики и создаёт новый бессрочный сезон, если следующий не задан.</p>
-    <table class="responsive-table">
-        <thead><tr><th>Начало</th><th>Конец</th><th>Создан</th><th></th></tr></thead>
-        <tbody>
-        {% for season in seasons %}
-            <tr>
-                <td data-label="Начало" class="mono">{{ season.start_season }}</td>
-                <td data-label="Конец" class="mono">{% if season.end_season %}{{ season.end_season }}{% else %}<span class="pill warning"><span class="dot"></span>Бессрочный — задайте дату конца</span>{% endif %}</td>
-                <td data-label="Создан" class="mono">{{ season.created_at }}</td>
-                <td data-label="">
-                    <form method="post" class="inline" onsubmit="return confirm('Закрыть сезон? Churn будет зафиксирован, сезонные счётчики обнулены.');">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="close_season">
-                        <input type="hidden" name="season_id" value="{{ season.id }}">
-                        <button type="submit" class="btn danger" style="padding:6px 12px;">Закрыть сезон</button>
-                    </form>
-                </td>
-            </tr>
-        {% empty %}
-            <tr><td colspan="4">Сезонов пока нет.</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
-
-    <form method="post" style="margin-top:1rem; max-width:400px;">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="add_season">
-        {{ season_form.as_p }}
-        <button type="submit" class="btn secondary">Добавить сезон</button>
-    </form>
+<div class="settings-panel" id="settings-panel" data-active-url="{{ active_url }}">
+    <p style="color:var(--text-secondary);">Загрузка…</p>
 </div>
 
-{% include 'blog/partials/_role_section.html' with action='assign_team_lead' title='Назначить тим-лидером' hint='Выбранные волонтёры получат роль тим-лидера. Список содержит только тех, кто ещё не является тим-лидером.' empty_text='Никто не выбран' submit_label='Назначить тим-лидером' submit_class='' confirm_verb='назначить тим-лидером' picker_filter='not_team_lead' section=role_sections.assign_team_lead %}
+<script>
+    // Хаб настроек: клик по кнопке хедера подгружает свою панель в #settings-panel
+    // через AJAX (сервер отдаёт partial по X-Requested-With) и пишет активную вкладку
+    // в URL. Единый список поведений таблиц/пикеров/модалок из base.html навешивается
+    // на свежий контент через initSettingsPanel (все init*-функции идемпотентны по
+    // data-*Init-флагам, поэтому повторный вызов на всей панели безопасен).
+    // Скрипт блока content выполняется РАНЬШЕ основного скрипта base.html (тот в конце
+    // body), где объявлены init*-функции общих компонентов. Поэтому откладываем запуск
+    // до DOMContentLoaded — к этому моменту base.html уже определил initSortableTables и
+    // др. (те же соображения, что у CalendarUtils в <head>, hot_fix_1 §B).
+    document.addEventListener('DOMContentLoaded', function () {
+        var panel = document.getElementById('settings-panel');
+        var tabsRow = document.getElementById('settings-tabs');
+        if (!panel || !tabsRow) return;
 
-{% include 'blog/partials/_role_section.html' with action='revoke_team_lead' title='Снять роль тим-лидера' hint='У выбранных пользователей роль тим-лидера будет отозвана. Список содержит только действующих тим-лидеров.' empty_text='Никто не выбран' submit_label='Снять роль тим-лидера' submit_class='danger' confirm_verb='снять роль тим-лидера у' picker_filter='team_lead' section=role_sections.revoke_team_lead %}
+        function initSettingsPanel(root) {
+            // Переиспользуем инициализаторы общих компонентов (base.html) для только что
+            // вставленной разметки — таблицы, пикеры волонтёров, счётчики символов, формы.
+            if (typeof initSortableTables === 'function') initSortableTables(root);
+            if (typeof initHideableColumns === 'function') initHideableColumns(root);
+            if (typeof initTableFilter === 'function') initTableFilter(root);
+            if (typeof initUserPickers === 'function') initUserPickers(root);
+            if (typeof initCharCounters === 'function') initCharCounters(root);
+            if (typeof bindRoleForms === 'function') bindRoleForms(root);
+            if (typeof bindConfirmForms === 'function') bindConfirmForms(root);
+        }
 
-{% include 'blog/partials/_role_section.html' with action='assign_manager' title='Назначить менеджером' hint='Выбранные волонтёры получат роль менеджера. Список содержит только тех, кто ещё не является менеджером.' empty_text='Никто не выбран' submit_label='Назначить менеджером' submit_class='' confirm_verb='назначить менеджером' picker_filter='not_manager' section=role_sections.assign_manager %}
+        function loadPanel(url, push) {
+            panel.innerHTML = '<p style="color:var(--text-secondary);">Загрузка…</p>';
+            fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function (r) { return r.text(); })
+                .then(function (html) {
+                    panel.innerHTML = html;
+                    initSettingsPanel(panel);
+                    panel.scrollIntoView({ block: 'nearest' });
+                })
+                .catch(function () {
+                    panel.innerHTML = '<div class="card"><p>Не удалось загрузить раздел. Обновите страницу.</p></div>';
+                });
+        }
 
-{% include 'blog/partials/_role_section.html' with action='revoke_manager' title='Снять роль менеджера' hint='У выбранных пользователей роль менеджера будет отозвана. Список содержит только действующих менеджеров.' empty_text='Никто не выбран' submit_label='Снять роль менеджера' submit_class='danger' confirm_verb='снять роль менеджера у' picker_filter='manager' section=role_sections.revoke_manager %}
+        function activateTab(btn, push) {
+            tabsRow.querySelectorAll('.settings-tab').forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            var url = btn.getAttribute('data-url');
+            var tabKey = btn.getAttribute('data-tab');
+            if (push) {
+                history.pushState({ tab: tabKey }, '', '?tab=' + tabKey);
+            }
+            loadPanel(url, push);
+        }
+
+        tabsRow.addEventListener('click', function (event) {
+            var btn = event.target.closest('.settings-tab');
+            if (!btn) return;
+            activateTab(btn, true);
+        });
+
+        // Кнопка «назад»/«вперёд» браузера — переключаем активную вкладку без нового
+        // pushState (иначе история задвоится).
+        window.addEventListener('popstate', function () {
+            var params = new URLSearchParams(window.location.search);
+            var tabKey = params.get('tab');
+            var btn = tabsRow.querySelector('.settings-tab[data-tab="' + tabKey + '"]')
+                || tabsRow.querySelector('.settings-tab.active')
+                || tabsRow.querySelector('.settings-tab');
+            if (btn) activateTab(btn, false);
+        });
+
+        // Первичная загрузка активной панели (активная вкладка уже отмечена сервером).
+        var initial = tabsRow.querySelector('.settings-tab.active') || tabsRow.querySelector('.settings-tab');
+        if (initial) {
+            initial.classList.add('active');
+            loadPanel(initial.getAttribute('data-url'), false);
+        }
+    });
+</script>
 {% endblock %}

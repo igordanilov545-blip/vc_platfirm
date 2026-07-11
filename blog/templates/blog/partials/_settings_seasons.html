@@ -1,0 +1,36 @@
+{% comment %}Панель «Сезоны» настроек. Контент перенесён из settings.html.{% endcomment %}
+<div class="settings-panel-head">
+    <h2>Сезоны</h2>
+</div>
+<div class="card">
+    <p style="color:var(--text-secondary); font-size:0.85rem;">Закрытие сезона фиксирует churn в истории (carryover), обнуляет сезонные счётчики и создаёт новый бессрочный сезон, если следующий не задан.</p>
+    <table class="responsive-table">
+        <thead><tr><th>Начало</th><th>Конец</th><th>Создан</th><th></th></tr></thead>
+        <tbody>
+        {% for season in seasons %}
+            <tr>
+                <td data-label="Начало" class="mono">{{ season.start_season }}</td>
+                <td data-label="Конец" class="mono">{% if season.end_season %}{{ season.end_season }}{% else %}<span class="pill warning"><span class="dot"></span>Бессрочный — задайте дату конца</span>{% endif %}</td>
+                <td data-label="Создан" class="mono">{{ season.created_at }}</td>
+                <td data-label="">
+                    <form method="post" class="inline" onsubmit="return confirm('Закрыть сезон? Churn будет зафиксирован, сезонные счётчики обнулены.');">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="close_season">
+                        <input type="hidden" name="season_id" value="{{ season.id }}">
+                        <button type="submit" class="btn danger" style="padding:6px 12px;">Закрыть сезон</button>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="4">Сезонов пока нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <form method="post" style="margin-top:1rem; max-width:400px;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="add_season">
+        {{ season_form.as_p }}
+        <button type="submit" class="btn secondary">Добавить сезон</button>
+    </form>
+</div>

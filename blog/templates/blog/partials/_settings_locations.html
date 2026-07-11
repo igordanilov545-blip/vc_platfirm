@@ -1,8 +1,11 @@
-{% extends 'blog/base.html' %}
-{% block title %}Локации{% endblock %}
-{% block content %}
-<div class="page-header">
-    <h1>Локации</h1>
+{% comment %}
+Панель «Локации» внутри страницы настроек (agent-workflow.md §4). Раньше была отдельной
+страницей location_list.html; теперь тот же контент рендерится в блоке настроек (AJAX-
+подгрузка по кнопке хедера) и как partial для infinite-независимой подгрузки. Разметку
+таблицы/поиска не дублируем — переиспользуем _table_search и общие data-* поведения таблиц.
+{% endcomment %}
+<div class="settings-panel-head">
+    <h2>Локации</h2>
     <a href="{% url 'location_create' %}" class="btn" data-modal data-modal-title="Новая локация">+ Новая локация</a>
 </div>
 
@@ -29,4 +32,3 @@
         </tbody>
     </table>
 </div>
-{% endblock %}

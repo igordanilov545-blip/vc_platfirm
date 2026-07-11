@@ -175,17 +175,8 @@
 
 <style>
     .report-picker-card h3 { margin-top: 0; }
-    .report-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin: 12px 0; }
-    .report-type {
-        display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 12px 14px;
-        border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 12px);
-        background: var(--bg-card); cursor: pointer; font-family: inherit; transition: border-color 0.1s, background 0.1s;
-    }
-    .report-type:hover { background: var(--bg-card-hover); }
-    .report-type.active { border-color: var(--accent); background: var(--bg-card-hover); box-shadow: 0 0 0 1px var(--accent) inset; }
-    .report-type .rt-icon { font-size: 20px; }
-    .report-type .rt-title { font-weight: 600; font-size: 13px; color: var(--text-primary); }
-    .report-type .rt-desc { font-size: 11.5px; color: var(--text-tertiary); }
+    /* .report-types/.report-type/.rt-* — общий компонент в nexus.css (agent-workflow.md §4),
+       переиспользуется хабом настроек. Здесь дублировать не нужно. */
 
     .report-fields { display: flex; flex-direction: column; gap: 12px; margin: 8px 0 14px; }
     .rf-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }

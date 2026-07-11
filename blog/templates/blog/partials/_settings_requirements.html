@@ -1,8 +1,10 @@
-{% extends 'blog/base.html' %}
-{% block title %}Требования{% endblock %}
-{% block content %}
-<div class="page-header">
-    <h1>Требования к волонтёрам</h1>
+{% comment %}
+Панель «Требования к волонтёрам» внутри настроек (agent-workflow.md §4). Контент перенесён
+из requirement_list.html без изменений бизнес-логики (белый список исключений, db.md
+правило 6).
+{% endcomment %}
+<div class="settings-panel-head">
+    <h2>Требования к волонтёрам</h2>
     <a href="{% url 'requirement_create' %}" class="btn" data-modal data-modal-title="Новое требование">+ Новое требование</a>
 </div>
 <p style="color:var(--text-secondary);">
@@ -86,4 +88,3 @@
 {% empty %}
 <div class="card"><p>Требований пока нет.</p></div>
 {% endfor %}
-{% endblock %}

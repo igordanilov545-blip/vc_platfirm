@@ -1,0 +1,24 @@
+{% comment %}Панель «Константы системы» настроек. Контент перенесён из settings.html.{% endcomment %}
+<div class="settings-panel-head">
+    <h2>Константы системы</h2>
+</div>
+<div class="card" style="padding:0; overflow:hidden;">
+    <p style="color:var(--text-secondary); font-size:0.85rem; padding:16px 20px 0;">Изменение значения требует решения простого примера — он появляется только при попытке реально изменить значение.</p>
+    <table class="responsive-table">
+        <thead><tr><th>Название</th><th>Значение</th><th>Описание</th><th></th></tr></thead>
+        <tbody>
+        {% for const in consts %}
+            <tr>
+                <td data-label="Название" class="mono">{{ const.name }}</td>
+                <td data-label="Значение" class="mono">{{ const.value }}</td>
+                <td data-label="Описание" style="color:var(--text-secondary); font-size:0.85rem;">{{ const.description|default:"—" }}</td>
+                <td data-label="">
+                    <a href="{% url 'const_edit' const.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Изменить: {{ const.name }}">Изменить</a>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="4">Константы не заданы.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>

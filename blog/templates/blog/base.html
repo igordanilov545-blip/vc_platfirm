@@ -54,10 +54,8 @@
     <div class="nav-section-title">Управление</div>
     <a href="{% url 'pending_applications' %}" data-track="nav:pending_applications" class="nav-link {% if request.resolver_match.url_name in 'pending_applications,import_preview,import_commit' %}active{% endif %}" title="Заявки"><span class="icon">🕓</span><span class="nav-label"> Заявки</span></a>
     <a href="{% url 'user_list' %}" data-track="nav:user_list" class="nav-link {% if request.resolver_match.url_name == 'user_list' %}active{% endif %}" title="Пользователи"><span class="icon">👥</span><span class="nav-label"> Пользователи</span></a>
-    <a href="{% url 'organizations_list' %}" data-track="nav:organizations_list" class="nav-link {% if request.resolver_match.url_name in 'organizations_list,organization_detail,organization_create' %}active{% endif %}" title="Организации"><span class="icon">🏢</span><span class="nav-label"> Организации</span></a>
-    <a href="{% url 'organizer_list' %}" data-track="nav:organizer_list" class="nav-link {% if request.resolver_match.url_name in 'organizer_list,organizer_detail,organizer_create' %}active{% endif %}" title="Организаторы"><span class="icon">🤝</span><span class="nav-label"> Организаторы</span></a>
-    <a href="{% url 'location_list' %}" data-track="nav:location_list" class="nav-link {% if request.resolver_match.url_name in 'location_list,location_create,location_edit' %}active{% endif %}" title="Локации"><span class="icon">📍</span><span class="nav-label"> Локации</span></a>
-    <a href="{% url 'requirement_list' %}" data-track="nav:requirement_list" class="nav-link {% if request.resolver_match.url_name in 'requirement_list,requirement_create,requirement_edit' %}active{% endif %}" title="Требования"><span class="icon">✅</span><span class="nav-label"> Требования</span></a>
+    {# Локации/организаторы/организации/требования вынесены в Настройки (хаб-вкладки,
+       кнопка «⚙️ Настройки» в подвале сайдбара) — здесь их отдельных пунктов больше нет. #}
     <a href="{% url 'report_period' %}" data-track="nav:report_period" class="nav-link {% if request.resolver_match.url_name == 'report_period' %}active{% endif %}" title="Отчёты"><span class="icon">📊</span><span class="nav-label"> Отчёты</span></a>
     <a href="{% url 'dobro_page' %}" data-track="nav:dobro_page" class="nav-link {% if request.resolver_match.url_name == 'dobro_page' %}active{% endif %}" title="Добро.ру"><span class="icon">❤️</span><span class="nav-label"> Добро.ру</span></a>
     {% endif %}
@@ -1443,40 +1441,53 @@
     // Универсальное подтверждение перед отправкой формы (защита от мисс-клика):
     // на форме указывается data-confirm="Текст вопроса"; при сабмите показываем
     // confirm() и прерываем отправку, если пользователь не подтвердил.
+    // Идемпотентно (data-confirmInit) — можно вызывать на подгруженном AJAX'ом
+    // контенте (напр. панели настроек), не навешивая обработчик повторно.
     // ======================================================================
-    document.querySelectorAll('form[data-confirm]').forEach(function (form) {
-        form.addEventListener('submit', function (event) {
-            var question = form.getAttribute('data-confirm');
-            if (question && !confirm(question)) {
-                event.preventDefault();
-            }
+    function bindConfirmForms(root) {
+        root.querySelectorAll('form[data-confirm]').forEach(function (form) {
+            if (form.dataset.confirmInit) return;
+            form.dataset.confirmInit = '1';
+            form.addEventListener('submit', function (event) {
+                var question = form.getAttribute('data-confirm');
+                if (question && !confirm(question)) {
+                    event.preventDefault();
+                }
+            });
         });
-    });
+    }
+    bindConfirmForms(document);
 
     // ======================================================================
     // Подтверждение перед назначением/снятием роли (настройки): показывает
-    // список выбранных ФИО и количество, требует явного OK.
+    // список выбранных ФИО и количество, требует явного OK. Идемпотентно
+    // (data-roleFormInit) — панель ролей в настройках подгружается AJAX'ом.
     // ======================================================================
-    document.querySelectorAll('[data-role-form]').forEach(function (form) {
-        form.addEventListener('submit', function (event) {
-            // Источник выбранных пользователей — JS-виджет data-user-picker
-            // (widget._pickerSelected, Map id->label), а не серверный <select multiple>:
-            // страница настроек больше не рендерит все тысячи пользователей в HTML.
-            var picker = form.querySelector('[data-user-picker]');
-            var selected = picker && picker._pickerSelected ? picker._pickerSelected : new Map();
-            if (!selected.size) {
-                event.preventDefault();
-                alert('Выберите хотя бы одного пользователя.');
-                return;
-            }
-            var names = Array.from(selected.values()).join(', ');
-            var verb = form.getAttribute('data-confirm-verb') || 'применить действие к';
-            var question = 'Вы уверены, что хотите ' + verb + ': ' + names + ' (' + selected.size + ')?';
-            if (!confirm(question)) {
-                event.preventDefault();
-            }
+    function bindRoleForms(root) {
+        root.querySelectorAll('[data-role-form]').forEach(function (form) {
+            if (form.dataset.roleFormInit) return;
+            form.dataset.roleFormInit = '1';
+            form.addEventListener('submit', function (event) {
+                // Источник выбранных пользователей — JS-виджет data-user-picker
+                // (widget._pickerSelected, Map id->label), а не серверный <select multiple>:
+                // страница настроек больше не рендерит все тысячи пользователей в HTML.
+                var picker = form.querySelector('[data-user-picker]');
+                var selected = picker && picker._pickerSelected ? picker._pickerSelected : new Map();
+                if (!selected.size) {
+                    event.preventDefault();
+                    alert('Выберите хотя бы одного пользователя.');
+                    return;
+                }
+                var names = Array.from(selected.values()).join(', ');
+                var verb = form.getAttribute('data-confirm-verb') || 'применить действие к';
+                var question = 'Вы уверены, что хотите ' + verb + ': ' + names + ' (' + selected.size + ')?';
+                if (!confirm(question)) {
+                    event.preventDefault();
+                }
+            });
         });
-    });
+    }
+    bindRoleForms(document);
 
     // ======================================================================
     // Кнопка "＋" рядом с select (организатор/локация/организация) открывает

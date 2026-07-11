@@ -141,6 +141,8 @@
 | Бесконечная подгрузка таблицы | `base.html` → `initInfiniteScroll` (`data-infinite-scroll`) | `<table data-infinite-scroll="url">`, `<tbody data-rows data-next-page>` |
 | Строки списка пользователей | [`partials/_user_list_rows.html`](../blog/templates/blog/partials/_user_list_rows.html) | `{% include %}` (общий для страницы и infinite-scroll) |
 | Карточка человека / блок опыта / статус-пилюля | `partials/_person_card.html`, `_experience_block.html`, `_event_status_pill.html` | `{% include %}` |
+| **Сетка кнопок-карточек «выбор раздела»** | `nexus.css` → `.report-types`/`.report-type`/`.rt-icon/-title/-desc` | хедер отчётов (`report_period.html`) и хаб настроек (`settings.html`) используют одни классы; новую такую сетку не клонируем инлайном |
+| **Хаб настроек** (хедер-кнопки → панель внизу) | `settings.html` + `partials/_settings_*.html`; вьюха `settings_view` (`SETTINGS_TABS`) | панели-справочники подгружаются AJAX'ом со своих list-вьюх (отдают partial при `X-Requested-With`), панели констант/сезонов/ролей — с `settings_view` (`?tab=…&partial=1`). Новый раздел настроек = запись в `SETTINGS_TABS` + partial `_settings_<key>.html` |
 
 > Все базовые визуальные примитивы (кнопки, карточки, пилюли, поля) — в
 > [`nexus.css`](../blog/static/blog/css/nexus.css) и брендбуке

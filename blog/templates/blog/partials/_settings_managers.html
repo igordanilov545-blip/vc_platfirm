@@ -1,0 +1,7 @@
+{% comment %}Панель «Менеджеры» настроек: назначение и снятие роли менеджера.{% endcomment %}
+<div class="settings-panel-head">
+    <h2>Менеджеры</h2>
+</div>
+{% include 'blog/partials/_role_section.html' with action='assign_manager' title='Назначить менеджером' hint='Выбранные волонтёры получат роль менеджера. Список содержит только тех, кто ещё не является менеджером.' empty_text='Никто не выбран' submit_label='Назначить менеджером' submit_class='' confirm_verb='назначить менеджером' picker_filter='not_manager' section=role_sections.assign_manager %}
+
+{% include 'blog/partials/_role_section.html' with action='revoke_manager' title='Снять роль менеджера' hint='У выбранных пользователей роль менеджера будет отозвана. Список содержит только действующих менеджеров.' empty_text='Никто не выбран' submit_label='Снять роль менеджера' submit_class='danger' confirm_verb='снять роль менеджера у' picker_filter='manager' section=role_sections.revoke_manager %}

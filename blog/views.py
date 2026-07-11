@@ -620,12 +620,17 @@ def event_list(request):
             event.team_leads_str = ', '.join(tl_by_event.get(event.id, [])) or '—'
             event.responsible_manager = manager_by_event.get(event.id, '—')
 
-            # Добро.ру: символ статуса + подпись (см. event_list.html §дизайн).
+            # Добро.ру: символ статуса + подпись (см. event_list.html §дизайн). dobro_index —
+            # id общей ссылки для нижнего индекса (О₁, О₂…), None — если рисовать не нужно
+            # (уникальная/нет ссылки/единственное меро на эту общую ссылку).
+            event.dobro_index = None
             if event.dobro_ru_link_kind == 'unique':
                 event.dobro_symbol, event.dobro_caption, event.dobro_class = 'У', 'уникальная', 'unique'
             elif event.dobro_ru_link_kind == 'shared' and event.dobro_ru_shared_link_id:
                 usage = dobro_shared_usage.get(event.dobro_ru_shared_link_id, 1)
-                event.dobro_symbol = f'О_{event.dobro_ru_shared_link_id}' if usage > 1 else 'О'
+                event.dobro_symbol = 'О'
+                if usage > 1:
+                    event.dobro_index = event.dobro_ru_shared_link_id
                 event.dobro_caption = 'общая' if usage > 1 else 'общая (единств.)'
                 event.dobro_class = 'shared'
             else:
@@ -2582,8 +2587,13 @@ def report_bundle(request):
 
 @manager_required
 def location_list(request):
+    # Панель хаба настроек: по AJAX (X-Requested-With) отдаём только partial панели для
+    # подгрузки в блок настроек; прямой заход на /locations/ редиректит в хаб на нужную
+    # вкладку (страница-справочник больше не живёт отдельно, agent-workflow.md §4).
     locations = Location.objects.order_by('name')
-    return render(request, 'blog/location_list.html', {'locations': locations})
+    if is_ajax(request):
+        return render(request, 'blog/partials/_settings_locations.html', {'locations': locations})
+    return redirect(reverse('settings') + '?tab=locations')
 
 
 @manager_required
@@ -2594,7 +2604,7 @@ def location_create(request):
         messages.success(request, 'Локация создана.')
         return modal_form_response(
             request, None, None,
-            success_redirect=reverse('location_list'),
+            success_redirect=reverse('settings') + '?tab=locations',
         )
     return modal_form_response(
         request, 'blog/location_form.html',
@@ -2611,7 +2621,7 @@ def location_edit(request, location_id):
         messages.success(request, 'Локация обновлена.')
         return modal_form_response(
             request, None, None,
-            success_redirect=reverse('location_list'),
+            success_redirect=reverse('settings') + '?tab=locations',
         )
     return modal_form_response(
         request, 'blog/location_form.html',
@@ -2621,8 +2631,11 @@ def location_edit(request, location_id):
 
 @manager_required
 def organizations_list(request):
+    # Панель хаба настроек (см. location_list): AJAX → partial, прямой заход → редирект.
     organizations = Organization.objects.order_by('name')
-    return render(request, 'blog/organizations_list.html', {'organizations': organizations})
+    if is_ajax(request):
+        return render(request, 'blog/partials/_settings_organizations.html', {'organizations': organizations})
+    return redirect(reverse('settings') + '?tab=organizations')
 
 
 @manager_required
@@ -2722,8 +2735,11 @@ def user_list(request):
 
 @manager_required
 def organizer_list(request):
+    # Панель хаба настроек (см. location_list): AJAX → partial, прямой заход → редирект.
     organizers = Organizer.objects.order_by('last_name', 'first_name')
-    return render(request, 'blog/organizer_list.html', {'organizers': organizers})
+    if is_ajax(request):
+        return render(request, 'blog/partials/_settings_organizers.html', {'organizers': organizers})
+    return redirect(reverse('settings') + '?tab=organizers')
 
 
 @manager_required
@@ -2815,6 +2831,50 @@ ROLE_ACTIONS = {
 }
 ROLE_LABELS = {'team_lead': 'тим-лидера', 'manager': 'менеджера'}
 
+# Хаб настроек: единый порядок и метаданные вкладок-кнопок в хедере страницы настроек.
+# Каждая вкладка открывает свою панель в блоке контента ниже (AJAX-подгрузка partial'а).
+# 'url' — имя вьюхи, отдающей partial по X-Requested-With:
+#   - справочники (локации/организаторы/организации/требования) — их же list-вьюхи,
+#     которые раньше были отдельными страницами (теперь редиректят на settings, а по
+#     AJAX отдают только partial панели);
+#   - константы/сезоны/тим-лидеры/менеджеры — сама settings_view (?tab=…).
+# Панели ролей разделены на две вкладки (тим-лидеры / менеджеры), внутри каждой —
+# по секции назначения и снятия (partials/_settings_team_leaders|managers.html).
+SETTINGS_TABS = [
+    {'key': 'locations', 'icon': '📍', 'title': 'Локации', 'desc': 'Площадки проведения мероприятий', 'url': 'location_list'},
+    {'key': 'organizers', 'icon': '🤝', 'title': 'Организаторы', 'desc': 'Контактные лица организаций', 'url': 'organizer_list'},
+    {'key': 'organizations', 'icon': '🏢', 'title': 'Организации', 'desc': 'Партнёры и заказчики мероприятий', 'url': 'organizations_list'},
+    {'key': 'requirements', 'icon': '✅', 'title': 'Требования', 'desc': 'Условия допуска волонтёров', 'url': 'requirement_list'},
+    {'key': 'constants', 'icon': '🔢', 'title': 'Константы', 'desc': 'Пороги и коэффициенты системы', 'url': 'settings'},
+    {'key': 'seasons', 'icon': '🗓️', 'title': 'Сезоны', 'desc': 'Периоды учёта и закрытие сезона', 'url': 'settings'},
+    {'key': 'team_leaders', 'icon': '⭐', 'title': 'Тим-лидеры', 'desc': 'Назначение и снятие роли ТЛ', 'url': 'settings'},
+    {'key': 'managers', 'icon': '🛡️', 'title': 'Менеджеры', 'desc': 'Назначение и снятие роли менеджера', 'url': 'settings'},
+]
+
+# Панели настроек, которые обслуживает сама settings_view (не отдельные list-вьюхи).
+SETTINGS_NATIVE_PANELS = {
+    'constants': 'blog/partials/_settings_constants.html',
+    'seasons': 'blog/partials/_settings_seasons.html',
+    'team_leaders': 'blog/partials/_settings_team_leaders.html',
+    'managers': 'blog/partials/_settings_managers.html',
+}
+SETTINGS_DEFAULT_TAB = 'locations'
+
+
+def _settings_tabs_context(active_tab):
+    """Готовит список вкладок с готовыми URL для шелла настроек. URL справочников ведут
+    на их list-вьюхи с ?tab= (для истории/копируемой ссылки шелл всё равно перепишет URL
+    на /settings/?tab=…), URL нативных панелей — на settings с ?tab=&partial=1."""
+    tabs = []
+    for tab in SETTINGS_TABS:
+        if tab['url'] == 'settings':
+            url = reverse('settings') + f"?tab={tab['key']}&partial=1"
+        else:
+            url = reverse(tab['url'])
+        tabs.append({**tab, 'url': url})
+    active_url = next((t['url'] for t in tabs if t['key'] == active_tab), tabs[0]['url'])
+    return tabs, active_url
+
 
 @manager_required
 def const_edit(request, const_id):
@@ -2864,19 +2924,52 @@ def const_edit(request, const_id):
     )
 
 
+def _settings_redirect(tab):
+    """Редирект после POST-действия настроек — обратно на нужную вкладку хаба
+    (/settings/?tab=…), чтобы пользователь остался в том же разделе, а не был выброшен
+    на дефолтную вкладку."""
+    return redirect(reverse('settings') + f'?tab={tab}')
+
+
+def _build_role_sections(request):
+    """Секции назначения/снятия ролей для панелей «тим-лидеры» и «менеджеры»: на каждую
+    роль — форма-пикер, свежая капча и число доступных пользователей. Вынесено, чтобы
+    строить только когда реально рендерим панель ролей (а не на каждый заход в настройки)."""
+    role_sections = {}
+    for action, (kind, verb) in ROLE_ACTIONS.items():
+        session_key = f'captcha_{action}'
+        queryset = (
+            roles_service.users_without_role(kind) if verb == 'assign'
+            else roles_service.users_with_role(kind)
+        )
+        role_sections[action] = {
+            # prefix обязателен: без него все 4 формы на странице рендерят <select id="id_users">
+            # с одинаковым id, и JS chip-виджет находит только первый по document.getElementById.
+            'form': RoleUsersForm(queryset=queryset, prefix=action),
+            'captcha_question': _new_captcha(request, session_key),
+            'users_count': queryset.count(),
+        }
+    return role_sections
+
+
 @manager_required
 def settings_view(request):
-    consts = Const.objects.order_by('name')
-    seasons = Season.objects.order_by('-start_season')
-
+    """Хаб настроек. GET без ?partial=1 отдаёт шелл (хедер-кнопки + пустой блок панели,
+    который JS сразу подгружает AJAX'ом). GET с ?partial=1&tab=… отдаёт partial нативной
+    панели (константы/сезоны/тим-лидеры/менеджеры). POST обрабатывает действия этих
+    панелей (добавить/закрыть сезон, назначить/снять роль) и редиректит на свою вкладку."""
+    # --- POST-действия панелей ---
     if request.method == 'POST' and request.POST.get('action') == 'add_season':
         season_form = SeasonForm(request.POST)
         if season_form.is_valid():
             season_form.save()
             messages.success(request, 'Сезон добавлен.')
-            return redirect('settings')
-    else:
-        season_form = SeasonForm()
+            return _settings_redirect('seasons')
+        # Невалидная форма — покажем панель сезонов с ошибками (partial).
+        return render(request, 'blog/partials/_settings_seasons.html', {
+            'seasons': Season.objects.order_by('-start_season'),
+            'season_form': season_form,
+        })
 
     if request.method == 'POST' and request.POST.get('action') == 'close_season':
         from blog.services.stats import close_season
@@ -2886,12 +2979,14 @@ def settings_view(request):
         if next_season:
             msg += ' Создан новый бессрочный сезон — задайте дату его окончания.'
         messages.success(request, msg)
-        return redirect('settings')
+        return _settings_redirect('seasons')
 
     if request.method == 'POST' and request.POST.get('action') in ROLE_ACTIONS:
         action = request.POST.get('action')
         kind, verb = ROLE_ACTIONS[action]
         session_key = f'captcha_{action}'
+        # Роль ТЛ — на вкладке «тим-лидеры», роль менеджера — на «менеджеры».
+        role_tab = 'team_leaders' if kind == 'team_lead' else 'managers'
 
         queryset = (
             roles_service.users_without_role(kind) if verb == 'assign'
@@ -2916,30 +3011,35 @@ def settings_view(request):
                 messages.success(request, f'{role_word.capitalize()} {verb_text}: {names} ({len(affected)}).')
             else:
                 messages.info(request, 'Выбранные пользователи уже были в этом статусе — изменений нет.')
-            return redirect('settings')
+            return _settings_redirect(role_tab)
         else:
             messages.error(request, 'Выберите хотя бы одного пользователя.')
+        return _settings_redirect(role_tab)
 
-    role_sections = {}
-    for action, (kind, verb) in ROLE_ACTIONS.items():
-        session_key = f'captcha_{action}'
-        queryset = (
-            roles_service.users_without_role(kind) if verb == 'assign'
-            else roles_service.users_with_role(kind)
-        )
-        role_sections[action] = {
-            # prefix обязателен: без него все 4 формы на странице рендерят <select id="id_users">
-            # с одинаковым id, и JS chip-виджет находит только первый по document.getElementById.
-            'form': RoleUsersForm(queryset=queryset, prefix=action),
-            'captcha_question': _new_captcha(request, session_key),
-            'users_count': queryset.count(),
-        }
+    # --- GET: partial панели или шелл ---
+    tab = request.GET.get('tab') or SETTINGS_DEFAULT_TAB
+    wants_partial = request.GET.get('partial') == '1' or is_ajax(request)
 
+    if wants_partial and tab in SETTINGS_NATIVE_PANELS:
+        template = SETTINGS_NATIVE_PANELS[tab]
+        context = {}
+        if tab == 'constants':
+            context['consts'] = Const.objects.order_by('name')
+        elif tab == 'seasons':
+            context['seasons'] = Season.objects.order_by('-start_season')
+            context['season_form'] = SeasonForm()
+        elif tab in ('team_leaders', 'managers'):
+            context['role_sections'] = _build_role_sections(request)
+        return render(request, template, context)
+
+    # Шелл хаба: активная вкладка из ?tab= (или дефолт), если такой нет — дефолт.
+    if tab not in {t['key'] for t in SETTINGS_TABS}:
+        tab = SETTINGS_DEFAULT_TAB
+    tabs, active_url = _settings_tabs_context(tab)
     return render(request, 'blog/settings.html', {
-        'consts': consts,
-        'seasons': seasons,
-        'season_form': season_form,
-        'role_sections': role_sections,
+        'tabs': tabs,
+        'active_tab': tab,
+        'active_url': active_url,
     })
 
 
@@ -2963,10 +3063,13 @@ def requirement_list(request):
             'exception_form': RequirementExceptionForm(requirement=req),
         })
 
-    return render(request, 'blog/requirement_list.html', {
-        'sections': sections,
-        'requirement_form': RequirementForm(),
-    })
+    # Панель хаба настроек (см. location_list): AJAX → partial, прямой заход → редирект.
+    if is_ajax(request):
+        return render(request, 'blog/partials/_settings_requirements.html', {
+            'sections': sections,
+            'requirement_form': RequirementForm(),
+        })
+    return redirect(reverse('settings') + '?tab=requirements')
 
 
 @manager_required
@@ -2975,7 +3078,7 @@ def requirement_create(request):
     if request.method == 'POST' and form.is_valid():
         form.save()
         messages.success(request, 'Требование добавлено.')
-        return modal_form_response(request, None, None, success_redirect=reverse('requirement_list'))
+        return modal_form_response(request, None, None, success_redirect=reverse('settings') + '?tab=requirements')
     return modal_form_response(
         request, 'blog/requirement_form.html',
         {'form': form, 'title': 'Новое требование', 'submit_label': 'Добавить'},
@@ -2989,7 +3092,7 @@ def requirement_edit(request, requirement_id):
     if request.method == 'POST' and form.is_valid():
         form.save()
         messages.success(request, 'Требование обновлено.')
-        return modal_form_response(request, None, None, success_redirect=reverse('requirement_list'))
+        return modal_form_response(request, None, None, success_redirect=reverse('settings') + '?tab=requirements')
     return modal_form_response(
         request, 'blog/requirement_form.html',
         {'form': form, 'title': f'Редактировать: {requirement.title}', 'submit_label': 'Сохранить'},

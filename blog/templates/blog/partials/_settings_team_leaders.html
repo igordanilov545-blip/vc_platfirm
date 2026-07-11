@@ -1,0 +1,8 @@
+{% comment %}Панель «Тим-лидеры» настроек: назначение и снятие роли ТЛ. Переиспользует
+общую секцию _role_section.html (капча + пикер волонтёров).{% endcomment %}
+<div class="settings-panel-head">
+    <h2>Тим-лидеры</h2>
+</div>
+{% include 'blog/partials/_role_section.html' with action='assign_team_lead' title='Назначить тим-лидером' hint='Выбранные волонтёры получат роль тим-лидера. Список содержит только тех, кто ещё не является тим-лидером.' empty_text='Никто не выбран' submit_label='Назначить тим-лидером' submit_class='' confirm_verb='назначить тим-лидером' picker_filter='not_team_lead' section=role_sections.assign_team_lead %}
+
+{% include 'blog/partials/_role_section.html' with action='revoke_team_lead' title='Снять роль тим-лидера' hint='У выбранных пользователей роль тим-лидера будет отозвана. Список содержит только действующих тим-лидеров.' empty_text='Никто не выбран' submit_label='Снять роль тим-лидера' submit_class='danger' confirm_verb='снять роль тим-лидера у' picker_filter='team_lead' section=role_sections.revoke_team_lead %}

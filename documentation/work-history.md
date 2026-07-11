@@ -369,3 +369,51 @@ up db/web/bot → (миграция sqlite→pg) → init_letsencrypt → up.
 19 мест) — не заводил второй такой же класс, при следующей широкой таблице
 переиспользовать `.table-scroll`+`.wrap`, а не копировать инлайн-стили. Затронуты
 `nexus.css`, `event_list.html`. `manage.py check` чист, проверено вручную runserver.
+
+---
+
+## Хаб настроек: перенос страниц-справочников в настройки (кнопки-вкладки)
+
+**Промт.** Переработать общий вид интерфейса: перенести страницы-кнопки (организаторы,
+организации, локации, требования) в настройки; в настройках сделать хедер с кнопками
+(по аналогии со страницей отчётов), каждый блок кликабелен и открывает своё содержимое
+внизу в основном контенте. Кнопки: локации, организаторы, организации, требования,
+константы, сезоны, тим-лидеры, менеджеры. В боковой панели эти пункты убрать. Содержимое
+блоков перенести как есть.
+
+**Тудушник.**
+- Хедер настроек — сетка кнопок-карточек тем же визуальным языком, что на отчётах
+  (`.report-type`), 8 вкладок.
+- Панель контента ниже, активная вкладка подгружается AJAX'ом; активная вкладка — в URL
+  (`?tab=…`), кнопки «назад/вперёд» работают.
+- Панели-справочники (локации/организаторы/организации/требования) отдают свой contentn
+  partial'ом со своих же list-вьюх при `X-Requested-With`; прямой заход → редирект в хаб.
+- Панели констант/сезонов/ролей — с самой `settings_view` (`?tab=…&partial=1`); роли
+  разбиты на вкладки «тим-лидеры» и «менеджеры» (внутри — назначить/снять).
+- Убрать 4 пункта из сайдбара.
+- Не дублировать вёрстку: вынести `.report-type*` в `nexus.css`, переиспользовать.
+
+**Вопросы + ответы.**
+- Переключение панелей? → AJAX-подгрузка с состоянием в `?tab=` (рекоменд.).
+- Старые URL/страницы? → Убрать из сайдбара, URL/вьюхи оставить (нужны как AJAX-эндпоинты
+  панелей и для модалок create/edit); прямой заход редиректит в хаб.
+
+**Итог.** Реализован хаб настроек. Новое: `settings.html` (шелл: хедер-кнопки + `#settings-panel`
++ JS переключения/истории), 8 partial'ов `partials/_settings_*.html` (контент перенесён
+1:1 из старых страниц и из прежней `settings.html`). `views.py`: `SETTINGS_TABS`/
+`SETTINGS_NATIVE_PANELS`/`_settings_tabs_context`/`_build_role_sections`/`_settings_redirect`;
+`settings_view` переписана под шелл+partial; `location_list/organizer_list/organizations_list/
+requirement_list` теперь AJAX→partial, иначе редирект в `?tab=…`; редиректы модалок create/edit
+ведут прямо на вкладку. `base.html`: убраны 4 пункта сайдбара; одноразовые биндинги
+`data-confirm`/`data-role-form` вынесены в идемпотентные `bindConfirmForms`/`bindRoleForms`
+(чтобы работали на подгруженном AJAX'ом контенте). `nexus.css`: `.report-types/.report-type/.rt-*`
+стали общим компонентом (были инлайном в `report_period.html`) + стили хаба. Удалены мёртвые
+`location_list.html/organizer_list.html/organizations_list.html/requirement_list.html`. Дока —
+таблица компонентов в `agent-workflow.md` §4 дополнена. `manage.py check` чист; прогнал
+runserver под менеджером: шелл отдаёт 8 вкладок, все 8 partial'ов рендерятся без утечки base,
+активная вкладка размечается по `?tab=`, старые URL 302→`?tab=…`, POST add_season (валид→302
+на вкладку сезонов, невалид→partial с ошибкой). Риск/остаток: `redirect('requirement_list')`
+в exception add/remove/delete делает лишний 302→settings (безвредно). Затронуты: `blog/views.py`,
+`blog/templates/blog/settings.html`, `blog/templates/blog/base.html`,
+`blog/templates/blog/report_period.html`, `blog/templates/blog/partials/_settings_*.html` (8 нов.),
+`blog/static/blog/css/nexus.css`, `documentation/agent-workflow.md`; удалены 4 шаблона.

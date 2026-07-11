@@ -5,52 +5,8 @@
 <h1>Отчёты</h1>
 
 <div class="card report-scope-card" id="report-scope-card">
-    <div class="report-scope-row">
-        {# Диапазон дат — компактный, открывается по клику (переиспользуем календарь проекта). #}
-        <div class="rs-daterange">
-            <span class="rs-label">Период:</span>
-            <div class="rs-presets">
-                <button type="button" class="rs-preset {% if period == 'today' %}active{% endif %}" data-preset="today">Сегодня</button>
-                <button type="button" class="rs-preset {% if period == 'week' %}active{% endif %}" data-preset="week">Неделя</button>
-                <button type="button" class="rs-preset {% if period == 'month' %}active{% endif %}" data-preset="month">Месяц</button>
-                <button type="button" class="rs-preset {% if period == 'season' %}active{% endif %}" data-preset="season">Сезон</button>
-                <button type="button" class="rs-preset {% if period == 'last_season' %}active{% endif %}" data-preset="last_season">Пр. сезон</button>
-            </div>
-            <span class="pill neutral" id="rs-range-label"><span class="dot"></span><span class="mono">{{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }}</span></span>
-            <button type="button" class="btn secondary btn-sm" id="rs-custom-toggle" title="Задать произвольный диапазон">📅 Даты…</button>
-        </div>
-    </div>
-
-    {# Произвольный диапазон (скрыт по умолчанию) — связанная пара календарей с
-       Airbnb-подсветкой диапазона (initDateRangePair, base.html). #}
-    <div class="rs-custom" id="rs-custom-panel" hidden>
-        <div class="rs-cal-pair" data-range-pair>
-            <input type="text" data-range-start value="{{ date_from|date:'Y-m-d' }}" id="rs-date-from" hidden>
-            <input type="text" data-range-end value="{{ date_to|date:'Y-m-d' }}" id="rs-date-to" hidden>
-        </div>
-        <button type="button" class="btn btn-sm" id="rs-custom-apply" style="margin-top:12px;">Применить</button>
-    </div>
-
-    <div class="report-scope-row">
-        {# Статус-режим пула мероприятий. #}
-        <div class="rs-status">
-            <span class="rs-label">Мероприятия:</span>
-            <div class="rs-status-toggle" id="rs-status-toggle">
-                <button type="button" class="rs-status-btn {% if event_status == 'all' %}active{% endif %}" data-status="all">Все</button>
-                <button type="button" class="rs-status-btn {% if event_status == 'ongoing' %}active{% endif %}" data-status="ongoing">Идущие</button>
-                <button type="button" class="rs-status-btn {% if event_status == 'past' %}active{% endif %}" data-status="past">Прошедшие</button>
-            </div>
-        </div>
-    </div>
-
-    <div class="report-scope-row rs-chips-row">
-        <div class="rs-chips-head">
-            <span class="rs-label" id="rs-chips-count">В отчёте ({{ event_chips|length }}):</span>
-            <button type="button" class="btn secondary btn-sm" id="rs-chips-toggle" title="Скрыть/показать список мероприятий">Скрыть список</button>
-        </div>
-        <div class="rs-chips" id="rs-chips">
-            {% include 'blog/partials/_report_chips.html' %}
-        </div>
+    <div id="report-scope-body">
+        {% include 'blog/partials/_report_scope.html' %}
     </div>
 </div>
 
@@ -93,26 +49,27 @@
             return task().finally(function () { overlay.remove(); });
         }
 
-        // --- Смена ОХВАТА: два AJAX-запроса (чипы + активная панель режима), без
-        // перезагрузки страницы целиком — раньше window.location.search дёргал скролл
-        // наверх при каждом клике по чипу/пресету/кнопке "только не проставленные". ---
+        // --- Смена ОХВАТА: сервер — единственный источник истины для активного
+        // пресета/лейбла диапазона/чипов, поэтому весь блок #report-scope-body
+        // перезаписывается целиком AJAX'ом (не только чипы отдельно, иначе кнопка
+        // периода/лейбл дат визуально не совпадали с реальным охватом после клика).
+        // Плюс AJAX активной панели режима — тем же охватом. Никакой полной
+        // перезагрузки страницы, поэтому scroll не прыгает. ---
         var scopeCard = document.getElementById('report-scope-card');
-        var chipsBox = document.getElementById('rs-chips');
-        var chipsCount = document.getElementById('rs-chips-count');
+        var scopeBody = document.getElementById('report-scope-body');
 
         function applyScopeChange(mutate) {
             var p = currentParams();
             mutate(p);
             history.replaceState(null, '', '?' + p.toString());
-            var chipsP = new URLSearchParams(p); chipsP.set('scope_partial', '1');
+            var scopeP = new URLSearchParams(p); scopeP.set('scope_partial', '1');
             withOverlay(scopeCard, function () {
-                return fetch('{% url "report_period" %}?' + chipsP.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                return fetch('{% url "report_period" %}?' + scopeP.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                     .then(function (r) { return r.text(); })
                     .then(function (html) {
-                        chipsBox.innerHTML = html;
-                        bindChipClicks();
-                        var count = chipsBox.querySelectorAll('.rs-chip').length;
-                        chipsCount.textContent = 'В отчёте (' + count + '):';
+                        scopeBody.innerHTML = html;
+                        bindScopeBody();
+                        window.initDateRangePair && window.initDateRangePair(scopeBody);
                     });
             });
             // Панель режима считается по тому же (уже обновлённому в URL) охвату.
@@ -124,88 +81,88 @@
             return t ? { table: t } : null;
         }
 
-        // Пресеты периода.
-        document.querySelectorAll('.rs-preset').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                applyScopeChange(function (p) {
-                    p.set('period', btn.getAttribute('data-preset'));
-                    p.delete('date_from'); p.delete('date_to');
-                    p.delete('exclude'); // новый период — новый пул, старые исключения не валидны
-                });
-            });
-        });
-
-        // Произвольный диапазон.
-        var customToggle = document.getElementById('rs-custom-toggle');
-        var customPanel = document.getElementById('rs-custom-panel');
-        if (customToggle && customPanel) {
-            customToggle.addEventListener('click', function () { customPanel.hidden = !customPanel.hidden; });
-        }
-
-        // Список мероприятий охвата можно свернуть — так же, как произвольный диапазон дат;
-        // список может быть длинным (десятки чипов), сворачивание освобождает экран.
-        var chipsToggle = document.getElementById('rs-chips-toggle');
-        if (chipsToggle && chipsBox) {
-            chipsToggle.addEventListener('click', function () {
-                chipsBox.hidden = !chipsBox.hidden;
-                chipsToggle.textContent = chipsBox.hidden ? 'Показать список' : 'Скрыть список';
-            });
-        }
-        var customApply = document.getElementById('rs-custom-apply');
-        if (customApply) {
-            customApply.addEventListener('click', function () {
-                var from = document.getElementById('rs-date-from').value;
-                var to = document.getElementById('rs-date-to').value;
-                if (!from || !to) return;
-                applyScopeChange(function (p) {
-                    p.delete('period');
-                    p.set('date_from', from); p.set('date_to', to);
-                    p.delete('exclude');
-                });
-                var rangeLabel = document.getElementById('rs-range-label');
-                if (rangeLabel) rangeLabel.querySelector('.mono').textContent = from.split('-').reverse().join('.') + ' — ' + to.split('-').reverse().join('.');
-            });
-        }
-
-        // Статус-режим пула.
-        document.querySelectorAll('.rs-status-btn').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                document.querySelectorAll('.rs-status-btn').forEach(function (b) { b.classList.remove('active'); });
-                btn.classList.add('active');
-                applyScopeChange(function (p) {
-                    p.set('event_status', btn.getAttribute('data-status'));
-                    p.delete('exclude'); // смена статус-режима меняет пул
-                });
-            });
-        });
-
-        // Чипы: клик по всему блоку (не только по иконке) убирает/возвращает меро
-        // в отчёт (правим ?exclude=). Делегирование — чипы перерисовываются AJAX'ом.
         function currentExclude() {
             var raw = currentParams().get('exclude') || '';
             return raw.split(',').filter(function (x) { return x.trim(); });
         }
-        function bindChipClicks() {
-            chipsBox.querySelectorAll('.rs-chip').forEach(function (chip) {
-                if (chip.dataset.bound) return; chip.dataset.bound = '1';
-                function toggle() {
-                    var id = chip.getAttribute('data-id');
-                    var excluded = chip.getAttribute('data-excluded') === '1';
-                    var ids = currentExclude();
-                    if (excluded) {
-                        ids = ids.filter(function (x) { return x !== id; });
-                    } else if (ids.indexOf(id) === -1) {
-                        ids.push(id);
-                    }
+
+        // Все обработчики внутри #report-scope-body — переустанавливаются после
+        // каждой AJAX-перезаписи блока (старые элементы уничтожены вместе с innerHTML).
+        function bindScopeBody() {
+            scopeBody.querySelectorAll('.rs-preset').forEach(function (btn) {
+                btn.addEventListener('click', function () {
                     applyScopeChange(function (p) {
-                        if (ids.length) p.set('exclude', ids.join(',')); else p.delete('exclude');
+                        p.set('period', btn.getAttribute('data-preset'));
+                        p.delete('date_from'); p.delete('date_to');
+                        p.delete('exclude'); // новый период — новый пул, старые исключения не валидны
                     });
-                }
-                chip.addEventListener('click', toggle);
-                chip.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+                });
             });
+
+            var customToggle = scopeBody.querySelector('#rs-custom-toggle');
+            var customPanel = scopeBody.querySelector('#rs-custom-panel');
+            if (customToggle && customPanel) {
+                customToggle.addEventListener('click', function () { customPanel.hidden = !customPanel.hidden; });
+            }
+
+            var chipsToggle = scopeBody.querySelector('#rs-chips-toggle');
+            var chipsBox = scopeBody.querySelector('#rs-chips');
+            if (chipsToggle && chipsBox) {
+                chipsToggle.addEventListener('click', function () {
+                    chipsBox.hidden = !chipsBox.hidden;
+                    chipsToggle.textContent = chipsBox.hidden ? 'Показать список' : 'Скрыть список';
+                });
+            }
+
+            // Диапазон применяется автоматически сразу при выборе конца диапазона в
+            // календаре (change на скрытом #rs-date-from) — отдельная кнопка «Применить»
+            // не нужна.
+            var fromInput = scopeBody.querySelector('#rs-date-from');
+            var toInput = scopeBody.querySelector('#rs-date-to');
+            if (fromInput && toInput) {
+                fromInput.addEventListener('change', function () {
+                    var from = fromInput.value, to = toInput.value;
+                    if (!from || !to) return;
+                    applyScopeChange(function (p) {
+                        p.delete('period');
+                        p.set('date_from', from); p.set('date_to', to);
+                        p.delete('exclude');
+                    });
+                });
+            }
+
+            scopeBody.querySelectorAll('.rs-status-btn').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    applyScopeChange(function (p) {
+                        p.set('event_status', btn.getAttribute('data-status'));
+                        p.delete('exclude'); // смена статус-режима меняет пул
+                    });
+                });
+            });
+
+            // Чипы: клик по всему блоку (не только по иконке) убирает/возвращает меро
+            // в отчёт (правим ?exclude=).
+            if (chipsBox) {
+                chipsBox.querySelectorAll('.rs-chip').forEach(function (chip) {
+                    function toggle() {
+                        var id = chip.getAttribute('data-id');
+                        var excluded = chip.getAttribute('data-excluded') === '1';
+                        var ids = currentExclude();
+                        if (excluded) {
+                            ids = ids.filter(function (x) { return x !== id; });
+                        } else if (ids.indexOf(id) === -1) {
+                            ids.push(id);
+                        }
+                        applyScopeChange(function (p) {
+                            if (ids.length) p.set('exclude', ids.join(',')); else p.delete('exclude');
+                        });
+                    }
+                    chip.addEventListener('click', toggle);
+                    chip.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+                });
+            }
         }
-        bindChipClicks();
+        bindScopeBody();
 
         // --- Смена РЕЖИМА: лёгкий AJAX (охват тот же) ---
         function panelUrl(viewKey, extra) {

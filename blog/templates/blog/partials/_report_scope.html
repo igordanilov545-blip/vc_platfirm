@@ -1,0 +1,45 @@
+{% load custom_tags %}
+<div class="report-scope-row">
+    <div class="rs-daterange">
+        <span class="rs-label">Период:</span>
+        <div class="rs-presets">
+            <button type="button" class="rs-preset {% if period == 'today' %}active{% endif %}" data-preset="today">Сегодня</button>
+            <button type="button" class="rs-preset {% if period == 'week' %}active{% endif %}" data-preset="week">Неделя</button>
+            <button type="button" class="rs-preset {% if period == 'month' %}active{% endif %}" data-preset="month">Месяц</button>
+            <button type="button" class="rs-preset {% if period == 'season' %}active{% endif %}" data-preset="season">Сезон</button>
+            <button type="button" class="rs-preset {% if period == 'last_season' %}active{% endif %}" data-preset="last_season">Пр. сезон</button>
+        </div>
+        <span class="pill neutral" id="rs-range-label"><span class="dot"></span><span class="mono">{{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }}</span></span>
+        <button type="button" class="btn secondary btn-sm" id="rs-custom-toggle" title="Задать произвольный диапазон">📅 Даты…</button>
+    </div>
+</div>
+
+{# Произвольный диапазон (скрыт по умолчанию) — связанная пара календарей с
+   Airbnb-подсветкой диапазона (initDateRangePair, base.html). #}
+<div class="rs-custom" id="rs-custom-panel" hidden>
+    <div class="rs-cal-pair" data-range-pair>
+        <input type="text" data-range-start value="{{ date_from|date:'Y-m-d' }}" id="rs-date-from" hidden>
+        <input type="text" data-range-end value="{{ date_to|date:'Y-m-d' }}" id="rs-date-to" hidden>
+    </div>
+</div>
+
+<div class="report-scope-row">
+    <div class="rs-status">
+        <span class="rs-label">Мероприятия:</span>
+        <div class="rs-status-toggle" id="rs-status-toggle">
+            <button type="button" class="rs-status-btn {% if event_status == 'all' %}active{% endif %}" data-status="all">Все</button>
+            <button type="button" class="rs-status-btn {% if event_status == 'ongoing' %}active{% endif %}" data-status="ongoing">Идущие</button>
+            <button type="button" class="rs-status-btn {% if event_status == 'past' %}active{% endif %}" data-status="past">Прошедшие</button>
+        </div>
+    </div>
+</div>
+
+<div class="report-scope-row rs-chips-row">
+    <div class="rs-chips-head">
+        <span class="rs-label" id="rs-chips-count">В отчёте ({{ event_chips|length }}):</span>
+        <button type="button" class="btn secondary btn-sm" id="rs-chips-toggle" title="Скрыть/показать список мероприятий">Скрыть список</button>
+    </div>
+    <div class="rs-chips" id="rs-chips">
+        {% include 'blog/partials/_report_chips.html' %}
+    </div>
+</div>

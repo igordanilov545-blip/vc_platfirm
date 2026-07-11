@@ -2226,12 +2226,20 @@ def report_period(request):
     scope = _report_erp_scope(request)
     wants_partial = request.GET.get('partial') == '1' or is_ajax(request)
 
-    # Смена охвата (даты/статус/исключения) обновляет только чипы AJAX'ом — без
-    # перезагрузки страницы (раньше окно перезагружалось целиком, и браузер
-    # прыгал наверх). Панель режима обновляется отдельным запросом тем же fetch'ем.
+    # Смена охвата (даты/статус/исключения) обновляет весь блок «строка охвата»
+    # AJAX'ом целиком (пресеты/лейбл диапазона/статус-режим/чипы) — сервер остаётся
+    # единственным источником истины для того, какая кнопка активна и что показано
+    # в лейбле диапазона; раньше окно перезагружалось целиком, и браузер прыгал
+    # наверх. Панель режима обновляется отдельным запросом тем же fetch'ем.
     if request.GET.get('scope_partial') == '1':
         chips = _report_event_chips(scope['date_from'], scope['date_to'], scope['event_status'], scope['exclude_ids'])
-        return render(request, 'blog/partials/_report_chips.html', {'event_chips': chips})
+        return render(request, 'blog/partials/_report_scope.html', {
+            'period': scope['period'],
+            'date_from': scope['date_from'],
+            'date_to': scope['date_to'],
+            'event_status': scope['event_status'],
+            'event_chips': chips,
+        })
 
     if wants_partial:
         return _report_render_panel(request, view_key, scope)
@@ -2322,8 +2330,13 @@ def _report_tables_panel(request, scope):
 
 def _report_dobro_panel(request, scope):
     """Панель «Добро.ру»: перенос страницы dobro_page — таблица ссылок с чекбоксом
-    «часы проставлены» (переключается AJAX'ом) + кнопка выгрузки отчёта."""
-    rows, unlogged_event_ids = _dobro_rows(only_unlogged=request.GET.get('only_unlogged') == '1')
+    «часы проставлены» (переключается AJAX'ом) + кнопка выгрузки отчёта.
+
+    Фильтруется тем же охватом (event_ids), что дашборд/таблицы — раньше показывала
+    вообще все ссылки/меро в системе независимо от выбранного периода/исключений."""
+    rows, unlogged_event_ids = _dobro_rows(
+        only_unlogged=request.GET.get('only_unlogged') == '1', event_ids=scope['event_ids'],
+    )
     return render(request, 'blog/partials/_report_dobro.html', {
         'rows': rows,
         'only_unlogged': request.GET.get('only_unlogged') == '1',
@@ -2749,25 +2762,39 @@ def report_dobro_toggle(request, event_id):
     return JsonResponse({'logged': event.dobro_ru_hours_logged})
 
 
-def _dobro_rows(only_unlogged=False):
+def _dobro_rows(only_unlogged=False, event_ids=None):
     """Строки таблицы Добро.ру (общие + уникальные ссылки) и id завершённых меро с
     непроставленными часами (для кнопки выгрузки). Вынесено из dobro_page, чтобы
-    переиспользовать в панели ERP-хаба (?view=dobro)."""
+    переиспользовать в панели ERP-хаба (?view=dobro).
+
+    event_ids — охват страницы отчётов (даты/статус-режим/исключения): если задан,
+    строка попадает в таблицу только если у неё остались привязанные меро ИЗ охвата
+    (остальные меро строки просто не показываются, а не прячут всю строку — общая
+    ссылка часто привязана к меро за пределами текущего периода)."""
     rows = []
     for link in DobroRuSharedLink.objects.order_by('-created_at'):
         events = list(link.events.filter(dobro_ru_link_kind='shared').order_by('-created_at'))
+        if event_ids is not None:
+            events = [e for e in events if e.id in event_ids]
         rows.append({
             'title': link.title, 'url': link.url, 'kind': 'shared', 'kind_display': 'Общая',
             'link_type_display': link.get_link_type_display(), 'is_active': link.is_active,
             'events': events,
             'all_logged': bool(events) and all(e.dobro_ru_hours_logged for e in events),
         })
-    for event in Event.objects.filter(dobro_ru_link_kind='unique').order_by('-created_at'):
+    unique_events = Event.objects.filter(dobro_ru_link_kind='unique').order_by('-created_at')
+    if event_ids is not None:
+        unique_events = unique_events.filter(id__in=event_ids)
+    for event in unique_events:
         rows.append({
             'title': event.dobro_ru_link or event.title, 'url': event.dobro_ru_link,
             'kind': 'unique', 'kind_display': 'Уникальная', 'link_type_display': '—',
             'is_active': True, 'events': [event], 'all_logged': event.dobro_ru_hours_logged,
         })
+    if event_ids is not None:
+        # Общие ссылки, у которых после фильтрации не осталось меро из охвата, —
+        # не показываем вовсе (пустая строка бессмысленна).
+        rows = [r for r in rows if r['kind'] != 'shared' or r['events']]
     if only_unlogged:
         rows = [r for r in rows if r['events'] and not r['all_logged']]
     # Только ЗАВЕРШЁННЫЕ меро с непроставленными часами — отчёт Добро.ру берёт в охват

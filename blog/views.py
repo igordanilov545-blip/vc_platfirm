@@ -587,9 +587,6 @@ def event_list(request):
         shifts = sorted(event.shifts.all(), key=lambda s: s.day)
         first_day = shifts[0].day if shifts else None
         last_day = shifts[-1].day if shifts else None
-        is_passed = event.compute_status() in ('passed', 'finished')
-        if hide_passed and is_passed:
-            continue
         event.first_day = first_day
         event.last_day = last_day
         if manager_view:
@@ -617,7 +614,10 @@ def event_list(request):
                     'applications_percent': 100 if bucket['total'] == 0 else round(bucket['processed'] * 100 / bucket['total']),
                 })
             event.shift_rows = shift_rows
-            event.team_leads_str = ', '.join(tl_by_event.get(event.id, [])) or '—'
+            # Список (не строка) — в шаблоне каждый тим-лидер выводится с новой строки
+            # внутри своей ячейки, а не растягивает колонку в ширину при нескольких ТЛ.
+            event.team_leads_list = tl_by_event.get(event.id, [])
+            event.team_leads_str = ', '.join(event.team_leads_list) or '—'
             event.responsible_manager = manager_by_event.get(event.id, '—')
 
             # Добро.ру: символ статуса + подпись (см. event_list.html §дизайн). dobro_index —

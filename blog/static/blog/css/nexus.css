@@ -906,7 +906,8 @@ input:focus, select:focus, textarea:focus {
 .event-status-badge {
   font-weight: 600;
   white-space: normal;
-  text-align: left;
+  text-align: center;
+  justify-content: center;
   max-width: 100%;
 }
 .event-status-badge--upcoming { background: var(--success-soft); color: var(--success); border-color: var(--success); }

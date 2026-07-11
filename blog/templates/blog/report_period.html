@@ -4,13 +4,8 @@
 {% block content %}
 <h1>Отчёты</h1>
 
-<div class="card report-scope-card" id="report-scope-card">
-    <div id="report-scope-body">
-        {% include 'blog/partials/_report_scope.html' %}
-    </div>
-</div>
-
-{# Переключатель режимов — общий визуальный язык кнопок-карточек (nexus.css). #}
+{# Тип отчёта (Дашборд/Таблицы/Добро.ру) — в самом верху; охват (период/мероприятия)
+   выбирается под ним. Общий визуальный язык кнопок-карточек (nexus.css). #}
 <div class="card report-views-card">
     <div class="report-types" id="report-views">
         {% for v in views %}
@@ -20,6 +15,12 @@
             <span class="rt-desc">{{ v.desc }}</span>
         </button>
         {% endfor %}
+    </div>
+</div>
+
+<div class="card report-scope-card" id="report-scope-card">
+    <div id="report-scope-body">
+        {% include 'blog/partials/_report_scope.html' %}
     </div>
 </div>
 
@@ -140,10 +141,14 @@
                 });
             });
 
-            // Чипы: клик по всему блоку (не только по иконке) убирает/возвращает меро
-            // в отчёт (правим ?exclude=).
+            // Чипы: ОДИНОЧНЫЙ клик убирает/возвращает меро в отчёт (правим ?exclude=);
+            // ДВОЙНОЙ клик — проваливается в мероприятие (открывает карточку в новой
+            // вкладке). Чтобы двойной клик не срабатывал как два одиночных (иначе меро
+            // успело бы выключиться-включиться), одиночный откладываем на 220 мс и
+            // отменяем, если пришёл dblclick.
             if (chipsBox) {
                 chipsBox.querySelectorAll('.rs-chip').forEach(function (chip) {
+                    var clickTimer = null;
                     function toggle() {
                         var id = chip.getAttribute('data-id');
                         var excluded = chip.getAttribute('data-excluded') === '1';
@@ -157,7 +162,15 @@
                             if (ids.length) p.set('exclude', ids.join(',')); else p.delete('exclude');
                         });
                     }
-                    chip.addEventListener('click', toggle);
+                    chip.addEventListener('click', function () {
+                        clearTimeout(clickTimer);
+                        clickTimer = setTimeout(toggle, 220);
+                    });
+                    chip.addEventListener('dblclick', function (e) {
+                        e.preventDefault();
+                        clearTimeout(clickTimer); // не переключать охват — это «проваливание»
+                        window.open('/events/' + chip.getAttribute('data-id') + '/', '_blank');
+                    });
                     chip.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
                 });
             }
@@ -169,7 +182,9 @@
             var p = currentParams();
             p.set('view', viewKey);
             p.set('partial', '1');
-            if (extra) Object.keys(extra).forEach(function (k) { p.set(k, extra[k]); });
+            if (extra) Object.keys(extra).forEach(function (k) {
+                if (extra[k] === '' || extra[k] == null) p.delete(k); else p.set(k, extra[k]);
+            });
             return '{% url "report_period" %}?' + p.toString();
         }
 
@@ -196,7 +211,23 @@
             root.querySelectorAll('[data-report-table-toggle]').forEach(function (btn) {
                 if (btn.dataset.bound) return; btn.dataset.bound = '1';
                 btn.addEventListener('click', function () {
-                    loadPanel('dobro', { only_unlogged: btn.getAttribute('data-only-unlogged') }, true);
+                    var extra = { only_unlogged: btn.getAttribute('data-only-unlogged') };
+                    var hl = currentParams().get('has_link');
+                    if (hl) extra.has_link = hl; // сохраняем активный фильтр «есть/нет ссылка»
+                    loadPanel('dobro', extra, true);
+                });
+            });
+            // Фильтр «есть/нет ссылка» Добро.ру — тот же лёгкий AJAX; сохраняем текущее
+            // состояние «только не проставленные».
+            root.querySelectorAll('[data-dobro-link-filter]').forEach(function (btn) {
+                if (btn.dataset.bound) return; btn.dataset.bound = '1';
+                btn.addEventListener('click', function () {
+                    var extra = {};
+                    var val = btn.getAttribute('data-dobro-link-filter');
+                    if (val) extra.has_link = val; else extra.has_link = '';
+                    var ou = currentParams().get('only_unlogged');
+                    if (ou === '1') extra.only_unlogged = '1';
+                    loadPanel('dobro', extra, true);
                 });
             });
             // Пересчёт статуса в соседней колонке «Часы» сразу после клика по галочке —

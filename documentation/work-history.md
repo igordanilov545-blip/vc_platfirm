@@ -1027,3 +1027,35 @@ data_controller» — убрать прямые `from blog.models import ...` / 
 Excel-экспорт 200 и тот же размер 46062 Б, PDF/dobro-экспорт 200, `dc.events_qs().count()=33`
 в shell. Затронуты: `data_base/data_controller.py`, `blog/services/reports.py`,
 `blog/services/report_exports.py`, `blog/views.py`, `documentation/agent-workflow.md`.
+
+---
+
+## Отчёты · UI-правки (переключатель вверх, календарь, двойной клик, Добро.ру-ссылки)
+
+**Промт.** (1) Выбор типа отчёта (Дашборд/Таблицы/Добро.ру) — в самый верх страницы, под
+ним период и мероприятия. (2) Починить выбор диапазона на календаре. (3) Двойной клик —
+проваливаться в мероприятие. (4) В таблице Добро.ру: если у строки нет URL — писать «Нет
+ссылки» в колонке «Ссылка»; добавить в хедер фильтр «есть/нет ссылка» рядом с «часами».
+
+**Итог.** (1) `report_period.html`: карточка `report-views-card` (переключатель режимов)
+поднята НАД `report-scope-card` (охват). (2) `base.html` `initDateRangePair`: событие
+`change` теперь диспатчится ТОЛЬКО когда диапазон закрыт (после второго клика,
+`rangeComplete`), а не на первом клике — раньше первый клик применял диапазон из одного дня
+и перерисовывал строку охвата, не давая выбрать конец (это и был баг «календарь не
+выбирается»). (3) `report_period.html`: на чипах мероприятий одиночный клик (отложен на
+220 мс) убирает/возвращает меро, двойной клик отменяет одиночный и открывает
+`/events/<id>/` в новой вкладке; таблицы меро/волонтёров/заявок уже открывались по
+двойному клику через глобальный `tr[data-href]`-хендлер base.html. Тултип чипа обновлён.
+(4) Добро.ру: `_report_dobro.html` — при пустом URL вместо заголовка выводится пилюля «Нет
+ссылки»; в хедер добавлен сегмент-фильтр «Все / Есть ссылка / Нет ссылки»
+(`data-dobro-link-filter`). `views.py`: `_report_dobro_panel`/`_dobro_rows` принимают
+`has_link=yes|no`, фильтрация по наличию URL; `report_period.html` — AJAX-обработчик
+фильтра (сохраняет активное «только не проставленные» и наоборот), `panelUrl` удаляет
+пустые параметры. `nexus.css`: `.dobro-link-filter` + `.btn.active`. `manage.py check`
+чист; прогон runserver под менеджером: переключатель выше охвата, у Добро.ру три кнопки
+фильтра + «Нет ссылки», `has_link=no` даёт 0 строк-с-URL и показывает пилюлю «Нет ссылки»;
+JS-гварды (`rangeComplete`, chip `dblclick`) на месте, чипы/строки несут data-id/data-href.
+Затронуты: `blog/templates/blog/report_period.html`, `blog/templates/blog/base.html`,
+`blog/templates/blog/partials/_report_scope.html` (не менялся — включается как есть),
+`blog/templates/blog/partials/_report_chips.html`, `blog/templates/blog/partials/_report_dobro.html`,
+`blog/views.py`, `blog/static/blog/css/nexus.css`.

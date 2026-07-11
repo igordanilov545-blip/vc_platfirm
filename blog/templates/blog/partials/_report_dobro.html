@@ -15,6 +15,12 @@ report_period.html через data-dobro-toggle). Статус в колонке
         {% else %}
         <button type="button" class="btn secondary btn-sm" data-report-table-toggle data-only-unlogged="1">Только не проставленные</button>
         {% endif %}
+        {# Фильтр «есть/нет ссылка» — три состояния (все / есть / нет), рядом с «часами». #}
+        <div class="dobro-link-filter">
+            <button type="button" class="btn secondary btn-sm {% if not has_link %}active{% endif %}" data-dobro-link-filter="">Все</button>
+            <button type="button" class="btn secondary btn-sm {% if has_link == 'yes' %}active{% endif %}" data-dobro-link-filter="yes">Есть ссылка</button>
+            <button type="button" class="btn secondary btn-sm {% if has_link == 'no' %}active{% endif %}" data-dobro-link-filter="no">Нет ссылки</button>
+        </div>
         {% if unlogged_event_ids %}
         <a href="{% url 'report_dobro_export' %}?scope=events&event_ids={{ unlogged_event_ids|join:',' }}" class="btn btn-sm" title="Excel-отчёт по завершённым мероприятиям с непроставленными часами">⬇ Скачать отчёт</a>
         {% endif %}
@@ -35,7 +41,7 @@ report_period.html через data-dobro-toggle). Статус в колонке
         {% for row in rows %}
             <tr>
                 <td data-label="Ссылка">
-                    {% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener" class="dobro-link">{{ row.url }}</a>{% else %}<span class="dobro-link dobro-link--missing">{{ row.title }}</span>{% endif %}
+                    {% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener" class="dobro-link">{{ row.url }}</a>{% else %}<span class="pill danger dobro-link--missing"><span class="dot"></span>Нет ссылки</span>{% endif %}
                     {% if not row.is_active %}<span class="pill neutral dobro-inactive"><span class="dot"></span>неактивна</span>{% endif %}
                 </td>
                 <td data-label="Тип">

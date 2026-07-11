@@ -812,21 +812,33 @@
             // кликнули раньше начала); третий клик снова начинает новый — и так по кругу.
             var pickingEnd = false;
             function onDayClick(date) {
+                var rangeComplete;
                 if (!pickingEnd) {
+                    // Первый клик — начало НОВОГО диапазона (start=end), ждём второй клик.
                     rangeStart = date;
                     rangeEnd = date;
                     pickingEnd = true;
+                    rangeComplete = false;
                 } else if (date < rangeStart) {
                     rangeEnd = rangeStart;
                     rangeStart = date;
                     pickingEnd = false;
+                    rangeComplete = true;
                 } else {
                     rangeEnd = date;
                     pickingEnd = false;
+                    rangeComplete = true;
                 }
                 startInput.value = dpToISO(rangeStart);
                 endInput.value = dpToISO(rangeEnd);
-                startInput.dispatchEvent(new Event('change', { bubbles: true }));
+                // change диспатчим ТОЛЬКО когда диапазон закрыт (после второго клика) —
+                // иначе потребитель (страница отчётов) применил бы охват уже на первом
+                // клике (диапазон из одного дня) и перерисовал бы календарь, не дав
+                // выбрать конец. Промежуточное состояние идёт в input (для повторного
+                // рендера подсветки), но без события применения.
+                if (rangeComplete) {
+                    startInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
                 rerenderBoth();
             }
 

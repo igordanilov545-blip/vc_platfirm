@@ -2340,13 +2340,21 @@ def _report_dobro_panel(request, scope):
     «часы проставлены» (переключается AJAX'ом) + кнопка выгрузки отчёта.
 
     Фильтруется тем же охватом (event_ids), что дашборд/таблицы — раньше показывала
-    вообще все ссылки/меро в системе независимо от выбранного периода/исключений."""
+    вообще все ссылки/меро в системе независимо от выбранного периода/исключений.
+
+    Дополнительные фильтры хедера: ?only_unlogged=1 (часы не проставлены) и
+    ?has_link=yes|no (есть/нет URL у ссылки)."""
+    only_unlogged = request.GET.get('only_unlogged') == '1'
+    has_link = request.GET.get('has_link')  # 'yes' | 'no' | None
+    if has_link not in ('yes', 'no'):
+        has_link = None
     rows, unlogged_event_ids = _dobro_rows(
-        only_unlogged=request.GET.get('only_unlogged') == '1', event_ids=scope['event_ids'],
+        only_unlogged=only_unlogged, event_ids=scope['event_ids'], has_link=has_link,
     )
     return render(request, 'blog/partials/_report_dobro.html', {
         'rows': rows,
-        'only_unlogged': request.GET.get('only_unlogged') == '1',
+        'only_unlogged': only_unlogged,
+        'has_link': has_link,
         'unlogged_event_ids': unlogged_event_ids,
         'scope_qs': _report_scope_querystring(scope),
     })
@@ -2769,7 +2777,7 @@ def report_dobro_toggle(request, event_id):
     return JsonResponse({'logged': event.dobro_ru_hours_logged})
 
 
-def _dobro_rows(only_unlogged=False, event_ids=None):
+def _dobro_rows(only_unlogged=False, event_ids=None, has_link=None):
     """Строки таблицы Добро.ру (общие + уникальные ссылки) и id завершённых меро с
     непроставленными часами (для кнопки выгрузки). Вынесено из dobro_page, чтобы
     переиспользовать в панели ERP-хаба (?view=dobro).
@@ -2777,7 +2785,8 @@ def _dobro_rows(only_unlogged=False, event_ids=None):
     event_ids — охват страницы отчётов (даты/статус-режим/исключения): если задан,
     строка попадает в таблицу только если у неё остались привязанные меро ИЗ охвата
     (остальные меро строки просто не показываются, а не прячут всю строку — общая
-    ссылка часто привязана к меро за пределами текущего периода)."""
+    ссылка часто привязана к меро за пределами текущего периода).
+    has_link — 'yes' (есть URL) / 'no' (нет URL) / None (не фильтровать)."""
     from data_base import data_controller as dc
     rows = []
     for link in dc.dobro_ru_shared_links_qs().order_by('-created_at'):
@@ -2805,6 +2814,10 @@ def _dobro_rows(only_unlogged=False, event_ids=None):
         rows = [r for r in rows if r['kind'] != 'shared' or r['events']]
     if only_unlogged:
         rows = [r for r in rows if r['events'] and not r['all_logged']]
+    if has_link == 'yes':
+        rows = [r for r in rows if (r['url'] or '').strip()]
+    elif has_link == 'no':
+        rows = [r for r in rows if not (r['url'] or '').strip()]
     # Только ЗАВЕРШЁННЫЕ меро с непроставленными часами — отчёт Добро.ру берёт в охват
     # только их, иначе незавершённые молча выпадут и создадут видимость пустого отчёта.
     unlogged_event_ids = sorted({

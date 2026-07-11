@@ -813,6 +813,10 @@
             select.hidden = true;
 
             var emptyText = widget.getAttribute('data-chip-empty') || 'Ничего не выбрано';
+            // Одиночный выбор (напр. ответственный менеджер — ровно один, в отличие от
+            // тим-лидеров) — тот же пул чипов "выбрано/доступно" без строки поиска,
+            // просто выбор нового кандидата снимает предыдущий.
+            var single = widget.hasAttribute('data-chip-single');
             var selectedRow = widget.querySelector('[data-chips-selected]');
             var availableRow = widget.querySelector('[data-chips-available]');
             var searchInput = widget.querySelector('[data-chips-search]');
@@ -844,6 +848,9 @@
                         avail.innerHTML = '<span class="cat-chip-label"></span><span class="cat-chip-plus">+</span>';
                         avail.querySelector('.cat-chip-label').textContent = opt.textContent;
                         avail.addEventListener('click', function () {
+                            if (single) {
+                                Array.prototype.forEach.call(select.options, function (o) { o.selected = false; });
+                            }
                             opt.selected = true;
                             // Поиск намеренно не сбрасывается — можно добавить несколько
                             // элементов подряд, продолжая фильтровать по тому же запросу.
@@ -1108,13 +1115,6 @@
             searchInput.addEventListener('click', function () {
                 ensurePickerModal().open(widgetState);
             });
-
-            // Предвыбор значения, поставленный инлайновым <script> в разметке ДО того,
-            // как этот виджет успел инициализироваться (напр. форма меро визуально
-            // предвыбирает создателя ответственным менеджером) — см. widget._pickerPreselect.
-            if (widget._pickerPreselect) {
-                widgetState.selected.set(widget._pickerPreselect.id, widget._pickerPreselect.label);
-            }
 
             renderSelected();
 

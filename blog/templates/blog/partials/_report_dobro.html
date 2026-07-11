@@ -1,0 +1,66 @@
+{% comment %}
+Панель «Добро.ру» ERP-хаба отчётов (перенос страницы dobro_page). Таблица ссылок с
+привязанными меро; у каждого завершённого меро с ведением учёта — чекбокс «часы
+проставлены» (переключается AJAX'ом /reports/dobro/<id>/toggle/, обработчик в
+report_period.html через data-dobro-toggle). Кнопка «Скачать отчёт» — тот же 4-листовый
+Excel, что и раньше (report_dobro_export), финальный вид не меняем.
+{% endcomment %}
+<div class="report-panel-head">
+    <h2>Добро.ру</h2>
+    <div class="report-panel-actions">
+        {% if only_unlogged %}
+        <a href="{% url 'report_period' %}?view=dobro&{{ scope_qs }}" class="btn secondary btn-sm">Показать все</a>
+        {% else %}
+        <a href="{% url 'report_period' %}?view=dobro&only_unlogged=1&{{ scope_qs }}" class="btn secondary btn-sm">Только не проставленные</a>
+        {% endif %}
+        {% if unlogged_event_ids %}
+        <a href="{% url 'report_dobro_export' %}?scope=events&event_ids={{ unlogged_event_ids|join:',' }}" class="btn btn-sm" title="Excel-отчёт по завершённым мероприятиям с непроставленными часами">⬇ Скачать отчёт</a>
+        {% endif %}
+    </div>
+</div>
+<p style="color:var(--text-secondary);">Все ссылки Добро.ру, их тип, привязанные мероприятия и статус простановки часов. Галочка отмечает, что часы по мероприятию уже проставлены.{% if only_unlogged %} <b>Показаны только ссылки с непроставленными часами.</b>{% endif %}</p>
+
+<div class="card" style="padding:0; overflow:hidden;">
+    <table class="responsive-table">
+        <thead><tr>
+            <th>Ссылка</th>
+            <th>Тип</th>
+            <th>Категория</th>
+            <th>Мероприятия</th>
+            <th>Часы</th>
+        </tr></thead>
+        <tbody>
+        {% for row in rows %}
+            <tr>
+                <td data-label="Ссылка">
+                    {% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.title }}</a>{% else %}{{ row.title }}{% endif %}
+                    {% if not row.is_active %}<span class="pill neutral" style="margin-left:6px;"><span class="dot"></span>неактивна</span>{% endif %}
+                </td>
+                <td data-label="Тип">
+                    {% if row.kind == 'shared' %}<span class="pill info"><span class="dot"></span>{{ row.kind_display }}</span>
+                    {% else %}<span class="pill warning"><span class="dot"></span>{{ row.kind_display }}</span>{% endif %}
+                </td>
+                <td data-label="Категория">{{ row.link_type_display }}</td>
+                <td data-label="Мероприятия">
+                    {% for e in row.events %}
+                    <label class="dobro-event {% if e.event_status != 'finished' or e.dobro_ru_link_kind == 'none' %}dobro-event--locked{% endif %}" title="{% if e.event_status != 'finished' %}Доступно после завершения мероприятия{% elif e.dobro_ru_link_kind == 'none' %}Учёт часов не ведётся{% else %}Отметить, что часы проставлены{% endif %}">
+                        <input type="checkbox" data-dobro-toggle="{{ e.id }}" {% if e.dobro_ru_hours_logged %}checked{% endif %} {% if e.event_status != 'finished' or e.dobro_ru_link_kind == 'none' %}disabled{% endif %}>
+                        <a href="{% url 'event_detail' e.id %}" class="dobro-event-name">{{ e.title }}</a>
+                    </label>
+                    {% empty %}
+                    <span style="color:var(--text-tertiary);">—</span>
+                    {% endfor %}
+                </td>
+                <td data-label="Часы">
+                    {% if row.events %}
+                        {% if row.all_logged %}<span class="pill success"><span class="dot"></span>Выставлены</span>
+                        {% else %}<span class="pill danger"><span class="dot"></span>Не выставлены</span>{% endif %}
+                    {% else %}<span style="color:var(--text-tertiary);">—</span>{% endif %}
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="5">Ссылок Добро.ру пока нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>

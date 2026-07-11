@@ -1056,3 +1056,126 @@ input:focus, select:focus, textarea:focus {
 }
 .settings-panel-head h2 { margin: 0; }
 
+
+/* ===================================================================
+   ERP-хаб «Отчёты» (report_period.html + partials/_report_*). Все графики —
+   инлайновый SVG/CSS, без внешних библиотек: работают офлайн и в тёмной теме
+   через переменные. Прогресс-бары набора переиспользуют .recruit-bar/--pct.
+   =================================================================== */
+
+/* Строка охвата: период, статус-режим, чипы меро */
+.report-scope-card { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.report-scope-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.rs-label { font-size: 13px; color: var(--text-secondary); min-width: 92px; }
+.rs-daterange, .rs-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rs-presets, .rs-status-toggle { display: flex; gap: 4px; background: var(--bg-card-hover); border-radius: var(--radius-sm); padding: 4px; flex-wrap: wrap; }
+.rs-preset, .rs-status-btn {
+  border: none; background: transparent; padding: 7px 14px; border-radius: calc(var(--radius-sm) - 2px);
+  font-family: inherit; font-size: 12.5px; cursor: pointer; color: var(--text-secondary);
+}
+.rs-preset.active, .rs-status-btn.active { background: var(--accent); color: var(--accent-text-on); font-weight: 600; }
+.rs-custom { border-top: 1px solid var(--border-subtle); padding-top: 12px; }
+.rs-cal-pair { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
+.rs-cal-pair label { font-size: 13px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 6px; }
+
+.rs-chips-row { align-items: flex-start; }
+.rs-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.rs-chip {
+  display: inline-flex; align-items: center; gap: 6px; background: var(--bg-card-hover);
+  border: 1px solid var(--border-subtle); border-radius: 999px; padding: 5px 8px 5px 12px; font-size: 12.5px;
+}
+.rs-chip-date { color: var(--text-tertiary); font-size: 11px; }
+.rs-chip--excluded { opacity: 0.5; }
+.rs-chip-x, .rs-chip-restore { border: none; background: transparent; cursor: pointer; color: var(--text-tertiary); font-size: 15px; line-height: 1; padding: 0 2px; }
+.rs-chip-x:hover, .rs-chip-restore:hover { color: var(--text-primary); }
+
+/* Переключатель режимов + панель */
+.report-views-card { padding: 12px 16px; }
+.report-views-card .report-types { margin: 0; }
+.report-panel { margin-top: 4px; }
+.report-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 4px 0 14px; }
+.report-panel-head h2 { margin: 0; }
+.report-panel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Под-переключатель таблиц */
+.report-subtabs { display: flex; gap: 4px; flex-wrap: wrap; background: var(--bg-card-hover); border-radius: var(--radius-sm); padding: 4px; margin-bottom: 14px; width: fit-content; max-width: 100%; }
+.report-subtab { border: none; background: transparent; padding: 8px 16px; border-radius: calc(var(--radius-sm) - 2px); font-family: inherit; font-size: 13px; cursor: pointer; color: var(--text-secondary); }
+.report-subtab.active { background: var(--accent); color: var(--accent-text-on); font-weight: 600; }
+
+/* KPI-плитки */
+.report-kpis { margin-bottom: 16px; }
+.report-kpis .stat-tile { padding: 12px 14px; }
+.report-kpis .value { font-size: 22px; }
+.kpi-sub { font-size: 15px; color: var(--text-tertiary); font-weight: 500; }
+
+/* Сетка графиков */
+.report-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+.chart-card { padding: 16px 18px; }
+.chart-card--wide { grid-column: 1 / -1; }
+.chart-card h3 { margin: 0 0 12px; }
+.chart-sub { font-weight: 400; font-size: 12px; color: var(--text-tertiary); }
+.chart-note { font-size: 12px; color: var(--text-tertiary); margin-top: 10px; }
+.chart-empty { color: var(--text-tertiary); font-size: 13px; margin: 8px 0 0; }
+
+/* Воронка */
+.funnel { display: flex; flex-direction: column; gap: 8px; }
+.funnel-step { width: 100%; }
+.funnel-bar {
+  width: var(--w); min-width: 88px; background: var(--accent); color: var(--accent-text-on);
+  border-radius: var(--radius-sm); padding: 9px 12px; display: flex; justify-content: space-between;
+  gap: 10px; font-size: 13px; transition: width .3s ease;
+}
+.funnel-bar--approved { background: var(--info); }
+.funnel-bar--attended { background: var(--success); }
+.funnel-name { font-weight: 600; }
+
+/* Вертикальный бар-чарт (динамика, тайминг, оценки) */
+.barchart { display: flex; align-items: flex-end; gap: 6px; height: 150px; padding-top: 6px; }
+.barchart-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
+.barchart-track { flex: 1; width: 100%; max-width: 42px; display: flex; align-items: flex-end; }
+.barchart-fill { width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 2px; transition: height .3s ease; }
+.barchart-fill--rating { background: var(--info); }
+.barchart-x { font-size: 10.5px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.barchart--ratings .barchart-x, .barchart--timing .barchart-x { font-size: 11px; }
+
+/* Прогресс-строки набора по мероприятиям */
+.recruit-rows { display: flex; flex-direction: column; gap: 10px; }
+.recruit-row { display: grid; grid-template-columns: minmax(90px, 1.4fr) 2fr auto; gap: 10px; align-items: center; }
+.recruit-row-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recruit-row-num { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.recruit-row--under .recruit-row-title { color: var(--danger); font-weight: 600; }
+
+/* Горизонтальные бары (топ волонтёров, категории) */
+.hbar-list { display: flex; flex-direction: column; gap: 8px; }
+.hbar-row { display: grid; grid-template-columns: minmax(80px, 1.2fr) 2fr auto; gap: 10px; align-items: center; }
+.hbar-label { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-track { height: 10px; background: var(--bg-card-hover); border-radius: 999px; overflow: hidden; }
+.hbar-fill { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width .3s ease; }
+.hbar-fill--cat { background: var(--info); }
+.hbar-val { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+
+/* Составная полоса явки + легенда */
+.stacked-bar { display: flex; height: 22px; border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-card-hover); }
+.stacked-seg { height: 100%; }
+.seg-attended { background: var(--success); }
+.seg-excused { background: var(--warning); }
+.seg-unexcused { background: var(--danger); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); }
+.legend-dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+.attention-list { margin: 0; padding-left: 18px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+
+/* Добро.ру: чекбокс «часы проставлены» рядом с меро */
+.dobro-event { display: inline-flex; align-items: center; gap: 5px; margin: 2px 6px 2px 0; font-size: 12.5px; }
+.dobro-event input { cursor: pointer; }
+.dobro-event--locked { opacity: 0.55; }
+.dobro-event--locked input { cursor: not-allowed; }
+.dobro-event-name { color: var(--text-primary); }
+
+.row-warn td { background: var(--danger-soft); }
+
+@media (max-width: 560px) {
+  .recruit-row, .hbar-row { grid-template-columns: 1fr; gap: 2px; }
+  .rs-label { min-width: 0; }
+}

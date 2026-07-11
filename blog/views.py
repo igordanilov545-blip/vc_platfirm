@@ -973,56 +973,27 @@ def event_create(request):
 
 @manager_required
 def event_edit(request, event_id):
-    """Редактирование мероприятия. Завершённое (finished) меро редактировать МОЖНО, но
-    только после двухфакторного подтверждения (капча x+y, общий render_captcha_modal):
-    первый заход по завершённому меро показывает окно капчи, верный ответ ставит
-    краткоживущий флаг в сессии, после чего открывается обычная форма редактирования."""
+    """Редактирование мероприятия. Завершённое (finished) меро НЕ редактируется
+    напрямую — нужно сначала открыть его обратно (event_reopen, капча x+y), после
+    чего event_status временно не 'finished' и вся страница (включая эту форму,
+    набор, явку) снова доступна для правок, как у обычного прошедшего меро."""
     event = get_object_or_404(Event, pk=event_id)
-    is_finished = event.event_status == 'finished'
-    unlock_key = f'edit_finished_ok_{event.id}'
-    captcha_key = f'captcha_event_edit_{event.id}'
-
-    # Для завершённого меро требуем капчу, пока в сессии нет флага разблокировки.
-    if is_finished and not request.session.get(unlock_key):
-        if request.method == 'POST' and 'captcha_answer' in request.POST:
-            if _check_captcha(request, captcha_key, request.POST.get('captcha_answer')):
-                request.session[unlock_key] = True
-                # Капча пройдена — отдаём саму форму редактирования (перерисовка модалки).
-                form = EventForm(instance=event, show_closing_fields=True, assigned_by=request.user)
-                return modal_form_response(
-                    request, 'blog/event_form.html',
-                    {'form': form, 'title': f'Редактировать (завершённое): {event.title}', 'submit_label': 'Сохранить'},
-                    partial_template='blog/partials/_event_form_body.html',
-                )
-            messages.error(request, 'Неверный ответ на пример.')
-        return render_captcha_modal(
-            request,
-            session_key=captcha_key,
-            action_url=reverse('event_edit', args=[event.id]),
-            confirm_text='Это мероприятие уже завершено. Подтвердите, что действительно хотите его редактировать.',
-            submit_label='Разблокировать редактирование',
-            title=f'Редактирование завершённого: {event.title}',
-        )
+    if event.event_status == 'finished':
+        raise PermissionDenied('Мероприятие завершено — сначала откройте его обратно кнопкой на странице меро.')
 
     form = EventForm(request.POST or None, instance=event, show_closing_fields=True, assigned_by=request.user)
     if request.method == 'POST' and form.is_valid():
         form.save()
-        # Разблокировка одноразовая — снимаем флаг после успешного сохранения.
-        request.session.pop(unlock_key, None)
         messages.success(request, 'Мероприятие обновлено.')
         return modal_form_response(
             request, None, None,
             success_redirect=reverse('event_detail', args=[event.id]),
         )
-    title = (f'Редактировать (завершённое): {event.title}' if is_finished
-             else f'Редактировать: {event.title}')
     return modal_form_response(
         request, 'blog/event_form.html',
-        {'form': form, 'title': title, 'submit_label': 'Сохранить'},
+        {'form': form, 'title': f'Редактировать: {event.title}', 'submit_label': 'Сохранить'},
         partial_template='blog/partials/_event_form_body.html',
     )
-
-
 
 
 @manager_required
@@ -1167,6 +1138,46 @@ def shift_toggle_attendance_confirmed(request, event_id, shift_id):
         label = 'можно забирать' if shift.attendance_confirmed else 'снята отметка «можно забирать»'
         messages.success(request, f'Смена {shift.day.strftime("%d.%m.%Y")}: {label}.')
     return redirect('event_detail', event_id=event.id)
+
+
+@manager_required
+def event_reopen(request, event_id):
+    """Открыть завершённое мероприятие обратно для редактирования явки/часов/заявок
+    (после ToDo: «мы не редактируем завершённое мероприятие, а открываем его обратно»).
+    Требует капчу x+y — тот же двухфакторный паттерн, что раньше защищал
+    редактирование общей информации завершённого меро (event_edit); теперь и общая
+    форма, и явка/набор одинаково доступны, пока меро не в статусе finished, так что
+    отдельная капча для явки отдельно не нужна — открытие меро её и есть.
+
+    event_status переключается на 'passed' (а не 'upcoming'/'ongoing') — сами смены
+    остались в прошлом, compute_status() и так вернёт 'passed' по датам; это лишь
+    снимает единственный флаг, который блокирует редактирование (event_status ==
+    'finished'). Обратно — кнопкой «Завершить обратно» (event_close), без
+    повторного прохождения чеклиста «готовности» (он уже пройден при первом
+    закрытии; чеклист всё равно перепроверяет актуальное состояние на всякий случай)."""
+    event = get_object_or_404(Event, pk=event_id)
+    if event.event_status != 'finished':
+        messages.error(request, 'Мероприятие не завершено — открывать нечего.')
+        return redirect('event_detail', event_id=event.id)
+
+    captcha_key = f'captcha_event_reopen_{event.id}'
+    if request.method == 'POST' and 'captcha_answer' in request.POST:
+        if _check_captcha(request, captcha_key, request.POST.get('captcha_answer')):
+            event.event_status = 'passed'
+            event.save(update_fields=['event_status'])
+            logger.info('Мероприятие открыто обратно для редактирования: event=%s by=%s', event.id, actor(request.user))
+            messages.success(request, f'Мероприятие «{event.title}» снова открыто для редактирования.')
+            return redirect('event_detail', event_id=event.id)
+        messages.error(request, 'Неверный ответ на пример.')
+
+    return render_captcha_modal(
+        request,
+        session_key=captcha_key,
+        action_url=reverse('event_reopen', args=[event.id]),
+        confirm_text='Мероприятие будет снова доступно для редактирования (заявки, набор, явка, часы) — не забудьте завершить его обратно, когда закончите.',
+        submit_label='Открыть для редактирования',
+        title=f'Открыть завершённое: {event.title}',
+    )
 
 
 @manager_required
@@ -2100,6 +2111,8 @@ def _report_period_range(request):
         return period, today, today
     if period == 'week':
         return period, today - datetime.timedelta(days=7), today
+    if period == 'month':
+        return period, today - datetime.timedelta(days=30), today
     if period == 'season':
         current = Season.objects.filter(start_season__lte=today).order_by('-start_season').first()
         if current:
@@ -2124,7 +2137,10 @@ def _report_scope(request):
     """Охват отчёта — два взаимоисключающих режима (reports_template.md «Выбор охвата»):
     `scope=events` + `event_ids=1,2,3` — по явному списку мероприятий (даты игнорируются),
     иначе — по периоду через `_report_period_range`. Возвращает
-    (scope_mode, period, date_from, date_to, event_ids)."""
+    (scope_mode, period, date_from, date_to, event_ids).
+
+    Оставлено для генераторов экспорта (report_*_export), которые ходят по старой схеме
+    `?scope=events&event_ids=…`. Экранный ERP-дашборд использует `_report_erp_scope`."""
     raw_event_ids = request.GET.get('event_ids', '').strip()
     if request.GET.get('scope') == 'events' and raw_event_ids:
         event_ids = [int(x) for x in raw_event_ids.split(',') if x.strip().isdigit()]
@@ -2135,64 +2151,178 @@ def _report_scope(request):
     return 'period', period, date_from, date_to, None
 
 
-@manager_required
-def report_period(request):
-    scope_mode, period, date_from, date_to, event_ids = _report_scope(request)
-    compare_mode = request.GET.get('compare', 'adjacent')
-    if compare_mode not in ('adjacent', 'year_ago'):
-        compare_mode = 'adjacent'
+def _parse_int_csv(raw):
+    return [int(x) for x in (raw or '').split(',') if x.strip().lstrip('-').isdigit()]
 
-    prev_from = prev_to = None
-    if scope_mode == 'period':
-        prev_from, prev_to = reports_service.previous_period_range(date_from, date_to, compare_mode)
 
-    data = reports_service.period_report(date_from, date_to, prev_from, prev_to, event_ids=event_ids)
-    efficiency = reports_service.recruitment_efficiency(date_from, date_to, event_ids=event_ids)
-    staff = reports_service.staff_load(date_from, date_to, event_ids=event_ids)
-    weekly = reports_service.weekly_dynamics(date_from, date_to, event_ids=event_ids)
-    timing = reports_service.application_timing(date_from, date_to, event_ids=event_ids)
-    post_timing = reports_service.post_publication_timing(date_from, date_to, event_ids=event_ids)
+def _report_erp_scope(request):
+    """Охват ERP-дашборда «Отчёты»: диапазон дат + статус-режим пула меро
+    (all/ongoing/past) + список УБРАННЫХ пользователем меро (`exclude`). Пул строится от
+    дат, из него исключаются `exclude` — так ссылка компактна (даты+исключения), переживает
+    появление новых меро и совпадает с механикой чипов-«убирания» на странице.
 
-    def _event_brief(event):
-        first_shift_day = event.shifts.order_by('day').values_list('day', flat=True).first()
-        return {
-            'id': event.id, 'title': event.title,
-            'date': first_shift_day.strftime('%d.%m.%Y') if first_shift_day else None,
-            # Часы на Добро.ру НЕ проставлены и меро ведёт учёт (не 'none') — нужно
-            # для кнопки «Выбрать все с непроставленными часами» в модалке выбора.
-            'dobro_unlogged': event.dobro_ru_link_kind != 'none' and not event.dobro_ru_hours_logged,
-        }
-
-    selected_events = []
-    if event_ids:
-        selected_events = list(Event.objects.filter(id__in=event_ids).order_by('-created_at'))
-
-    # Модалка выбора мероприятий грузит ВЕСЬ список одним запросом (мероприятий —
-    # десятки/сотни, не тысячи, поэтому проблема производительности неактуальна, в
-    # отличие от списка волонтёров) — раньше здесь были только «последние 15», из-за
-    # чего пользователь физически не мог увидеть и выбрать более старые мероприятия
-    # без явного поиска по названию, и путал этот урезанный список с полным списком
-    # на странице «Мероприятия».
-    recent_events = [_event_brief(e) for e in Event.objects.order_by('-created_at')]
-
-    context = {
-        'scope_mode': scope_mode,
+    Возвращает dict: period, date_from, date_to, event_status, exclude_ids, event_ids
+    (итоговый охват — id меро пула минус исключённые)."""
+    period, date_from, date_to = _report_period_range(request)
+    event_status = request.GET.get('event_status', 'all')
+    if event_status not in reports_service.EVENT_SCOPE_MODES:
+        event_status = 'all'
+    exclude_ids = _parse_int_csv(request.GET.get('exclude'))
+    event_ids = reports_service.events_pool(date_from, date_to, event_status, exclude_ids)
+    return {
         'period': period,
         'date_from': date_from,
         'date_to': date_to,
-        'event_ids': event_ids or [],
-        'selected_events': selected_events,
-        'compare_mode': compare_mode,
+        'event_status': event_status,
+        'exclude_ids': exclude_ids,
+        'event_ids': event_ids,
+    }
+
+
+# ERP-хаб «Отчёты»: верхний переключатель режимов. Активный режим — в URL (?view=…),
+# чтобы копируемая ссылка и кнопка «назад» помнили, где был пользователь.
+REPORT_VIEWS = [
+    {'key': 'dashboard', 'icon': '📊', 'title': 'Дашборд', 'desc': 'Ключевые показатели и графики за охват'},
+    {'key': 'tables', 'icon': '🗂️', 'title': 'Таблицы', 'desc': 'Детальные списки: волонтёры, меро, набор, персонал'},
+    {'key': 'dobro', 'icon': '❤️', 'title': 'Добро.ру', 'desc': 'Простановка часов и выгрузка отчёта'},
+]
+# Под-таблицы внутри режима «Таблицы».
+REPORT_TABLES = [
+    {'key': 'volunteers', 'title': 'Волонтёры'},
+    {'key': 'events', 'title': 'Мероприятия'},
+    {'key': 'recruitment', 'title': 'Набор'},
+    {'key': 'staff', 'title': 'Персонал'},
+    {'key': 'timing', 'title': 'Тайминг заявок'},
+]
+
+
+def _report_event_chips(date_from, date_to, event_status, exclude_ids):
+    """Данные для чипов охвата (выбор/убирание мероприятий, как чипы категорий): весь пул
+    периода данного статус-режима, с флагом excluded по каждому. Пользователь «убирает»
+    ненужные — их id уходят в ?exclude=."""
+    exclude_set = set(exclude_ids or [])
+    pool_all = reports_service.events_pool(date_from, date_to, event_status, exclude_ids=None)
+    chips = []
+    for event in Event.objects.filter(id__in=pool_all).prefetch_related('shifts'):
+        first_day = event.shifts.order_by('day').values_list('day', flat=True).first()
+        chips.append({
+            'id': event.id,
+            'title': event.title,
+            'date': first_day.strftime('%d.%m.%Y') if first_day else None,
+            'excluded': event.id in exclude_set,
+        })
+    # Свежие сверху (по первой смене).
+    chips.sort(key=lambda c: c['date'] or '', reverse=True)
+    return chips
+
+
+@manager_required
+def report_period(request):
+    """ERP-хаб «Отчёты». GET без ?partial=1 — шелл (переключатель режимов + строка охвата,
+    панель подгружается AJAX'ом). GET с ?partial=1&view=… — partial активного режима."""
+    view_key = request.GET.get('view', 'dashboard')
+    if view_key not in {v['key'] for v in REPORT_VIEWS}:
+        view_key = 'dashboard'
+    scope = _report_erp_scope(request)
+    wants_partial = request.GET.get('partial') == '1' or is_ajax(request)
+
+    if wants_partial:
+        return _report_render_panel(request, view_key, scope)
+
+    # Шелл: строка охвата (даты/статус-режим/чипы) + переключатель режимов.
+    chips = _report_event_chips(scope['date_from'], scope['date_to'], scope['event_status'], scope['exclude_ids'])
+    return render(request, 'blog/report_period.html', {
+        'views': REPORT_VIEWS,
+        'active_view': view_key,
+        'period': scope['period'],
+        'date_from': scope['date_from'],
+        'date_to': scope['date_to'],
+        'event_status': scope['event_status'],
+        'exclude_ids': scope['exclude_ids'],
+        'event_chips': chips,
+    })
+
+
+def _report_scope_querystring(scope, extra=None):
+    """Собрать query-string охвата (даты/статус/исключения) для ссылок экспорта и
+    AJAX-подгрузок панелей — чтобы панель считалась по тому же охвату, что на экране."""
+    from urllib.parse import urlencode
+    params = {
+        'date_from': scope['date_from'].isoformat(),
+        'date_to': scope['date_to'].isoformat(),
+        'event_status': scope['event_status'],
+    }
+    if scope['exclude_ids']:
+        params['exclude'] = ','.join(str(i) for i in scope['exclude_ids'])
+    if extra:
+        params.update(extra)
+    return urlencode(params)
+
+
+def _report_render_panel(request, view_key, scope):
+    """Рендер partial активного режима хаба (дашборд/таблицы/добро)."""
+    if view_key == 'dobro':
+        return _report_dobro_panel(request, scope)
+    if view_key == 'tables':
+        return _report_tables_panel(request, scope)
+    return _report_dashboard_panel(request, scope)
+
+
+def _report_dashboard_panel(request, scope):
+    """Панель «Дашборд»: KPI-плитки + графики (воронка, динамика, набор по меро, топ
+    волонтёров, явка, оценки, категории). Считает только то, что показывается на экране."""
+    event_ids = scope['event_ids']
+    date_from, date_to = scope['date_from'], scope['date_to']
+    data = reports_service.period_report(date_from, date_to, event_ids=event_ids)
+    efficiency = reports_service.recruitment_efficiency(date_from, date_to, event_ids=event_ids)
+    dynamics = reports_service.dynamics(date_from, date_to, event_ids=event_ids)
+    return render(request, 'blog/partials/_report_dashboard.html', {
         'report': data,
         'efficiency': efficiency,
-        'staff': staff,
-        'weekly': weekly,
-        'timing': timing,
-        'post_timing': post_timing,
-        'recent_events_json': recent_events,
-        'selected_events_json': [_event_brief(e) for e in selected_events],
+        'dynamics': dynamics,
+        'scope_qs': _report_scope_querystring(scope),
+        'event_count': len(event_ids),
+    })
+
+
+def _report_tables_panel(request, scope):
+    """Панель «Таблицы» (ERP): под-выбор таблицы + сама таблица. Каждая таблица считает
+    только свою функцию (ленивость), выбор таблицы — в ?table=."""
+    table_key = request.GET.get('table', 'volunteers')
+    if table_key not in {t['key'] for t in REPORT_TABLES}:
+        table_key = 'volunteers'
+    event_ids = scope['event_ids']
+    date_from, date_to = scope['date_from'], scope['date_to']
+
+    context = {
+        'tables': REPORT_TABLES,
+        'active_table': table_key,
+        'scope_qs': _report_scope_querystring(scope),
+        'event_count': len(event_ids),
     }
-    return render(request, 'blog/report_period.html', context)
+    if table_key == 'volunteers':
+        context['rows'] = reports_service.volunteers_table(date_from, date_to, event_ids=event_ids)
+    elif table_key == 'events':
+        context['rows'] = reports_service.events_table(date_from, date_to, event_ids=event_ids)
+    elif table_key == 'recruitment':
+        context['efficiency'] = reports_service.recruitment_efficiency(date_from, date_to, event_ids=event_ids)
+    elif table_key == 'staff':
+        context['staff'] = reports_service.staff_load(date_from, date_to, event_ids=event_ids)
+    elif table_key == 'timing':
+        context['timing'] = reports_service.application_timing(date_from, date_to, event_ids=event_ids)
+    return render(request, 'blog/partials/_report_tables.html', context)
+
+
+def _report_dobro_panel(request, scope):
+    """Панель «Добро.ру»: перенос страницы dobro_page — таблица ссылок с чекбоксом
+    «часы проставлены» (переключается AJAX'ом) + кнопка выгрузки отчёта."""
+    rows, unlogged_event_ids = _dobro_rows(only_unlogged=request.GET.get('only_unlogged') == '1')
+    return render(request, 'blog/partials/_report_dobro.html', {
+        'rows': rows,
+        'only_unlogged': request.GET.get('only_unlogged') == '1',
+        'unlogged_event_ids': unlogged_event_ids,
+        'scope_qs': _report_scope_querystring(scope),
+    })
 
 
 @manager_required
@@ -2588,60 +2718,58 @@ def dobro_page(request):
 
     Фильтр `?only_unlogged=1` оставляет только ссылки, по которым часы ещё НЕ полностью
     проставлены (есть хотя бы одно незакрытое меро)."""
-    only_unlogged = request.GET.get('only_unlogged') == '1'
-    rows = []
+    # Добро.ру переехало во вкладку ERP-хаба «Отчёты» (?view=dobro). Прямой заход на
+    # /dobro/ редиректим туда, чтобы не держать вторую копию страницы.
+    return redirect(reverse('report_period') + '?view=dobro')
 
-    # 1) Общие ссылки: одна строка на ссылку, к ней привязаны несколько меро.
+
+@manager_required
+def report_dobro_toggle(request, event_id):
+    """AJAX-переключение «часы на Добро.ру проставлены» из таблицы Добро.ру внутри
+    ERP-хаба (галочка в строке). Те же инварианты, что у event_dobro_toggle (только
+    завершённые меро с ведением учёта), но ответ — JSON для обновления галочки без
+    перезагрузки панели."""
+    event = get_object_or_404(Event, pk=event_id)
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method'}, status=405)
+    if event.event_status != 'finished':
+        return JsonResponse({'error': 'Статус доступен только после завершения мероприятия.'}, status=400)
+    if event.dobro_ru_link_kind == 'none':
+        return JsonResponse({'error': 'У мероприятия учёт часов на Добро.ру не ведётся.'}, status=400)
+    event.dobro_ru_hours_logged = not event.dobro_ru_hours_logged
+    event.dobro_ru_logged_by = request.user if event.dobro_ru_hours_logged else None
+    event.save(update_fields=['dobro_ru_hours_logged', 'dobro_ru_logged_by'])
+    return JsonResponse({'logged': event.dobro_ru_hours_logged})
+
+
+def _dobro_rows(only_unlogged=False):
+    """Строки таблицы Добро.ру (общие + уникальные ссылки) и id завершённых меро с
+    непроставленными часами (для кнопки выгрузки). Вынесено из dobro_page, чтобы
+    переиспользовать в панели ERP-хаба (?view=dobro)."""
+    rows = []
     for link in DobroRuSharedLink.objects.order_by('-created_at'):
-        events = list(
-            link.events.filter(dobro_ru_link_kind='shared')
-            .order_by('-created_at')
-        )
+        events = list(link.events.filter(dobro_ru_link_kind='shared').order_by('-created_at'))
         rows.append({
-            'title': link.title,
-            'url': link.url,
-            'kind': 'shared',
-            'kind_display': 'Общая',
-            'link_type_display': link.get_link_type_display(),
-            'is_active': link.is_active,
+            'title': link.title, 'url': link.url, 'kind': 'shared', 'kind_display': 'Общая',
+            'link_type_display': link.get_link_type_display(), 'is_active': link.is_active,
             'events': events,
             'all_logged': bool(events) and all(e.dobro_ru_hours_logged for e in events),
         })
-
-    # 2) Уникальные ссылки: у каждого меро своя ссылка — строка на меро.
-    for event in (
-        Event.objects.filter(dobro_ru_link_kind='unique')
-        .order_by('-created_at')
-    ):
+    for event in Event.objects.filter(dobro_ru_link_kind='unique').order_by('-created_at'):
         rows.append({
-            'title': event.dobro_ru_link or event.title,
-            'url': event.dobro_ru_link,
-            'kind': 'unique',
-            'kind_display': 'Уникальная',
-            'link_type_display': '—',
-            'is_active': True,
-            'events': [event],
-            'all_logged': event.dobro_ru_hours_logged,
+            'title': event.dobro_ru_link or event.title, 'url': event.dobro_ru_link,
+            'kind': 'unique', 'kind_display': 'Уникальная', 'link_type_display': '—',
+            'is_active': True, 'events': [event], 'all_logged': event.dobro_ru_hours_logged,
         })
-
     if only_unlogged:
-        # Оставляем ссылки, где часы ещё не полностью проставлены (есть незакрытые меро),
-        # а также ссылки вообще без привязанных меро скрываем — по ним закрывать нечего.
         rows = [r for r in rows if r['events'] and not r['all_logged']]
-
-    # Для кнопки «Скачать отчёт Добро.ру» — id мероприятий с непроставленными часами.
-    # Только ЗАВЕРШЁННЫЕ (event_status='finished'): отчёт Добро.ру (report_dobro_export)
-    # в принципе не берёт незавершённые меро в охват (_events_in_scope), поэтому включать
-    # их в готовую ссылку смысла нет — молча выпадут и создадут видимость пустого отчёта.
+    # Только ЗАВЕРШЁННЫЕ меро с непроставленными часами — отчёт Добро.ру берёт в охват
+    # только их, иначе незавершённые молча выпадут и создадут видимость пустого отчёта.
     unlogged_event_ids = sorted({
         e.id for r in rows if not r['all_logged']
         for e in r['events'] if e.event_status == 'finished' and not e.dobro_ru_hours_logged
     })
-
-    return render(request, 'blog/dobro_page.html', {
-        'rows': rows, 'only_unlogged': only_unlogged,
-        'unlogged_event_ids': unlogged_event_ids,
-    })
+    return rows, unlogged_event_ids
 
 
 @manager_required

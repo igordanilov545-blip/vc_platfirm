@@ -58,21 +58,14 @@
 
     <div class="field">
         <label>Ответственный менеджер</label>
-        <div class="category-chips" data-user-picker data-mode="single" data-field-name="manager" data-filter="manager" data-empty-text="Менеджер не выбран" data-linkable>
-            <div class="cat-chips-search">
-                <input type="text" placeholder="Начните вводить имя или фамилию…" data-chips-search readonly>
-            </div>
+        <div class="category-chips" data-chip-select="{{ form.manager.id_for_label }}" data-chip-single data-chip-empty="Менеджер не выбран">
             <div class="cat-chips-row" data-chips-selected></div>
+            <div class="cat-chips-available-wrap">
+                <div class="cat-chips-available-label">Доступные менеджеры — нажмите, чтобы назначить:</div>
+                <div class="cat-chips-row" data-chips-available></div>
+            </div>
         </div>
-        {% if form.manager.initial %}
-        <script>
-            // Создатель (или текущий менеджер при редактировании) визуально предвыбран
-            // в пикере сразу при открытии формы — initUserPickers ждёт клика в поле
-            // поиска для загрузки списка, поэтому подставляем чип напрямую в DOM.
-            document.currentScript.closest('.field').querySelector('[data-user-picker]')
-                ._pickerPreselect = { id: {{ form.manager.initial.id }}, label: "{{ form.manager.initial.full_name|escapejs }}" };
-        </script>
-        {% endif %}
+        {{ form.manager }}
         {% if form.manager.errors %}<div class="field-error">{{ form.manager.errors|striptags }}</div>{% endif %}
     </div>
 

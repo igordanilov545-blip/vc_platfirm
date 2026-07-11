@@ -1,31 +1,68 @@
-"""Отчёт за период и вспомогательная аналитика (reports.md раздел 7).
+"""Отчёт за период и вспомогательная аналитика (ERP-дашборд «Отчёты»).
 
-Все функции принимают либо диапазон дат (date_from/date_to), либо явный список
-мероприятий (event_ids) — режимы «по периоду» и «по мероприятиям» взаимоисключающие
-(reports_template.md, «Выбор охвата»). Диапазон и список мероприятий приводятся к
-единому Q-фильтру через `_scope_filter`, чтобы не дублировать ветвление в каждой функции.
+Охват отчёта — это ВСЕГДА явный набор мероприятий (`event_ids`): страница строит пул
+мероприятий по выбранному диапазону дат и статус-режиму (все/идущие/прошедшие), даёт
+пользователю убрать лишние чипами, и передаёт сюда итоговый список id. Диапазон дат
+(date_from/date_to) при этом всё равно нужен для графиков с временной осью (динамика).
+
+В отличие от прежней версии отчётов, охват НЕ ограничен `event_status='finished'` —
+считаем по фактически выбранным мероприятиям любого статуса (по незавершённым часы/явка
+могут быть не проставлены — цифры тогда частичные, это ожидаемо). Сравнение с прошлым
+периодом (дельты) убрано из UI — функции `*_basic`/`previous_period_range` больше не
+вызываются страницей, оставлены только для обратной совместимости с экспортом.
 """
 import math
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.db.models import Avg, Count, Q, Sum
 
 from blog.models import Application, Event, EventShift, Participation, User
 
+# Режимы статус-фильтра пула мероприятий (под-переключатель над чипами охвата).
+EVENT_SCOPE_MODES = ('all', 'ongoing', 'past')
+
+
+def events_pool(date_from, date_to, status_mode='all', exclude_ids=None):
+    """Пул мероприятий для выбора охвата: все меро, у которых есть смена в диапазоне
+    [date_from; date_to], отфильтрованные по статус-режиму и без явно убранных.
+
+    status_mode:
+      - 'all'     — любые мероприятия периода (по умолчанию);
+      - 'ongoing' — идущие (compute_status == 'ongoing') либо предстоящие в периоде;
+      - 'past'    — прошедшие/завершённые (compute_status in {'passed','finished'}).
+
+    Возвращает список id (порядок — по первой смене, свежие сверху). Мероприятий в
+    системе десятки/сотни, поэтому compute_status в Python здесь допустим (не тысячи)."""
+    exclude_ids = set(exclude_ids or [])
+    qs = (
+        Event.objects.filter(shifts__day__gte=date_from, shifts__day__lte=date_to)
+        .distinct()
+        .prefetch_related('shifts')
+    )
+    result = []
+    for event in qs:
+        if event.id in exclude_ids:
+            continue
+        if status_mode == 'ongoing' and event.compute_status() not in ('ongoing', 'upcoming'):
+            continue
+        if status_mode == 'past' and event.compute_status() not in ('passed', 'finished'):
+            continue
+        result.append(event.id)
+    return result
+
 
 def _events_in_scope(date_from=None, date_to=None, event_ids=None):
-    """Завершённые мероприятия, попадающие в охват (по периоду или явному списку)."""
-    qs = Event.objects.filter(event_status='finished')
-    if event_ids:
-        return qs.filter(id__in=event_ids).distinct()
-    return qs.filter(shifts__day__gte=date_from, shifts__day__lte=date_to).distinct()
+    """Мероприятия охвата — по явному списку id (см. events_pool) либо, как запасной
+    вариант, все меро со сменами в периоде (без ограничения на статус)."""
+    if event_ids is not None:
+        return Event.objects.filter(id__in=event_ids).distinct()
+    return Event.objects.filter(shifts__day__gte=date_from, shifts__day__lte=date_to).distinct()
 
 
 def _shifts_in_scope(date_from=None, date_to=None, event_ids=None):
-    qs = EventShift.objects.filter(event__event_status='finished')
-    if event_ids:
-        return qs.filter(event_id__in=event_ids)
-    return qs.filter(day__gte=date_from, day__lte=date_to)
+    if event_ids is not None:
+        return EventShift.objects.filter(event_id__in=event_ids)
+    return EventShift.objects.filter(day__gte=date_from, day__lte=date_to)
 
 
 def period_report(date_from=None, date_to=None, prev_from=None, prev_to=None, event_ids=None):
@@ -38,9 +75,24 @@ def period_report(date_from=None, date_to=None, prev_from=None, prev_to=None, ev
     total_hours = attended.aggregate(s=Sum('hours'))['s'] or 0
     total_events = events.count()
     unique_volunteers = attended.values('user').distinct().count()
-    closed_shifts = attended.count()
+    closed_shifts = attended.count()  # число «человеко-смен» (посещённых слотов)
     new_volunteers = _new_volunteers_count(date_from, date_to, event_ids)
     people_helped = events.aggregate(s=Sum('people_helped'))['s'] or 0
+
+    # --- Дополнительные KPI (плитки дашборда) ---
+    total_shifts = shifts.count()  # число СМЕН в охвате (не человеко-смен)
+    # Заявки охвата: обработано (assigned) из общего числа поданных.
+    apps_all = Application.objects.filter(event__in=events)
+    applications_total = apps_all.count()
+    applications_processed = apps_all.filter(assigned_at__isnull=False).count()
+    # Средние: смен и часов на одного пришедшего волонтёра; людей помогли на меро.
+    avg_shifts_per_person = round(closed_shifts / unique_volunteers, 1) if unique_volunteers else 0
+    avg_hours_per_person = round(total_hours / unique_volunteers, 1) if unique_volunteers else 0
+    # «Людей помогли на меро» считаем только по меро, где people_helped проставлено
+    # (иначе нули занизят среднее и оно потеряет смысл).
+    helped_events = events.filter(people_helped__isnull=False).exclude(people_helped=0)
+    helped_events_count = helped_events.count()
+    avg_people_helped = round(people_helped / helped_events_count, 1) if helped_events_count else 0
 
     top_volunteers = list(
         attended.values('user__id', 'user__telegram_username', 'user__first_name', 'user__last_name')
@@ -63,10 +115,8 @@ def period_report(date_from=None, date_to=None, prev_from=None, prev_to=None, ev
     )
     top_categories = [{'event_day__event__category_map__category__name': c['name'], 'count': c['volunteers']} for c in category_breakdown[:10]]
 
-    # Воронка набора
-    apps_scope = Application.objects.filter(event__in=events) if event_ids else Application.objects.filter(
-        created_at__date__gte=date_from, created_at__date__lte=date_to,
-    )
+    # Воронка набора (охват — всегда список меро)
+    apps_scope = Application.objects.filter(event__in=events)
     submitted = apps_scope.count()
     approved = apps_scope.filter(status='approved').count()
     rejected = apps_scope.filter(status='rejected').count()
@@ -74,41 +124,51 @@ def period_report(date_from=None, date_to=None, prev_from=None, prev_to=None, ev
     unexcused = participations.filter(status='absent_unexcused').count()
     conversion = (attended_count / submitted * 100) if submitted else 0
 
-    # Retention / churn
-    from blog.models import Const
-    threshold = Const.objects.filter(name='churn_blacklist_threshold').first()
-    threshold_value = threshold.value if threshold else 5
-    active_total = User.objects.filter(status='active').count() or 1
-    churned = User.objects.filter(churn_score__gte=threshold_value).count()
-    churn_rate = churned / active_total * 100
-    if event_ids:
-        new_blacklisted = 0  # без временного охвата «новых в blacklist» не определить
-    else:
-        new_blacklisted = User.objects.filter(
-            status='blacklisted', created_at__date__gte=date_from, created_at__date__lte=date_to,
-        ).count()
+    # Явка / дисциплина (график 7): распределение статусов участий в охвате.
+    absent_excused = participations.filter(status='absent_excused').count()
+    attendance = {
+        'attended': attended_count,
+        'absent_excused': absent_excused,
+        'absent_unexcused': unexcused,
+        'total': attended_count + absent_excused + unexcused,
+    }
 
-    churn_histogram = _churn_histogram(threshold_value)
+    # Оценки мероприятий (график 11): распределение рейтингов 0–10 и средняя.
+    ratings = _ratings_distribution(events)
 
-    # Проблемные зоны
+    # Проблемные зоны — низко-оценённые меро (для блока «требует внимания»).
     low_rated_events = list(
         events.annotate(avg_rating=Avg('feedbacks__rating'), fb_count=Count('feedbacks'))
         .filter(avg_rating__lt=6, fb_count__gt=0)
         .values('id', 'title', 'avg_rating', 'fb_count')
     )
 
+    # --- Ниже: данные, которые НЕ показываются на экранном дашборде (график churn,
+    # retention, сравнение убраны из UI), но их читают генераторы DOCX/Excel-отчётов
+    # (report_builders/report_exports). Оставлены ради обратной совместимости экспорта —
+    # финальный вид скачиваемых документов не меняем. ---
+    from blog.models import Const
+    threshold = Const.objects.filter(name='churn_blacklist_threshold').first()
+    threshold_value = threshold.value if threshold else 5
+    active_total = User.objects.filter(status='active').count() or 1
+    churned = User.objects.filter(churn_score__gte=threshold_value).count()
+    churn_rate = churned / active_total * 100
+    if event_ids is not None:
+        new_blacklisted = 0
+    else:
+        new_blacklisted = User.objects.filter(
+            status='blacklisted', created_at__date__gte=date_from, created_at__date__lte=date_to,
+        ).count()
     at_risk_users = list(
         User.objects.filter(churn_score__gte=threshold_value * 0.8)
         .values('id', 'telegram_username', 'first_name', 'last_name', 'churn_score')
         .order_by('-churn_score')[:20]
     )
-
     comparison = None
-    if prev_from and prev_to and not event_ids:
+    if prev_from and prev_to and event_ids is None:
         prev = period_report_basic(prev_from, prev_to)
         comparison = {
-            'date_from': prev_from,
-            'date_to': prev_to,
+            'date_from': prev_from, 'date_to': prev_to,
             'hours_delta': total_hours - prev['total_hours'],
             'events_delta': total_events - prev['total_events'],
             'volunteers_delta': unique_volunteers - prev['unique_volunteers'],
@@ -126,6 +186,12 @@ def period_report(date_from=None, date_to=None, prev_from=None, prev_to=None, ev
         'closed_shifts': closed_shifts,
         'new_volunteers': new_volunteers,
         'people_helped': people_helped,
+        'total_shifts': total_shifts,
+        'applications_total': applications_total,
+        'applications_processed': applications_processed,
+        'avg_shifts_per_person': avg_shifts_per_person,
+        'avg_hours_per_person': avg_hours_per_person,
+        'avg_people_helped': avg_people_helped,
         'top_volunteers': top_volunteers,
         'top_categories': top_categories,
         'category_breakdown': category_breakdown,
@@ -137,17 +203,36 @@ def period_report(date_from=None, date_to=None, prev_from=None, prev_to=None, ev
             'unexcused': unexcused,
             'conversion_pct': round(conversion, 1),
         },
+        'attendance': attendance,
+        'ratings': ratings,
+        # Ключи ниже — только для генераторов DOCX/Excel (на дашборде не рендерятся).
         'retention': {
             'churn_rate_pct': round(churn_rate, 1),
             'new_blacklisted': new_blacklisted,
         },
-        'churn_histogram': churn_histogram,
+        'churn_histogram': _churn_histogram(threshold_value),
         'churn_threshold': threshold_value,
         'problem_zones': {
             'low_rated_events': low_rated_events,
             'at_risk_users': at_risk_users,
         },
         'comparison': comparison,
+    }
+
+
+def _ratings_distribution(events):
+    """Распределение оценок мероприятий охвата по значениям 0–10 + средняя и число
+    отзывов (график 11). Средняя — по всем отзывам меро охвата."""
+    from blog.models import EventFeedback
+    feedbacks = EventFeedback.objects.filter(event__in=events)
+    total = feedbacks.count()
+    avg = feedbacks.aggregate(a=Avg('rating'))['a']
+    by_value = {row['rating']: row['n'] for row in feedbacks.values('rating').annotate(n=Count('id'))}
+    buckets = [{'rating': r, 'count': by_value.get(r, 0)} for r in range(0, 11)]
+    return {
+        'buckets': buckets,
+        'avg': round(avg, 1) if avg is not None else None,
+        'count': total,
     }
 
 
@@ -164,8 +249,10 @@ def _pct_delta(current, previous):
 
 
 def _new_volunteers_count(date_from, date_to, event_ids):
-    if event_ids:
-        return 0  # «новых волонтёров» без временных границ не определить
+    # Страница отчётов теперь всегда передаёт диапазон дат (даже когда охват — явный
+    # список меро), поэтому «новых волонтёров» считаем по датам создания аккаунта.
+    if not date_from or not date_to:
+        return 0
     return User.objects.filter(created_at__date__gte=date_from, created_at__date__lte=date_to).count()
 
 
@@ -224,11 +311,10 @@ def previous_period_range(date_from, date_to, mode='adjacent'):
 
 
 def weekly_dynamics(date_from=None, date_to=None, event_ids=None):
-    """Динамика по неделям: часы и закрытые смены на каждую неделю периода.
-    В режиме «по мероприятиям» не строится — нет временной оси периода."""
-    if event_ids:
+    """Динамика по неделям — оставлена для генераторов DOCX/Excel (финальный вид
+    документов не меняем). Экранный дашборд использует адаптивную `dynamics` ниже."""
+    if event_ids is not None:
         return []
-
     weeks = []
     max_hours = 0
     cursor = date_from
@@ -239,19 +325,71 @@ def weekly_dynamics(date_from=None, date_to=None, event_ids=None):
             event_day__event__event_status='finished',
         )
         hours = attended.aggregate(s=Sum('hours'))['s'] or 0
-        shifts = attended.count()
         max_hours = max(max_hours, hours)
-        weeks.append({
-            'from': cursor,
-            'to': week_end,
-            'hours': hours,
-            'shifts': shifts,
-        })
+        weeks.append({'from': cursor, 'to': week_end, 'hours': hours, 'shifts': attended.count()})
         cursor = week_end + timedelta(days=1)
-
     for week in weeks:
         week['pct'] = round(week['hours'] / max_hours * 100) if max_hours else 0
     return weeks
+
+
+def _month_start(d):
+    return d.replace(day=1)
+
+
+def _add_month(d):
+    return date(d.year + (d.month // 12), (d.month % 12) + 1, 1)
+
+
+def dynamics(date_from, date_to, event_ids=None):
+    """Адаптивная динамика активности для экранного дашборда (график 3).
+
+    Шаг корзины подбирается под длину охвата, чтобы график не был ни пустым (1 день),
+    ни частоколом (год по дням):
+      - ≤ 14 дней  → по ДНЯМ;
+      - ≤ 92 дня   → по НЕДЕЛЯМ;
+      - иначе      → по МЕСЯЦАМ.
+    Каждая корзина: сумма часов attended и число человеко-смен. Ограничен охватом меро
+    (event_ids), если он задан. Возвращает {granularity, buckets:[{label, hours, shifts, pct}]}.
+    """
+    base = Participation.objects.filter(status='attended')
+    if event_ids is not None:
+        base = base.filter(event_day__event_id__in=event_ids)
+
+    span_days = (date_to - date_from).days
+    buckets = []
+
+    def _bucket(lo, hi, label):
+        qs = base.filter(event_day__day__gte=lo, event_day__day__lte=hi)
+        hours = qs.aggregate(s=Sum('hours'))['s'] or 0
+        buckets.append({'label': label, 'hours': hours, 'shifts': qs.count()})
+
+    if span_days <= 14:
+        granularity = 'day'
+        cursor = date_from
+        while cursor <= date_to:
+            _bucket(cursor, cursor, cursor.strftime('%d.%m'))
+            cursor += timedelta(days=1)
+    elif span_days <= 92:
+        granularity = 'week'
+        cursor = date_from
+        while cursor <= date_to:
+            week_end = min(cursor + timedelta(days=6), date_to)
+            _bucket(cursor, week_end, cursor.strftime('%d.%m'))
+            cursor = week_end + timedelta(days=1)
+    else:
+        granularity = 'month'
+        MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
+        cursor = _month_start(date_from)
+        while cursor <= date_to:
+            nxt = _add_month(cursor)
+            _bucket(cursor, min(nxt - timedelta(days=1), date_to), f'{MONTHS[cursor.month - 1]} {cursor.year % 100:02d}')
+            cursor = nxt
+
+    max_hours = max((b['hours'] for b in buckets), default=0)
+    for b in buckets:
+        b['pct'] = round(b['hours'] / max_hours * 100) if max_hours else 0
+    return {'granularity': granularity, 'buckets': buckets}
 
 
 def recruitment_efficiency(date_from=None, date_to=None, event_ids=None):
@@ -284,7 +422,81 @@ def recruitment_efficiency(date_from=None, date_to=None, event_ids=None):
                 avg_recruit_days.append(days)
 
     avg_recruit_time = round(sum(avg_recruit_days) / len(avg_recruit_days), 1) if avg_recruit_days else None
-    return {'shifts': result, 'avg_recruit_days': avg_recruit_time}
+
+    # Свёртка по МЕРОПРИЯТИЯМ (график 4 дашборда): при 1–2 меро в неделю частокол
+    # столбиков по сменам нечитаем — агрегируем needed/attended до уровня меро, каждое
+    # меро = одна прогресс-строка с названием и % закрытия. Меро без плановой потребности
+    # (needed=0) не показываем (нечего «закрывать»).
+    by_event = {}
+    for row in result:
+        e = by_event.setdefault(row['event_id'], {'event_id': row['event_id'], 'title': row['title'], 'needed': 0, 'attended': 0})
+        e['needed'] += row['needed']
+        e['attended'] += row['attended']
+    events_rollup = []
+    for e in by_event.values():
+        if e['needed'] <= 0:
+            continue
+        pct = e['attended'] / e['needed'] * 100
+        e['pct_closed'] = round(pct, 1)
+        e['understaffed'] = pct < 80
+        events_rollup.append(e)
+    events_rollup.sort(key=lambda x: x['pct_closed'])  # худшие сверху — на них смотрят первыми
+
+    return {'shifts': result, 'events': events_rollup, 'avg_recruit_days': avg_recruit_time}
+
+
+def volunteers_table(date_from=None, date_to=None, event_ids=None):
+    """Таблица «Волонтёры» ERP-раздела: по каждому пришедшему в охват волонтёру —
+    часы, число человеко-смен, число мероприятий и текущий churn_score. Сортируется по
+    часам (в UI доступна клиентская сортировка по любой колонке)."""
+    shifts = _shifts_in_scope(date_from, date_to, event_ids)
+    attended = Participation.objects.filter(event_day__in=shifts, status='attended')
+    rows = list(
+        attended.values('user__id', 'user__first_name', 'user__last_name', 'user__telegram_username', 'user__churn_score')
+        .annotate(
+            hours=Sum('hours'),
+            shifts_count=Count('id'),
+            events_count=Count('event_day__event', distinct=True),
+        )
+        .order_by('-hours')
+    )
+    for r in rows:
+        full = f"{r['user__first_name'] or ''} {r['user__last_name'] or ''}".strip()
+        r['name'] = full or r['user__telegram_username'] or f"#{r['user__id']}"
+        r['churn_score'] = round(r['user__churn_score'] or 0, 1)
+    return rows
+
+
+def events_table(date_from=None, date_to=None, event_ids=None):
+    """Таблица «Мероприятия» ERP-раздела: по каждому меро охвата — статус, набор
+    (нужно/пришло/%), число смен, часы, средняя оценка и статус часов Добро.ру."""
+    from blog.models import EventFeedback
+    events = _events_in_scope(date_from, date_to, event_ids).prefetch_related('shifts')
+    rows = []
+    for event in events:
+        shift_ids = [s.id for s in event.shifts.all()]
+        needed = sum(s.volunteer_needed or 0 for s in event.shifts.all())
+        attended = Participation.objects.filter(event_day_id__in=shift_ids, status='attended')
+        attended_count = attended.count()
+        hours = attended.aggregate(s=Sum('hours'))['s'] or 0
+        avg_rating = EventFeedback.objects.filter(event=event).aggregate(a=Avg('rating'))['a']
+        pct = round(attended_count / needed * 100, 1) if needed else None
+        rows.append({
+            'id': event.id,
+            'title': event.title,
+            'status': event.compute_status(),
+            'status_display': event.compute_status_display(),
+            'shifts_count': len(shift_ids),
+            'needed': needed,
+            'attended': attended_count,
+            'pct_closed': pct,
+            'hours': hours,
+            'avg_rating': round(avg_rating, 1) if avg_rating is not None else None,
+            'dobro_kind': event.dobro_ru_link_kind,
+            'dobro_logged': event.dobro_ru_hours_logged,
+        })
+    rows.sort(key=lambda r: r['title'].lower())
+    return rows
 
 
 def staff_load(date_from=None, date_to=None, event_ids=None):
@@ -293,9 +505,7 @@ def staff_load(date_from=None, date_to=None, event_ids=None):
     from blog.models import EventStaff
 
     events = _events_in_scope(date_from, date_to, event_ids)
-    apps_scope = Application.objects.filter(event__in=events) if event_ids else Application.objects.filter(
-        created_at__date__gte=date_from, created_at__date__lte=date_to,
-    )
+    apps_scope = Application.objects.filter(event__in=events)
 
     processed_apps = list(
         apps_scope.filter(assigned_by__isnull=False, assigned_at__isnull=False)

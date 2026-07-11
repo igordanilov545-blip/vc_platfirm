@@ -1,0 +1,200 @@
+{% comment %}
+Панель «Дашборд» ERP-хаба отчётов. KPI-плитки (переиспользуют .stat-grid/.stat-tile) +
+графики инлайновым SVG/CSS (без внешних библиотек/CDN — работает в тёмной теме через
+CSS-переменные, адаптивно, без сети). Данные — из reports.period_report / recruitment_efficiency
+/ dynamics. Дельты (сравнение с прошлым периодом) намеренно убраны.
+{% endcomment %}
+<div class="report-panel-head">
+    <h2>Дашборд</h2>
+    <div class="report-panel-actions">
+        <a class="btn secondary btn-sm" href="{% url 'report_period_export' %}?{{ scope_qs }}" title="Полный отчёт за период (Excel)">⬇ Excel</a>
+        <a class="btn secondary btn-sm" href="{% url 'report_period_pdf' 'internal' %}?{{ scope_qs }}" target="_blank" title="Полный отчёт (DOCX)">⬇ DOCX</a>
+    </div>
+</div>
+
+{% if event_count == 0 %}
+<div class="card"><p style="margin:0; color:var(--text-secondary);">В выбранном охвате нет мероприятий — измените период или верните убранные мероприятия.</p></div>
+{% else %}
+
+{# --- KPI-плитки --- #}
+<div class="stat-grid report-kpis">
+    <div class="stat-tile"><div class="label">Часов волонтёрства</div><div class="value">{{ report.total_hours }}</div></div>
+    <div class="stat-tile"><div class="label">Мероприятий</div><div class="value">{{ report.total_events }}</div></div>
+    <div class="stat-tile"><div class="label">Смен</div><div class="value">{{ report.total_shifts }}</div></div>
+    <div class="stat-tile"><div class="label">Уник. волонтёров</div><div class="value">{{ report.unique_volunteers }}</div></div>
+    <div class="stat-tile"><div class="label">Новых волонтёров</div><div class="value">{{ report.new_volunteers }}</div></div>
+    <div class="stat-tile"><div class="label">Заявки (обработано / всего)</div><div class="value">{{ report.applications_processed }}<span class="kpi-sub"> / {{ report.applications_total }}</span></div></div>
+    <div class="stat-tile"><div class="label">Людям помогли</div><div class="value">{{ report.people_helped }}</div></div>
+    <div class="stat-tile"><div class="label">Смен на волонтёра</div><div class="value">{{ report.avg_shifts_per_person }}</div></div>
+    <div class="stat-tile"><div class="label">Часов на волонтёра</div><div class="value">{{ report.avg_hours_per_person }}</div></div>
+    <div class="stat-tile"><div class="label">Людям помогли / меро</div><div class="value">{{ report.avg_people_helped }}</div></div>
+</div>
+
+<div class="report-charts">
+
+    {# --- График 2: воронка набора --- #}
+    <div class="card chart-card">
+        <h3>Воронка набора</h3>
+        {% with f=report.funnel %}
+        <div class="funnel">
+            {% comment %}Ширина ступеней относительно «подано» (самая широкая).{% endcomment %}
+            <div class="funnel-step">
+                <div class="funnel-bar" style="--w:100%;"><span class="funnel-name">Подано</span><span class="funnel-val">{{ f.submitted }}</span></div>
+            </div>
+            <div class="funnel-step">
+                <div class="funnel-bar funnel-bar--approved" style="--w:{% if f.submitted %}{% widthratio f.approved f.submitted 100 %}{% else %}0{% endif %}%;"><span class="funnel-name">Одобрено</span><span class="funnel-val">{{ f.approved }}</span></div>
+            </div>
+            <div class="funnel-step">
+                <div class="funnel-bar funnel-bar--attended" style="--w:{% if f.submitted %}{% widthratio f.attended f.submitted 100 %}{% else %}0{% endif %}%;"><span class="funnel-name">Пришло</span><span class="funnel-val">{{ f.attended }}</span></div>
+            </div>
+        </div>
+        <div class="chart-note">Конверсия «подано → пришло»: <b>{{ f.conversion_pct }}%</b>{% if f.rejected %} · в резерв/отклонено: {{ f.rejected }}{% endif %}{% if f.unexcused %} · неявок без предупреждения: {{ f.unexcused }}{% endif %}</div>
+        {% endwith %}
+    </div>
+
+    {# --- График 3: адаптивная динамика активности --- #}
+    <div class="card chart-card">
+        <h3>Динамика активности <span class="chart-sub">{% if dynamics.granularity == 'day' %}по дням{% elif dynamics.granularity == 'week' %}по неделям{% else %}по месяцам{% endif %}</span></h3>
+        {% if dynamics.buckets %}
+        <div class="barchart" style="--n:{{ dynamics.buckets|length }};">
+            {% for b in dynamics.buckets %}
+            <div class="barchart-col" title="{{ b.label }}: {{ b.hours }} ч · {{ b.shifts }} чел.-смен">
+                <div class="barchart-track"><div class="barchart-fill" style="height:{{ b.pct }}%;"></div></div>
+                <div class="barchart-x">{{ b.label }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="chart-note">Высота столбца — часы волонтёрства за интервал.</div>
+        {% else %}
+        <p class="chart-empty">Нет данных за период.</p>
+        {% endif %}
+    </div>
+
+    {# --- График 4: закрытие набора по мероприятиям --- #}
+    <div class="card chart-card chart-card--wide">
+        <h3>Закрытие набора по мероприятиям</h3>
+        {% if efficiency.events %}
+        <div class="recruit-rows">
+            {% for e in efficiency.events %}
+            <div class="recruit-row {% if e.understaffed %}recruit-row--under{% endif %}">
+                <div class="recruit-row-title" title="{{ e.title }}">{{ e.title }}</div>
+                <div class="recruit-bar" style="width:100%;"><span class="recruit-bar-fill {% if e.pct_closed > 100 %}recruit-bar-fill--over{% endif %}" style="width:{% if e.pct_closed > 100 %}100{% else %}{{ e.pct_closed }}{% endif %}%; --pct:{{ e.pct_closed }};"></span></div>
+                <div class="recruit-row-num mono">{{ e.attended }}/{{ e.needed }} · {{ e.pct_closed }}%</div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="chart-note">Красным — недобор (&lt;80% плановой потребности). Сортировка: худшие сверху.</div>
+        {% else %}
+        <p class="chart-empty">Ни у одного мероприятия охвата не задана плановая потребность в волонтёрах.</p>
+        {% endif %}
+    </div>
+
+    {# --- График 7: явка / дисциплина --- #}
+    <div class="card chart-card">
+        <h3>Явка</h3>
+        {% with a=report.attendance %}
+        {% if a.total %}
+        <div class="stacked-bar">
+            <span class="stacked-seg seg-attended" style="width:{% widthratio a.attended a.total 100 %}%;" title="Пришли: {{ a.attended }}"></span>
+            <span class="stacked-seg seg-excused" style="width:{% widthratio a.absent_excused a.total 100 %}%;" title="Уважит.: {{ a.absent_excused }}"></span>
+            <span class="stacked-seg seg-unexcused" style="width:{% widthratio a.absent_unexcused a.total 100 %}%;" title="Без предупр.: {{ a.absent_unexcused }}"></span>
+        </div>
+        <div class="legend">
+            <span class="legend-item"><span class="legend-dot seg-attended"></span>Пришли — {{ a.attended }}</span>
+            <span class="legend-item"><span class="legend-dot seg-excused"></span>Уважит. — {{ a.absent_excused }}</span>
+            <span class="legend-item"><span class="legend-dot seg-unexcused"></span>Без предупр. — {{ a.absent_unexcused }}</span>
+        </div>
+        {% else %}
+        <p class="chart-empty">Явка ещё не проставлена.</p>
+        {% endif %}
+        {% endwith %}
+    </div>
+
+    {# --- График 6: топ волонтёров по часам --- #}
+    <div class="card chart-card">
+        <h3>Топ волонтёров</h3>
+        {% if report.top_volunteers %}
+        {% with maxh=report.top_volunteers.0.hours %}
+        <div class="hbar-list">
+            {% for v in report.top_volunteers %}
+            <div class="hbar-row">
+                <span class="hbar-label" title="{{ v.name }}">{{ v.name }}</span>
+                <span class="hbar-track"><span class="hbar-fill" style="width:{% if maxh %}{% widthratio v.hours maxh 100 %}{% else %}0{% endif %}%;"></span></span>
+                <span class="hbar-val mono">{{ v.hours }} ч</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endwith %}
+        {% else %}
+        <p class="chart-empty">Нет данных.</p>
+        {% endif %}
+    </div>
+
+    {# --- График 11: оценки мероприятий --- #}
+    <div class="card chart-card">
+        <h3>Оценки мероприятий {% if report.ratings.avg is not None %}<span class="chart-sub">средняя {{ report.ratings.avg }} · {{ report.ratings.count }} отзывов</span>{% endif %}</h3>
+        {% if report.ratings.count %}
+        {% with maxc=1 %}
+        <div class="barchart barchart--ratings" style="--n:11;">
+            {% for b in report.ratings.buckets %}
+            <div class="barchart-col" title="Оценка {{ b.rating }}: {{ b.count }}">
+                <div class="barchart-track"><div class="barchart-fill barchart-fill--rating" data-count="{{ b.count }}" style="height:0;"></div></div>
+                <div class="barchart-x">{{ b.rating }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endwith %}
+        <div class="chart-note">Распределение оценок 0–10.</div>
+        {% else %}
+        <p class="chart-empty">Отзывов за период нет.</p>
+        {% endif %}
+    </div>
+
+    {# --- Блок «требует внимания»: низко-оценённые меро --- #}
+    {% if report.problem_zones.low_rated_events %}
+    <div class="card chart-card">
+        <h3>⚠️ Низко оценённые мероприятия</h3>
+        <ul class="attention-list">
+            {% for e in report.problem_zones.low_rated_events %}
+            <li><a href="{% url 'event_detail' e.id %}">{{ e.title }}</a> — <b>{{ e.avg_rating|floatformat:1 }}</b>/10 ({{ e.fb_count }} отзывов)</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {# --- График 5: разбивка по категориям (в самом низу) --- #}
+    <div class="card chart-card chart-card--wide">
+        <h3>По категориям</h3>
+        {% if report.category_breakdown %}
+        {% with maxv=report.category_breakdown.0.volunteers %}
+        <div class="hbar-list">
+            {% for c in report.category_breakdown %}
+            <div class="hbar-row">
+                <span class="hbar-label" title="{{ c.name|default:'Без категории' }}">{{ c.name|default:'Без категории' }}</span>
+                <span class="hbar-track"><span class="hbar-fill hbar-fill--cat" style="width:{% if maxv %}{% widthratio c.volunteers maxv 100 %}{% else %}0{% endif %}%;"></span></span>
+                <span class="hbar-val mono">{{ c.volunteers }} чел · {{ c.hours|default:0 }} ч</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endwith %}
+        {% else %}
+        <p class="chart-empty">Нет данных по категориям.</p>
+        {% endif %}
+    </div>
+
+</div>
+
+<script>
+    // Гистограмма оценок: высоты столбиков считаем на клиенте от максимума в наборе
+    // (чтобы не тащить max в шаблон через доп. проходы). Идемпотентно для AJAX-подгрузки.
+    (function () {
+        var fills = document.querySelectorAll('.barchart-fill--rating');
+        var max = 0;
+        fills.forEach(function (f) { max = Math.max(max, parseInt(f.dataset.count, 10) || 0); });
+        fills.forEach(function (f) {
+            var c = parseInt(f.dataset.count, 10) || 0;
+            f.style.height = max ? (c / max * 100) + '%' : '0';
+        });
+    })();
+</script>
+{% endif %}

@@ -1,0 +1,169 @@
+{% comment %}
+Панель «Таблицы» (ERP) хаба отчётов: под-выбор конкретной таблицы (сегментированный
+переключатель) + сама таблица на общих компонентах проекта (data-sortable/-hideable-columns/
+-table-filter). Каждая таблица считается на сервере лениво (по ?table=), переключение —
+AJAX через data-report-table (обработчик в report_period.html).
+{% endcomment %}
+<div class="report-panel-head">
+    <h2>Таблицы</h2>
+    <div class="report-panel-actions">
+        <a class="btn secondary btn-sm" href="{% url 'report_period_export' %}?{{ scope_qs }}" title="Экспорт полного отчёта (Excel)">⬇ Excel</a>
+    </div>
+</div>
+
+<div class="report-subtabs">
+    {% for t in tables %}
+    <button type="button" class="report-subtab {% if t.key == active_table %}active{% endif %}" data-report-table="{{ t.key }}">{{ t.title }}</button>
+    {% endfor %}
+</div>
+
+{% if event_count == 0 %}
+<div class="card"><p style="margin:0; color:var(--text-secondary);">В охвате нет мероприятий.</p></div>
+{% elif active_table == 'volunteers' %}
+    {% include 'blog/partials/_table_search.html' with search_target="#rt-volunteers" search_placeholder="Поиск по имени…" %}
+    <div class="card" style="padding:0; overflow:hidden;">
+        <table class="responsive-table" data-sortable data-hideable-columns id="rt-volunteers">
+            <thead><tr>
+                <th data-sort-key="name">Волонтёр</th>
+                <th data-sort-key="hours" class="num">Часы</th>
+                <th data-sort-key="shifts" class="num">Смен</th>
+                <th data-sort-key="events" class="num">Меро</th>
+                <th data-sort-key="churn" class="num">Churn</th>
+            </tr></thead>
+            <tbody>
+            {% for r in rows %}
+                <tr data-href="{% url 'profile_detail' r.user__id %}" data-search="{{ r.name }}">
+                    <td data-label="Волонтёр"><a href="{% url 'profile_detail' r.user__id %}">{{ r.name }}</a></td>
+                    <td data-label="Часы" class="num mono" data-sort-value="{{ r.hours }}">{{ r.hours }}</td>
+                    <td data-label="Смен" class="num mono" data-sort-value="{{ r.shifts_count }}">{{ r.shifts_count }}</td>
+                    <td data-label="Меро" class="num mono" data-sort-value="{{ r.events_count }}">{{ r.events_count }}</td>
+                    <td data-label="Churn" class="num mono" data-sort-value="{{ r.churn_score }}">{{ r.churn_score }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="5">В охвате нет пришедших волонтёров.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+{% elif active_table == 'events' %}
+    {% include 'blog/partials/_table_search.html' with search_target="#rt-events" search_placeholder="Поиск по названию…" %}
+    <div class="card" style="padding:0; overflow:hidden;">
+        <table class="responsive-table" data-sortable data-hideable-columns id="rt-events">
+            <thead><tr>
+                <th data-sort-key="title">Мероприятие</th>
+                <th data-sort-key="status">Статус</th>
+                <th data-sort-key="shifts" class="num">Смен</th>
+                <th data-sort-key="recruit" class="num">Набор</th>
+                <th data-sort-key="hours" class="num">Часы</th>
+                <th data-sort-key="rating" class="num">Оценка</th>
+                <th data-sort-key="dobro">Добро.ру</th>
+            </tr></thead>
+            <tbody>
+            {% for r in rows %}
+                <tr data-href="{% url 'event_detail' r.id %}" data-search="{{ r.title }}">
+                    <td data-label="Мероприятие"><a href="{% url 'event_detail' r.id %}">{{ r.title }}</a></td>
+                    <td data-label="Статус" data-sort-value="{{ r.status }}">{{ r.status_display }}</td>
+                    <td data-label="Смен" class="num mono" data-sort-value="{{ r.shifts_count }}">{{ r.shifts_count }}</td>
+                    <td data-label="Набор" class="num mono" data-sort-value="{{ r.pct_closed|default:-1 }}">{% if r.pct_closed is not None %}{{ r.attended }}/{{ r.needed }} · {{ r.pct_closed }}%{% else %}—{% endif %}</td>
+                    <td data-label="Часы" class="num mono" data-sort-value="{{ r.hours }}">{{ r.hours }}</td>
+                    <td data-label="Оценка" class="num mono" data-sort-value="{{ r.avg_rating|default:-1 }}">{% if r.avg_rating is not None %}{{ r.avg_rating }}{% else %}—{% endif %}</td>
+                    <td data-label="Добро.ру" data-sort-value="{{ r.dobro_logged }}">
+                        {% if r.dobro_kind == 'none' %}<span style="color:var(--text-tertiary);">не ведётся</span>
+                        {% elif r.dobro_logged %}<span class="pill success"><span class="dot"></span>Часы есть</span>
+                        {% else %}<span class="pill danger"><span class="dot"></span>Нет часов</span>{% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7">В охвате нет мероприятий.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+{% elif active_table == 'recruitment' %}
+    <div class="card" style="padding:0; overflow:hidden;">
+        <table class="responsive-table" data-sortable data-hideable-columns id="rt-recruit">
+            <thead><tr>
+                <th data-sort-key="title">Мероприятие</th>
+                <th data-sort-key="day">Смена</th>
+                <th data-sort-key="needed" class="num">Нужно</th>
+                <th data-sort-key="attended" class="num">Пришло</th>
+                <th data-sort-key="pct" class="num">% закрытия</th>
+            </tr></thead>
+            <tbody>
+            {% for s in efficiency.shifts %}
+                <tr data-href="{% url 'event_detail' s.event_id %}" class="{% if s.understaffed %}row-warn{% endif %}">
+                    <td data-label="Мероприятие"><a href="{% url 'event_detail' s.event_id %}">{{ s.title }}</a></td>
+                    <td data-label="Смена" class="mono" data-sort-value="{{ s.day|date:'Y-m-d' }}">{{ s.day|date:"d.m.Y" }}</td>
+                    <td data-label="Нужно" class="num mono" data-sort-value="{{ s.needed }}">{{ s.needed }}</td>
+                    <td data-label="Пришло" class="num mono" data-sort-value="{{ s.attended }}">{{ s.attended }}</td>
+                    <td data-label="% закрытия" class="num mono" data-sort-value="{{ s.pct_closed }}"><span class="recruit-pct" style="--pct:{{ s.pct_closed }};">{{ s.pct_closed }}%</span></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="5">Нет смен в охвате.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if efficiency.avg_recruit_days is not None %}<p class="chart-note" style="padding:0 4px;">Среднее время набора: {{ efficiency.avg_recruit_days }} дн.</p>{% endif %}
+
+{% elif active_table == 'staff' %}
+    <div class="card" style="padding:0; overflow:hidden;">
+        <h3 style="padding:16px 20px 0; margin:0;">Менеджеры</h3>
+        <table class="responsive-table" data-sortable id="rt-managers">
+            <thead><tr><th data-sort-key="name">Менеджер</th><th data-sort-key="events" class="num">Меро</th><th data-sort-key="apps" class="num">Обработано заявок</th><th data-sort-key="avg" class="num">Ср. время, ч</th></tr></thead>
+            <tbody>
+            {% for m in staff.managers %}
+                <tr>
+                    <td data-label="Менеджер">{{ m.name }}</td>
+                    <td data-label="Меро" class="num mono" data-sort-value="{{ m.event_count }}">{{ m.event_count }}</td>
+                    <td data-label="Обработано заявок" class="num mono" data-sort-value="{{ m.applications_processed }}">{{ m.applications_processed }}</td>
+                    <td data-label="Ср. время, ч" class="num mono" data-sort-value="{{ m.avg_processing_hours|default:-1 }}">{{ m.avg_processing_hours|default:"—" }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="4">Нет данных.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card" style="padding:0; overflow:hidden;">
+        <h3 style="padding:16px 20px 0; margin:0;">Тим-лидеры</h3>
+        <table class="responsive-table" data-sortable id="rt-tls">
+            <thead><tr><th data-sort-key="name">Тим-лидер</th><th data-sort-key="events" class="num">Меро</th><th data-sort-key="apps" class="num">Обработано заявок</th><th data-sort-key="avg" class="num">Ср. время, ч</th></tr></thead>
+            <tbody>
+            {% for m in staff.team_leads %}
+                <tr>
+                    <td data-label="Тим-лидер">{{ m.name }}</td>
+                    <td data-label="Меро" class="num mono" data-sort-value="{{ m.event_count }}">{{ m.event_count }}</td>
+                    <td data-label="Обработано заявок" class="num mono" data-sort-value="{{ m.applications_processed }}">{{ m.applications_processed }}</td>
+                    <td data-label="Ср. время, ч" class="num mono" data-sort-value="{{ m.avg_processing_hours|default:-1 }}">{{ m.avg_processing_hours|default:"—" }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="4">Нет данных.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+{% elif active_table == 'timing' %}
+    <div class="card">
+        <h3 style="margin-top:0;">Тайминг заявок относительно публикации</h3>
+        {% if timing.total_applications %}
+        <p class="chart-note">Всего заявок с известным временем публикации: <b>{{ timing.total_applications }}</b>.</p>
+        <div class="barchart barchart--timing" style="--n:{{ timing.density|length }};">
+            {% with maxc=timing.total_applications %}
+            {% for d in timing.density %}
+            <div class="barchart-col" title="{{ d.label }}: {{ d.count }} заявок">
+                <div class="barchart-track"><div class="barchart-fill" style="height:{% if maxc %}{% widthratio d.count maxc 100 %}{% else %}0{% endif %}%;"></div></div>
+                <div class="barchart-x">{{ d.label }}</div>
+            </div>
+            {% endfor %}
+            {% endwith %}
+        </div>
+        <div class="chart-note">Плотность подачи заявок по времени после публикации мероприятия.</div>
+        {% else %}
+        <p class="chart-empty">Нет заявок с известным временем публикации в охвате.</p>
+        {% endif %}
+    </div>
+{% endif %}

@@ -22,8 +22,8 @@ from blog.forms import (
     ApplicationCancelForm, ApplicationForm, ConstForm, EventCommentForm, EventShiftForm, EventFeedbackForm, EventForm,
     ExcelImportForm, ExternalExperienceForm, LocationForm, LoginForm, OrganizationForm, OrganizerForm, ProfileCompletionForm,
     ProfileForm, ParticipationForm, QuickCategoryForm, QuickLocationForm, QuickOrganizationForm, QuickOrganizerForm,
-    QuickRequirementForm, RegisterForm, RequirementForm, RequirementEditForm, RequirementExceptionForm, RoleUsersForm,
-    SeasonForm, UserCommentForm,
+    QuickRequirementForm, QuickVolunteerForm, RegisterForm, RequirementForm, RequirementEditForm, RequirementExceptionForm,
+    RoleUsersForm, SeasonForm, UserCommentForm,
 )
 from blog.models import (
     Application, ApplicationShiftDecision, Const, DobroRuSharedLink, Event, EventCategory, EventComment, EventShift, EventFeedback, EventStaff,
@@ -149,6 +149,26 @@ def quick_create_category(request):
     if form.is_valid():
         category = form.save()
         return JsonResponse({'id': category.id, 'label': category.name})
+    return JsonResponse({'errors': form.errors}, status=400)
+
+
+@manager_required
+def quick_create_volunteer(request):
+    """Быстрое создание волонтёра прямо из пикера (data-user-picker) — новый
+    пользователь сразу попадает в пул выбранных в текущей форме (напр. «Добавить
+    заявки»), без отдельного одноразового сабмита всей формы (см. create_volunteer_by_name)."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Метод не поддерживается.'}, status=405)
+    from blog.services.applications import create_volunteer_by_name
+
+    form = QuickVolunteerForm(request.POST)
+    if form.is_valid():
+        data = form.cleaned_data
+        user = create_volunteer_by_name(
+            data['first_name'], data['last_name'],
+            phone=data['phone'], telegram_username=data['telegram_username'],
+        )
+        return JsonResponse({'id': user.id, 'label': user.full_name})
     return JsonResponse({'errors': form.errors}, status=400)
 
 
@@ -1538,12 +1558,13 @@ def application_create(request):
 def application_manual_create(request):
     """Ручное добавление заявок волонтёров менеджером (пайплайн как у веб-подачи/импорта).
     За раз — на ОДНО мероприятие, но сразу на нескольких волонтёров. Волонтёры выбираются
-    пикером (data-user-picker, multiple); можно также вписать НОВОГО волонтёра по ФИО —
-    он создаётся служебным аккаунтом (create_volunteer_by_name).
+    пикером (data-user-picker, multiple); новый волонтёр создаётся заранее отдельным
+    AJAX-запросом (см. quick_create_volunteer) и приходит сюда уже обычным user_id —
+    единая точка создания заявок, без спецлогики "нового по ФИО" в этой вьюхе.
 
     Мероприятие: если пришло `?event=<id>` (кнопка на странице меро) — оно зафиксировано
     и не выбирается; иначе (страница заявок) — выбирается из списка."""
-    from blog.services.applications import create_manual_application, create_volunteer_by_name
+    from blog.services.applications import create_manual_application
 
     fixed_event_id = request.GET.get('event') or request.POST.get('event')
     fixed_event = Event.objects.filter(pk=fixed_event_id).first() if fixed_event_id else None
@@ -1554,15 +1575,10 @@ def application_manual_create(request):
             return JsonResponse({'errors': {'event': ['Выберите мероприятие.']}}, status=400)
 
         user_ids = request.POST.getlist('users')
-        new_first = (request.POST.get('new_first_name') or '').strip()
-        new_last = (request.POST.get('new_last_name') or '').strip()
-
-        if not user_ids and not new_first:
-            return JsonResponse({'errors': {'users': ['Выберите хотя бы одного волонтёра или впишите ФИО нового.']}}, status=400)
+        if not user_ids:
+            return JsonResponse({'errors': {'users': ['Выберите хотя бы одного волонтёра.']}}, status=400)
 
         targets = list(User.objects.filter(id__in=user_ids))
-        if new_first:
-            targets.append(create_volunteer_by_name(new_first, new_last))
 
         created = 0
         skipped = 0

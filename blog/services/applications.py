@@ -295,17 +295,20 @@ def create_manual_application(event: Event, user: User, created_by: User, shifts
     return application, True
 
 
-def create_volunteer_by_name(first_name: str, last_name: str = '', middle_name: str = '') -> User:
-    """Создаёт «служебного» волонтёра по одному ФИО (когда менеджер вписывает человека,
+def create_volunteer_by_name(first_name: str, last_name: str = '', middle_name: str = '', phone: str = '', telegram_username: str = '') -> User:
+    """Создаёт «служебного» волонтёра по ФИО (когда менеджер вписывает человека,
     которого ещё нет в системе). Telegram-id служебный (manual:<uuid>) — такому нельзя
     слать в Telegram, но по нему можно проставлять явку (Participation привязан к User),
-    как у импортных заявок (db.md — у импортной заявки всегда есть User)."""
+    как у импортных заявок (db.md — у импортной заявки всегда есть User). Телефон/
+    Telegram-username — опциональны, для последующего матчинга (find_matching_user)."""
     import uuid
     return User.objects.create_user(
         telegram_id=f"manual:{uuid.uuid4()}",
         first_name=(first_name or '').strip(),
         last_name=(last_name or '').strip(),
         middle_name=(middle_name or '').strip(),
+        phone=(phone or '').strip() or None,
+        telegram_username=(telegram_username or '').strip().lstrip('@') or None,
     )
 
 

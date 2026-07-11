@@ -1070,8 +1070,16 @@
                 renderSelected: renderSelected,
             };
             // Доступ извне (напр. обработчику подтверждения перед отправкой формы,
-            // см. [data-role-form]) — без этого JS-свойства пришлось бы парсить DOM.
+            // см. [data-role-form]; или quick-add "＋" волонтёра — см. data-add-ref-picker)
+            // — без этих JS-свойств пришлось бы парсить DOM/дублировать рендер чипов.
             widget._pickerSelected = widgetState.selected;
+            widget._pickerRenderSelected = function () { renderSelected(); };
+            widget._pickerAddUser = function (user) {
+                // Свежесозданный волонтёр — сразу в кэш кандидатов модалки поиска (если
+                // она уже открывалась и allUsers загружен), чтобы не пропал при повторном
+                // открытии/поиске, раз он уже выбран.
+                if (widgetState.allUsers) widgetState.allUsers.push(user);
+            };
 
             function renderSelected() {
                 selectedRow.innerHTML = '';
@@ -1582,6 +1590,16 @@
                 { name: 'description', label: 'Описание', type: 'textarea', required: false },
             ],
         },
+        volunteer: {
+            title: 'Новый волонтёр',
+            createUrl: '{% url "quick_create_volunteer" %}',
+            fields: [
+                { name: 'first_name', label: 'Имя', type: 'text', required: true },
+                { name: 'last_name', label: 'Фамилия', type: 'text', required: false },
+                { name: 'phone', label: 'Телефон', type: 'text', required: false },
+                { name: 'telegram_username', label: 'Telegram', type: 'text', required: false },
+            ],
+        },
     };
 
     function getCsrfToken() {
@@ -1740,9 +1758,9 @@
     var quickAddTitle = document.getElementById('quick-add-title');
     var quickAddClose = document.getElementById('quick-add-close');
 
-    function openQuickAddModal(kind, targetSelect) {
+    function openQuickAddModal(kind, onCreated) {
         var config = REF_CONFIG[kind];
-        if (!config || !targetSelect) return;
+        if (!config || !onCreated) return;
         quickAddTitle.textContent = config.title;
 
         var html = '<div class="quick-add-error" data-quick-error hidden></div>';
@@ -1791,13 +1809,7 @@
                     errorBox.hidden = false;
                     return;
                 }
-                var option = document.createElement('option');
-                option.value = result.data.id;
-                option.textContent = result.data.label;
-                option.selected = true;
-                targetSelect.appendChild(option);
-                // Если это виджет категорий с чипами — перерисовать его.
-                targetSelect.dispatchEvent(new Event('chips:refresh'));
+                onCreated(result.data);
                 closeQuickAddModal();
             });
         });
@@ -1809,13 +1821,39 @@
     }
 
     // Делегирование клика по "＋" — работает и на странице, и в динамически вставленной модалке.
+    // Два варианта таргета: обычный <select> (data-add-ref + data-target) — старое
+    // поведение; либо пул пикера волонтёров (data-add-ref-picker) — новая запись сразу
+    // попадает в widgetState.selected того же виджета, форма не сабмитится.
     document.addEventListener('click', function (event) {
-        var btn = event.target.closest('[data-add-ref]');
-        if (!btn) return;
-        event.preventDefault();
-        var kind = btn.getAttribute('data-add-ref');
-        var targetSelect = document.getElementById(btn.getAttribute('data-target'));
-        openQuickAddModal(kind, targetSelect);
+        var selectBtn = event.target.closest('[data-add-ref]');
+        if (selectBtn) {
+            event.preventDefault();
+            var kind = selectBtn.getAttribute('data-add-ref');
+            var targetSelect = document.getElementById(selectBtn.getAttribute('data-target'));
+            if (!targetSelect) return;
+            openQuickAddModal(kind, function (data) {
+                var option = document.createElement('option');
+                option.value = data.id;
+                option.textContent = data.label;
+                option.selected = true;
+                targetSelect.appendChild(option);
+                // Если это виджет категорий с чипами — перерисовать его.
+                targetSelect.dispatchEvent(new Event('chips:refresh'));
+            });
+            return;
+        }
+        var pickerBtn = event.target.closest('[data-add-ref-picker]');
+        if (pickerBtn) {
+            event.preventDefault();
+            var pickerKind = pickerBtn.getAttribute('data-add-ref-picker');
+            var pickerWidget = pickerBtn.closest('[data-user-picker]');
+            if (!pickerWidget || !pickerWidget._pickerSelected || !pickerWidget._pickerRenderSelected) return;
+            openQuickAddModal(pickerKind, function (data) {
+                pickerWidget._pickerSelected.set(data.id, data.label);
+                pickerWidget._pickerAddUser({ id: data.id, label: data.label, is_team_lead: false, is_manager: false });
+                pickerWidget._pickerRenderSelected();
+            });
+        }
     });
 
     quickAddClose.addEventListener('click', closeQuickAddModal);

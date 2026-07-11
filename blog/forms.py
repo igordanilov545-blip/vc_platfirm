@@ -100,6 +100,16 @@ class QuickOrganizerForm(forms.ModelForm):
         }
 
 
+class QuickVolunteerForm(forms.Form):
+    """Мини-форма быстрого создания волонтёра прямо из пикера (data-user-picker) —
+    новый пользователь попадает в тот же пул выбранных, что и существующие, без
+    отдельного одноразового сабмита всей формы (см. quick_create_volunteer)."""
+    first_name = forms.CharField(label='Имя', max_length=100)
+    last_name = forms.CharField(label='Фамилия', max_length=100, required=False)
+    phone = forms.CharField(label='Телефон', max_length=20, required=False)
+    telegram_username = forms.CharField(label='Telegram', max_length=100, required=False)
+
+
 class QuickCategoryForm(forms.ModelForm):
     """Мини-форма быстрого создания категории мероприятия прямо из формы мероприятия."""
     class Meta:

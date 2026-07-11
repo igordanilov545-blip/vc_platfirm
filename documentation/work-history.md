@@ -585,3 +585,42 @@ seed → сразу видны decisions без захода в event_detail (10
 объединённая таблица ЛК на реальных seed-данных показывает корректно и «Присутствовал/
 4 часа» (одобрена+явка), и «—/0 часов» (отклонена). `manage.py check` чист.
 Продолжение (страница заявок, страница мероприятия) — следующими коммитами той же ветки.
+
+---
+
+## 2026-07-11 · Claude Sonnet 5 · ветка `agent/claude/big-rework-4-pages` (часть 2/N: страница заявок)
+
+**Промт (продолжение большого реворка):**
+> Страница работы с заявками: переименовать «Обработать все заявки» → «Принять всех»;
+> переработать блок «Добавить волонтёра» — выбор волонтеров + создание нового.
+
+**Тудушник:**
+- [x] `pending_applications.html`: кнопка переименована.
+- [x] Новый quick-add паттерн для волонтёра (переиспользуется и на странице
+  мероприятия — тот же партиал `_application_manual_form_body.html`, значит правка
+  одна на обе кнопки «Добавить заявки» / «Добавить волонтёров»):
+  - `QuickVolunteerForm` (forms.py), `quick_create_volunteer` view (создаёт через
+    `create_volunteer_by_name`, теперь принимающую опциональные phone/telegram_username),
+    URL `/quick-create/volunteer/` — тот же паттерн, что `quick_create_location` и др.
+  - `data-add-ref-picker="volunteer"` — новая кнопка «＋» рядом с полем поиска в
+    `data-user-picker`; расширил `openQuickAddModal` (base.html) на callback-based API
+    (`onCreated(data)`), вместо жёсткой привязки к `<select>`-таргету, чтобы поддержать
+    и старый (`data-add-ref` + `<select>`) и новый (`data-add-ref-picker` + picker) пути.
+  - `initUserPickers`: `widget._pickerRenderSelected`/`widget._pickerAddUser` — новый
+    волонтёр сразу попадает в `widgetState.selected` (тот же пул, что и существующие
+    выбранные) и в кэш `allUsers` модалки поиска; форма НЕ сабмитится и не закрывается.
+  - Убраны старые одноразовые поля `new_first_name`/`new_last_name` из
+    `_application_manual_form_body.html` и обработка в `application_manual_create` —
+    новый волонтёр теперь создаётся заранее отдельным AJAX-запросом и приходит в
+    основной сабмит уже обычным `user_id`.
+  - CSS: `.cat-chips-search.has-add-btn` — тот же визуальный язык, что
+    `.select-with-add` у справочников (флекс-ряд поле+кнопка).
+
+**Итог:**
+Затронуты `blog/forms.py`, `blog/services/applications.py`, `blog/views.py`,
+`blog/urls.py`, `blog/templates/blog/base.html`,
+`blog/templates/blog/partials/_application_manual_form_body.html`,
+`blog/templates/blog/pending_applications.html`, `blog/static/blog/css/nexus.css`.
+Проверено вручную runserver: AJAX `/quick-create/volunteer/` создаёт пользователя и
+возвращает `{id, label}`, модалка «Добавить заявки» отдаёт новую разметку с кнопкой
+«＋». `manage.py check` чист. Тестовый волонтёр удалён после проверки.

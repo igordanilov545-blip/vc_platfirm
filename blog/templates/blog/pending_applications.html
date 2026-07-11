@@ -14,7 +14,7 @@
     <span class="pill warning"><span class="dot"></span>Осталось обработать: {{ pending_count }}</span>
     <form method="post" action="{% url 'application_process_all' %}" class="inline">
         {% csrf_token %}
-        <button type="submit" class="btn">Обработать все заявки</button>
+        <button type="submit" class="btn">Принять всех</button>
     </form>
 </div>
 {% endif %}

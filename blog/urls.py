@@ -111,6 +111,7 @@ urlpatterns = [
     path('quick-create/organizer/', views.quick_create_organizer, name='quick_create_organizer'),
     path('quick-create/category/', views.quick_create_category, name='quick_create_category'),
     path('quick-create/requirement/', views.quick_create_requirement, name='quick_create_requirement'),
+    path('quick-create/volunteer/', views.quick_create_volunteer, name='quick_create_volunteer'),
 
     # Аналитика
     path('analytics/', views.analytics_dashboard, name='analytics_dashboard'),

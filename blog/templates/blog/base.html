@@ -57,7 +57,8 @@
     {# Локации/организаторы/организации/требования вынесены в Настройки (хаб-вкладки,
        кнопка «⚙️ Настройки» в подвале сайдбара) — здесь их отдельных пунктов больше нет. #}
     <a href="{% url 'report_period' %}" data-track="nav:report_period" class="nav-link {% if request.resolver_match.url_name == 'report_period' %}active{% endif %}" title="Отчёты"><span class="icon">📊</span><span class="nav-label"> Отчёты</span></a>
-    <a href="{% url 'dobro_page' %}" data-track="nav:dobro_page" class="nav-link {% if request.resolver_match.url_name == 'dobro_page' %}active{% endif %}" title="Добро.ру"><span class="icon">❤️</span><span class="nav-label"> Добро.ру</span></a>
+    {# Добро.ру теперь вкладка внутри хаба «Отчёты» — ссылка ведёт прямо на неё. #}
+    <a href="{% url 'report_period' %}?view=dobro" data-track="nav:dobro_page" class="nav-link" title="Добро.ру"><span class="icon">❤️</span><span class="nav-label"> Добро.ру</span></a>
     {% endif %}
 
     {% if is_tech_admin %}

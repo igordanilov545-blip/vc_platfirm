@@ -113,10 +113,13 @@
         </div>
         <div class="field" style="flex:1;">
             <label>Нужно волонтёров</label>
-            <input type="number" data-shift-needed value="0" min="0">
+            <input type="number" data-shift-needed value="1" min="1" list="volunteer-needed-options">
         </div>
         <button type="button" class="btn secondary shift-add-btn" data-shift-add title="Добавить смену" aria-label="Добавить смену">＋</button>
     </div>
+    <datalist id="volunteer-needed-options">
+        {% for n in volunteer_needed_options %}<option value="{{ n }}">{% endfor %}
+    </datalist>
     <div class="field-error" data-shift-error hidden></div>
     {% for sf in form.shift_forms %}
         {% if sf.errors %}<div class="field-error">Смена {{ forloop.counter }}: {{ sf.errors.as_text }}</div>{% endif %}

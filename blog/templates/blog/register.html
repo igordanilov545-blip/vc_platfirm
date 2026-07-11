@@ -1,0 +1,86 @@
+{% extends 'blog/base.html' %}
+{% block title %}Регистрация{% endblock %}
+{% block content %}
+<div class="card" style="max-width:480px; margin: 2rem auto;">
+    <h2>Регистрация</h2>
+    <p style="color:var(--text-secondary); font-size:0.9rem; margin-top:0;">
+        Фамилия, имя, Telegram, номер телефона и дата рождения обязательны. Остальные
+        данные профиля можно будет заполнить позже.
+    </p>
+
+    <form method="post" id="register-form">
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+
+        {% for field in form %}
+        {% if field.name != 'password' and field.name != 'password2' %}
+        <div class="field">
+            {{ field.label_tag }}
+            {% if field.name != 'middle_name' %}<span style="color:var(--danger, #d33);">*</span>{% endif %}
+            {{ field }}
+            {% if field.errors %}<div class="field-error">{{ field.errors|striptags }}</div>{% endif %}
+        </div>
+        {% endif %}
+        {% endfor %}
+
+        <div class="field">
+            {{ form.password.label_tag }}<span style="color:var(--danger, #d33);">*</span>
+            <div style="display:flex; gap:8px;">
+                {{ form.password }}
+                <button type="button" class="btn secondary btn-sm" id="gen-password-btn" style="white-space:nowrap;">Сгенерировать</button>
+            </div>
+            <div style="color:var(--text-tertiary); font-size:12px;">Минимум 8 символов, буквы, цифры и спецсимволы.</div>
+            {% if form.password.errors %}<div class="field-error">{{ form.password.errors|striptags }}</div>{% endif %}
+        </div>
+
+        <div class="field">
+            {{ form.password2.label_tag }}<span style="color:var(--danger, #d33);">*</span>
+            {{ form.password2 }}
+            {% if form.password2.errors %}<div class="field-error">{{ form.password2.errors|striptags }}</div>{% endif %}
+        </div>
+
+        <div class="event-form-actions">
+            <button type="submit" class="btn">Зарегистрироваться</button>
+            <a href="{% url 'login' %}" class="btn secondary">Уже есть аккаунт — войти</a>
+        </div>
+    </form>
+</div>
+
+<script>
+(function () {
+    // Генератор пароля на клиенте (без похода на сервер) — 8 символов, буквы разного
+    // регистра, цифры и спецсимволы; заполняет оба поля пароля сразу.
+    var genBtn = document.getElementById('gen-password-btn');
+    if (!genBtn) return;
+    var form = document.getElementById('register-form');
+    var pass1 = form.querySelector('[name=password]');
+    var pass2 = form.querySelector('[name=password2]');
+
+    function generatePassword() {
+        var lower = 'abcdefghijkmnpqrstuvwxyz';
+        var upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+        var digits = '23456789';
+        var special = '!@#$%^&*';
+        var all = lower + upper + digits + special;
+        var pick = function (chars) { return chars[Math.floor(Math.random() * chars.length)]; };
+        // Гарантируем хотя бы по одному символу каждого типа, остальное — случайно.
+        var chars = [pick(lower), pick(upper), pick(digits), pick(special)];
+        while (chars.length < 8) chars.push(pick(all));
+        // Перемешиваем, чтобы обязательные символы не всегда стояли в начале.
+        for (var i = chars.length - 1; i > 0; i--) {
+            var j = Math.floor(Math.random() * (i + 1));
+            var tmp = chars[i]; chars[i] = chars[j]; chars[j] = tmp;
+        }
+        return chars.join('');
+    }
+
+    genBtn.addEventListener('click', function () {
+        var generated = generatePassword();
+        pass1.value = generated;
+        pass2.value = generated;
+        pass1.type = 'text';
+        pass2.type = 'text';
+    });
+})();
+</script>
+{% endblock %}

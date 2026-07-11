@@ -21,7 +21,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
 from blog.models import Event, EventShift
-from blog.services.applications import find_matching_user
+from blog.services.applications import ensure_shift_decisions, find_matching_user
 
 COLUMN_MAP = {
     'event': ['Мероприятие', 'Название мероприятия'],
@@ -343,6 +343,11 @@ def commit_import(rows: list) -> dict:
                 status='rejected' if req_check['auto_reject'] else 'new',
                 auto_reject_reason='; '.join(req_check['reasons']) if req_check['auto_reject'] else None,
             )
+            # Без этого event_list не видит набор/заявки по сменам для только что
+            # импортированной заявки, пока менеджер не откроет страницу мероприятия
+            # (там ApplicationShiftDecision досоздаётся лениво) — тот же список
+            # мероприятий должен сразу показывать актуальную картину после импорта.
+            ensure_shift_decisions(application)
             existing_by_event[event.id][person_key] = application
             name = f'{application.first_name} {application.last_name or ""}'.strip()
             # Массовый импорт намеренно не шлёт уведомление тим-лидеру на КАЖДУЮ новую

@@ -506,13 +506,18 @@
                     showError('Смена пересекается по времени с уже добавленной в этот день.');
                     return;
                 }
+                var needed = parseInt(neededInput.value, 10);
+                if (!needed || needed < 1) {
+                    showError('Укажите, сколько волонтёров нужно на смену (не менее 1).');
+                    return;
+                }
                 showError('');
                 shifts.push({
                     day: dayIso,
                     dayLabel: dpFmtLabel(dayIso),
                     start_time: start,
                     end_time: end,
-                    volunteer_needed: Math.max(0, parseInt(neededInput.value, 10) || 0),
+                    volunteer_needed: needed,
                 });
                 sync();
             });
@@ -592,7 +597,14 @@
             if (input.dataset.dpInit) return;
             input.dataset.dpInit = '1';
 
-            var selected = dpParseISO(input.value) || new Date();
+            // Дефолт для пустого поля — обычно сегодня, но поле даты рождения задаёт
+            // свой сдвиг в годах (data-dp-default-years-ago="18"): открываем календарь
+            // сразу на «сегодня минус 18 лет» — средний возраст волонтёра, а не на
+            // текущую дату, откуда до нужного года нужно было бы листать вручную.
+            var defaultYearsAgo = parseInt(input.getAttribute('data-dp-default-years-ago'), 10) || 0;
+            var fallback = new Date();
+            if (defaultYearsAgo) fallback.setFullYear(fallback.getFullYear() - defaultYearsAgo);
+            var selected = dpParseISO(input.value) || fallback;
             var viewMonth = new Date(selected.getFullYear(), selected.getMonth(), 1);
 
             var wrap = document.createElement('div');
@@ -631,7 +643,22 @@
                 var daysInMonth = new Date(year, month + 1, 0).getDate();
                 var today = new Date();
 
-                var html = '<div class="cal-head"><button type="button" data-dp-nav="-1">‹</button><span>' + DP_MONTHS[month] + ' ' + year + '</span><button type="button" data-dp-nav="1">›</button></div>';
+                var html = '<div class="cal-head">'
+                    + '<button type="button" data-dp-nav="-1" title="Предыдущий месяц">‹</button>'
+                    + '<span class="cal-head-title">' + DP_MONTHS[month]
+                    + ' <button type="button" class="cal-year-btn" data-dp-year-toggle>' + year + '</button></span>'
+                    + '<button type="button" data-dp-nav="1" title="Следующий месяц">›</button>'
+                    + '</div>';
+                // Список годов для быстрого перехода (не листать месяцы сотни раз, чтобы
+                // дойти до даты рождения) — раскрывается по клику на год в шапке, диапазон
+                // с запасом в обе стороны от текущего года.
+                var yearListOpen = cal.querySelector('.cal-year-list') && !cal.querySelector('.cal-year-list').hidden;
+                html += '<div class="cal-year-list"' + (yearListOpen ? '' : ' hidden') + '>';
+                var todayYear = new Date().getFullYear();
+                for (var y = todayYear + 5; y >= todayYear - 100; y--) {
+                    html += '<div class="cal-year-option' + (y === year ? ' selected' : '') + '" data-dp-year="' + y + '">' + y + '</div>';
+                }
+                html += '</div>';
                 html += '<div class="cal-grid">';
                 DP_DOW.forEach(function (d) { html += '<div class="dow">' + d + '</div>'; });
                 for (var i = 0; i < startOffset; i++) html += '<div class="day empty"></div>';
@@ -652,6 +679,25 @@
                         renderMonth();
                     });
                 });
+                var yearList = cal.querySelector('.cal-year-list');
+                var yearToggle = cal.querySelector('[data-dp-year-toggle]');
+                if (yearToggle && yearList) {
+                    yearToggle.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        yearList.hidden = !yearList.hidden;
+                        if (!yearList.hidden) {
+                            var sel = yearList.querySelector('.selected');
+                            if (sel) sel.scrollIntoView({ block: 'center' });
+                        }
+                    });
+                    yearList.querySelectorAll('[data-dp-year]').forEach(function (opt) {
+                        opt.addEventListener('click', function (e) {
+                            e.stopPropagation();
+                            viewMonth = new Date(parseInt(opt.getAttribute('data-dp-year'), 10), viewMonth.getMonth(), 1);
+                            renderMonth();
+                        });
+                    });
+                }
                 cal.querySelectorAll('.day:not(.empty)').forEach(function (cell) {
                     cell.addEventListener('click', function () {
                         selected = dpParseISO(cell.getAttribute('data-dp-date'));

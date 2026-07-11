@@ -28,6 +28,7 @@ from blog.models import (
     EventFeedback, EventShift, EventStaff, Location, Manager, Organization,
     Organizer, OrganizerOrganizationLink, Participation, Season, TeamLeader, User,
 )
+from blog.services.applications import ensure_shift_decisions
 
 RND = random.Random(20260708)  # фиксированный seed — воспроизводимый датасет
 
@@ -396,6 +397,13 @@ class Command(BaseCommand):
             submitted_at=submitted, status=status, assigned_by=assigned_by, assigned_at=assigned,
         )
         Application.objects.filter(pk=app.pk).update(created_at=created)
+        # Заявка создана напрямую через ORM (не через process_application), поэтому
+        # ApplicationShiftDecision по её сменам ещё не существует — без этого
+        # event_list не видит набор/заявки по сменам, пока менеджер не откроет
+        # мероприятие (там ensure_shift_decisions вызывается лениво). Создаём сразу,
+        # чтобы демо-датасет с самого начала выглядел так же, как после реальной
+        # обработки заявок.
+        ensure_shift_decisions(app)
         return app
 
     def _maybe_feedback(self, event, volunteers, case):
@@ -447,6 +455,9 @@ class Command(BaseCommand):
                     submitted_at=submitted, status=status, assigned_by=assigned_by,
                     assigned_at=(submitted + timedelta(hours=2)) if assigned_by else None,
                 )
+                # См. _make_application — без этого event_list не видит набор/заявки
+                # по сменам до первого захода менеджера на страницу мероприятия.
+                ensure_shift_decisions(app)
                 if status == 'approved':
                     Participation.objects.create(user=user, event_day=shift, status='attended', hours=0)
             self.stdout.write(f'  меро с открытым набором: {event.title} (id={event.id})')

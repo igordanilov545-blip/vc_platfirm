@@ -4,6 +4,7 @@ from . import views
 
 urlpatterns = [
     path('login/', views.login_view, name='login'),
+    path('register/', views.register_view, name='register'),
     path('logout/', views.logout_view, name='logout'),
     path('auth/telegram/callback/', views.telegram_login_callback, name='telegram_login_callback'),
     path('auth/tg/<uuid:token>/', views.tg_link_login, name='tg_link_login'),

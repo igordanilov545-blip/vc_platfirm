@@ -22,7 +22,8 @@ from blog.forms import (
     ApplicationCancelForm, ApplicationForm, ConstForm, EventCommentForm, EventShiftForm, EventFeedbackForm, EventForm,
     ExcelImportForm, ExternalExperienceForm, LocationForm, LoginForm, OrganizationForm, OrganizerForm, ProfileCompletionForm,
     ProfileForm, ParticipationForm, QuickCategoryForm, QuickLocationForm, QuickOrganizationForm, QuickOrganizerForm,
-    QuickRequirementForm, RequirementForm, RequirementEditForm, RequirementExceptionForm, RoleUsersForm, SeasonForm, UserCommentForm,
+    QuickRequirementForm, RegisterForm, RequirementForm, RequirementEditForm, RequirementExceptionForm, RoleUsersForm,
+    SeasonForm, UserCommentForm,
 )
 from blog.models import (
     Application, ApplicationShiftDecision, Const, DobroRuSharedLink, Event, EventCategory, EventComment, EventShift, EventFeedback, EventStaff,
@@ -54,6 +55,10 @@ from blog.models import ButtonClickEvent, SystemDowntime, WebPageView, WebSessio
 from blog.logging_utils import get_web_logger, actor
 
 logger = get_web_logger(__name__)
+
+# Готовые значения для datalist поля «Нужно волонтёров» (EventShiftForm) — можно
+# выбрать число из списка или ввести своё вручную.
+VOLUNTEER_NEEDED_OPTIONS = range(1, 201)
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +234,54 @@ def login_view(request):
         # Абсолютный URL коллбэка Login Widget — Telegram шлёт данные на data-auth-url.
         'tg_widget_auth_url': request.build_absolute_uri(reverse('telegram_login_callback')),
     })
+
+
+def register_view(request):
+    """Самостоятельная веб-регистрация без Telegram (см. RegisterForm docstring и
+    coding-principles.md §3 — правило "аккаунт всегда через telegram_id" ослаблено:
+    веб-регистрация создаёт аккаунт со служебным telegram_id `web_register:<uuid>`,
+    как import:* у Excel-импорта, до подтверждения через бота.
+
+    Если находится совпадение по ФИО/Telegram/телефону с уже существующим
+    пользователем — не блокируем, создаём новый аккаунт и после входа показываем
+    плашку с просьбой подтвердить личность через бота (см. dashboard, messages)."""
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+
+    from blog.services.applications import find_matching_user
+    import uuid as uuid_lib
+
+    form = RegisterForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        data = form.cleaned_data
+        existing = find_matching_user(
+            telegram_username=data['telegram_username'], phone=data['phone'],
+            first_name=data['first_name'], last_name=data['last_name'],
+        )
+        user = User.objects.create_user(
+            telegram_id=f'web_register:{uuid_lib.uuid4()}',
+            first_name=data['first_name'], last_name=data['last_name'], middle_name=data['middle_name'],
+            telegram_username=data['telegram_username'], phone=data['phone'], birthday=data['birthday'],
+            login=data['login'],
+        )
+        user.set_password(data['password'])
+        user.web_credentials_set_at = timezone.now()
+        user.save()
+        logger.info('Веб-регистрация: создан user=%s login=%s matched_existing=%s', user.id, user.login, existing.id if existing else None)
+
+        auth_login(request, user, backend='blog.auth_backends.WebLoginBackend')
+        if existing:
+            from django.conf import settings
+            messages.warning(
+                request,
+                'Мы нашли похожий профиль в системе (по ФИО/Telegram/телефону). '
+                'Чтобы объединить историю мероприятий с этим аккаунтом, подтвердите себя '
+                f'через Telegram-бота: https://t.me/{settings.TG_BOT_USERNAME}',
+            )
+        messages.success(request, 'Регистрация завершена. Добро пожаловать!')
+        return redirect('dashboard')
+
+    return render(request, 'blog/register.html', {'form': form})
 
 
 @csrf_exempt
@@ -891,7 +944,8 @@ def event_create(request):
         )
     return modal_form_response(
         request, 'blog/event_form.html',
-        {'form': form, 'title': 'Новое мероприятие', 'submit_label': 'Создать'},
+        {'form': form, 'title': 'Новое мероприятие', 'submit_label': 'Создать',
+         'volunteer_needed_options': VOLUNTEER_NEEDED_OPTIONS},
         partial_template='blog/partials/_event_form_body.html',
     )
 
@@ -1189,7 +1243,8 @@ def event_shift_add(request, event_id):
         )
     return modal_form_response(
         request, 'blog/event_shift_form.html',
-        {'form': form, 'event': event, 'title': f'Новая смена: {event.title}', 'submit_label': 'Добавить'},
+        {'form': form, 'event': event, 'title': f'Новая смена: {event.title}', 'submit_label': 'Добавить',
+         'volunteer_needed_options': VOLUNTEER_NEEDED_OPTIONS},
         partial_template='blog/partials/_event_shift_form_body.html',
     )
 
@@ -1210,7 +1265,8 @@ def event_shift_edit(request, event_id, shift_id):
         )
     return modal_form_response(
         request, 'blog/event_shift_form.html',
-        {'form': form, 'event': event, 'title': f'Редактировать смену: {event.title}', 'submit_label': 'Сохранить'},
+        {'form': form, 'event': event, 'title': f'Редактировать смену: {event.title}', 'submit_label': 'Сохранить',
+         'volunteer_needed_options': VOLUNTEER_NEEDED_OPTIONS},
         partial_template='blog/partials/_event_shift_form_body.html',
     )
 

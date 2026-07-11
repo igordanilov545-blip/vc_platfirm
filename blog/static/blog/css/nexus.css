@@ -817,9 +817,26 @@ input:focus, select:focus, textarea:focus {
    ========================================================================== */
 .cal { width: 100%; max-width: 260px; }
 .daterange-calendars .cal { width: 260px; max-width: none; }
-.cal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: 600; font-size: 13px; }
+.cal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: 600; font-size: 13px; position: relative; }
 .cal-head button { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 15px; padding: 2px 8px; border-radius: 6px; }
 .cal-head button:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+.cal-head-title { position: relative; }
+/* Год в шапке — кликабельная кнопка, открывающая список годов (быстрый переход
+   вместо листания по месяцам, важно для даты рождения — до 100 лет назад). */
+.cal-year-btn {
+  background: none; border: none; color: inherit; cursor: pointer;
+  font: inherit; font-weight: 600; padding: 1px 4px; border-radius: 4px;
+}
+.cal-year-btn:hover { background: var(--bg-card-hover); }
+.cal-year-list {
+  position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  z-index: 30; margin-top: 4px; width: 100px; max-height: 220px; overflow-y: auto;
+  background: var(--bg-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow-card); padding: 4px;
+}
+.cal-year-option { padding: 6px 10px; font-size: 13px; text-align: center; border-radius: 6px; cursor: pointer; }
+.cal-year-option:hover { background: var(--bg-card-hover); }
+.cal-year-option.selected { background: var(--accent); color: var(--accent-text-on); font-weight: 700; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
 .cal-grid .dow { font-size: 10px; color: var(--text-tertiary); padding: 4px 0; font-weight: 600; }
 .cal-grid .day { font-size: 13px; padding: 8px 0; cursor: pointer; color: var(--text-primary); position: relative; }

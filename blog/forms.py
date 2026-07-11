@@ -15,6 +15,51 @@ class LoginForm(forms.Form):
     password = forms.CharField(label='Пароль', widget=forms.PasswordInput)
 
 
+class RegisterForm(forms.Form):
+    """Самостоятельная веб-регистрация без Telegram (создаёт аккаунт с временным
+    служебным telegram_id, как import:* у Excel-импорта — см. register_view).
+
+    Обязательны: ФИО (Фамилия/Имя, Отчество опционально), Telegram, телефон, дата
+    рождения, логин и пароль — остальные поля профиля пользователь донастроит позже.
+    Если по ФИО+Telegram+телефону находится уже существующий пользователь (заведён
+    ботом/импортом ранее) — НЕ блокируем регистрацию: создаём новый веб-аккаунт и
+    просим подтвердить личность через бота для последующего объединения профилей
+    (см. register_view, TODO мерджа — пока только плашка-предупреждение)."""
+    last_name = forms.CharField(label='Фамилия', max_length=100)
+    first_name = forms.CharField(label='Имя', max_length=100)
+    middle_name = forms.CharField(label='Отчество', max_length=100, required=False)
+    telegram_username = forms.CharField(label='Telegram', max_length=100)
+    phone = forms.CharField(label='Номер телефона', max_length=20)
+    birthday = forms.DateField(
+        label='Дата рождения',
+        widget=forms.DateInput(
+            attrs={'type': 'text', 'data-datepicker': '', 'data-dp-default-years-ago': '18', 'autocomplete': 'off'},
+            format='%Y-%m-%d',
+        ),
+    )
+    login = forms.CharField(label='Логин', max_length=50)
+    password = forms.CharField(label='Пароль', widget=forms.PasswordInput)
+    password2 = forms.CharField(label='Повторите пароль', widget=forms.PasswordInput)
+
+    def clean_telegram_username(self):
+        value = (self.cleaned_data.get('telegram_username') or '').strip()
+        return value.lstrip('@').strip()
+
+    def clean_login(self):
+        value = (self.cleaned_data.get('login') or '').strip()
+        if User.objects.filter(login=value).exists():
+            raise forms.ValidationError('Этот логин уже занят — выберите другой.')
+        return value
+
+    def clean(self):
+        cleaned = super().clean()
+        password = cleaned.get('password')
+        password2 = cleaned.get('password2')
+        if password and password2 and password != password2:
+            self.add_error('password2', 'Пароли не совпадают.')
+        return cleaned
+
+
 class QuickLocationForm(forms.ModelForm):
     """Мини-форма быстрого создания локации прямо из формы мероприятия (без ухода со страницы)."""
     class Meta:
@@ -396,7 +441,13 @@ class EventShiftForm(forms.ModelForm):
             'location': 'Локация',
         }
         widgets = {
-            'volunteer_needed': forms.NumberInput(attrs={'min': 0}),
+            # min=1 — на смену не может требоваться 0 волонтёров (иначе набор
+            # автоматически считается "укомплектованным" и смена бессмысленна).
+            # list="volunteer-needed-options" — нативный HTML5 datalist: можно выбрать
+            # готовое число из списка (1..200) или ввести своё вручную, без отдельного
+            # JS-компонента (единственный такой combobox в проекте, см. datalist в
+            # _event_shift_form_body.html).
+            'volunteer_needed': forms.NumberInput(attrs={'min': 1, 'list': 'volunteer-needed-options'}),
         }
 
     def __init__(self, *args, event=None, **kwargs):
@@ -421,6 +472,12 @@ class EventShiftForm(forms.ModelForm):
             self.initial.setdefault('day', timezone.localdate())
             self.initial.setdefault('start_time', time(10, 0))
             self.initial.setdefault('end_time', time(18, 0))
+
+    def clean_volunteer_needed(self):
+        value = self.cleaned_data.get('volunteer_needed')
+        if value is None or value < 1:
+            raise forms.ValidationError('Укажите, сколько волонтёров нужно на смену (не менее 1).')
+        return value
 
     def clean(self):
         cleaned = super().clean()
@@ -583,7 +640,11 @@ class ProfileForm(forms.ModelForm):
         ]
         widgets = {
             'birthday': forms.DateInput(
-                attrs={'type': 'text', 'data-datepicker': '', 'autocomplete': 'off'},
+                # data-dp-default-years-ago="18" — если дата ещё не указана, календарь
+                # сразу открывается и предзаполняется «сегодня минус 18 лет» (средний
+                # возраст волонтёра), а не сегодняшним днём, откуда до нужного года
+                # пришлось бы листать вручную.
+                attrs={'type': 'text', 'data-datepicker': '', 'data-dp-default-years-ago': '18', 'autocomplete': 'off'},
                 format='%Y-%m-%d',
             ),
             'about': forms.Textarea(attrs={'rows': 3}),

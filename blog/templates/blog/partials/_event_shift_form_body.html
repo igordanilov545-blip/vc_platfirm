@@ -34,6 +34,11 @@
     <div class="field">
         {{ form.volunteer_needed.label_tag }}
         {{ form.volunteer_needed }}
+        {% comment %}Список готовых значений 1..200 — можно выбрать или ввести своё
+        число вручную (нативный HTML5 datalist, единственный такой комбобокс в проекте).{% endcomment %}
+        <datalist id="volunteer-needed-options">
+            {% for n in volunteer_needed_options %}<option value="{{ n }}">{% endfor %}
+        </datalist>
         {% if form.volunteer_needed.errors %}<div class="field-error">{{ form.volunteer_needed.errors|striptags }}</div>{% endif %}
     </div>
 

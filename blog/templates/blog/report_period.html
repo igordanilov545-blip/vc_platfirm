@@ -4,8 +4,8 @@
 {% block content %}
 <h1>Отчёты</h1>
 
-{# Тип отчёта (Дашборд/Таблицы/Добро.ру) — в самом верху; охват (период/мероприятия)
-   выбирается под ним. Общий визуальный язык кнопок-карточек (nexus.css). #}
+{% comment %}Тип отчёта (Дашборд/Таблицы/Добро.ру) — в самом верху; охват (период/
+мероприятия) выбирается под ним. Общий визуальный язык кнопок-карточек (nexus.css).{% endcomment %}
 <div class="card report-views-card">
     <div class="report-types" id="report-views">
         {% for v in views %}
@@ -230,24 +230,18 @@
                     loadPanel('dobro', extra, true);
                 });
             });
-            // Пересчёт статуса в соседней колонке «Часы» сразу после клика по галочке —
-            // без этого он оставался старым до перезагрузки панели (баг из ToDo).
-            // «Выставлены» только если ВСЕ чекбоксы строки (все привязанные меро) отмечены.
-            function updateDobroStatusCell(row) {
-                var cell = row.querySelector('[data-dobro-status-cell]');
-                if (!cell) return;
-                var boxes = row.querySelectorAll('[data-dobro-row]');
-                if (!boxes.length) return;
-                var allLogged = Array.prototype.every.call(boxes, function (b) { return b.checked; });
-                cell.innerHTML = allLogged
-                    ? '<span class="pill success"><span class="dot"></span>Выставлены</span>'
-                    : '<span class="pill danger"><span class="dot"></span>Не выставлены</span>';
+            // Клик по галочке «часы проставлены» (одна на строку-мероприятие): шлём
+            // toggle на сервер и обновляем подпись рядом с чекбоксом + sort-value ячейки.
+            function updateDobroToggleLabel(box, logged) {
+                var label = box.parentNode ? box.parentNode.querySelector('span') : null;
+                if (label) label.textContent = logged ? 'выставлены' : 'не выставлены';
+                var cell = box.closest('td');
+                if (cell) cell.setAttribute('data-sort-value', logged ? '1' : '0');
             }
             root.querySelectorAll('[data-dobro-toggle]').forEach(function (box) {
                 if (box.dataset.bound) return; box.dataset.bound = '1';
                 box.addEventListener('change', function () {
                     var id = box.getAttribute('data-dobro-toggle');
-                    var row = box.closest('tr');
                     box.disabled = true;
                     fetch('/reports/dobro/' + id + '/toggle/', {
                         method: 'POST',
@@ -257,9 +251,9 @@
                     .then(function (res) {
                         if (!res.ok) { alert(res.d.error || 'Не удалось изменить статус.'); box.checked = !box.checked; }
                         else { box.checked = res.d.logged; }
-                        if (row) updateDobroStatusCell(row);
+                        updateDobroToggleLabel(box, box.checked);
                     })
-                    .catch(function () { alert('Ошибка сети.'); box.checked = !box.checked; if (row) updateDobroStatusCell(row); })
+                    .catch(function () { alert('Ошибка сети.'); box.checked = !box.checked; updateDobroToggleLabel(box, box.checked); })
                     .finally(function () { box.disabled = false; });
                 });
             });

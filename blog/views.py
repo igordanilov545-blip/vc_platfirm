@@ -2778,52 +2778,60 @@ def report_dobro_toggle(request, event_id):
 
 
 def _dobro_rows(only_unlogged=False, event_ids=None, has_link=None):
-    """Строки таблицы Добро.ру (общие + уникальные ссылки) и id завершённых меро с
-    непроставленными часами (для кнопки выгрузки). Вынесено из dobro_page, чтобы
-    переиспользовать в панели ERP-хаба (?view=dobro).
+    """Строки таблицы Добро.ру — ПО ОДНОМУ МЕРОПРИЯТИЮ охвата (не по ссылке): в таблице
+    присутствует каждое меро из охвата, даже если у него нет ссылки Добро.ру (тогда в
+    колонке «Ссылка» явно пишется «нет ссылки»). Раньше таблица была link-центричной и
+    меро без учёта Добро.ру (kind='none') в неё вообще не попадали — из-за чего при
+    выбранном периоде таблица выглядела пустой, хотя мероприятия в охвате были.
 
-    event_ids — охват страницы отчётов (даты/статус-режим/исключения): если задан,
-    строка попадает в таблицу только если у неё остались привязанные меро ИЗ охвата
-    (остальные меро строки просто не показываются, а не прячут всю строку — общая
-    ссылка часто привязана к меро за пределами текущего периода).
-    has_link — 'yes' (есть URL) / 'no' (нет URL) / None (не фильтровать)."""
+    Для каждого меро колонка «Ссылка» = его уникальный URL (kind='unique'), либо URL
+    общей ссылки (kind='shared'), либо пусто (kind='none'). Чекбокс «часы проставлены»
+    доступен только у завершённых меро с ведением учёта (kind != 'none').
+
+    event_ids — охват (даты/статус/исключения). None → все меро (прямой заход).
+    has_link — 'yes'|'no'|None (фильтр по наличию URL). only_unlogged — только меро с
+    непроставленными часами."""
     from data_base import data_controller as dc
+    events = dc.events_qs().select_related('dobro_ru_shared_link').order_by('-created_at')
+    if event_ids is not None:
+        events = events.filter(id__in=event_ids)
+
+    KIND_DISPLAY = {'none': 'Нет учёта', 'unique': 'Уникальная', 'shared': 'Общая'}
     rows = []
-    for link in dc.dobro_ru_shared_links_qs().order_by('-created_at'):
-        events = list(link.events.filter(dobro_ru_link_kind='shared').order_by('-created_at'))
-        if event_ids is not None:
-            events = [e for e in events if e.id in event_ids]
+    for event in events:
+        if event.dobro_ru_link_kind == 'unique':
+            url = event.dobro_ru_link or ''
+        elif event.dobro_ru_link_kind == 'shared':
+            url = event.dobro_ru_shared_link.url if event.dobro_ru_shared_link else ''
+        else:
+            url = ''
+        tracks_hours = event.dobro_ru_link_kind != 'none'
         rows.append({
-            'title': link.title, 'url': link.url, 'kind': 'shared', 'kind_display': 'Общая',
-            'link_type_display': link.get_link_type_display(), 'is_active': link.is_active,
-            'events': events,
-            'all_logged': bool(events) and all(e.dobro_ru_hours_logged for e in events),
+            'event': event,
+            'title': event.title,
+            'url': url,
+            'kind': event.dobro_ru_link_kind,
+            'kind_display': KIND_DISPLAY.get(event.dobro_ru_link_kind, event.dobro_ru_link_kind),
+            'tracks_hours': tracks_hours,
+            'logged': event.dobro_ru_hours_logged,
+            # Чекбокс доступен только у завершённого меро с ведением учёта.
+            'toggle_enabled': tracks_hours and event.event_status == 'finished',
         })
-    unique_events = dc.events_qs().filter(dobro_ru_link_kind='unique').order_by('-created_at')
-    if event_ids is not None:
-        unique_events = unique_events.filter(id__in=event_ids)
-    for event in unique_events:
-        rows.append({
-            'title': event.dobro_ru_link or event.title, 'url': event.dobro_ru_link,
-            'kind': 'unique', 'kind_display': 'Уникальная', 'link_type_display': '—',
-            'is_active': True, 'events': [event], 'all_logged': event.dobro_ru_hours_logged,
-        })
-    if event_ids is not None:
-        # Общие ссылки, у которых после фильтрации не осталось меро из охвата, —
-        # не показываем вовсе (пустая строка бессмысленна).
-        rows = [r for r in rows if r['kind'] != 'shared' or r['events']]
+
     if only_unlogged:
-        rows = [r for r in rows if r['events'] and not r['all_logged']]
+        # «Не проставленные» = ведём учёт и часы ещё не отмечены.
+        rows = [r for r in rows if r['tracks_hours'] and not r['logged']]
     if has_link == 'yes':
-        rows = [r for r in rows if (r['url'] or '').strip()]
+        rows = [r for r in rows if r['url'].strip()]
     elif has_link == 'no':
-        rows = [r for r in rows if not (r['url'] or '').strip()]
-    # Только ЗАВЕРШЁННЫЕ меро с непроставленными часами — отчёт Добро.ру берёт в охват
-    # только их, иначе незавершённые молча выпадут и создадут видимость пустого отчёта.
-    unlogged_event_ids = sorted({
-        e.id for r in rows if not r['all_logged']
-        for e in r['events'] if e.event_status == 'finished' and not e.dobro_ru_hours_logged
-    })
+        rows = [r for r in rows if not r['url'].strip()]
+
+    # Для кнопки выгрузки — id завершённых меро с непроставленными часами (отчёт берёт
+    # в охват только их).
+    unlogged_event_ids = sorted(
+        r['event'].id for r in rows
+        if r['tracks_hours'] and not r['logged'] and r['event'].event_status == 'finished'
+    )
     return rows, unlogged_event_ids
 
 

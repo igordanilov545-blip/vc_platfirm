@@ -14,8 +14,8 @@
     </div>
 </div>
 
-{# Произвольный диапазон (скрыт по умолчанию) — связанная пара календарей с
-   Airbnb-подсветкой диапазона (initDateRangePair, base.html). #}
+{% comment %}Произвольный диапазон (скрыт по умолчанию) — связанная пара календарей с
+Airbnb-подсветкой диапазона (initDateRangePair, base.html).{% endcomment %}
 <div class="rs-custom" id="rs-custom-panel" hidden>
     <div class="rs-cal-pair" data-range-pair>
         <input type="text" data-range-start value="{{ date_from|date:'Y-m-d' }}" id="rs-date-from" hidden>

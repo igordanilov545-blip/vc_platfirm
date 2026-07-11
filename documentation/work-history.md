@@ -1059,3 +1059,32 @@ JS-гварды (`rangeComplete`, chip `dblclick`) на месте, чипы/с�
 `blog/templates/blog/partials/_report_scope.html` (не менялся — включается как есть),
 `blog/templates/blog/partials/_report_chips.html`, `blog/templates/blog/partials/_report_dobro.html`,
 `blog/views.py`, `blog/static/blog/css/nexus.css`.
+
+---
+
+## Отчёты · фикс Добро.ру (строка на меро) + утечка комментариев шаблона
+
+**Промт.** На Добро.ру в диапазоне мероприятия есть, а в таблице пусто (хотя выбраны все).
+Если у меро нет ссылки — меро должно быть в таблице, а в колонке «Ссылка» явно «нет ссылки».
+
+**Причина.** (1) Таблица Добро.ру была link-центричной: строки только для меро с
+записью Добро.ру (unique/shared), меро с kind='none' не попадали — при периоде без таких
+меро таблица выглядела пустой. (2) Заодно на странице как ТЕКСТ рендерились два
+многострочных `{# #}`-комментария (Django парсит `{# #}` только однострочно) в
+report_period.html и _report_scope.html.
+
+**Итог.** `views._dobro_rows` переписан на ПО-МЕРОПРИЯТИЮ: строка на каждое меро охвата,
+колонка «Ссылка» = unique-URL / URL общей ссылки / пусто→«нет ссылки»; чекбокс «часы
+проставлены» только у завершённого меро с ведением учёта (kind!='none'); фильтры
+only_unlogged/has_link работают по этим строкам; unlogged_event_ids для выгрузки — из тех
+же строк. `_report_dobro.html` перевёрстан: колонки Мероприятие/Ссылка/Тип/Часы
+проставлены, `data-sortable`, строки `tr data-href` (двойной клик открывает меро), «нет
+ссылки» пилюлей. `report_period.html`: обработчик галочки обновляет подпись
+«выставлены/не выставлены» и sort-value на месте (удалён мёртвый updateDobroStatusCell для
+старой мульти-меро разметки). Многострочные `{# #}` → `{% comment %}` в report_period.html
+и _report_scope.html. `manage.py check` чист; прогон под менеджером: комментарии больше не
+видны; в сезоне 13 строк-меро (все «нет ссылки», т.к. линкованные меро вне периода),
+has_link=no=13/has_link=yes=0; на диапазоне с unique-меро в колонке «Ссылка» реальный URL
+(https://dobro.ru/event/5000, тип «Уникальная»). Затронуты: blog/views.py,
+blog/templates/blog/partials/_report_dobro.html, blog/templates/blog/report_period.html,
+blog/templates/blog/partials/_report_scope.html.

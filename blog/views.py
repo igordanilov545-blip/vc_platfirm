@@ -2226,6 +2226,13 @@ def report_period(request):
     scope = _report_erp_scope(request)
     wants_partial = request.GET.get('partial') == '1' or is_ajax(request)
 
+    # Смена охвата (даты/статус/исключения) обновляет только чипы AJAX'ом — без
+    # перезагрузки страницы (раньше окно перезагружалось целиком, и браузер
+    # прыгал наверх). Панель режима обновляется отдельным запросом тем же fetch'ем.
+    if request.GET.get('scope_partial') == '1':
+        chips = _report_event_chips(scope['date_from'], scope['date_to'], scope['event_status'], scope['exclude_ids'])
+        return render(request, 'blog/partials/_report_chips.html', {'event_chips': chips})
+
     if wants_partial:
         return _report_render_panel(request, view_key, scope)
 

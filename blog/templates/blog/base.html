@@ -384,6 +384,7 @@
         initCategoryChips(root);
         initShiftChips(root);
         initDatepickers(root);
+        initDateRangePair(root);
         initTimepickers(root);
         initApplicationForm(root);
     }
@@ -711,6 +712,138 @@
             }
 
             renderMonth();
+        });
+    }
+
+    // ======================================================================
+    // Пара календарей выбора диапазона (data-range-pair) — «С» / «По» рядом,
+    // с Airbnb-подсветкой: концы диапазона залиты акцентом, дни между ними —
+    // тем же цветом приглушённо (.range-start/.range-end/.in-range, nexus.css).
+    // В отличие от initDatepickers (одиночный выбор на инпут, независимые
+    // календари) — здесь оба календаря синхронно знают про обе даты диапазона
+    // и перерисовываются вместе при любом клике в любом из них.
+    // ======================================================================
+    function initDateRangePair(root) {
+        root.querySelectorAll('[data-range-pair]').forEach(function (pairEl) {
+            if (pairEl.dataset.rangeInit) return;
+            pairEl.dataset.rangeInit = '1';
+
+            var startInput = pairEl.querySelector('[data-range-start]');
+            var endInput = pairEl.querySelector('[data-range-end]');
+            if (!startInput || !endInput) return;
+
+            var rangeStart = dpParseISO(startInput.value) || new Date();
+            var rangeEnd = dpParseISO(endInput.value) || rangeStart;
+            if (rangeEnd < rangeStart) { var t = rangeStart; rangeStart = rangeEnd; rangeEnd = t; }
+
+            // Два месяца видны сразу — «С» показывает месяц начала диапазона,
+            // «По» месяц конца (или следующий, если это тот же месяц — иначе
+            // сетки дублировались бы и было бы нечего листать по «По»).
+            var viewStart = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
+            var viewEnd = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1);
+            if (viewEnd.getTime() === viewStart.getTime()) {
+                viewEnd = new Date(viewStart.getFullYear(), viewStart.getMonth() + 1, 1);
+            }
+
+            function buildCalBlock(labelText) {
+                var wrap = document.createElement('div');
+                wrap.className = 'datepicker-wrap range-pair-cal';
+                var label = document.createElement('div');
+                label.className = 'range-pair-label';
+                label.textContent = labelText;
+                wrap.appendChild(label);
+                var cal = document.createElement('div');
+                cal.className = 'cal datepicker-inline';
+                wrap.appendChild(cal);
+                return { wrap: wrap, cal: cal };
+            }
+
+            var startBlock = buildCalBlock('С');
+            var endBlock = buildCalBlock('По');
+            pairEl.insertBefore(startBlock.wrap, startInput);
+            pairEl.insertBefore(endBlock.wrap, endInput);
+            startInput.hidden = true;
+            endInput.hidden = true;
+
+            function dayClasses(d) {
+                var classes = ['day'];
+                var isStart = dpSameDay(d, rangeStart);
+                var isEnd = dpSameDay(d, rangeEnd);
+                if (isStart) classes.push('range-start');
+                if (isEnd) classes.push('range-end');
+                if (!isStart && !isEnd && d > rangeStart && d < rangeEnd) classes.push('in-range');
+                if (dpSameDay(d, new Date())) classes.push('today');
+                return classes;
+            }
+
+            function renderCal(block, viewMonth, onNav) {
+                var year = viewMonth.getFullYear(), month = viewMonth.getMonth();
+                var firstDay = new Date(year, month, 1);
+                var startOffset = (firstDay.getDay() + 6) % 7;
+                var daysInMonth = new Date(year, month + 1, 0).getDate();
+
+                var html = '<div class="cal-head">'
+                    + '<button type="button" data-nav="-1" title="Предыдущий месяц">‹</button>'
+                    + '<span class="cal-head-title">' + DP_MONTHS[month] + ' ' + year + '</span>'
+                    + '<button type="button" data-nav="1" title="Следующий месяц">›</button>'
+                    + '</div>';
+                html += '<div class="cal-grid">';
+                DP_DOW.forEach(function (d) { html += '<div class="dow">' + d + '</div>'; });
+                for (var i = 0; i < startOffset; i++) html += '<div class="day empty"></div>';
+                for (var day = 1; day <= daysInMonth; day++) {
+                    var d = new Date(year, month, day);
+                    html += '<div class="' + dayClasses(d).join(' ') + '" data-date="' + dpToISO(d) + '">' + day + '</div>';
+                }
+                html += '</div>';
+                block.cal.innerHTML = html;
+
+                block.cal.querySelector('[data-nav="-1"]').addEventListener('click', function () { onNav(-1); });
+                block.cal.querySelector('[data-nav="1"]').addEventListener('click', function () { onNav(1); });
+                block.cal.querySelectorAll('.day:not(.empty)').forEach(function (cell) {
+                    cell.addEventListener('click', function () {
+                        onDayClick(dpParseISO(cell.getAttribute('data-date')));
+                    });
+                });
+            }
+
+            // Клик по дню — обычная схема двух кликов (Airbnb): диапазон стартует
+            // "закрытым" (pickingEnd=false), первый клик всегда начинает НОВЫЙ диапазон
+            // (start=end=дата клика); второй клик завершает его (меняет местами, если
+            // кликнули раньше начала); третий клик снова начинает новый — и так по кругу.
+            var pickingEnd = false;
+            function onDayClick(date) {
+                if (!pickingEnd) {
+                    rangeStart = date;
+                    rangeEnd = date;
+                    pickingEnd = true;
+                } else if (date < rangeStart) {
+                    rangeEnd = rangeStart;
+                    rangeStart = date;
+                    pickingEnd = false;
+                } else {
+                    rangeEnd = date;
+                    pickingEnd = false;
+                }
+                startInput.value = dpToISO(rangeStart);
+                endInput.value = dpToISO(rangeEnd);
+                startInput.dispatchEvent(new Event('change', { bubbles: true }));
+                rerenderBoth();
+            }
+
+            function rerenderBoth() {
+                renderCal(startBlock, viewStart, function (dir) {
+                    viewStart = new Date(viewStart.getFullYear(), viewStart.getMonth() + dir, 1);
+                    rerenderBoth();
+                });
+                renderCal(endBlock, viewEnd, function (dir) {
+                    viewEnd = new Date(viewEnd.getFullYear(), viewEnd.getMonth() + dir, 1);
+                    rerenderBoth();
+                });
+            }
+
+            startInput.value = dpToISO(rangeStart);
+            endInput.value = dpToISO(rangeEnd);
+            rerenderBoth();
         });
     }
 

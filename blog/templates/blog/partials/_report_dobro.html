@@ -11,9 +11,9 @@ report_period.html через data-dobro-toggle). Статус в колонке
     <h2>Добро.ру</h2>
     <div class="report-panel-actions">
         {% if only_unlogged %}
-        <a href="{% url 'report_period' %}?view=dobro&{{ scope_qs }}" class="btn secondary btn-sm">Показать все</a>
+        <button type="button" class="btn secondary btn-sm" data-report-table-toggle data-only-unlogged="0">Показать все</button>
         {% else %}
-        <a href="{% url 'report_period' %}?view=dobro&only_unlogged=1&{{ scope_qs }}" class="btn secondary btn-sm">Только не проставленные</a>
+        <button type="button" class="btn secondary btn-sm" data-report-table-toggle data-only-unlogged="1">Только не проставленные</button>
         {% endif %}
         {% if unlogged_event_ids %}
         <a href="{% url 'report_dobro_export' %}?scope=events&event_ids={{ unlogged_event_ids|join:',' }}" class="btn btn-sm" title="Excel-отчёт по завершённым мероприятиям с непроставленными часами">⬇ Скачать отчёт</a>
@@ -28,7 +28,6 @@ report_period.html через data-dobro-toggle). Статус в колонке
         <thead><tr>
             <th>Ссылка</th>
             <th>Тип</th>
-            <th>Категория</th>
             <th>Мероприятия</th>
             <th>Часы</th>
         </tr></thead>
@@ -36,14 +35,13 @@ report_period.html через data-dobro-toggle). Статус в колонке
         {% for row in rows %}
             <tr>
                 <td data-label="Ссылка">
-                    {% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener" class="dobro-link">{{ row.title }}</a>{% else %}<span class="dobro-link dobro-link--missing">{{ row.title }}</span>{% endif %}
+                    {% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener" class="dobro-link">{{ row.url }}</a>{% else %}<span class="dobro-link dobro-link--missing">{{ row.title }}</span>{% endif %}
                     {% if not row.is_active %}<span class="pill neutral dobro-inactive"><span class="dot"></span>неактивна</span>{% endif %}
                 </td>
                 <td data-label="Тип">
                     {% if row.kind == 'shared' %}<span class="pill info"><span class="dot"></span>{{ row.kind_display }}</span>
                     {% else %}<span class="pill warning"><span class="dot"></span>{{ row.kind_display }}</span>{% endif %}
                 </td>
-                <td data-label="Категория">{{ row.link_type_display }}</td>
                 <td data-label="Мероприятия">
                     <div class="dobro-events-list">
                     {% for e in row.events %}
@@ -64,7 +62,7 @@ report_period.html через data-dobro-toggle). Статус в колонке
                 </td>
             </tr>
         {% empty %}
-            <tr><td colspan="5">Ссылок Добро.ру пока нет.</td></tr>
+            <tr><td colspan="4">Ссылок Добро.ру пока нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>

@@ -4,7 +4,7 @@
 {% block content %}
 <h1>Отчёты</h1>
 
-<div class="card report-scope-card">
+<div class="card report-scope-card" id="report-scope-card">
     <div class="report-scope-row">
         {# Диапазон дат — компактный, открывается по клику (переиспользуем календарь проекта). #}
         <div class="rs-daterange">
@@ -16,25 +16,26 @@
                 <button type="button" class="rs-preset {% if period == 'season' %}active{% endif %}" data-preset="season">Сезон</button>
                 <button type="button" class="rs-preset {% if period == 'last_season' %}active{% endif %}" data-preset="last_season">Пр. сезон</button>
             </div>
-            <span class="pill neutral"><span class="dot"></span><span class="mono">{{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }}</span></span>
+            <span class="pill neutral" id="rs-range-label"><span class="dot"></span><span class="mono">{{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }}</span></span>
             <button type="button" class="btn secondary btn-sm" id="rs-custom-toggle" title="Задать произвольный диапазон">📅 Даты…</button>
         </div>
     </div>
 
-    {# Произвольный диапазон (скрыт по умолчанию) — два инлайновых календаря. #}
+    {# Произвольный диапазон (скрыт по умолчанию) — связанная пара календарей с
+       Airbnb-подсветкой диапазона (initDateRangePair, base.html). #}
     <div class="rs-custom" id="rs-custom-panel" hidden>
-        <div class="rs-cal-pair">
-            <label>С <input type="text" data-datepicker value="{{ date_from|date:'Y-m-d' }}" id="rs-date-from"></label>
-            <label>По <input type="text" data-datepicker value="{{ date_to|date:'Y-m-d' }}" id="rs-date-to"></label>
-            <button type="button" class="btn btn-sm" id="rs-custom-apply">Применить</button>
+        <div class="rs-cal-pair" data-range-pair>
+            <input type="text" data-range-start value="{{ date_from|date:'Y-m-d' }}" id="rs-date-from" hidden>
+            <input type="text" data-range-end value="{{ date_to|date:'Y-m-d' }}" id="rs-date-to" hidden>
         </div>
+        <button type="button" class="btn btn-sm" id="rs-custom-apply" style="margin-top:12px;">Применить</button>
     </div>
 
     <div class="report-scope-row">
         {# Статус-режим пула мероприятий. #}
         <div class="rs-status">
             <span class="rs-label">Мероприятия:</span>
-            <div class="rs-status-toggle">
+            <div class="rs-status-toggle" id="rs-status-toggle">
                 <button type="button" class="rs-status-btn {% if event_status == 'all' %}active{% endif %}" data-status="all">Все</button>
                 <button type="button" class="rs-status-btn {% if event_status == 'ongoing' %}active{% endif %}" data-status="ongoing">Идущие</button>
                 <button type="button" class="rs-status-btn {% if event_status == 'past' %}active{% endif %}" data-status="past">Прошедшие</button>
@@ -44,22 +45,11 @@
 
     <div class="report-scope-row rs-chips-row">
         <div class="rs-chips-head">
-            <span class="rs-label">В отчёте ({{ event_chips|length }}):</span>
+            <span class="rs-label" id="rs-chips-count">В отчёте ({{ event_chips|length }}):</span>
             <button type="button" class="btn secondary btn-sm" id="rs-chips-toggle" title="Скрыть/показать список мероприятий">Скрыть список</button>
         </div>
         <div class="rs-chips" id="rs-chips">
-            {% for chip in event_chips %}
-            <span class="rs-chip {{ chip.id|chip_color }} {% if chip.excluded %}rs-chip--excluded{% endif %}" data-id="{{ chip.id }}">
-                <span class="rs-chip-label">{{ chip.title }}{% if chip.date %} <span class="rs-chip-date">{{ chip.date }}</span>{% endif %}</span>
-                {% if chip.excluded %}
-                <button type="button" class="rs-chip-restore" data-restore="{{ chip.id }}" title="Вернуть в отчёт">↩</button>
-                {% else %}
-                <button type="button" class="rs-chip-x" data-exclude="{{ chip.id }}" title="Убрать из отчёта">×</button>
-                {% endif %}
-            </span>
-            {% empty %}
-            <span class="cat-chips-empty">В выбранном периоде мероприятий нет.</span>
-            {% endfor %}
+            {% include 'blog/partials/_report_chips.html' %}
         </div>
     </div>
 </div>
@@ -89,20 +79,55 @@
         var viewsRow = document.getElementById('report-views');
         if (!panel || !viewsRow) return;
 
-        // Текущий охват из URL — базис для ссылок панелей и перезагрузок при смене охвата.
+        // Текущий охват из URL — базис для ссылок панелей и AJAX-обновлений при смене охвата.
         function currentParams() { return new URLSearchParams(window.location.search); }
 
-        // --- Смена ОХВАТА: перезагрузка страницы (пул меро считается на сервере) ---
-        function reloadWithParams(mutate) {
+        // --- Полупрозрачный оверлей на время перезагрузки блока — вместо того чтобы
+        // стирать контент (panel.innerHTML = 'Загрузка…'), старый контент остаётся на
+        // месте и не даёт странице "прыгать" (сохраняется высота блока и scroll). ---
+        function withOverlay(el, task) {
+            var overlay = document.createElement('div');
+            overlay.className = 'report-block-overlay';
+            el.style.position = el.style.position || 'relative';
+            el.appendChild(overlay);
+            return task().finally(function () { overlay.remove(); });
+        }
+
+        // --- Смена ОХВАТА: два AJAX-запроса (чипы + активная панель режима), без
+        // перезагрузки страницы целиком — раньше window.location.search дёргал скролл
+        // наверх при каждом клике по чипу/пресету/кнопке "только не проставленные". ---
+        var scopeCard = document.getElementById('report-scope-card');
+        var chipsBox = document.getElementById('rs-chips');
+        var chipsCount = document.getElementById('rs-chips-count');
+
+        function applyScopeChange(mutate) {
             var p = currentParams();
             mutate(p);
-            window.location.search = p.toString();
+            history.replaceState(null, '', '?' + p.toString());
+            var chipsP = new URLSearchParams(p); chipsP.set('scope_partial', '1');
+            withOverlay(scopeCard, function () {
+                return fetch('{% url "report_period" %}?' + chipsP.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    .then(function (r) { return r.text(); })
+                    .then(function (html) {
+                        chipsBox.innerHTML = html;
+                        bindChipClicks();
+                        var count = chipsBox.querySelectorAll('.rs-chip').length;
+                        chipsCount.textContent = 'В отчёте (' + count + '):';
+                    });
+            });
+            // Панель режима считается по тому же (уже обновлённому в URL) охвату.
+            loadPanel(currentParams().get('view') || '{{ active_view }}', tableExtra(), false);
+        }
+
+        function tableExtra() {
+            var t = currentParams().get('table');
+            return t ? { table: t } : null;
         }
 
         // Пресеты периода.
         document.querySelectorAll('.rs-preset').forEach(function (btn) {
             btn.addEventListener('click', function () {
-                reloadWithParams(function (p) {
+                applyScopeChange(function (p) {
                     p.set('period', btn.getAttribute('data-preset'));
                     p.delete('date_from'); p.delete('date_to');
                     p.delete('exclude'); // новый период — новый пул, старые исключения не валидны
@@ -120,60 +145,67 @@
         // Список мероприятий охвата можно свернуть — так же, как произвольный диапазон дат;
         // список может быть длинным (десятки чипов), сворачивание освобождает экран.
         var chipsToggle = document.getElementById('rs-chips-toggle');
-        var chipsList = document.getElementById('rs-chips');
-        if (chipsToggle && chipsList) {
+        if (chipsToggle && chipsBox) {
             chipsToggle.addEventListener('click', function () {
-                chipsList.hidden = !chipsList.hidden;
-                chipsToggle.textContent = chipsList.hidden ? 'Показать список' : 'Скрыть список';
+                chipsBox.hidden = !chipsBox.hidden;
+                chipsToggle.textContent = chipsBox.hidden ? 'Показать список' : 'Скрыть список';
             });
         }
         var customApply = document.getElementById('rs-custom-apply');
         if (customApply) {
             customApply.addEventListener('click', function () {
-                // data-datepicker заменяет input на hidden с тем же name — читаем из обёртки.
-                var wraps = customPanel.querySelectorAll('.datepicker-wrap input[type=hidden]');
-                var from = wraps[0] ? wraps[0].value : '';
-                var to = wraps[1] ? wraps[1].value : '';
+                var from = document.getElementById('rs-date-from').value;
+                var to = document.getElementById('rs-date-to').value;
                 if (!from || !to) return;
-                reloadWithParams(function (p) {
+                applyScopeChange(function (p) {
                     p.delete('period');
                     p.set('date_from', from); p.set('date_to', to);
                     p.delete('exclude');
                 });
+                var rangeLabel = document.getElementById('rs-range-label');
+                if (rangeLabel) rangeLabel.querySelector('.mono').textContent = from.split('-').reverse().join('.') + ' — ' + to.split('-').reverse().join('.');
             });
         }
 
         // Статус-режим пула.
         document.querySelectorAll('.rs-status-btn').forEach(function (btn) {
             btn.addEventListener('click', function () {
-                reloadWithParams(function (p) {
+                document.querySelectorAll('.rs-status-btn').forEach(function (b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                applyScopeChange(function (p) {
                     p.set('event_status', btn.getAttribute('data-status'));
                     p.delete('exclude'); // смена статус-режима меняет пул
                 });
             });
         });
 
-        // Чипы: убрать / вернуть меро (правим ?exclude=).
+        // Чипы: клик по всему блоку (не только по иконке) убирает/возвращает меро
+        // в отчёт (правим ?exclude=). Делегирование — чипы перерисовываются AJAX'ом.
         function currentExclude() {
             var raw = currentParams().get('exclude') || '';
             return raw.split(',').filter(function (x) { return x.trim(); });
         }
-        document.getElementById('rs-chips').addEventListener('click', function (e) {
-            var ex = e.target.closest('[data-exclude]');
-            var re = e.target.closest('[data-restore]');
-            if (ex) {
-                var ids = currentExclude();
-                var id = ex.getAttribute('data-exclude');
-                if (ids.indexOf(id) === -1) ids.push(id);
-                reloadWithParams(function (p) { p.set('exclude', ids.join(',')); });
-            } else if (re) {
-                var id2 = re.getAttribute('data-restore');
-                var kept = currentExclude().filter(function (x) { return x !== id2; });
-                reloadWithParams(function (p) {
-                    if (kept.length) p.set('exclude', kept.join(',')); else p.delete('exclude');
-                });
-            }
-        });
+        function bindChipClicks() {
+            chipsBox.querySelectorAll('.rs-chip').forEach(function (chip) {
+                if (chip.dataset.bound) return; chip.dataset.bound = '1';
+                function toggle() {
+                    var id = chip.getAttribute('data-id');
+                    var excluded = chip.getAttribute('data-excluded') === '1';
+                    var ids = currentExclude();
+                    if (excluded) {
+                        ids = ids.filter(function (x) { return x !== id; });
+                    } else if (ids.indexOf(id) === -1) {
+                        ids.push(id);
+                    }
+                    applyScopeChange(function (p) {
+                        if (ids.length) p.set('exclude', ids.join(',')); else p.delete('exclude');
+                    });
+                }
+                chip.addEventListener('click', toggle);
+                chip.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+            });
+        }
+        bindChipClicks();
 
         // --- Смена РЕЖИМА: лёгкий AJAX (охват тот же) ---
         function panelUrl(viewKey, extra) {
@@ -200,6 +232,14 @@
                 if (btn.dataset.bound) return; btn.dataset.bound = '1';
                 btn.addEventListener('click', function () {
                     loadPanel('tables', { table: btn.getAttribute('data-report-table') }, true);
+                });
+            });
+            // «Только не проставленные» / «Показать все» в Добро.ру — тот же лёгкий
+            // AJAX, что и смена таблицы, без перезагрузки всей страницы.
+            root.querySelectorAll('[data-report-table-toggle]').forEach(function (btn) {
+                if (btn.dataset.bound) return; btn.dataset.bound = '1';
+                btn.addEventListener('click', function () {
+                    loadPanel('dobro', { only_unlogged: btn.getAttribute('data-only-unlogged') }, true);
                 });
             });
             // Пересчёт статуса в соседней колонке «Часы» сразу после клика по галочке —
@@ -242,22 +282,30 @@
             return el ? el.value : '';
         }
 
+        var panelLoaded = false;
         function loadPanel(viewKey, extra, pushView) {
-            panel.innerHTML = '<p style="color:var(--text-secondary);">Загрузка…</p>';
-            fetch(panelUrl(viewKey, extra), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-                .then(function (r) { return r.text(); })
-                .then(function (html) {
-                    panel.innerHTML = html;
-                    initPanel(panel);
-                    if (pushView) {
-                        var p = currentParams(); p.set('view', viewKey);
-                        if (extra && extra.table) p.set('table', extra.table);
-                        history.replaceState(null, '', '?' + p.toString());
-                    }
-                })
-                .catch(function () {
-                    panel.innerHTML = '<div class="card"><p>Не удалось загрузить раздел.</p></div>';
-                });
+            // Первая загрузка — панель пуста, оверлей ставить не на что; дальше —
+            // старый контент остаётся на экране под полупрозрачным оверлеем, вместо
+            // того чтобы стираться в "Загрузка…" (это и дёргало страницу — контент
+            // пропадал, менялась высота блока, скролл прыгал).
+            var task = function () {
+                return fetch(panelUrl(viewKey, extra), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                    .then(function (r) { return r.text(); })
+                    .then(function (html) {
+                        panel.innerHTML = html;
+                        initPanel(panel);
+                        panelLoaded = true;
+                        if (pushView) {
+                            var p = currentParams(); p.set('view', viewKey);
+                            if (extra && extra.table) p.set('table', extra.table); else p.delete('table');
+                            history.replaceState(null, '', '?' + p.toString());
+                        }
+                    })
+                    .catch(function () {
+                        panel.innerHTML = '<div class="card"><p>Не удалось загрузить раздел.</p></div>';
+                    });
+            };
+            if (panelLoaded) { withOverlay(panel, task); } else { task(); }
         }
 
         viewsRow.addEventListener('click', function (e) {

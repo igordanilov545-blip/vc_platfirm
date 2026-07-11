@@ -1,0 +1,9 @@
+{% load custom_tags %}
+{% for chip in event_chips %}
+<span class="rs-chip {{ chip.id|chip_color }} {% if chip.excluded %}rs-chip--excluded{% endif %}" data-id="{{ chip.id }}" data-excluded="{% if chip.excluded %}1{% else %}0{% endif %}" role="button" tabindex="0" title="{% if chip.excluded %}Вернуть в отчёт{% else %}Убрать из отчёта{% endif %}">
+    <span class="rs-chip-label">{{ chip.title }}{% if chip.date %} <span class="rs-chip-date">{{ chip.date }}</span>{% endif %}</span>
+    <span class="rs-chip-icon">{% if chip.excluded %}↩{% else %}×{% endif %}</span>
+</span>
+{% empty %}
+<span class="cat-chips-empty">В выбранном периоде мероприятий нет.</span>
+{% endfor %}

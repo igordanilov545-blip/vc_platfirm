@@ -1075,31 +1075,47 @@ input:focus, select:focus, textarea:focus {
 }
 .rs-preset.active, .rs-status-btn.active { background: var(--accent); color: var(--accent-text-on); font-weight: 600; }
 .rs-custom { border-top: 1px solid var(--border-subtle); padding-top: 12px; }
-/* Два календаря «С» / «По» рядом, каждый растягивается на свою половину ширины
-   карточки (а не сжимается до .cal { max-width:260px }) — на узких экранах
-   переходят в один столбец на всю ширину. */
+/* Два календаря «С» / «По» рядом (initDateRangePair) — каждый растягивается на
+   свою половину ширины карточки (а не сжимается до .cal { max-width:260px }),
+   на узких экранах переходят в один столбец. Airbnb-подсветка диапазона —
+   .range-start/.range-end/.in-range уже определены в базовой секции календаря. */
 .rs-cal-pair { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
-.rs-cal-pair label { font-size: 13px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 6px; flex: 1 1 320px; min-width: 280px; }
-.rs-cal-pair .datepicker-wrap, .rs-cal-pair .cal { width: 100%; max-width: none; }
+.rs-cal-pair .range-pair-cal { flex: 1 1 320px; min-width: 280px; }
+.rs-cal-pair .cal { width: 100%; max-width: none; }
+.range-pair-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
 
 .rs-chips-row { align-items: flex-start; }
 .rs-chips-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
 .rs-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; width: 100%; }
 .rs-chips[hidden] { display: none; }
 /* Цвет чипа — та же палитра cat-c0..c7 (chip_color), что у категорий/тим-лидеров:
-   стабильный по id, чтобы одно и то же мероприятие всегда было одного цвета. */
+   стабильный по id, чтобы одно и то же мероприятие всегда было одного цвета.
+   Весь чип — кликабельный блок (toggle exclude/include), не нужно целиться в
+   крестик отдельно. */
 .rs-chip {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--_soft); color: var(--_main);
-  border: 1px solid transparent; border-radius: 999px; padding: 5px 8px 5px 12px; font-size: 12.5px;
-  font-weight: 600;
+  border: 1px solid transparent; border-radius: 999px; padding: 5px 10px; font-size: 12.5px;
+  font-weight: 600; cursor: pointer; user-select: none;
 }
+.rs-chip:hover { filter: brightness(0.95); }
+:root[data-theme="dark"] .rs-chip:hover { filter: brightness(1.15); }
 .rs-chip-date { opacity: 0.75; font-size: 11px; font-weight: 500; }
+.rs-chip-icon { opacity: 0.75; font-size: 14px; line-height: 1; }
 /* Исключённое мероприятие — тот же цвет, сильно приглушённый (не серый), чтобы
    было видно, какого именно оно цвета/категории, просто "выключено" из отчёта. */
 .rs-chip--excluded { opacity: 0.35; }
-.rs-chip-x, .rs-chip-restore { border: none; background: transparent; cursor: pointer; color: inherit; opacity: 0.75; font-size: 15px; line-height: 1; padding: 0 2px; }
-.rs-chip-x:hover, .rs-chip-restore:hover { opacity: 1; }
+
+/* Оверлей на время AJAX-обновления блока (охват/панель режима) — старый контент
+   остаётся на месте (не стирается в "Загрузка…"), поэтому высота блока и scroll
+   страницы не скачут при смене периода/статуса/исключении меро. */
+.report-block-overlay {
+  position: absolute; inset: 0; z-index: 5;
+  background: var(--bg-page); opacity: 0.55;
+  border-radius: inherit;
+  cursor: wait;
+}
+:root[data-theme="dark"] .report-block-overlay { background: var(--bg-page); opacity: 0.6; }
 
 /* Переключатель режимов + панель */
 .report-views-card { padding: 12px 16px; }

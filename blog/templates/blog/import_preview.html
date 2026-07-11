@@ -3,8 +3,18 @@
 {% block content %}
 <div class="page-header">
     <h1>Загрузка заявок из Excel</h1>
+    {% if fixed_event %}
+    <a href="{% url 'event_detail' fixed_event.id %}" class="btn secondary">← К мероприятию</a>
+    {% else %}
     <a href="{% url 'pending_applications' %}" class="btn secondary">← К заявкам</a>
+    {% endif %}
 </div>
+
+{% if fixed_event %}
+<div class="card">
+    <p style="margin:0;">Все заявки будут добавлены на мероприятие: <b>{{ fixed_event.title }}</b>.</p>
+</div>
+{% endif %}
 
 {% if errors %}
 <div class="card">

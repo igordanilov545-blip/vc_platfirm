@@ -59,13 +59,21 @@ def _to_date(value):
     return None
 
 
-def parse_excel(file) -> dict:
-    """Возвращает превью: {'rows': [...], 'errors': [...]}.
+def parse_excel(file, fixed_event=None) -> dict:
+    """Возвращает превью: {'rows': [...], 'errors': [...], 'mismatched_titles': [...]}.
 
     Строки с несуществующим мероприятием не отбрасываются — помечаются
     event_missing=True с предложенными датами (по умолчанию сегодня,
     либо период, если он указан в файле), чтобы менеджер мог создать
     мероприятие прямо при подтверждении импорта.
+
+    `fixed_event` — загрузка с конкретной страницы мероприятия («Загрузить заявки»
+    на event_detail): колонка «Мероприятие» в файле полностью ИГНОРИРУЕТСЯ для
+    привязки — каждая строка гарантированно идёт на fixed_event, независимо от того,
+    что написано в файле. Если название в файле расходится с fixed_event.title —
+    строка не блокируется, но её исходное название попадает в `mismatched_titles`
+    (уникальные, без учёта регистра), чтобы менеджер явно подтвердил "всё равно
+    добавить" на превью (см. import_preview).
     """
     wb = openpyxl.load_workbook(file, data_only=True)
     ws = wb.active
@@ -73,16 +81,18 @@ def parse_excel(file) -> dict:
     rows_iter = ws.iter_rows(values_only=True)
     header = next(rows_iter, None)
     if not header:
-        return {'rows': [], 'errors': ['Файл пуст']}
+        return {'rows': [], 'errors': ['Файл пуст'], 'mismatched_titles': []}
 
     col_idx = {key: _find_col(header, names) for key, names in COLUMN_MAP.items()}
-    missing = [key for key in ('event', 'first_name') if col_idx[key] is None]
+    required = ('first_name',) if fixed_event else ('event', 'first_name')
+    missing = [key for key in required if col_idx[key] is None]
     if missing:
-        return {'rows': [], 'errors': [f'Не найдены обязательные колонки: {missing}']}
+        return {'rows': [], 'errors': [f'Не найдены обязательные колонки: {missing}'], 'mismatched_titles': []}
 
     today = timezone.now().date()
     rows = []
     errors = []
+    mismatched_titles = set()
     for line_no, row in enumerate(rows_iter, start=2):
         if row is None or all(v is None for v in row):
             continue
@@ -92,20 +102,25 @@ def parse_excel(file) -> dict:
             return row[idx] if idx is not None and idx < len(row) else None
 
         event_title_raw = get('event')
-        if not event_title_raw:
+        if fixed_event is None and not event_title_raw:
             errors.append(f'Строка {line_no}: не указано название мероприятия')
             continue
         # .strip() — иначе случайный лишний пробел в ячейке Excel (частый артефакт
         # копипаста) даёт "новое" мероприятие с визуально тем же названием, и дедуп
         # по event.id перестаёт совпадать между загрузками.
-        event_title = str(event_title_raw).strip()
+        event_title = str(event_title_raw).strip() if event_title_raw else ''
 
         first_name = get('first_name')
         if not first_name:
             errors.append(f'Строка {line_no}: не указано имя заявителя')
             continue
 
-        event = Event.objects.filter(title__iexact=event_title).first()
+        if fixed_event is not None:
+            event = fixed_event
+            if event_title and event_title.lower() != fixed_event.title.strip().lower():
+                mismatched_titles.add(event_title)
+        else:
+            event = Event.objects.filter(title__iexact=event_title).first()
 
         event_start = _to_date(get('event_start_date')) or today
         event_end = _to_date(get('event_end_date')) or event_start
@@ -128,7 +143,7 @@ def parse_excel(file) -> dict:
 
         rows.append({
             'event_id': event.id if event else None,
-            'event_title': event_title,
+            'event_title': event_title or (fixed_event.title if fixed_event else ''),
             'event_missing': event is None,
             'event_start_date': event_start.isoformat(),
             'event_end_date': event_end.isoformat(),
@@ -147,7 +162,7 @@ def parse_excel(file) -> dict:
             'line_no': line_no,
         })
 
-    return {'rows': rows, 'errors': errors}
+    return {'rows': rows, 'errors': errors, 'mismatched_titles': sorted(mismatched_titles)}
 
 
 def _create_event_with_days(row: dict) -> Event:

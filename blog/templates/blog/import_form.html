@@ -2,9 +2,16 @@
 {% block title %}Импорт заявок{% endblock %}
 {% block content %}
 <h1>Импорт заявок из Excel</h1>
+{% if fixed_event %}
+<div class="card">
+    <p style="margin:0;">Загрузка на мероприятие: <b>{{ fixed_event.title }}</b> — колонка
+    «Мероприятие» в файле будет проигнорирована, все заявки пойдут именно на него.</p>
+</div>
+{% endif %}
 <div class="card" style="max-width:500px;">
-    <form method="post" enctype="multipart/form-data">
+    <form method="post" enctype="multipart/form-data" action="{% url 'import_preview' %}{% if fixed_event %}?event={{ fixed_event.id }}{% endif %}">
         {% csrf_token %}
+        {% if fixed_event %}<input type="hidden" name="event" value="{{ fixed_event.id }}">{% endif %}
         {{ form.as_p }}
         <button type="submit" class="btn">Загрузить и посмотреть превью</button>
     </form>

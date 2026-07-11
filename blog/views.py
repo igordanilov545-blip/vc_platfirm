@@ -1812,17 +1812,47 @@ def application_process_all(request, event_id=None):
 
 @manager_required
 def import_preview(request):
+    """Excel-импорт заявок. Обычный вход (со страницы «Заявки») — мероприятие
+    определяется из колонки файла. Вход с конкретного мероприятия (?event=<id>,
+    кнопка «Загрузить заявки» на event_detail) — событие ЗАФИКСИРОВАНО: колонка
+    «Мероприятие» в файле полностью игнорируется для привязки, остальной пайплайн
+    (превью → подтверждение → commit) идентичен обычной загрузке.
+
+    Если в файле встречаются другие названия мероприятия (расхождение с fixed_event)
+    — показываем отдельный экран с перечнем уникальных названий и просим явно
+    подтвердить «всё равно добавить», прежде чем показать обычное превью."""
+    fixed_event_id = request.GET.get('event') or request.POST.get('event')
+    fixed_event = Event.objects.filter(pk=fixed_event_id).first() if fixed_event_id else None
+
     form = ExcelImportForm(request.POST or None, request.FILES or None)
-    if request.method == 'POST' and form.is_valid():
-        result = import_service.parse_excel(request.FILES['excel_file'])
+    if request.method == 'POST' and 'excel_file' in request.FILES and form.is_valid():
+        result = import_service.parse_excel(request.FILES['excel_file'], fixed_event=fixed_event)
         request.session['import_rows'] = [
             {**row, 'submitted_at': row['submitted_at'].isoformat() if row.get('submitted_at') else None}
             for row in result['rows']
         ]
+        request.session['import_fixed_event_id'] = fixed_event.id if fixed_event else None
+
+        if fixed_event and result['mismatched_titles']:
+            return render(request, 'blog/import_mismatch_confirm.html', {
+                'fixed_event': fixed_event,
+                'mismatched_titles': result['mismatched_titles'],
+                'errors': result['errors'],
+                'rows_count': len(result['rows']),
+            })
         return render(request, 'blog/import_preview.html', {
-            'rows': result['rows'], 'errors': result['errors'],
+            'rows': result['rows'], 'errors': result['errors'], 'fixed_event': fixed_event,
         })
-    return render(request, 'blog/import_form.html', {'form': form})
+
+    # Подтверждение "всё равно добавить" после экрана расхождений — строки уже в
+    # сессии из предыдущего шага, просто показываем обычное превью.
+    if request.method == 'POST' and request.POST.get('confirm_mismatch') == 'yes':
+        rows = request.session.get('import_rows', [])
+        return render(request, 'blog/import_preview.html', {
+            'rows': rows, 'errors': [], 'fixed_event': fixed_event,
+        })
+
+    return render(request, 'blog/import_form.html', {'form': form, 'fixed_event': fixed_event})
 
 
 @manager_required
@@ -1831,14 +1861,15 @@ def import_commit(request):
         return redirect('import_preview')
 
     rows = request.session.pop('import_rows', [])
+    fixed_event_id = request.session.pop('import_fixed_event_id', None)
     for row in rows:
         if row.get('submitted_at'):
             row['submitted_at'] = datetime.datetime.fromisoformat(row['submitted_at'])
 
     result = import_service.commit_import(rows)
     logger.info(
-        'Excel-импорт заявок подтверждён: by=%s created=%s updated=%s skipped=%s',
-        actor(request.user), result['created'], result['updated'], result['skipped'],
+        'Excel-импорт заявок подтверждён: by=%s created=%s updated=%s skipped=%s fixed_event=%s',
+        actor(request.user), result['created'], result['updated'], result['skipped'], fixed_event_id,
     )
     msg = f'Новых заявок: {result["created"]}.'
     if result['updated']:
@@ -1846,7 +1877,7 @@ def import_commit(request):
     if result['skipped']:
         msg += f' Без изменений: {result["skipped"]}.'
     messages.success(request, msg)
-    return redirect('event_list')
+    return redirect('event_detail', event_id=fixed_event_id) if fixed_event_id else redirect('event_list')
 
 
 # ---------------------------------------------------------------------------

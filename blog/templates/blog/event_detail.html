@@ -278,6 +278,9 @@
             {% if can_edit_applications %}
             {% comment %}Ручное добавление волонтёров — зафиксировано на текущем меро (?event=).{% endcomment %}
             <a href="{% url 'application_manual_create' %}?event={{ event.id }}" class="btn secondary btn-sm" data-modal data-modal-title="Добавить волонтёров">➕ Добавить волонтёров</a>
+            {% comment %}Excel-импорт зафиксирован на текущем меро — колонка «Мероприятие»
+            в файле игнорируется (import_preview?event=), см. pipeline на странице «Заявки».{% endcomment %}
+            <a href="{% url 'import_preview' %}?event={{ event.id }}" class="btn secondary btn-sm">📥 Загрузить заявки</a>
             {% endif %}
             {% if pending_count and can_edit_applications %}
             <span class="pill warning"><span class="dot"></span>Осталось обработать: {{ pending_count }}</span>

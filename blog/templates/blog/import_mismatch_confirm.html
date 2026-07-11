@@ -1,0 +1,38 @@
+{% extends 'blog/base.html' %}
+{% block title %}Расхождение названий мероприятия{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Расхождение с названием мероприятия</h1>
+    <a href="{% url 'event_detail' fixed_event.id %}" class="btn secondary">← К мероприятию</a>
+</div>
+
+{% if errors %}
+<div class="card">
+    <h3>Ошибки в файле</h3>
+    <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<div class="card">
+    <p>
+        Вы загружаете заявки на мероприятие <b>«{{ fixed_event.title }}»</b> (#{{ fixed_event.id }}),
+        но в файле в колонке «Мероприятие» указано {{ mismatched_titles|length|pluralize:"другое название,другие названия" }}:
+    </p>
+    <ul>
+        {% for title in mismatched_titles %}<li><b>{{ title }}</b></li>{% endfor %}
+    </ul>
+    <p style="color:var(--text-secondary); font-size:0.9rem;">
+        Колонка «Мероприятие» в файле будет проигнорирована — все {{ rows_count }} заявок
+        всё равно будут добавлены именно на «{{ fixed_event.title }}». Продолжить?
+    </p>
+    <form method="post" action="{% url 'import_preview' %}?event={{ fixed_event.id }}">
+        {% csrf_token %}
+        <input type="hidden" name="confirm_mismatch" value="yes">
+        <input type="hidden" name="event" value="{{ fixed_event.id }}">
+        <div class="event-form-actions">
+            <button type="submit" class="btn">Всё равно добавить на «{{ fixed_event.title }}»</button>
+            <a href="{% url 'event_detail' fixed_event.id %}" class="btn secondary">Отмена</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

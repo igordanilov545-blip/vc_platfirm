@@ -39,6 +39,18 @@ jobs:
             #    --build пересобирает образ при изменении кода/зависимостей.
             docker compose up -d --build
 
+            # 2b) nginx: перечитать конфиг И пересобрать upstream-резолв. При деплое web
+            #     пересоздаётся и получает новый IP; nginx конфиг монтируется volume'ом и
+            #     сам не перезапускается — поэтому принудительно reload'им (с проверкой
+            #     конфига). resolver в nginx.conf держит IP web актуальным в рантайме, а
+            #     reload гарантирует, что применится и обновлённый конфиг из репозитория.
+            docker compose up -d nginx
+            if docker exec vc_platform-nginx-1 nginx -t; then
+              docker exec vc_platform-nginx-1 nginx -s reload || docker compose restart nginx
+            else
+              docker compose restart nginx
+            fi
+
             # 3) Короткая пауза и статус (для наглядности в логах Actions).
             sleep 5
             docker compose ps

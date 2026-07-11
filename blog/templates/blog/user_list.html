@@ -8,7 +8,12 @@
 <div class="card" style="padding:0; overflow:hidden;">
     <table class="responsive-table" data-sortable data-hideable-columns data-infinite-scroll="{% url 'user_list' %}" id="users-table">
         <thead>
-            <tr><th data-sort-key="name">Имя</th><th data-sort-key="tg">Telegram</th><th data-sort-key="role">Роль</th><th data-sort-key="status">Статус</th><th data-sort-key="hours" class="num">Часов всего</th></tr>
+            <tr>
+                <th data-sort-key="name">Имя</th>
+                <th data-sort-key="tg">Telegram</th>
+                <th data-sort-key="hours" class="num" title="Часов за сезон / за всё время">Часов<br><span class="th-sub">сезон / всё время</span></th>
+                <th data-sort-key="events" class="num" title="Мероприятий за сезон / за всё время">Мероприятия<br><span class="th-sub">сезон / всё время</span></th>
+            </tr>
         </thead>
         {% include 'blog/partials/_user_list_rows.html' %}
     </table>

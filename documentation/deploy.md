@@ -1,9 +1,12 @@
-# Деплой на Beget + CI/CD
+# Деплой (ЛЕГАСИ: Beget shared) + CI/CD
 
-Прод-домен: **https://vc-platform.ru** (SSL, Let's Encrypt). Старый домен
-`vc.iedanimk.beget.tech` оставлен как резерв/совместимость и указывает на прежний
-инстанс.
-Хостинг: Beget shared («Python-сайт» на Passenger), Python 3.10, SQLite.
+> ⛔ **Устарело.** Прод переехал на собственный **VPS в Docker**
+> (db/web/bot/nginx/certbot). Актуальная инструкция — [docker-deploy.md](docker-deploy.md).
+> Старый shared-хостинг Beget отключён. Этот файл оставлен как история/справка по
+> Passenger-схеме (может пригодиться, если снова понадобится shared-хостинг).
+
+Прод-домен: **https://vc-platform.ru** (SSL, Let's Encrypt).
+Историческая схема ниже: Beget shared («Python-сайт» на Passenger), Python 3.10, SQLite.
 
 > ⚠️ **Особенность Beget при нескольких доменах:** каждый домен запускается под своим
 > системным пользователем и НЕ имеет доступа к каталогам другого домена. Поэтому

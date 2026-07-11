@@ -1,10 +1,13 @@
-name: Deploy to Beget
+name: Deploy to VPS (Docker)
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+# Прод переехал на собственный VPS (Docker: db/web/bot/nginx/certbot).
+# CI/CD: заходим по SSH → git pull → docker compose up -d --build.
+# Миграции применяет entrypoint контейнера web (RUN_MIGRATIONS=1), статику — он же.
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -12,27 +15,19 @@ jobs:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.BEGET_HOST }}
-          username: ${{ secrets.BEGET_USER }}
-          key: ${{ secrets.BEGET_SSH_KEY }}
-          port: ${{ secrets.BEGET_SSH_PORT }}
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT }}
           command_timeout: "20m"
           script: |
             set -euo pipefail
 
-            # Прод переехал на домен vc-platform.ru (с SSL). Проект живёт ВНУТРИ
-            # каталога этого домена — на Beget каждый домен запускается под своим
-            # пользователем и не имеет доступа к каталогам другого домена.
-            # BEGET_PROJECT_DIR (секрет) может переопределить путь; иначе — новый домен.
-            DOMAIN_DIR="$HOME/vc-platform.ru"
-            PROJECT_DIR="${{ secrets.BEGET_PROJECT_DIR }}"
-            if [ -z "$PROJECT_DIR" ]; then
-              PROJECT_DIR="$DOMAIN_DIR/vc_platform"
-            fi
+            PROJECT_DIR="${{ secrets.VPS_PROJECT_DIR }}"
+            [ -z "$PROJECT_DIR" ] && PROJECT_DIR="$HOME/vc_platform"
             REPO="git@github.com:Willi-Wonkaa/vc_platform.git"
-            PY=/usr/bin/python3.10
 
-            # 1) Клонируем репозиторий при первом деплое, дальше — обновляем.
+            # 1) Обновляем код (репозиторий на VPS клонируется через deploy-key).
             if [ ! -d "$PROJECT_DIR/.git" ]; then
               git clone "$REPO" "$PROJECT_DIR"
             fi
@@ -40,32 +35,10 @@ jobs:
             git fetch --all
             git reset --hard origin/main
 
-            # 1b) Passenger-конфиг домена: держим .htaccess в актуальном виде из репо
-            #     (AppRoot обязан указывать внутрь этого домена — см. deploy/htaccess.public_html).
-            if [ -d "$DOMAIN_DIR/public_html" ] && [ -f deploy/htaccess.public_html ]; then
-              cp -f deploy/htaccess.public_html "$DOMAIN_DIR/public_html/.htaccess"
-            fi
+            # 2) Пересобираем и поднимаем стек. Миграции/collectstatic — в entrypoint web.
+            #    --build пересобирает образ при изменении кода/зависимостей.
+            docker compose up -d --build
 
-            # 2) venv (на shared-хостинге создаётся с --copies, симлинки запрещены).
-            if [ ! -x ".venv/bin/python" ]; then
-              virtualenv --copies -p "$PY" .venv
-            fi
-            source .venv/bin/activate
-            pip install --upgrade pip --quiet
-            pip install -r requirements.txt --quiet
-
-            # 3) Миграции и статика.
-            python manage.py migrate --noinput
-            python manage.py collectstatic --noinput
-
-            # 4) Перезапуск веб-приложения (Passenger следит за tmp/restart.txt).
-            #    После рестарта Passenger подхватит новый код, включая webhook-эндпоинт.
-            mkdir -p tmp
-            touch tmp/restart.txt
-
-            # 5) Telegram-бот на shared-хостинге Beget работает через WEBHOOK, а не
-            #    long polling (постоянный фоновый процесс тут убивается). Обновляем
-            #    регистрацию webhook у Telegram на случай смены URL/секрета.
-            #    Исходящие уведомления (notifier) крутит cron панели Beget через
-            #    `manage.py process_notifications` — см. documentation/deploy.md.
-            python manage.py set_webhook || echo "set_webhook: пропущено (проверьте HTTPS/секрет)"
+            # 3) Короткая пауза и статус (для наглядности в логах Actions).
+            sleep 5
+            docker compose ps

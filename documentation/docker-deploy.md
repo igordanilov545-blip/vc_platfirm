@@ -71,6 +71,22 @@ docker compose exec web python manage.py <cmd>
 - **Бэкап БД**: `docker compose exec db pg_dump -U $DB_USER $DB_NAME > backup.sql`.
 - **Обновление кода**: `git pull && docker compose up -d --build` (web сам применит миграции).
 
+## CI/CD (GitHub Actions → VPS)
+
+`.github/workflows/deploy.yml`: на push в `main` заходит по SSH на VPS →
+`git reset --hard origin/main` → `docker compose up -d --build` (миграции/статику
+применяет entrypoint web).
+
+Нужны два ключа:
+- **Deploy key** (VPS → GitHub, для `git clone/pull` приватного репо): пара
+  `~/.ssh/github_deploy` на VPS, публичная часть добавлена в **Settings → Deploy keys**
+  репозитория. `~/.ssh/config` направляет `github.com` на этот ключ.
+- **CI key** (GitHub Actions → VPS): пара `~/.ssh/gha_ci` на VPS, публичная часть в
+  `~/.ssh/authorized_keys`, приватная — в secret `VPS_SSH_KEY`.
+
+Секреты репозитория: `VPS_HOST`, `VPS_USER`, `VPS_SSH_PORT`, `VPS_SSH_KEY`,
+`VPS_PROJECT_DIR` (необязателен — по умолчанию `~/vc_platform`).
+
 ## Отличия от shared-прода
 
 - Бот: **long polling** вместо webhook — не нужен `/tg/webhook/`, бот независим от web.

@@ -1,11 +1,7 @@
 {% extends 'blog/base.html' %}
+{% load custom_tags %}
 {% block title %}Отчёты{% endblock %}
 {% block content %}
-{# ERP-хаб «Отчёты»: строка охвата (диапазон дат + статус-режим + чипы меро с «убиранием»)
-   + переключатель режимов (Дашборд/Таблицы/Добро.ру). Активный режим — в URL (?view=…),
-   панель режима подгружается AJAX'ом. Смена ОХВАТА (даты/статус/исключения) требует
-   пересчёта пула меро на сервере → перезагружает страницу целиком с новым ?exclude=…;
-   смена РЕЖИМА/таблицы — лёгкий AJAX без перезагрузки. #}
 <h1>Отчёты</h1>
 
 <div class="card report-scope-card">
@@ -46,14 +42,14 @@
         </div>
     </div>
 
-    {# Чипы охвата: пул меро периода. Крестик убирает меро из охвата (id → ?exclude=).
-       Убранные показываются приглушённо с «вернуть». Считается серверно, поэтому клик
-       перезагружает страницу с новым exclude. #}
     <div class="report-scope-row rs-chips-row">
-        <span class="rs-label">В отчёте ({{ event_chips|length }}):</span>
+        <div class="rs-chips-head">
+            <span class="rs-label">В отчёте ({{ event_chips|length }}):</span>
+            <button type="button" class="btn secondary btn-sm" id="rs-chips-toggle" title="Скрыть/показать список мероприятий">Скрыть список</button>
+        </div>
         <div class="rs-chips" id="rs-chips">
             {% for chip in event_chips %}
-            <span class="rs-chip {% if chip.excluded %}rs-chip--excluded{% endif %}" data-id="{{ chip.id }}">
+            <span class="rs-chip {{ chip.id|chip_color }} {% if chip.excluded %}rs-chip--excluded{% endif %}" data-id="{{ chip.id }}">
                 <span class="rs-chip-label">{{ chip.title }}{% if chip.date %} <span class="rs-chip-date">{{ chip.date }}</span>{% endif %}</span>
                 {% if chip.excluded %}
                 <button type="button" class="rs-chip-restore" data-restore="{{ chip.id }}" title="Вернуть в отчёт">↩</button>
@@ -119,6 +115,17 @@
         var customPanel = document.getElementById('rs-custom-panel');
         if (customToggle && customPanel) {
             customToggle.addEventListener('click', function () { customPanel.hidden = !customPanel.hidden; });
+        }
+
+        // Список мероприятий охвата можно свернуть — так же, как произвольный диапазон дат;
+        // список может быть длинным (десятки чипов), сворачивание освобождает экран.
+        var chipsToggle = document.getElementById('rs-chips-toggle');
+        var chipsList = document.getElementById('rs-chips');
+        if (chipsToggle && chipsList) {
+            chipsToggle.addEventListener('click', function () {
+                chipsList.hidden = !chipsList.hidden;
+                chipsToggle.textContent = chipsList.hidden ? 'Показать список' : 'Скрыть список';
+            });
         }
         var customApply = document.getElementById('rs-custom-apply');
         if (customApply) {
@@ -195,10 +202,24 @@
                     loadPanel('tables', { table: btn.getAttribute('data-report-table') }, true);
                 });
             });
+            // Пересчёт статуса в соседней колонке «Часы» сразу после клика по галочке —
+            // без этого он оставался старым до перезагрузки панели (баг из ToDo).
+            // «Выставлены» только если ВСЕ чекбоксы строки (все привязанные меро) отмечены.
+            function updateDobroStatusCell(row) {
+                var cell = row.querySelector('[data-dobro-status-cell]');
+                if (!cell) return;
+                var boxes = row.querySelectorAll('[data-dobro-row]');
+                if (!boxes.length) return;
+                var allLogged = Array.prototype.every.call(boxes, function (b) { return b.checked; });
+                cell.innerHTML = allLogged
+                    ? '<span class="pill success"><span class="dot"></span>Выставлены</span>'
+                    : '<span class="pill danger"><span class="dot"></span>Не выставлены</span>';
+            }
             root.querySelectorAll('[data-dobro-toggle]').forEach(function (box) {
                 if (box.dataset.bound) return; box.dataset.bound = '1';
                 box.addEventListener('change', function () {
                     var id = box.getAttribute('data-dobro-toggle');
+                    var row = box.closest('tr');
                     box.disabled = true;
                     fetch('/reports/dobro/' + id + '/toggle/', {
                         method: 'POST',
@@ -208,8 +229,9 @@
                     .then(function (res) {
                         if (!res.ok) { alert(res.d.error || 'Не удалось изменить статус.'); box.checked = !box.checked; }
                         else { box.checked = res.d.logged; }
+                        if (row) updateDobroStatusCell(row);
                     })
-                    .catch(function () { alert('Ошибка сети.'); box.checked = !box.checked; })
+                    .catch(function () { alert('Ошибка сети.'); box.checked = !box.checked; if (row) updateDobroStatusCell(row); })
                     .finally(function () { box.disabled = false; });
                 });
             });

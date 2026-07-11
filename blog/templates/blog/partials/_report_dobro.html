@@ -2,8 +2,10 @@
 Панель «Добро.ру» ERP-хаба отчётов (перенос страницы dobro_page). Таблица ссылок с
 привязанными меро; у каждого завершённого меро с ведением учёта — чекбокс «часы
 проставлены» (переключается AJAX'ом /reports/dobro/<id>/toggle/, обработчик в
-report_period.html через data-dobro-toggle). Кнопка «Скачать отчёт» — тот же 4-листовый
-Excel, что и раньше (report_dobro_export), финальный вид не меняем.
+report_period.html через data-dobro-toggle). Статус в колонке «Часы» пересчитывается
+на клиенте сразу при клике (без перезагрузки панели) — см. data-dobro-status-cell.
+Кнопка «Скачать отчёт» — тот же 4-листовый Excel, что и раньше (report_dobro_export),
+финальный вид не меняем.
 {% endcomment %}
 <div class="report-panel-head">
     <h2>Добро.ру</h2>
@@ -18,10 +20,11 @@ Excel, что и раньше (report_dobro_export), финальный вид �
         {% endif %}
     </div>
 </div>
-<p style="color:var(--text-secondary);">Все ссылки Добро.ру, их тип, привязанные мероприятия и статус простановки часов. Галочка отмечает, что часы по мероприятию уже проставлены.{% if only_unlogged %} <b>Показаны только ссылки с непроставленными часами.</b>{% endif %}</p>
+<p style="color:var(--text-secondary);">Все ссылки Добро.ру, их тип, привязанные мероприятия и статус простановки часов.{% if only_unlogged %} <b>Показаны только ссылки с непроставленными часами.</b>{% endif %}</p>
 
 <div class="card" style="padding:0; overflow:hidden;">
-    <table class="responsive-table">
+    <div class="table-scroll">
+    <table class="responsive-table dobro-table">
         <thead><tr>
             <th>Ссылка</th>
             <th>Тип</th>
@@ -33,8 +36,8 @@ Excel, что и раньше (report_dobro_export), финальный вид �
         {% for row in rows %}
             <tr>
                 <td data-label="Ссылка">
-                    {% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.title }}</a>{% else %}{{ row.title }}{% endif %}
-                    {% if not row.is_active %}<span class="pill neutral" style="margin-left:6px;"><span class="dot"></span>неактивна</span>{% endif %}
+                    {% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener" class="dobro-link">{{ row.title }}</a>{% else %}<span class="dobro-link dobro-link--missing">{{ row.title }}</span>{% endif %}
+                    {% if not row.is_active %}<span class="pill neutral dobro-inactive"><span class="dot"></span>неактивна</span>{% endif %}
                 </td>
                 <td data-label="Тип">
                     {% if row.kind == 'shared' %}<span class="pill info"><span class="dot"></span>{{ row.kind_display }}</span>
@@ -42,20 +45,22 @@ Excel, что и раньше (report_dobro_export), финальный вид �
                 </td>
                 <td data-label="Категория">{{ row.link_type_display }}</td>
                 <td data-label="Мероприятия">
+                    <div class="dobro-events-list">
                     {% for e in row.events %}
-                    <label class="dobro-event {% if e.event_status != 'finished' or e.dobro_ru_link_kind == 'none' %}dobro-event--locked{% endif %}" title="{% if e.event_status != 'finished' %}Доступно после завершения мероприятия{% elif e.dobro_ru_link_kind == 'none' %}Учёт часов не ведётся{% else %}Отметить, что часы проставлены{% endif %}">
-                        <input type="checkbox" data-dobro-toggle="{{ e.id }}" {% if e.dobro_ru_hours_logged %}checked{% endif %} {% if e.event_status != 'finished' or e.dobro_ru_link_kind == 'none' %}disabled{% endif %}>
-                        <a href="{% url 'event_detail' e.id %}" class="dobro-event-name">{{ e.title }}</a>
-                    </label>
+                        <label class="dobro-event {% if e.event_status != 'finished' or e.dobro_ru_link_kind == 'none' %}dobro-event--locked{% endif %}" title="{% if e.event_status != 'finished' %}Доступно после завершения мероприятия{% elif e.dobro_ru_link_kind == 'none' %}Учёт часов не ведётся{% else %}Отметить, что часы проставлены{% endif %}">
+                            <input type="checkbox" data-dobro-toggle="{{ e.id }}" data-dobro-row {% if e.dobro_ru_hours_logged %}checked{% endif %} {% if e.event_status != 'finished' or e.dobro_ru_link_kind == 'none' %}disabled{% endif %}>
+                            <a href="{% url 'event_detail' e.id %}" class="dobro-event-name">{{ e.title }}</a>
+                        </label>
                     {% empty %}
-                    <span style="color:var(--text-tertiary);">—</span>
+                        <span class="dobro-events-empty">—</span>
                     {% endfor %}
+                    </div>
                 </td>
-                <td data-label="Часы">
+                <td data-label="Часы" data-dobro-status-cell>
                     {% if row.events %}
                         {% if row.all_logged %}<span class="pill success"><span class="dot"></span>Выставлены</span>
                         {% else %}<span class="pill danger"><span class="dot"></span>Не выставлены</span>{% endif %}
-                    {% else %}<span style="color:var(--text-tertiary);">—</span>{% endif %}
+                    {% else %}<span class="dobro-events-empty">—</span>{% endif %}
                 </td>
             </tr>
         {% empty %}
@@ -63,4 +68,5 @@ Excel, что и раньше (report_dobro_export), финальный вид �
         {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>

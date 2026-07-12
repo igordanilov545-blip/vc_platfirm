@@ -1,9 +1,11 @@
-{% comment %}Блок «Мой опыт» — системный (участия) + внешний (ExternalExperience) опыт.
-Ожидает: experience (dict из build_experience), is_owner (bool), can_edit (bool).
-На публичной странице is_owner/can_edit = False.{% endcomment %}
+{% comment %}Блок «Внешний опыт» — только самозаявленный внешний опыт (ExternalExperience),
+НЕ входящий в статистику центра. Мероприятия центра (участия) теперь живут в объединённой
+таблице «Мероприятия и заявки» ниже (по каждой заявке — даты/статус/явка/часы), поэтому
+здесь их больше не дублируем — остаётся только внешнее, у которого нет ни заявки, ни явки.
+Ожидает: experience (dict из build_experience), can_edit (bool).{% endcomment %}
 <div class="card" id="experience" style="padding:0; overflow:hidden;">
     <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:20px 20px 0; flex-wrap:wrap;">
-        <h3 style="margin:0;">🎖️ Волонтёрский опыт</h3>
+        <h3 style="margin:0;">🌐 Внешний опыт</h3>
         {% if can_edit %}
         <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
             {% if experience_share_url %}
@@ -18,42 +20,32 @@
         {% endif %}
     </div>
 
+    {% comment %}Показываем только внешние записи; системные участия ушли в таблицу ниже.{% endcomment %}
     <table class="responsive-table" data-sortable data-collapse-rows="5">
-        <thead><tr><th data-sort-key="event">Мероприятие</th><th data-sort-key="date">Дата</th><th data-sort-key="kind">Тип</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+        <thead><tr><th data-sort-key="event">Мероприятие</th><th data-sort-key="date">Дата</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
         <tbody>
         {% for item in experience.items %}
+            {% if item.kind == 'external' %}
             <tr>
-                <td data-label="Мероприятие">
-                    {% if item.event_id %}
-                        <a href="{% url 'event_detail' item.event_id %}">{{ item.title }}</a>
-                    {% else %}
-                        {{ item.title }}
-                    {% endif %}
-                </td>
+                <td data-label="Мероприятие">{{ item.title }}</td>
                 <td data-label="Дата" class="mono">{{ item.date|default:"—" }}</td>
-                <td data-label="Тип">
-                    {% if item.kind == 'external' %}
-                        <span class="pill neutral"><span class="dot"></span>Внешнее</span>
-                    {% else %}
-                        <span class="pill success"><span class="dot"></span>Центр</span>
-                    {% endif %}
-                </td>
                 {% if can_edit %}
                 <td data-label="">
-                    {% if item.kind == 'external' %}
                     <a href="{% url 'external_experience_edit' item.exp_id %}" class="btn secondary" data-modal data-modal-title="Редактировать">✎</a>
                     <form method="post" action="{% url 'external_experience_delete' item.exp_id %}" class="inline"
                           onsubmit="return confirm('Удалить эту запись?');">
                         {% csrf_token %}
                         <button type="submit" class="btn danger">✕</button>
                     </form>
-                    {% endif %}
                 </td>
                 {% endif %}
             </tr>
+            {% endif %}
         {% empty %}
-            <tr><td colspan="{% if can_edit %}4{% else %}3{% endif %}">Опыта пока нет.</td></tr>
+            <tr><td colspan="{% if can_edit %}3{% else %}2{% endif %}">Внешнего опыта пока нет.</td></tr>
         {% endfor %}
+        {% comment %}Если участия центра есть, но внешнего опыта нет — {% empty %} не
+        сработает (items не пуст из-за системных). Явно подскажем.{% endcomment %}
         </tbody>
     </table>
 </div>

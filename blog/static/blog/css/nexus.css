@@ -1275,3 +1275,11 @@ input:focus, select:focus, textarea:focus {
 .dobro-link-filter .btn.active {
   background: var(--accent); color: var(--accent-text-on); border-color: var(--accent);
 }
+
+/* Таблица «Пользователи»: колонки по содержимому (не растягиваются на всю ширину,
+   иначе между «посл. мероприятие» и «часы» зияет пустота), таблица влезает на экран,
+   при нехватке ширины — горизонтальный скролл (.table-scroll). Перенос в заголовке
+   «Посл. мероприятие» уменьшает ширину колонки. */
+.users-table { width: auto; min-width: 0; }
+.users-table th, .users-table td { white-space: nowrap; }
+.users-table th[data-sort-key="name"], .users-table td:first-child { white-space: normal; }

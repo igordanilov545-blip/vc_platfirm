@@ -30,6 +30,7 @@ __all__ = [
     'create_location', 'get_locations',
     'create_event_category', 'get_event_categories',
     'create_event', 'get_events', 'get_open_events', 'get_active_events',
+    'get_unpublished_events', 'publish_event', 'get_broadcastable_events', 'mark_event_broadcast_sent',
     'create_dobro_ru_shared_link',
     'add_category_to_event', 'get_event_categories_map',
     'create_event_shift', 'get_event_shifts',
@@ -552,6 +553,43 @@ def get_open_events(limit: Optional[int] = None) -> List[Event]:
         .order_by('created_at')
     )
     return list(qs[:limit]) if limit else list(qs)
+
+
+def get_unpublished_events() -> List[Event]:
+    """Мероприятия, сформированные на сайте, но ещё не опубликованные (bot-update.md
+    §2.4.C) — `published_at IS NULL`, не завершённые."""
+    return list(
+        Event.objects.filter(published_at__isnull=True)
+        .exclude(event_status='finished')
+        .order_by('created_at')
+    )
+
+
+def publish_event(event: Event) -> Event:
+    """Публикует мероприятие: проставляет `published_at` (тонкая обёртка, зеркалит
+    `blog.views.event_publish` — бизнес-проверки делает вызывающий сервис)."""
+    event.published_at = timezone.now()
+    event.save(update_fields=['published_at'])
+    logger.info('UPDATE events: event=%s published_at=%s', event.id, event.published_at)
+    return event
+
+
+def get_broadcastable_events() -> List[Event]:
+    """Опубликованные, ещё не завершённые мероприятия — кандидаты для рассылки
+    (bot-update.md §2.4.D)."""
+    return list(
+        Event.objects.filter(published_at__isnull=False)
+        .exclude(event_status='finished')
+        .order_by('created_at')
+    )
+
+
+def mark_event_broadcast_sent(event: Event) -> Event:
+    """Проставляет `broadcast_sent_at` при ПЕРВОЙ рассылке по мероприятию (повторные
+    рассылки это поле не трогают — вызывающий сервис проверяет `was_sent_before`)."""
+    event.broadcast_sent_at = timezone.now()
+    event.save(update_fields=['broadcast_sent_at'])
+    return event
 
 
 def get_active_events() -> List[Event]:

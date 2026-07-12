@@ -82,6 +82,8 @@ async def _decide(callback: CallbackQuery, approve: bool):
         await callback.message.answer('⚠️ Заявка не найдена.')
         return
 
+    await sync_to_async(services.notify_manager_processed_application)(user.id, application)
+
     await callback.message.edit_reply_markup(reply_markup=None)
     if approve:
         name = f'{application.first_name} {application.last_name or ""}'.strip()
@@ -113,6 +115,8 @@ async def cb_shift_approve(callback: CallbackQuery):
     if error:
         await callback.message.answer('⚠️ Заявка или смена не найдена.')
         return
+
+    await sync_to_async(services.notify_manager_processed_application)(user.id, application)
 
     name = f'{application.first_name} {application.last_name or ""}'.strip()
     await callback.message.answer(f'✅ Заявка {name} одобрена на выбранную смену. Волонтёр получил уведомление.')

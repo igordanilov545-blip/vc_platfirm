@@ -47,6 +47,8 @@ def main_menu(is_team_leader: bool = False, is_manager: bool = False) -> ReplyKe
         builder.button(text='👥 Мои мероприятия (ТЛ)')
     if is_manager:
         builder.button(text='⚙️ Управление')
+        builder.button(text='📢 Опубликовать меро')
+        builder.button(text='📨 Сделать рассылку')
     # Тумблер уведомлений о новых заявках — только у тех, кому они вообще приходят
     # (ТЛ своих меро и менеджеры). Волонтёру эта кнопка не показывается (§5.5).
     if is_team_leader or is_manager:
@@ -220,6 +222,27 @@ def event_actions(event_id: int) -> InlineKeyboardMarkup:
     builder.button(text='📋 Все заявки', callback_data=f'event_apps:{event_id}')
     builder.button(text='✅ Одобрить все заявки', callback_data=f'event_apps_approve_all:{event_id}')
     builder.button(text='📝 Явка', callback_data=f'event_attendance:{event_id}')
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def publish_button(event_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text='Опубликовать', callback_data=f'event_publish:{event_id}')
+    return builder.as_markup()
+
+
+def broadcast_button(event_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text='Разослать', callback_data=f'event_broadcast:{event_id}')
+    return builder.as_markup()
+
+
+def published_offer_broadcast(event_id: int) -> InlineKeyboardMarkup:
+    """После публикации меро — предложить сразу сделать рассылку (узел `published`)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text='📨 Да, разослать', callback_data=f'event_broadcast:{event_id}')
+    builder.button(text='Нет', callback_data='dismiss')
     builder.adjust(1)
     return builder.as_markup()
 

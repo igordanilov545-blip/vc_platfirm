@@ -129,6 +129,23 @@ def notify_feedback_request(user: User, event):
     notify_user(user, text)
 
 
+def notify_manager_processed(application, manager: User):
+    """Заявку обработал именно менеджер (bot-update.md §2.4.A) → тим-лидерам этого меро
+    (не самому менеджеру — он и так знает, что сделал)."""
+    name = f'{manager.first_name} {manager.last_name or ""}'.strip() if manager else 'Менеджер'
+    status_label = 'одобрена' if application.status == 'approved' else 'резерв'
+    text = (
+        f'ℹ️ Заявка на «{application.event.title}» обработана менеджером {name}. '
+        f'Статус: {status_label}.'
+    )
+    staff_users = User.objects.filter(
+        staff_assignments__event=application.event, staff_assignments__staff_role='team_lead',
+        notify_applications=True,
+    ).distinct()
+    for user in staff_users:
+        notify_user(user, text)
+
+
 def notify_all_attended_to_managers(event, team_lead: User):
     """«Были все» от тим-лидера (bot-update.md §2.3.D) → активным менеджерам: можно
     забирать табличку часов по этому мероприятию."""

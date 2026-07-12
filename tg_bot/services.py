@@ -699,6 +699,86 @@ def active_events_with_organizers(user_id: int):
     return dc.get_active_events(), None
 
 
+def unpublished_events(user_id: int):
+    """Меро, сформированные на сайте, но не опубликованные (bot-update.md §2.4.C) —
+    только менеджер."""
+    close_old_connections()
+    user = get_user(user_id)
+    if not roles_service.is_manager(user):
+        return None, 'forbidden'
+    return dc.get_unpublished_events(), None
+
+
+def publish_event_from_bot(user_id: int, event_id: int):
+    """Публикация меро из бота (bot-update.md §2.4.C) — зеркалит `blog.views.event_publish`:
+    открывает подачу заявок, рассылку НЕ делает (отдельная кнопка). Возвращает
+    (event|None, код_ошибки|None)."""
+    close_old_connections()
+    user = get_user(user_id)
+    if not roles_service.is_manager(user):
+        return None, 'forbidden'
+    event = dc.get_event_by_id(event_id)
+    if not event:
+        return None, 'not_found'
+    if event.published_at:
+        return None, 'already_published'
+    if event.event_status == 'finished':
+        return None, 'finished'
+    dc.publish_event(event)
+    logger.info('Мероприятие опубликовано из бота: event=%s by=%s', event.id, actor(user))
+    return event, None
+
+
+def broadcastable_events(user_id: int):
+    """Активные (опубликованные, не завершённые) меро — кандидаты для рассылки
+    (bot-update.md §2.4.D), с датой последней рассылки — только менеджер."""
+    close_old_connections()
+    user = get_user(user_id)
+    if not roles_service.is_manager(user):
+        return None, 'forbidden'
+    return dc.get_broadcastable_events(), None
+
+
+def broadcast_event_from_bot(user_id: int, event_id: int):
+    """Рассылка по меро из бота (bot-update.md §2.4.D) — зеркалит `blog.views.event_broadcast`:
+    рассылка всем подписанным волонтёрам, `broadcast_sent_at` проставляется только при
+    первой рассылке. Возвращает (число адресатов|None, была_ли_рассылка_раньше, код_ошибки|None)."""
+    close_old_connections()
+    from blog.services.notifications import broadcast_new_event
+
+    user = get_user(user_id)
+    if not roles_service.is_manager(user):
+        return None, None, 'forbidden'
+    event = dc.get_event_by_id(event_id)
+    if not event:
+        return None, None, 'not_found'
+    if not event.published_at:
+        return None, None, 'not_published'
+    if event.event_status == 'finished':
+        return None, None, 'finished'
+
+    was_sent_before = event.broadcast_sent_at is not None
+    sent = broadcast_new_event(event)
+    if not was_sent_before:
+        dc.mark_event_broadcast_sent(event)
+    logger.info(
+        'Рассылка по меро из бота: event=%s адресатов=%s повторная=%s by=%s',
+        event.id, sent, was_sent_before, actor(user),
+    )
+    return sent, was_sent_before, None
+
+
+def notify_manager_processed_application(user_id: int, application):
+    """Оповещение ТЛ меро, что заявку обработал именно менеджер (bot-update.md §2.4.A) —
+    вызывается после успешной обработки, только если обработавший — менеджер (не ТЛ)."""
+    close_old_connections()
+    user = get_user(user_id)
+    if not roles_service.is_manager(user):
+        return
+    from blog.services.notifications import notify_manager_processed
+    notify_manager_processed(application, user)
+
+
 def pending_feedback_requests(delay_hours: float = 3.0) -> list:
     """Участники, кому пора отправить запрос на оценку мероприятия (tg-bot.md §4.6)."""
     close_old_connections()

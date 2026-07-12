@@ -405,6 +405,8 @@ tbody tr[data-href] { cursor: pointer; }
 tbody tr:hover { background: var(--bg-card-hover); }
 tbody tr:last-child td { border-bottom: none; }
 th.num, td.num { text-align: right; }
+/* Числовые колонки по центру (часы/мероприятия в списке пользователей). */
+th.col-center, td.col-center { text-align: center; }
 .th-sub { display: inline-block; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-tertiary); font-size: 11px; }
 td.mono, th.mono { font-family: var(--font-mono); }
 

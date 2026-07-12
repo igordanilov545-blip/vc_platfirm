@@ -4,7 +4,7 @@
     «Роль»/«Статус»): блэклист (чёрный) главнее роли; иначе менеджер (фиолетовый) →
     тим-лидер (синий) → волонтёр (серый). data-sort-value для сортировки по «важности».{% endcomment %}
     <tr data-href="{% url 'profile_detail' u.id %}" data-search="{{ u.full_name }} {{ u.telegram_username }}">
-        <td data-label="Имя" data-sort-value="{% if u.status == 'blacklisted' %}3{% elif u.id in manager_ids %}2{% elif u.id in team_leader_ids %}1{% else %}0{% endif %}">
+        <td data-label="Имя">
             {% if u.status == 'blacklisted' %}
                 <span class="role-badge role-blacklist" title="В блэклисте">{{ u.full_name }}</span>
             {% elif u.id in manager_ids %}
@@ -15,10 +15,18 @@
                 <span class="role-badge role-volunteer" title="Волонтёр">{{ u.full_name }}</span>
             {% endif %}
         </td>
+        {% comment %}Отдельная колонка «Роль»: блэклист главнее роли, дальше менеджер →
+        тим-лидер → волонтёр. data-sort-value кодирует «важность» для сортировки.{% endcomment %}
+        <td data-label="Роль" data-sort-value="{% if u.status == 'blacklisted' %}3{% elif u.id in manager_ids %}2{% elif u.id in team_leader_ids %}1{% else %}0{% endif %}">
+            {% if u.status == 'blacklisted' %}<span class="pill danger"><span class="dot"></span>Чёрный список</span>
+            {% elif u.id in manager_ids %}<span class="pill info"><span class="dot"></span>Менеджер</span>
+            {% elif u.id in team_leader_ids %}<span class="pill warning"><span class="dot"></span>Тим-лидер</span>
+            {% else %}<span class="pill neutral"><span class="dot"></span>Волонтёр</span>{% endif %}
+        </td>
         <td data-label="Telegram" data-sort-value="{{ u.telegram_username }}">{{ u.telegram_username|default:"—" }}</td>
         <td data-label="Посл. мероприятие" class="mono" data-sort-value="{{ u.last_attended_day|date:'Y-m-d'|default:'' }}">{{ u.last_attended_day|date:"d.m.y"|default:"—" }}</td>
-        <td data-label="Часов (сезон / всё)" class="num mono" data-sort-value="{{ u.total_hours }}">{{ u.season_hours }} / {{ u.total_hours }}</td>
-        <td data-label="Мероприятия (сезон / всё)" class="num mono" data-sort-value="{{ u.total_event_count }}">{{ u.season_event_count }} / {{ u.total_event_count }}</td>
+        <td data-label="Часов (сезон / всё)" class="col-center mono" data-sort-value="{{ u.total_hours }}">{{ u.season_hours }} / {{ u.total_hours }}</td>
+        <td data-label="Мероприятия (сезон / всё)" class="col-center mono" data-sort-value="{{ u.total_event_count }}">{{ u.season_event_count }} / {{ u.total_event_count }}</td>
     </tr>
 {% endfor %}
 </tbody>

@@ -40,10 +40,18 @@ def build_experience(user: User) -> dict:
     system_event_count = len(items)
 
     for exp in user.external_experiences.all():
+        if exp.date and exp.date_to and exp.date_to != exp.date:
+            date_display = f'{exp.date.strftime("%d.%m.%y")} — {exp.date_to.strftime("%d.%m.%y")}'
+        elif exp.date:
+            date_display = exp.date.strftime('%d.%m.%y')
+        else:
+            date_display = None
         items.append({
             'kind': 'external',
             'title': exp.title,
             'date': exp.date,
+            'date_display': date_display,
+            'description': exp.description,
             'event_id': None,
             'exp_id': exp.id,
         })

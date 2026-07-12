@@ -754,20 +754,36 @@ ProfileCompletionForm = ProfileForm
 
 class ExternalExperienceForm(forms.ModelForm):
     """Внешнее волонтёрское мероприятие (раздел «Мой опыт») — хранится как текст в
-    профиле и не влияет на статистику."""
+    профиле и не влияет на статистику. Дата — диапазон (date/date_to): большинство
+    внешних мероприятий однодневные, date_to можно оставить пустым."""
     class Meta:
         model = ExternalExperience
-        fields = ['title', 'date']
+        fields = ['title', 'date', 'date_to', 'description']
         widgets = {
             'title': forms.TextInput(attrs={'placeholder': 'Например: Городской субботник'}),
-            # Красивый календарь проекта (data-datepicker), как в смене мероприятия,
-            # вместо нативного type=date.
+            # Красивый календарь проекта (data-datepicker) с листанием по годам
+            # (data-dp-year-toggle в base.html), как в смене мероприятия — вместо
+            # нативного type=date. Два независимых одиночных календаря (не
+            # initDateRangePair — тот заточен под конкретную разметку строки охвата
+            # отчётов), date_to может остаться пустым для однодневного мероприятия.
             'date': forms.DateInput(
                 attrs={'type': 'text', 'data-datepicker': '', 'autocomplete': 'off'},
                 format='%Y-%m-%d',
             ),
+            'date_to': forms.DateInput(
+                attrs={'type': 'text', 'data-datepicker': '', 'autocomplete': 'off'},
+                format='%Y-%m-%d',
+            ),
+            'description': forms.TextInput(attrs={'placeholder': 'Например: Помощь на регистрации'}),
         }
-        labels = {'title': 'Название', 'date': 'Дата'}
+        labels = {'title': 'Название', 'date': 'Дата начала', 'date_to': 'Дата окончания (если несколько дней)', 'description': 'Что делал'}
+
+    def clean(self):
+        cleaned = super().clean()
+        date, date_to = cleaned.get('date'), cleaned.get('date_to')
+        if date and date_to and date_to < date:
+            self.add_error('date_to', 'Дата окончания не может быть раньше даты начала.')
+        return cleaned
 
 
 class ExcelImportForm(forms.Form):

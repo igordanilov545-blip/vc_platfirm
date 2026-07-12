@@ -81,6 +81,27 @@ def start_guest_inline() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def telegram_verify_prompt(token: str) -> InlineKeyboardMarkup:
+    """Кнопки «Да/Нет» при подтверждении владения Telegram из ЛК (deep-link
+    `?start=verify_<token>`). «Да» — верифицируем и привязываем id, «Нет» — гасим токен
+    и разлогиниваем инициатора на сайте (blog.services.telegram_verify)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text='✅ Да, это я', callback_data=f'tgverify_yes:{token}')
+    builder.button(text='❌ Нет, это не я', callback_data=f'tgverify_no:{token}')
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def back_to_site_button() -> InlineKeyboardMarkup:
+    """Кнопка «Обратно на сайт» после успешного подтверждения Telegram."""
+    url = (settings.WEBAPP_URL or '').strip()
+    if not url.startswith('https://'):
+        return None
+    builder = InlineKeyboardBuilder()
+    builder.button(text='🌐 Обратно на сайт', url=url.rstrip('/') + '/')
+    return builder.as_markup()
+
+
 def apply_button(event_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text='✅ Подать заявку', callback_data=f'apply:{event_id}')

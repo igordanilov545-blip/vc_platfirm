@@ -377,6 +377,25 @@ def profile_edit(request):
 complete_profile = profile_edit
 
 
+@login_required
+@require_POST
+def verify_telegram_start(request):
+    """ЛК → «Подтвердить телеграм»: создаём одноразовый токен и уводим пользователя в
+    бота по deep-link `?start=verify_<token>`. Дальнейшее — в боте (подтверждение да/нет),
+    см. blog.services.telegram_verify и хендлер common.cmd_start."""
+    from blog.services.telegram_verify import issue_verify_token
+
+    bot_username = (settings.TG_BOT_USERNAME or '').lstrip('@')
+    if not bot_username:
+        messages.error(request, 'Бот не сконфигурирован — обратитесь к менеджеру центра.')
+        return redirect('profile_edit')
+
+    token = issue_verify_token(request.user)
+    deep_link = f'https://t.me/{bot_username}?start=verify_{token.token}'
+    logger.info('Запущено подтверждение Telegram из ЛК: user=%s', request.user.id)
+    return redirect(deep_link)
+
+
 def tg_link_login(request, token):
     """Вход по одноразовой ссылке из бота (deep-link `?start=weblogin`): проверяем
     токен (не использован и не старше 5 минут), логиним и гасим токен."""
@@ -1406,6 +1425,26 @@ def participation_set_hours(request, participation_id):
 
 
 @login_required
+def application_set_profile_note(request, application_id):
+    """Инлайн-редактирование «Что делал» в единой таблице «Опыт и заявки» профиля
+    (AJAX, тот же паттерн, что participation_set_hours) — свободный текст, который
+    менеджер/ТЛ вписывает постфактум про заявку волонтёра. Доступно только тому, у
+    кого расширенный доступ к профилю ВЛАДЕЛЬЦА заявки (менеджер всегда; ТЛ — пока
+    контекстные условия выполняются), сам волонтёр эту заметку не редактирует."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Метод не поддерживается.'}, status=405)
+
+    application = get_object_or_404(Application.objects.select_related('user'), pk=application_id)
+    if not application.user or not has_extended_access_to_profile(request.user, application.user):
+        raise PermissionDenied('Нет доступа к профилю этого волонтёра.')
+
+    note = (request.POST.get('profile_note') or '').strip()
+    application.profile_note = note or None
+    application.save(update_fields=['profile_note'])
+    return JsonResponse({'profile_note': application.profile_note or ''})
+
+
+@login_required
 def participation_edit(request, participation_id):
     participation = get_object_or_404(
         Participation.objects.select_related('event_day__event', 'user'), pk=participation_id
@@ -1993,17 +2032,25 @@ def profile_detail(request, user_id):
                 'sort_date': shifts[0].day if shifts else None,
                 'date_display': ', '.join(s.day.strftime('%d.%m.%y') for s in shifts) or '—',
                 'application': app,
+                'note': app.profile_note,
                 'attendance_display': attendance_display,
                 'total_hours': total_hours,
             })
         for exp in target.external_experiences.all():
+            if exp.date and exp.date_to and exp.date_to != exp.date:
+                date_display = f'{exp.date.strftime("%d.%m.%y")} — {exp.date_to.strftime("%d.%m.%y")}'
+            elif exp.date:
+                date_display = exp.date.strftime('%d.%m.%y')
+            else:
+                date_display = '—'
             rows.append({
                 'kind': 'external',
                 'title': exp.title,
                 'event_id': None,
                 'sort_date': exp.date,
-                'date_display': exp.date.strftime('%d.%m.%y') if exp.date else '—',
+                'date_display': date_display,
                 'application': None,
+                'note': exp.description,
                 'attendance_display': None,
                 'total_hours': 0,
             })

@@ -13,10 +13,16 @@
 (function () {
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const NODE_W = 250;
-  const NODE_H = 92;
+  const NODE_H = 96;
   const H_GAP = 40;
   const V_GAP = 140;
   const KIND_TAG = { act: 'действие', warn: 'предупреждение', proact: 'бот сам' };
+  // Статус согласования блока тим-лидером.
+  const STATUS = {
+    approved: { emoji: '✅', label: 'Согласовано' },
+    review:   { emoji: '🔶', label: 'На утверждении' },
+  };
+  function statusOf(node) { return (node && node.status === 'approved') ? 'approved' : 'review'; }
 
   function el(tag, attrs, children) {
     const n = document.createElementNS(SVG_NS, tag);
@@ -79,7 +85,8 @@
     panel.querySelector('.step').textContent = node.title || '';
 
     const outEdges = DATA.edges.filter(e => e.from === id);
-    let html = '';
+    const st = STATUS[statusOf(node)];
+    let html = `<div class="status-line status-${statusOf(node)}">${st.emoji} ${st.label}</div>`;
     // Экран бота.
     html += `<div class="sect"><h4>💬 Что отвечает бот</h4><div class="bot-bubble">${esc(node.bot || '—')}</div>`;
     if (node.menu && node.menu.length) {
@@ -210,13 +217,18 @@
 
     for (const n of byId.values()) {
       const kind = n.kind || 'leaf';
-      const g = el('g', { class: `node-card node-${kind}`, 'data-id': n.id, transform: `translate(${n.px} ${n.py})` });
+      const stKey = statusOf(n);
+      const g = el('g', { class: `node-card node-${kind} status-${stKey}`, 'data-id': n.id, 'data-status': stKey, transform: `translate(${n.px} ${n.py})` });
       g.__nodeId = n.id;
       g.appendChild(el('rect', { class: 'node-rect', x: 0, y: 0, width: NODE_W, height: NODE_H, rx: 11 }));
+      // Бейдж согласования в правом верхнем углу карточки.
+      const badgeSt = el('text', { class: 'node-status', x: NODE_W - 12, y: 20, 'text-anchor': 'end' });
+      badgeSt.textContent = STATUS[stKey].emoji;
+      g.appendChild(badgeSt);
       let ty = 18;
       if (n.code) { const t = el('text', { class: 'node-code', x: 14, y: ty }); t.textContent = n.code; g.appendChild(t); ty += 16; }
       else ty += 2;
-      const titleLines = wrapText(n.title, 30);
+      const titleLines = wrapText(n.title, 27);
       for (let i = 0; i < titleLines.length && i < 2; i++) { const t = el('text', { class: 'node-title', x: 14, y: ty }); t.textContent = titleLines[i]; g.appendChild(t); ty += 15; }
       // Превью текста бота (2 строки).
       const botLines = wrapText(n.bot || '', 40);
@@ -245,6 +257,28 @@
     setupInteractions(svg, world, handleTap);
     if (data.title) { const h = document.querySelector('.cjm-topbar h1'); if (h) h.textContent = data.title; }
     if (data.subtitle) { const s = document.querySelector('.cjm-topbar .sub'); if (s) s.textContent = data.subtitle; }
+    setupApprovalUI(data);
+  }
+
+  /* ---- Панель согласования: счётчик + фильтр «только несогласованные» ---- */
+  function setupApprovalUI(data) {
+    const total = data.nodes.length;
+    const pending = data.nodes.filter(n => statusOf(n) === 'review').length;
+    const approved = total - pending;
+    const bar = document.querySelector('.cjm-topbar');
+    if (!bar) return;
+    const box = document.createElement('label');
+    box.className = 'appr-filter';
+    box.innerHTML = `<input type="checkbox" id="appr-only-pending">
+      <span class="appr-counts">✅ ${approved} · 🔶 ${pending} на утверждении</span>
+      <span class="appr-toggle">показать только 🔶</span>`;
+    // Вставляем перед навигацией, если она есть, иначе в конец топбара.
+    const nav = bar.querySelector('.cjm-nav');
+    if (nav) bar.insertBefore(box, nav); else bar.appendChild(box);
+    const cb = box.querySelector('#appr-only-pending');
+    cb.addEventListener('change', () => {
+      document.querySelector('.cjm-stage-wrap').classList.toggle('only-pending', cb.checked);
+    });
   }
 
   /* ---- Панорама/зум (идентично CJM) ---- */

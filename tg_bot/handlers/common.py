@@ -50,8 +50,27 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
 
     # Deep-link входа на сайт: t.me/<bot>?start=weblogin — авто-регистрация (если
     # новый, останется гостем) + одноразовая ссылка входа в веб-сессию.
-    if command is not None and (command.args or '').strip() == 'weblogin':
+    args = (command.args or '').strip() if command is not None else ''
+    if args == 'weblogin':
         await _send_web_login_link(message, user)
+        return
+
+    # Deep-link подтверждения Telegram из ЛК: t.me/<bot>?start=verify_<token>.
+    # Показываем инициатору («<ФИО> сейчас пытается подтвердить телеграм») кнопки да/нет.
+    if args.startswith('verify_'):
+        token = args[len('verify_'):]
+        name, err = await sync_to_async(services.verify_token_requester)(token)
+        if err:
+            await message.answer(
+                '⚠️ Ссылка для подтверждения недействительна или устарела. '
+                'Запросите её заново в личном кабинете на сайте.'
+            )
+            return
+        await message.answer(
+            f'🔐 <b>{name}</b> сейчас пытается подтвердить этот Telegram как свой.\n\n'
+            'Это вы? Подтвердите, что аккаунт действительно ваш.',
+            reply_markup=kb.telegram_verify_prompt(token),
+        )
         return
 
     if not created and not await sync_to_async(services.is_guest)(user):
@@ -208,6 +227,46 @@ async def cmd_appnotify(message: Message):
 async def cb_dismiss(callback: CallbackQuery, state: FSMContext):
     await state.update_data(pending_event_id=None)
     await callback.answer('Хорошо, вернёшься к этому позже.')
+
+
+@router.callback_query(F.data.startswith('tgverify_yes:'))
+async def cb_tgverify_yes(callback: CallbackQuery):
+    """«Да, это я» — верифицируем Telegram и (если был web:*) привязываем реальный id."""
+    token = callback.data.split(':', 1)[1]
+    user, err = await sync_to_async(services.confirm_telegram_verification)(
+        token, callback.from_user.id, callback.from_user.username,
+    )
+    if err == 'invalid':
+        await callback.message.edit_text(
+            '⚠️ Ссылка для подтверждения недействительна или устарела. '
+            'Запросите её заново в личном кабинете на сайте.'
+        )
+        await callback.answer()
+        return
+
+    text = '✅ Готово! Ваш Telegram подтверждён.'
+    if err == 'conflict':
+        text += ('\n\n⚠️ Этот Telegram уже привязан к другому аккаунту, поэтому мы только '
+                 'отметили подтверждение. Если это ошибка — напишите менеджеру центра.')
+    markup = kb.back_to_site_button()
+    await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer('Аккаунт верифицирован')
+
+
+@router.callback_query(F.data.startswith('tgverify_no:'))
+async def cb_tgverify_no(callback: CallbackQuery):
+    """«Нет, это не я» — гасим токен и разлогиниваем инициатора на сайте."""
+    token = callback.data.split(':', 1)[1]
+    _, err = await sync_to_async(services.reject_telegram_verification)(token)
+    if err == 'invalid':
+        await callback.message.edit_text('⚠️ Ссылка недействительна или уже использована.')
+        await callback.answer()
+        return
+    await callback.message.edit_text(
+        '🚫 Подтверждение отклонено. Тот, кто пытался подтвердить этот Telegram, '
+        'разлогинен на сайте в целях безопасности.'
+    )
+    await callback.answer('Отклонено')
 
 
 # ---------------------------------------------------------------------------

@@ -16,6 +16,16 @@
             {{ form.date }}
             {% if form.date.errors %}<div class="field-error">{{ form.date.errors|striptags }}</div>{% endif %}
         </div>
+        <div class="field">
+            {{ form.date_to.label_tag }}
+            {{ form.date_to }}
+            {% if form.date_to.errors %}<div class="field-error">{{ form.date_to.errors|striptags }}</div>{% endif %}
+        </div>
+        <div class="field">
+            {{ form.description.label_tag }}
+            {{ form.description }}
+            {% if form.description.errors %}<div class="field-error">{{ form.description.errors|striptags }}</div>{% endif %}
+        </div>
         <div class="event-form-actions">
             <button type="submit" class="btn">{{ submit_label|default:'Сохранить' }}</button>
         </div>

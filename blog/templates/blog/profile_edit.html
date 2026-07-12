@@ -23,14 +23,27 @@
 
     <div class="field">
         <label>Telegram</label>
-        {% if user.telegram_username %}
-            <p style="margin:4px 0;">@{{ user.telegram_username }} <span class="pill success" style="margin-left:6px;"><span class="dot"></span>привязан</span></p>
-        {% else %}
-            <p style="margin:4px 0;"><span class="pill warning"><span class="dot"></span>не привязан</span></p>
-        {% endif %}
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:4px 0;">
+            {% if user.telegram_username %}
+                <span>@{{ user.telegram_username }}</span>
+            {% endif %}
+            {% if user.telegram_verified %}
+                <span class="pill success"><span class="dot"></span>подтверждён</span>
+            {% elif user.telegram_username %}
+                <span class="pill warning"><span class="dot"></span>не подтверждён</span>
+            {% else %}
+                <span class="pill warning"><span class="dot"></span>не привязан</span>
+            {% endif %}
+            {% if not user.telegram_verified %}
+                <form method="post" action="{% url 'verify_telegram_start' %}" style="margin:0;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn secondary" style="padding:4px 12px; font-size:0.85rem;">Подтвердить телеграм</button>
+                </form>
+            {% endif %}
+        </div>
         <div style="color:var(--text-tertiary); font-size:12px;">
-            Telegram-юзернейм можно указать только через авторизацию в боте — это подтверждает,
-            что аккаунт действительно ваш. Веб-форма его не меняет.
+            «Подтвердить телеграм» перенесёт вас в бота — там подтвердите, что это ваш
+            аккаунт. Это доказывает, что Telegram действительно принадлежит вам.
         </div>
     </div>
 

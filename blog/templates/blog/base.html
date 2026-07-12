@@ -94,7 +94,7 @@
 {% endif %}
 
 <div class="page-wrapper{% if not user.is_authenticated %} page-wrapper-guest{% endif %}">
-    <main>
+    <main id="page-main">
         {% if messages %}
         <ul class="messages">
             {% for message in messages %}
@@ -285,6 +285,60 @@
         document.querySelectorAll('.timepicker-list').forEach(function (el) { el.remove(); });
     }
 
+    // ======================================================================
+    // «Мягкая» навигация после успешной модалки — вместо window.location.href
+    // (полная перезагрузка страницы, роняющая scroll и любое клиентское
+    // состояние вроде развёрнутых таблиц). Модалка просто закрывается, а целевая
+    // страница (success_redirect формы) подгружается AJAX'ом и подменяет только
+    // #page-main — заголовок/сайдбар/подвал не перерисовываются, но данные внутри
+    // страницы полностью свежие (это обычный GET той же вьюхи, не частичный патч).
+    // Если целевой URL — текущая страница (та же модалка на месте) — скролл и хэш
+    // сохраняются; если другая страница — history.pushState и скролл наверх.
+    // ======================================================================
+    function navigateSoft(url) {
+        var target = new URL(url, window.location.origin);
+        var samePage = target.pathname === window.location.pathname && target.search === window.location.search;
+
+        // Без X-Requested-With намеренно: многие вьюхи по этому заголовку отдают
+        // partial вместо полной страницы (is_ajax()) — soft-nav должен получить
+        // ровно то же самое, что обычный переход по ссылке (полный HTML, из
+        // которого мы вырезаем #page-main сами на клиенте).
+        return fetch(target.pathname + target.search, { headers: { 'X-Soft-Nav': '1' } })
+            .then(function (r) { return r.text().then(function (html) { return { ok: r.ok, html: html }; }); })
+            .then(function (result) {
+                if (!result.ok) { window.location.href = url; return; }
+                var doc = new DOMParser().parseFromString(result.html, 'text/html');
+                var newMain = doc.getElementById('page-main');
+                var curMain = document.getElementById('page-main');
+                if (!newMain || !curMain) { window.location.href = url; return; }
+                curMain.innerHTML = newMain.innerHTML;
+                var newTitle = doc.querySelector('title');
+                if (newTitle) document.title = newTitle.textContent;
+                if (!samePage) {
+                    history.pushState(null, '', target.pathname + target.search + target.hash);
+                }
+                initPageContent(curMain);
+                if (target.hash) {
+                    var anchor = document.getElementById(target.hash.slice(1));
+                    if (anchor) anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else if (!samePage) {
+                    window.scrollTo(0, 0);
+                }
+            })
+            .catch(function () { window.location.href = url; });
+    }
+
+    // Переинициализация интерактивных компонентов внутри свежеподменённого блока
+    // страницы (то же самое, что делается один раз при обычной загрузке страницы).
+    function initPageContent(root) {
+        ['initSortableTables', 'initHideableColumns', 'initTableFilter', 'initCharCounters',
+         'bindConfirmForms', 'initCategoryChips', 'initShiftChips', 'initDatepickers',
+         'initDateRangePair', 'initTimepickers', 'initUserPickers', 'initInfiniteScroll',
+         'bindRoleForms', 'initAttendanceHoursInputs', 'initProfileNoteInputs'].forEach(function (fn) {
+            if (typeof window[fn] === 'function') window[fn](root);
+        });
+    }
+
     function bindModalForm(formUrl) {
         var form = modalBody.querySelector('[data-modal-form], form');
         if (!form) return;
@@ -307,7 +361,8 @@
             })
             .then(function (result) {
                 if (result.redirect) {
-                    window.location.href = result.redirect;
+                    closeModal();
+                    navigateSoft(result.redirect);
                     return;
                 }
                 document.querySelectorAll('.timepicker-list').forEach(function (el) { el.remove(); });
@@ -2058,15 +2113,59 @@
         .finally(function () { input.disabled = false; });
     }
 
-    document.querySelectorAll('[data-attendance-hours]').forEach(function (input) {
-        var lastSaved = input.value;
-        input.addEventListener('change', function () {
-            if (input.value !== lastSaved) { lastSaved = input.value; sendParticipationHours(input); }
+    function initAttendanceHoursInputs(root) {
+        (root || document).querySelectorAll('[data-attendance-hours]').forEach(function (input) {
+            if (input.dataset.hoursInit) return;
+            input.dataset.hoursInit = '1';
+            var lastSaved = input.value;
+            input.addEventListener('change', function () {
+                if (input.value !== lastSaved) { lastSaved = input.value; sendParticipationHours(input); }
+            });
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+            });
         });
-        input.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    }
+    initAttendanceHoursInputs(document);
+
+    // «Что делал» — инлайн-редактирование прямо в единой таблице «Опыт и заявки»
+    // профиля (тот же паттерн, что часы явки выше): сохраняется по blur/Enter, без
+    // отдельной формы/модалки.
+    function sendProfileNote(input) {
+        var id = input.getAttribute('data-profile-note-input');
+        input.disabled = true;
+        fetch('/applications/' + id + '/set-profile-note/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: 'profile_note=' + encodeURIComponent(input.value) + '&csrfmiddlewaretoken=' + encodeURIComponent(getCsrfToken()),
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.error) { alert(data.error); return; }
+            input.value = data.profile_note;
+            var cell = input.closest('td');
+            if (cell) cell.setAttribute('data-sort-value', data.profile_note);
+        })
+        .catch(function () { alert('Не удалось сохранить. Попробуйте ещё раз.'); })
+        .finally(function () { input.disabled = false; });
+    }
+    function initProfileNoteInputs(root) {
+        (root || document).querySelectorAll('[data-profile-note-input]').forEach(function (input) {
+            if (input.dataset.noteInit) return;
+            input.dataset.noteInit = '1';
+            var lastSaved = input.value;
+            input.addEventListener('change', function () {
+                if (input.value !== lastSaved) { lastSaved = input.value; sendProfileNote(input); }
+            });
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+            });
         });
-    });
+    }
+    initProfileNoteInputs(document);
 
     var quickAddBackdrop = document.getElementById('quick-add-backdrop');
     var quickAddBody = document.getElementById('quick-add-body');

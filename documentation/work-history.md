@@ -1184,3 +1184,63 @@ _report_dashboard, reports.py, _report_dobro, report_period, urls, nexus.css.
 вручную runserver: менеджер на чужом профиле (user 5102) видит единую таблицу с
 внутренними заявками (включая отклонённые) в одном списке; менеджер на своём профиле
 (is_owner) видит только «Мой опыт» без изменений. `manage.py check` чист.
+
+---
+
+## 2026-07-12 · Claude Sonnet 5 · ветка `main` (ЛК: soft-navigation модалок, диапазон дат внешнего опыта, «Что делал»)
+
+**Промт:**
+> При добавлении нового мероприятия должно сразу перекидывать на страницу обратно,
+> ровно в то же место где был пользователь — просто закрывается модалка, без
+> перезагрузки. Также выбор диапазона дат, листание по годам, и новая колонка
+> «Что делал» — для внешних мероприятий и для внутренних от центра.
+
+**Тудушник:**
+- [x] Глобальный `navigateSoft(url)` (base.html) заменяет `window.location.href =
+  result.redirect` во ВСЕХ модалках проекта (не только внешний опыт) — AJAX GET на
+  тот же `redirect` URL без `X-Requested-With` (чтобы получить полную страницу, не
+  partial), парсинг через `DOMParser`, замена `#page-main` (новый id на `<main>` в
+  base.html), `history.pushState`/`replaceState` в зависимости от того, тот же путь
+  или другой, скролл к хэшу если есть. `initPageContent(root)` переинициализирует
+  все интерактивные компоненты внутри подменённого блока (список `init*`-функций,
+  идемпотентны через `dataset.xInit` флаги — новые DOM-узлы получают чистое
+  состояние). При ошибке (fetch failed / нет `#page-main` в ответе) — fallback на
+  старый `window.location.href`.
+- [x] `ExternalExperience`: новое поле `date_to` (диапазон, опционально — пусто
+  для однодневных, старые записи остаются такими) и `description` («Что делал»,
+  видно и редактируется самим волонтёром — это его собственная запись). Миграция
+  `0023`.
+- [x] `Application.profile_note` — отдельное поле «Что делал» для ВНУТРЕННИХ
+  мероприятий в единой таблице профиля (сознательно не переиспользовал
+  `functions` — тот заполняется волонтёром при подаче заявки и имеет другой
+  смысл). Видно и редактируется только менеджером/ТЛ с расширенным доступом
+  (`has_extended_access_to_profile`), сам волонтёр это поле не видит нигде — новый
+  AJAX-эндпоинт `application_set_profile_note` + инлайн-input в таблице (тот же
+  паттерн, что `data-attendance-hours`: сохранение по blur/Enter).
+- [x] `ExternalExperienceForm`: `date_to`/`description` — два одиночных
+  `data-datepicker` (не `initDateRangePair` — тот заточен под конкретную разметку
+  строки охвата отчётов), с листанием по годам «из коробки» (`data-dp-year-toggle`
+  уже был в датапикере). `clean()` проверяет `date_to >= date`.
+- [x] `build_experience`/`_experience_block.html` — диапазон дат и «Что делал»
+  показываются для внешнего опыта; для системных участий центра колонка
+  «Что делал» — прочерк (там `profile_note` намеренно скрыт от волонтёра).
+
+**Вопросы + ответы:**
+- Масштаб soft-navigation — глобально для всех модалок (не только внешнего опыта).
+- «Что делал» для внутренних — новое отдельное поле, не переиспользуем `functions`.
+- `profile_note` от волонтёра скрыт полностью (даже read-only) — только менеджер/ТЛ.
+
+**Итог:**
+Затронуты `blog/models.py` (ExternalExperience.date_to/description,
+Application.profile_note + миграция 0023), `blog/forms.py`
+(ExternalExperienceForm), `blog/services/experience.py`, `blog/views.py`
+(application_set_profile_note), `blog/urls.py`, `blog/templates/blog/base.html`
+(navigateSoft, initPageContent, initAttendanceHoursInputs/initProfileNoteInputs),
+`blog/templates/blog/external_experience_form.html`,
+`blog/templates/blog/partials/_experience_block.html`,
+`blog/templates/blog/profile_detail.html`. POST внешнего опыта с диапазоном дат
+подтверждён напрямую в БД (id=3, date=2026-05-01, date_to=2026-05-03,
+description сохранён). Живой прогон через runserver не завершён в момент
+разработки (соседняя параллельная работа над verify_telegram временно ломала
+manage.py check/urls.py) — на момент коммита `manage.py check` чист, обе части
+(моя и параллельная telegram_verify) консистентны вместе.

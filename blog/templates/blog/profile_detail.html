@@ -97,6 +97,7 @@
                 <th data-sort-key="event">Мероприятие</th>
                 <th data-sort-key="date" data-sort-default="desc">Дата</th>
                 <th data-sort-key="kind">Тип</th>
+                <th data-sort-key="note">Что делал</th>
                 <th data-sort-key="app-status">Статус заявки</th>
                 <th data-sort-key="attendance">Присутствие</th>
                 <th data-sort-key="hours" class="num">Часы</th>
@@ -115,10 +116,14 @@
                     {% else %}<span class="pill success"><span class="dot"></span>Внутреннее</span>{% endif %}
                 </td>
                 {% if row.kind == 'external' %}
+                <td data-label="Что делал" data-sort-value="{{ row.note|default:'' }}">{{ row.note|default:"—" }}</td>
                 <td data-label="Статус заявки" data-sort-value="">—</td>
                 <td data-label="Присутствие" data-sort-value="">—</td>
                 <td data-label="Часы" class="num mono" data-sort-value="0">—</td>
                 {% else %}
+                <td data-label="Что делал" data-sort-value="{{ row.note|default:'' }}">
+                    <input type="text" class="profile-note-input" data-profile-note-input="{{ a.id }}" value="{{ row.note|default:'' }}" placeholder="—" autocomplete="off">
+                </td>
                 <td data-label="Статус заявки" data-sort-value="{{ a.status }}">
                     {% if a.status == 'approved' %}<span class="pill success"><span class="dot"></span>{{ a.get_status_display }}</span>
                     {% elif a.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>{{ a.get_status_display }}</span>
@@ -131,7 +136,7 @@
             </tr>
             {% endwith %}
         {% empty %}
-            <tr><td colspan="6">Опыта пока нет.</td></tr>
+            <tr><td colspan="7">Опыта пока нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>

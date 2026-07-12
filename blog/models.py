@@ -95,6 +95,12 @@ class User(AbstractBaseUser):
     # При false карточка новой заявки не приходит, но заявка остаётся видна в разделах меро/«Все заявки».
     notify_applications = models.BooleanField(default=True)
 
+    # Флаг «Telegram подтверждён»: пользователь из личного кабинета нажал «Подтвердить
+    # телеграм», открыл бота по deep-link и подтвердил «да, это мой аккаунт». Это
+    # доказывает, что человек действительно владеет привязанным Telegram (в отличие от
+    # ФИО/юзернейма, подтянутых из Excel-заявок). Ставится в blog.services.telegram_verify.
+    telegram_verified = models.BooleanField(default=False)
+
     # Токен для публичной ссылки «Скопировать опыт» — открывает read-only блок
     # волонтёрского опыта без входа (раздел «Мой опыт»). Не угадывается перебором id.
     experience_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
@@ -602,6 +608,11 @@ class Application(models.Model):
     # (для менеджера/ТЛ на странице меро); пусто, если решение было обычным ручным.
     auto_reject_reason = models.TextField(blank=True, null=True)
 
+    # «Что делал» в колонке единой таблицы «Опыт и заявки» профиля (profile_detail.html) —
+    # свободный текст, который менеджер вписывает постфактум; НЕ то же самое, что
+    # `functions` (роль/функция, указанная волонтёром при подаче заявки).
+    profile_note = models.CharField(max_length=255, blank=True, null=True, verbose_name='Что делал')
+
     class Meta:
         db_table = 'applications'
         verbose_name = 'Заявка'
@@ -1001,7 +1012,13 @@ class ExternalExperience(models.Model):
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='external_experiences')
     title = models.CharField(max_length=255, verbose_name='Название')
-    date = models.DateField(blank=True, null=True, verbose_name='Дата')
+    date = models.DateField(blank=True, null=True, verbose_name='Дата начала')
+    # Конец диапазона — опционально; если пусто, мероприятие однодневное (date == date_to
+    # для отображения). Старые записи (до этого поля) остаются однодневными.
+    date_to = models.DateField(blank=True, null=True, verbose_name='Дата окончания')
+    # Что волонтёр делал на этом внешнем мероприятии — свободный текст, отдельно от
+    # title (название события) — profile_detail.html показывает это отдельной колонкой.
+    description = models.CharField(max_length=255, blank=True, null=True, verbose_name='Что делал')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1029,6 +1046,30 @@ class TelegramAuthToken(models.Model):
         db_table = 'telegram_auth_tokens'
         verbose_name = 'Токен входа через Telegram'
         verbose_name_plural = 'Токены входа через Telegram'
+
+    def is_valid(self) -> bool:
+        return self.used_at is None and timezone.now() < self.expires_at
+
+
+class TelegramVerifyToken(models.Model):
+    """Одноразовый токен подтверждения владения Telegram («Подтвердить телеграм» в ЛК).
+
+    Пользователь в личном кабинете нажимает кнопку → создаётся эта запись → его
+    переносит в бота по deep-link `?start=verify_<token>`. Бот показывает «<ФИО> сейчас
+    пытается подтвердить телеграм — да/нет». При «да» токен потребляется: реальный
+    `telegram_id` того, кто открыл бота, привязывается к аккаунту и ставится
+    `telegram_verified=True`. При «нет» токен гасится, а веб-сессии запросившего
+    пользователя завершаются (разлогин). См. blog.services.telegram_verify."""
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='verify_tokens')
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+    used_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'telegram_verify_tokens'
+        verbose_name = 'Токен подтверждения Telegram'
+        verbose_name_plural = 'Токены подтверждения Telegram'
 
     def is_valid(self) -> bool:
         return self.used_at is None and timezone.now() < self.expires_at

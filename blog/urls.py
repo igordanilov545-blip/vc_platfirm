@@ -10,6 +10,7 @@ urlpatterns = [
     path('auth/tg/<uuid:token>/', views.tg_link_login, name='tg_link_login'),
     path('profile/complete/', views.complete_profile, name='complete_profile'),
     path('profile/edit/', views.profile_edit, name='profile_edit'),
+    path('profile/verify-telegram/', views.verify_telegram_start, name='verify_telegram_start'),
     path('', views.dashboard, name='dashboard'),
     path('healthz/', views.healthz, name='healthz'),
 
@@ -39,6 +40,7 @@ urlpatterns = [
     path('participations/<int:participation_id>/edit/', views.participation_edit, name='participation_edit'),
     path('participations/<int:participation_id>/set-status/', views.participation_set_status, name='participation_set_status'),
     path('participations/<int:participation_id>/set-hours/', views.participation_set_hours, name='participation_set_hours'),
+    path('applications/<int:application_id>/set-profile-note/', views.application_set_profile_note, name='application_set_profile_note'),
 
     path('applications/new/', views.application_create, name='application_create'),
     path('applications/manual-create/', views.application_manual_create, name='application_manual_create'),

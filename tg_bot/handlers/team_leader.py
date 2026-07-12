@@ -195,52 +195,57 @@ async def cb_event_apps(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith('event_attendance:'))
 async def cb_event_attendance(callback: CallbackQuery):
-    """Экран явки по меро (tg-bot.md §5.3) — список участников с кнопками Был/Уваж./Неявка."""
+    """Явка после завершения меро — «Были все» / «Были не все» (bot-update.md §2.3.D)."""
     event_id = int(callback.data.split(':', 1)[1])
     user, _ = await sync_to_async(services.get_or_create_user)(
         callback.from_user.id, callback.from_user.username
     )
     await callback.answer()
-    participations, error = await sync_to_async(services.event_participants_for_attendance)(
-        user.id, event_id
-    )
+    ready, error = await sync_to_async(services.event_ready_for_attendance)(user.id, event_id)
     if error == 'forbidden':
         await callback.message.answer('⛔ Ты не тим-лидер этого мероприятия.')
         return
-    if not participations:
-        await callback.message.answer('📋 Участников с подтверждённой явкой пока нет.')
+    if not ready:
+        await callback.message.answer('📋 Явку можно отметить только после завершения мероприятия.')
         return
-
-    by_day = {}
-    for p in participations:
-        by_day.setdefault(p.event_day, []).append(p)
-
-    for shift, rows in sorted(by_day.items(), key=lambda kv: kv[0].day):
-        await callback.message.answer(f'📋 Явка — {shift.day.strftime("%d.%m.%Y")}')
-        for p in rows:
-            name = p.user.full_name
-            await answer_with_expiring_keyboard(callback.message, name, kb.attendance_row(p.id))
+    await answer_with_expiring_keyboard(
+        callback.message, 'Проставь явку по мероприятию:', kb.attendance_all_or_some(event_id),
+    )
 
 
-@router.callback_query(F.data.startswith('att:'))
-async def cb_attendance(callback: CallbackQuery):
-    _, participation_id_s, status = callback.data.split(':')
-    participation_id = int(participation_id_s)
+@router.callback_query(F.data.startswith('attend_all:'))
+async def cb_attend_all(callback: CallbackQuery):
+    event_id = int(callback.data.split(':', 1)[1])
     user, _ = await sync_to_async(services.get_or_create_user)(
         callback.from_user.id, callback.from_user.username
     )
-    participation, error = await sync_to_async(services.set_attendance)(
-        user.id, participation_id, status
-    )
+    count, error = await sync_to_async(services.mark_all_attended)(user.id, event_id)
     await callback.answer()
     if error == 'forbidden':
         await callback.message.answer('⛔ Ты не тим-лидер этого мероприятия.')
         return
     if error:
-        await callback.message.answer('⚠️ Запись об участии не найдена.')
+        await callback.message.answer('⚠️ Мероприятие не найдено.')
         return
+    await callback.message.edit_text(
+        '✅ Отмечено: пришли все. Менеджеру ушло уведомление, что можно забирать табличку для '
+        'проставления часов.'
+    )
 
-    await callback.message.answer('✅ Явка сохранена. Часы и статистика волонтёров пересчитаны.')
+
+@router.callback_query(F.data.startswith('attend_some:'))
+async def cb_attend_some(callback: CallbackQuery):
+    event_id = int(callback.data.split(':', 1)[1])
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        callback.from_user.id, callback.from_user.username
+    )
+    await callback.answer()
+    link = await sync_to_async(services.attendance_web_link)(user.id, event_id)
+    await callback.message.edit_text(
+        'Открой страницу мероприятия — там отметишь, кто был, а кто нет. '
+        'Ты авторизуешься автоматически.',
+        reply_markup=kb.attendance_web_link_button(link),
+    )
 
 
 @router.callback_query(F.data.startswith('comment:'))

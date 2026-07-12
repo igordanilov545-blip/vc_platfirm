@@ -231,12 +231,19 @@ def profile_comment_button(target_user_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def attendance_row(participation_id: int) -> InlineKeyboardMarkup:
+def attendance_all_or_some(event_id: int) -> InlineKeyboardMarkup:
+    """После завершения меро — явка «все/не все» (bot-update.md §2.3.D). «Были все» —
+    авто-attended всем; «Были не все» — ссылка на страницу меро с автологином."""
     builder = InlineKeyboardBuilder()
-    builder.button(text='✅ Был', callback_data=f'att:{participation_id}:attended')
-    builder.button(text='🙁 Уваж.', callback_data=f'att:{participation_id}:absent_excused')
-    builder.button(text='⛔ Неявка', callback_data=f'att:{participation_id}:absent_unexcused')
-    builder.adjust(3)
+    builder.button(text='✅ Были все', callback_data=f'attend_all:{event_id}')
+    builder.button(text='Были не все', callback_data=f'attend_some:{event_id}')
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def attendance_web_link_button(url: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text='🌐 Открыть страницу мероприятия', url=url)
     return builder.as_markup()
 
 

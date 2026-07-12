@@ -129,6 +129,21 @@ def notify_feedback_request(user: User, event):
     notify_user(user, text)
 
 
+def notify_all_attended_to_managers(event, team_lead: User):
+    """«Были все» от тим-лидера (bot-update.md §2.3.D) → активным менеджерам: можно
+    забирать табличку часов по этому мероприятию."""
+    name = f'{team_lead.first_name} {team_lead.last_name or ""}'.strip() if team_lead else 'Тим-лидер'
+    text = (
+        f'✅ Тим-лидер {name} отметил(а): на «{event.title}» были все. '
+        'Можно забирать табличку для проставления часов.'
+    )
+    manager_users = User.objects.filter(notify_applications=True).filter(
+        Exists(Manager.objects.filter(user=OuterRef('pk'), revoked_at__isnull=True))
+    )
+    for user in manager_users:
+        notify_user(user, text)
+
+
 def broadcast_new_event(event):
     """Оповещение о мероприятии → подписанным активным волонтёрам, КРОМЕ тех, кто уже
     подал заявку на это меро (им напоминание не нужно). Рассылку можно делать повторно

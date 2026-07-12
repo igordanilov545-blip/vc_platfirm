@@ -33,11 +33,6 @@ class WebCredentials(StatesGroup):
     waiting_password = State()
 
 
-class Attendance(StatesGroup):
-    """Простановка явки тим-лидером (tg-bot.md §5.3)."""
-    in_progress = State()
-
-
 class Comment(StatesGroup):
     """Комментарий волонтёру от ТЛ/менеджера (tg-bot.md §5.4)."""
     waiting_text = State()

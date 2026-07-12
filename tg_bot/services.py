@@ -604,41 +604,61 @@ def process_all_applications(user_id: int, event_id: int):
     return approved, None
 
 
-def event_participants_for_attendance(user_id: int, event_id: int):
-    """Список участников меро для простановки явки (tg-bot.md §5.3)."""
+def event_ready_for_attendance(user_id: int, event_id: int):
+    """Меро прошло и по нему уже можно отмечать явку (bot-update.md §2.3.D). Возвращает
+    (готово: bool, ошибка|None)."""
     close_old_connections()
     user = get_user(user_id)
     if not roles_service.can_process_applications(user, event_id):
-        return None, 'forbidden'
-    participations = dc.get_participations(event_id=event_id)
-    return participations, None
+        return False, 'forbidden'
+    event = dc.get_event_by_id(event_id)
+    if not event:
+        return False, 'not_found'
+    return event.compute_status() in ('passed', 'finished'), None
 
 
-def set_attendance(user_id: int, participation_id: int, status: str, hours: int = None):
-    """Проставляет явку и пересчитывает агрегаты/churn волонтёра (tg-bot.md §5.3)."""
+def mark_all_attended(user_id: int, event_id: int):
+    """«Были все» (bot-update.md §2.3.D) — все одобренные участия по меро становятся
+    `attended`, пересчёт статистики + уведомление менеджерам, что можно забирать
+    табличку часов. Возвращает (число обновлённых участий, код ошибки|None)."""
     close_old_connections()
-    from blog.models import Participation
-    from blog.services.stats import recalc_user_aggregates, apply_churn_no_show, apply_churn_activity_decay
+    from blog.services.stats import recalc_user_aggregates
+    from blog.services.notifications import notify_all_attended_to_managers
 
     user = get_user(user_id)
-    participation = Participation.objects.select_related('event_day__event', 'user').filter(pk=participation_id).first()
-    if not participation:
+    if not roles_service.can_process_applications(user, event_id):
+        return None, 'forbidden'
+    event = dc.get_event_by_id(event_id)
+    if not event:
         return None, 'not_found'
-    event_id = participation.event_day.event_id
-    if not roles_service.can_process_applications(user, event_id):
-        return None, 'forbidden'
 
-    dc.update_participation_status(participation, status, hours=hours, actor_user=user)
-    recalc_user_aggregates(participation.user)
-    if status == 'absent_unexcused':
-        apply_churn_no_show(participation.user)
-    elif status == 'attended':
-        apply_churn_activity_decay(participation.user)
-    logger.info(
-        'Явка проставлена из бота: participation=%s status=%s by=%s subject=%s',
-        participation_id, status, actor(user), actor(participation.user),
-    )
-    return participation, None
+    participations = dc.get_participations(event_id=event_id)
+    affected_users = set()
+    for p in participations:
+        if p.status != 'attended':
+            dc.update_participation_status(p, 'attended', actor_user=user)
+        affected_users.add(p.user)
+    for u in affected_users:
+        recalc_user_aggregates(u)
+    notify_all_attended_to_managers(event, user)
+    logger.info('Явка «были все» из бота: event=%s count=%s by=%s', event_id, len(participations), actor(user))
+    return len(participations), None
+
+
+def attendance_web_link(user_id: int, event_id: int) -> str:
+    """Ссылка с автологином на страницу меро для простановки явки «были не все»
+    (bot-update.md §2.3.D) — переиспользует одноразовый токен веб-входа из бота
+    (`web_auth.issue_auth_token`), с `next` на страницу конкретного мероприятия."""
+    close_old_connections()
+    from urllib.parse import quote
+    from django.conf import settings
+    from blog.services.web_auth import issue_auth_token
+
+    user = get_user(user_id)
+    token = issue_auth_token(user)
+    base = (settings.WEBAPP_URL or '').rstrip('/')
+    next_path = quote(f'/events/{event_id}/')
+    return f'{base}/auth/tg/{token.token}/?next={next_path}'
 
 
 def add_user_comment(user_id: int, target_user_id: int, text: str, event_id: int = None):

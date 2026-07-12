@@ -2285,17 +2285,16 @@ def _report_render_panel(request, view_key, scope):
 
 
 def _report_dashboard_panel(request, scope):
-    """Панель «Дашборд»: KPI-плитки + графики (воронка, динамика, набор по меро, топ
-    волонтёров, явка, оценки, категории). Считает только то, что показывается на экране."""
+    """Панель «Дашборд»: KPI-плитки + графики (набор по меро, явка-бублик, топ волонтёров,
+    оценки). Воронка/динамика/категории убраны из UI, поэтому не считаем (dynamics больше
+    не нужен). Считаем только то, что показывается на экране."""
     event_ids = scope['event_ids']
     date_from, date_to = scope['date_from'], scope['date_to']
     data = reports_service.period_report(date_from, date_to, event_ids=event_ids)
     efficiency = reports_service.recruitment_efficiency(date_from, date_to, event_ids=event_ids)
-    dynamics = reports_service.dynamics(date_from, date_to, event_ids=event_ids)
     return render(request, 'blog/partials/_report_dashboard.html', {
         'report': data,
         'efficiency': efficiency,
-        'dynamics': dynamics,
         'scope_qs': _report_scope_querystring(scope),
         'event_count': len(event_ids),
     })

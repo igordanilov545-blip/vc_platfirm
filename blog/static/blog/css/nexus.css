@@ -1137,13 +1137,50 @@ input:focus, select:focus, textarea:focus {
 .kpi-sub { font-size: 15px; color: var(--text-tertiary); font-weight: 500; }
 
 /* Сетка графиков */
-.report-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
-.chart-card { padding: 16px 18px; }
+/* Дашборд: ровно 2 колонки графиков (каждый .chart-card--half = половина ширины),
+   чтобы все 4–5 графиков умещались на экран рядом с KPI-плитками сверху. На узких
+   экранах — 1 колонка. */
+.report-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.chart-card { padding: 14px 16px; }
 .chart-card--wide { grid-column: 1 / -1; }
-.chart-card h3 { margin: 0 0 12px; }
+.chart-card--half { grid-column: span 1; }
+.chart-card h3 { margin: 0 0 10px; font-size: 15px; }
 .chart-sub { font-weight: 400; font-size: 12px; color: var(--text-tertiary); }
 .chart-note { font-size: 12px; color: var(--text-tertiary); margin-top: 10px; }
 .chart-empty { color: var(--text-tertiary); font-size: 13px; margin: 8px 0 0; }
+@media (max-width: 720px) { .report-charts { grid-template-columns: 1fr; } }
+
+/* Набор по мероприятиям: длинные названия переносятся (не в одну строку). */
+.rc-row-title { white-space: normal; word-break: break-word; line-height: 1.25; }
+
+/* Явка — бублик (donut) через conic-gradient + легенда справа. Толщина кольца задаётся
+   .donut-hole (белый круг по центру). Сегменты: пришли (успех) → уважит. (warning) →
+   без предупр. (danger). Углы = проценты (--att/--exc), остаток до 100 — danger. */
+.donut-wrap { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.donut {
+  --att: 0; --exc: 0;
+  width: 132px; height: 132px; border-radius: 50%; flex-shrink: 0; position: relative;
+  background: conic-gradient(
+    var(--success) 0 calc(var(--att) * 1%),
+    var(--warning) calc(var(--att) * 1%) calc((var(--att) + var(--exc)) * 1%),
+    var(--danger) calc((var(--att) + var(--exc)) * 1%) 100%
+  );
+}
+.donut-hole {
+  position: absolute; inset: 22px; border-radius: 50%; background: var(--bg-card);
+  display: flex; align-items: center; justify-content: center;
+}
+.donut-center { font-size: 22px; font-weight: 700; color: var(--text-primary); text-align: center; line-height: 1.05; }
+.donut-center small { display: block; font-size: 11px; font-weight: 500; color: var(--text-tertiary); }
+.legend--col { flex-direction: column; gap: 7px; }
+
+/* Оценки — вертикальные столбцы с числом сверху. Фикс. высота области, влезает в пол-карты. */
+.ratingchart { display: flex; align-items: flex-end; gap: 5px; height: 120px; padding-top: 4px; }
+.ratingchart-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; height: 100%; }
+.ratingchart-count { font-size: 11px; color: var(--text-secondary); }
+.ratingchart-track { flex: 1; width: 100%; max-width: 26px; display: flex; align-items: flex-end; }
+.ratingchart-fill { width: 100%; background: var(--info); border-radius: 3px 3px 0 0; min-height: 2px; transition: height .3s ease; }
+.ratingchart-x { font-size: 11px; color: var(--text-tertiary); }
 
 /* Воронка */
 .funnel { display: flex; flex-direction: column; gap: 8px; }

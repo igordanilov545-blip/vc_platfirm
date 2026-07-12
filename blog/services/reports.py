@@ -233,6 +233,7 @@ def _ratings_distribution(events):
         'buckets': buckets,
         'avg': round(avg, 1) if avg is not None else None,
         'count': total,
+        'max_count': max((b['count'] for b in buckets), default=0),
     }
 
 

@@ -40,7 +40,11 @@ views._dobro_rows): каждое меро периода в таблице, да
         {% for row in rows %}
             <tr data-href="{% url 'event_detail' row.event.id %}">
                 <td data-label="Мероприятие"><a href="{% url 'event_detail' row.event.id %}" class="dobro-event-name">{{ row.title }}</a></td>
-                <td data-label="Ссылка" data-sort-value="{% if row.url %}1{% else %}0{% endif %}">
+                {% comment %}Ссылку можно задать/поправить двойным кликом по ячейке (кроме
+                общих shared-ссылок — их источник общий на несколько меро). data-dobro-link-cell
+                — обработчик в report_period.html открывает инлайн-ввод URL.{% endcomment %}
+                <td data-label="Ссылка" data-sort-value="{% if row.url %}1{% else %}0{% endif %}"
+                    {% if row.kind != 'shared' %}data-dobro-link-cell data-event-id="{{ row.event.id }}" data-url="{{ row.url }}" title="Двойной клик — задать/изменить ссылку"{% endif %}>
                     {% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener" class="dobro-link">{{ row.url }}</a>
                     {% else %}<span class="pill danger dobro-link--missing"><span class="dot"></span>нет ссылки</span>{% endif %}
                 </td>

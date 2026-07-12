@@ -257,6 +257,57 @@
                     .finally(function () { box.disabled = false; });
                 });
             });
+
+            // Двойной клик по ячейке «Ссылка» (не shared) — инлайн-ввод URL, сохранение
+            // AJAX'ом на /reports/dobro/<id>/set-link/. Останавливаем всплытие, чтобы не
+            // сработал общий tr[data-href] (открытие мероприятия по двойному клику).
+            root.querySelectorAll('[data-dobro-link-cell]').forEach(function (cell) {
+                if (cell.dataset.bound) return; cell.dataset.bound = '1';
+                cell.addEventListener('dblclick', function (e) {
+                    e.stopPropagation();
+                    if (cell.querySelector('.dobro-link-edit')) return; // уже редактируем
+                    var id = cell.getAttribute('data-event-id');
+                    var current = cell.getAttribute('data-url') || '';
+                    var saved = cell.innerHTML;
+                    var box = document.createElement('div');
+                    box.className = 'dobro-link-edit';
+                    box.innerHTML =
+                        '<input type="url" class="dobro-link-input" placeholder="https://dobro.ru/event/…" value="' + current.replace(/"/g, '&quot;') + '">' +
+                        '<button type="button" class="btn btn-sm dobro-link-save">OK</button>' +
+                        '<button type="button" class="btn secondary btn-sm dobro-link-cancel">Отмена</button>';
+                    cell.innerHTML = '';
+                    cell.appendChild(box);
+                    var input = box.querySelector('.dobro-link-input');
+                    input.focus();
+                    function restore(html) { cell.innerHTML = html; }
+                    function save() {
+                        var url = input.value.trim();
+                        var body = new URLSearchParams(); body.append('url', url);
+                        fetch('/reports/dobro/' + id + '/set-link/', {
+                            method: 'POST',
+                            headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': getReportCsrf(), 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: body.toString(),
+                        })
+                        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+                        .then(function (res) {
+                            if (!res.ok) { alert(res.d.error || 'Не удалось сохранить ссылку.'); restore(saved); return; }
+                            // Перезагружаем панель Добро.ру — тип/статус часов зависят от ссылки.
+                            // Сохраняем активные фильтры панели (только не проставленные / есть-нет ссылка).
+                            var extra = {};
+                            var ou = currentParams().get('only_unlogged'); if (ou === '1') extra.only_unlogged = '1';
+                            var hl = currentParams().get('has_link'); if (hl) extra.has_link = hl;
+                            loadPanel('dobro', extra, false);
+                        })
+                        .catch(function () { alert('Ошибка сети.'); restore(saved); });
+                    }
+                    box.querySelector('.dobro-link-save').addEventListener('click', save);
+                    box.querySelector('.dobro-link-cancel').addEventListener('click', function () { restore(saved); });
+                    input.addEventListener('keydown', function (ev) {
+                        if (ev.key === 'Enter') { ev.preventDefault(); save(); }
+                        else if (ev.key === 'Escape') { restore(saved); }
+                    });
+                });
+            });
         }
 
         function getReportCsrf() {

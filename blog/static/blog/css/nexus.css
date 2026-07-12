@@ -1320,3 +1320,12 @@ input:focus, select:focus, textarea:focus {
 .users-table { width: auto; min-width: 0; }
 .users-table th, .users-table td { white-space: nowrap; }
 .users-table th[data-sort-key="name"], .users-table td:first-child { white-space: normal; }
+
+/* Инлайн-ввод ссылки Добро.ру (двойной клик по ячейке «нет ссылки»). */
+.dobro-link-edit { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.dobro-link-input {
+  flex: 1; min-width: 180px; padding: 5px 8px; font-size: 13px; font-family: inherit;
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+  background: var(--bg-card); color: var(--text-primary);
+}
+[data-dobro-link-cell] { cursor: pointer; }

@@ -7,8 +7,9 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import authenticate, login as auth_login, logout as auth_logout
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
+from django.core.validators import URLValidator
 from django.db.models import Avg, Count, Q
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -2774,6 +2775,36 @@ def report_dobro_toggle(request, event_id):
     event.dobro_ru_logged_by = request.user if event.dobro_ru_hours_logged else None
     event.save(update_fields=['dobro_ru_hours_logged', 'dobro_ru_logged_by'])
     return JsonResponse({'logged': event.dobro_ru_hours_logged})
+
+
+@manager_required
+def report_dobro_set_link(request, event_id):
+    """AJAX: задать/изменить уникальную ссылку Добро.ру мероприятию прямо из таблицы
+    Добро.ру (двойной клик по ячейке «нет ссылки» → модалка ввода URL). Ставит
+    dobro_ru_link_kind='unique' и dobro_ru_link=<url>. Пустой URL — снимает ссылку
+    (kind='none'). Общие (shared) ссылки отсюда не трогаем — их источник DobroRuSharedLink,
+    менять её здесь было бы неожиданно (она общая на несколько меро)."""
+    event = get_object_or_404(Event, pk=event_id)
+    if request.method != 'POST':
+        return JsonResponse({'error': 'method'}, status=405)
+    if event.dobro_ru_link_kind == 'shared':
+        return JsonResponse({'error': 'У мероприятия общая ссылка Добро.ру — измените её в справочнике общих ссылок.'}, status=400)
+    url = (request.POST.get('url') or '').strip()
+    if url:
+        # Мягкая валидация: ждём http(s)-ссылку.
+        validator = URLValidator()
+        try:
+            validator(url)
+        except ValidationError:
+            return JsonResponse({'error': 'Введите корректную ссылку (http/https).'}, status=400)
+        event.dobro_ru_link = url
+        event.dobro_ru_link_kind = 'unique'
+    else:
+        event.dobro_ru_link = None
+        event.dobro_ru_link_kind = 'none'
+        event.dobro_ru_hours_logged = False
+    event.save(update_fields=['dobro_ru_link', 'dobro_ru_link_kind', 'dobro_ru_hours_logged'])
+    return JsonResponse({'url': event.dobro_ru_link or '', 'kind': event.dobro_ru_link_kind})
 
 
 def _dobro_rows(only_unlogged=False, event_ids=None, has_link=None):

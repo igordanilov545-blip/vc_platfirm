@@ -72,6 +72,7 @@ urlpatterns = [
     path('reports/period/events-search/', views.report_events_search, name='report_events_search'),
     path('reports/dobro/export/', views.report_dobro_export, name='report_dobro_export'),
     path('reports/dobro/<int:event_id>/toggle/', views.report_dobro_toggle, name='report_dobro_toggle'),
+    path('reports/dobro/<int:event_id>/set-link/', views.report_dobro_set_link, name='report_dobro_set_link'),
     path('dobro/', views.dobro_page, name='dobro_page'),
     path('reports/event/<int:event_id>/pdf/', views.report_event_pdf, name='report_event_pdf'),
     path('reports/event/<int:event_id>/export/', views.report_event_export, name='report_event_export'),

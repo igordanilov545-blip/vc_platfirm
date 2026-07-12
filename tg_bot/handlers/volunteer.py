@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 
 from tg_bot import services, keyboards as kb
-from tg_bot.states import ApplicationCancel, ApplicationEdit, PendingApplication, Feedback, ShiftSelection
+from tg_bot.states import ApplicationCancel, PendingApplication, Feedback, ShiftSelection
 from tg_bot.ui import answer_with_expiring_keyboard
 
 router = Router(name='volunteer')
@@ -100,18 +100,25 @@ async def cb_apply(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-async def _show_shift_selection(message: Message, state: FSMContext, event_id: int, selected_ids: set = None):
+async def _show_shift_selection(message: Message, state: FSMContext, event_id: int,
+                                 selected_ids: set = None, editing: bool = False):
     shifts = await sync_to_async(services.event_open_shifts)(event_id)
     if not shifts:
         await message.answer(ERROR_TEXTS['closed'])
         return
     selected_ids = selected_ids or set()
-    await state.update_data(shift_event_id=event_id, shift_selected_ids=list(selected_ids))
+    data = await state.get_data()
+    await state.update_data(
+        shift_event_id=event_id, shift_selected_ids=list(selected_ids),
+        edit_application_id=data.get('edit_application_id') if editing else None,
+        shift_editing=editing,
+    )
     await state.set_state(ShiftSelection.choosing)
     title = await sync_to_async(get_event_title)(event_id)
+    header = f'✏️ «{title}» — измени смены (уже отмечены твои):' if editing else f'🗓 «{title}» — выбери смены:'
     await answer_with_expiring_keyboard(
-        message, f'🗓 «{title}» — выбери смены:',
-        kb.shift_selection_keyboard(event_id, shifts, selected_ids),
+        message, header,
+        kb.shift_selection_keyboard(event_id, shifts, selected_ids, editing=editing),
     )
 
 
@@ -121,6 +128,7 @@ async def cb_shift_pick(callback: CallbackQuery, state: FSMContext):
     event_id, shift_id = int(event_id_s), int(shift_id_s)
     data = await state.get_data()
     selected_ids = set(data.get('shift_selected_ids') or [])
+    editing = bool(data.get('shift_editing'))
     if shift_id in selected_ids:
         selected_ids.discard(shift_id)
     else:
@@ -130,7 +138,7 @@ async def cb_shift_pick(callback: CallbackQuery, state: FSMContext):
         await callback.message.delete()
     except Exception:
         pass
-    await _show_shift_selection(callback.message, state, event_id, selected_ids)
+    await _show_shift_selection(callback.message, state, event_id, selected_ids, editing=editing)
 
 
 @router.callback_query(ShiftSelection.choosing, F.data.startswith('shift_all:'))
@@ -192,10 +200,17 @@ async def _finalize_application(callback: CallbackQuery, state: FSMContext, even
     )
 
 
+@router.callback_query(F.data == 'myapp_ok')
+async def cb_myapp_ok(callback: CallbackQuery):
+    await callback.answer()
+    await callback.message.edit_reply_markup(reply_markup=None)
+
+
+@router.callback_query(F.data.startswith('myapp_edit:'))
 @router.callback_query(F.data.startswith('app_edit:'))
 async def cb_application_edit_start(callback: CallbackQuery, state: FSMContext):
-    """Начало изменения заявки (db.md правило 7d) — спрашиваем функцию, затем роль;
-    обе можно пропустить (оставить как в старой заявке)."""
+    """Редактирование заявки (bot-update.md §2.2.F) — экран выбора смен с уже
+    отмеченными текущими сменами заявки; снял все смены → предложение отменить."""
     application_id = int(callback.data.split(':', 1)[1])
     user, _ = await sync_to_async(services.get_or_create_user)(
         callback.from_user.id, callback.from_user.username
@@ -206,47 +221,54 @@ async def cb_application_edit_start(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer('⚠️ Заявка не найдена.')
         return
 
+    can_cancel, _, late_cancel_hours = await sync_to_async(services.application_cancel_eligibility)(
+        user.id, application_id
+    )
+    if not can_cancel:
+        await callback.message.answer(
+            f'До мероприятия осталось меньше допустимого ({late_cancel_hours:g} ч) — изменить '
+            'заявку через бота нельзя. Для редактирования напишите тим-лидеру.'
+        )
+        return
+
+    current_shift_ids = await sync_to_async(
+        lambda: set(application.selected_shifts.values_list('id', flat=True))
+    )()
     await state.update_data(edit_application_id=application_id)
-    await state.set_state(ApplicationEdit.waiting_functions)
-    await callback.message.answer(
-        'Какую функцию хочешь указать? (например «Регистрация гостей»)\n'
-        'Если менять не нужно — отправь «Пропустить».'
+    await _show_shift_selection(
+        callback.message, state, application.event_id, current_shift_ids, editing=True,
     )
 
 
-@router.message(ApplicationEdit.waiting_functions)
-async def application_edit_got_functions(message: Message, state: FSMContext):
-    text = (message.text or '').strip()
-    if text and text.lower() != 'пропустить':
-        await state.update_data(edit_functions=text)
-    await state.set_state(ApplicationEdit.waiting_role)
-    await message.answer(
-        'Какую роль хочешь указать? (например «Волонтёр на площадке»)\n'
-        'Если менять не нужно — отправь «Пропустить».'
-    )
-
-
-@router.message(ApplicationEdit.waiting_role)
-async def application_edit_got_role(message: Message, state: FSMContext):
-    text = (message.text or '').strip()
+@router.callback_query(ShiftSelection.choosing, F.data.startswith('shift_edit_apply:'))
+async def cb_shift_edit_apply(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    role_in_event = text if text and text.lower() != 'пропустить' else None
     application_id = data.get('edit_application_id')
-    functions = data.get('edit_functions')
+    selected_ids = data.get('shift_selected_ids') or []
     await state.set_state(None)
     await state.clear()
+    await callback.answer()
+
+    if not selected_ids:
+        # Снял все смены — по дереву это равносильно отмене заявки: просим причину.
+        await callback.message.answer(
+            '⚠️ Все смены сняты. Если хочешь отменить заявку — напиши причину отмены:'
+        )
+        await state.update_data(cancel_application_id=application_id)
+        await state.set_state(ApplicationCancel.waiting_reason)
+        return
 
     user, _ = await sync_to_async(services.get_or_create_user)(
-        message.from_user.id, message.from_user.username
+        callback.from_user.id, callback.from_user.username
     )
     new_application, error = await sync_to_async(services.edit_own_application)(
-        user.id, application_id, functions=functions, role_in_event=role_in_event
+        user.id, application_id, selected_ids
     )
     if error:
-        await message.answer('⚠️ Не удалось изменить заявку — возможно, она уже неактивна.')
+        await callback.message.answer('⚠️ Не удалось изменить заявку — возможно, она уже неактивна.')
         return
-    await message.answer(
-        f'✅ Новая заявка на «{new_application.event.title}» с обновлёнными данными отправлена! '
+    await callback.message.answer(
+        f'✅ Новая заявка на «{new_application.event.title}» с обновлёнными сменами отправлена! '
         'Тим-лидер рассмотрит её и пришлёт ответ сюда, в бот.'
     )
 
@@ -314,20 +336,35 @@ async def application_cancel_got_reason(message: Message, state: FSMContext):
 @router.message(Command('myapps'))
 @router.message(F.text == '📝 Мои заявки')
 async def cmd_myapps(message: Message):
+    """Мои заявки одним сообщением (bot-update.md §2.2.E): дата меро, значок ✅/❌ по
+    сменам, ссылка на пост. Кнопки «Редактировать»/«OK» — «OK» просто убирает кнопки."""
     user, _ = await sync_to_async(services.get_or_create_user)(
         message.from_user.id, message.from_user.username
     )
     apps = await sync_to_async(services.my_active_applications)(user.id)
     if not apps:
-        await message.answer('📝 У тебя пока нет активных заявок. Загляни в «📅 Мероприятия».')
+        await answer_with_expiring_keyboard(
+            message, '📝 У тебя пока нет заявок. Посмотри активные мероприятия — вдруг что-то подойдёт.',
+            kb.view_events_button(),
+        )
         return
 
-    status_icon = {'new': '🕓 На рассмотрении', 'approved': '✅ Одобрена'}
-    lines = ['📝 Твои активные заявки:\n']
+    lines = ['📝 Твои заявки:\n']
     for a in apps:
-        icon = status_icon.get(a['status'], a['status_display'])
-        lines.append(f"• «{a['event_title']}» — {icon} ({a['created_at'].strftime('%d.%m.%Y')})")
+        status_line = a['status_display']
+        if a.get('shifts_summary'):
+            status_line += f"\n   Смены: {a['shifts_summary']}"
+        if a.get('post_link'):
+            status_line += f"\n   🔗 {a['post_link']}"
+        lines.append(f"• «{a['event_title']}» — 📆 {a['created_at'].strftime('%d.%m.%Y')} — {status_line}\n")
     await message.answer('\n'.join(lines))
+
+    # Кнопки редактирования — отдельным маленьким сообщением на каждую заявку (общий
+    # текст уже отправлен одним блоком выше, здесь только действия).
+    for a in apps:
+        await answer_with_expiring_keyboard(
+            message, f"«{a['event_title']}»", kb.myapp_actions(a['id']),
+        )
 
 
 @router.message(Command('stats'))

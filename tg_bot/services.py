@@ -385,20 +385,33 @@ def apply_to_event(user_id: int, event_id: int, shift_ids: list = None):
 
 def my_active_applications(user_id: int) -> list:
     """Только активные заявки волонтёра на ещё актуальные меро (new/approved,
-    tg-bot.md §4.4) — заявки на уже прошедшие мероприятия сюда не попадают
-    (фильтр внутри `get_user_active_applications`)."""
+    tg-bot.md §4.4, bot-update.md §2.2.E) — заявки на уже прошедшие мероприятия сюда
+    не попадают (фильтр внутри `get_user_active_applications`). `shifts_summary` —
+    какие смены заявки уже решены (✅/❌ по каждой), `post_link` — пост меро, если есть."""
     close_old_connections()
     apps = dc.get_user_active_applications(user_id)
-    return [
-        {
+    result = []
+    for a in apps:
+        shifts = list(a.selected_shifts.all())
+        shifts_summary = None
+        if shifts:
+            decisions = {d.shift_id: d.status for d in a.shift_decisions.all()}
+            parts = []
+            for s in sorted(shifts, key=lambda s: s.day):
+                status = decisions.get(s.id, 'new')
+                icon = '✅' if status == 'approved' else ('❌' if status == 'rejected' else '⬜')
+                parts.append(f'{icon} {s.day.strftime("%d.%m")}')
+            shifts_summary = ' · '.join(parts)
+        result.append({
             'id': a.id,
             'event_title': a.event.title,
             'status': a.status,
             'status_display': a.get_status_display(),
             'created_at': a.created_at,
-        }
-        for a in apps
-    ]
+            'shifts_summary': shifts_summary,
+            'post_link': a.event.post_in_chanel_link or None,
+        })
+    return result
 
 
 def get_own_application(user_id: int, application_id: int):
@@ -439,16 +452,20 @@ def cancel_own_application(user_id: int, application_id: int, reason: str):
     return application, None
 
 
-def edit_own_application(user_id: int, application_id: int, functions: str = None, role_in_event: str = None):
-    """Изменение данных активной заявки (tg-bot.md §4.3.2, db.md правило 7d): создаёт
-    НОВУЮ запись `applications` с обновлёнными функцией/ролью и статусом `new` — старая
-    заявка остаётся в истории без изменений (дубли разрешены, см. правило 3). Возвращает
-    (новая_заявка|None, код_ошибки|None)."""
+def edit_own_application(user_id: int, application_id: int, shift_ids: list):
+    """Изменение смен активной заявки (bot-update.md §2.2.F, db.md правило 7d): создаёт
+    НОВУЮ запись `applications` с новыми `selected_shifts` и статусом `new` — старая
+    заявка остаётся в истории без изменений (дубли разрешены, см. правило 3). Плюс
+    запись в `ApplicationChangeLog` (как при повторном Excel-импорте), чтобы ТЛ увидел
+    изменение на странице меро. Возвращает (новая_заявка|None, код_ошибки|None)."""
     close_old_connections()
+    from blog.models import EventShift, ApplicationChangeLog
+
     old = get_own_application(user_id, application_id)
     if not old or old.status not in ('new', 'approved'):
         return None, 'not_found'
     user = get_user(user_id)
+    shifts = list(EventShift.objects.filter(pk__in=shift_ids, event=old.event)) if shift_ids else []
 
     from blog.services.requirements import check_application_requirements
     req_check = check_application_requirements(old.event, user)
@@ -461,13 +478,20 @@ def edit_own_application(user_id: int, application_id: int, functions: str = Non
         middle_name=old.middle_name,
         telegram_username=old.telegram_username,
         phone=old.phone,
-        functions=functions if functions is not None else old.functions,
-        role_in_event=role_in_event if role_in_event is not None else old.role_in_event,
+        functions=old.functions,
+        role_in_event=old.role_in_event,
         submitted_at=timezone.now(),
         status='rejected' if req_check['auto_reject'] else 'new',
         auto_reject_reason='; '.join(req_check['reasons']) if req_check['auto_reject'] else None,
     )
+    dc.set_application_shifts(new_application, shifts)
     notify_application_submitted(new_application, unknown_age=req_check['unknown_age'])
+
+    name = f'{old.first_name} {old.last_name or ""}'.strip()
+    ApplicationChangeLog.objects.create(
+        event=old.event, application=new_application, kind='changed',
+        text=f'{name} изменил(а) смены заявки через бота.',
+    )
     return new_application, None
 
 

@@ -146,17 +146,22 @@ def recognize_confirm_actions() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def shift_selection_keyboard(event_id: int, shifts, selected_ids: set) -> InlineKeyboardMarkup:
-    """Экран выбора смен при подаче/редактировании заявки (bot-update.md §2.1.E):
-    «Выбрать все смены», по кнопке на каждую смену (отмеченные — с ✅), «Подать заявку»."""
+def shift_selection_keyboard(event_id: int, shifts, selected_ids: set, editing: bool = False) -> InlineKeyboardMarkup:
+    """Экран выбора смен при подаче (bot-update.md §2.1.E) или редактировании (§2.2.F)
+    заявки: «Выбрать все смены» (только при подаче), по кнопке на каждую смену
+    (отмеченные — с ✅), внизу «Подать заявку»/«Сохранить»."""
     builder = InlineKeyboardBuilder()
-    builder.button(text='✅ Выбрать все смены', callback_data=f'shift_all:{event_id}')
+    if not editing:
+        builder.button(text='✅ Выбрать все смены', callback_data=f'shift_all:{event_id}')
     for shift in shifts:
         label = f"{shift.day.strftime('%d.%m')} · {shift.start_time.strftime('%H:%M')}–{shift.end_time.strftime('%H:%M')}"
         if shift.id in selected_ids:
             label = f'✅ {label}'
         builder.button(text=label, callback_data=f'shift_pick:{event_id}:{shift.id}')
-    builder.button(text='Подать заявку' if not selected_ids else 'Подать заявку ✅', callback_data=f'shift_apply:{event_id}')
+    if editing:
+        builder.button(text='Сохранить', callback_data=f'shift_edit_apply:{event_id}')
+    else:
+        builder.button(text='Подать заявку' if not selected_ids else 'Подать заявку ✅', callback_data=f'shift_apply:{event_id}')
     builder.adjust(1)
     return builder.as_markup()
 
@@ -165,6 +170,22 @@ def confirm_pending_application(event_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text='✅ Да, подать заявку', callback_data=f'apply:{event_id}')
     builder.button(text='Не сейчас', callback_data='dismiss')
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def view_events_button() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text='📅 Посмотреть мероприятия', callback_data='events')
+    return builder.as_markup()
+
+
+def myapp_actions(application_id: int) -> InlineKeyboardMarkup:
+    """Кнопки под заявкой в «Мои заявки» (bot-update.md §2.2.E) — «OK» просто
+    убирает клавиатуру (без действия над заявкой)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text='✏️ Редактировать', callback_data=f'myapp_edit:{application_id}')
+    builder.button(text='OK', callback_data='myapp_ok')
     builder.adjust(1)
     return builder.as_markup()
 

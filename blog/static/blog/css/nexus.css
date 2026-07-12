@@ -1167,11 +1167,15 @@ input:focus, select:focus, textarea:focus {
 .barchart--ratings .barchart-x, .barchart--timing .barchart-x { font-size: 11px; }
 
 /* Прогресс-строки набора по мероприятиям */
-.recruit-rows { display: flex; flex-direction: column; gap: 10px; }
-.recruit-row { display: grid; grid-template-columns: minmax(90px, 1.4fr) 2fr auto; gap: 10px; align-items: center; }
-.recruit-row-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.recruit-row-num { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
-.recruit-row--under .recruit-row-title { color: var(--danger); font-weight: 600; }
+/* Строки графика «Закрытие набора по мероприятиям» (дашборд). ВАЖНО: класс НЕ
+   `.recruit-row` — он уже занят строками таблицы явки на странице мероприятия
+   (event_detail.html, <tr class="recruit-row">), и `display:grid` отсюда ломал ту
+   таблицу в стек. Свой префикс `rc-` (recruit chart). */
+.rc-rows { display: flex; flex-direction: column; gap: 10px; }
+.rc-row { display: grid; grid-template-columns: minmax(90px, 1.4fr) 2fr auto; gap: 10px; align-items: center; }
+.rc-row-title { font-size: 13px; }
+.rc-row-num { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.rc-row--under .rc-row-title { color: var(--danger); font-weight: 600; }
 
 /* Горизонтальные бары (топ волонтёров, категории) */
 .hbar-list { display: flex; flex-direction: column; gap: 8px; }

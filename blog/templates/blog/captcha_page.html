@@ -1,0 +1,13 @@
+{% extends 'blog/base.html' %}
+{% comment %}Полностраничная версия окна-подтверждения с капчей (для действий, открываемых
+не в модалке, а переходом на страницу — напр. «Редактировать завершённое мероприятие»).
+Тот же контекст, что у partials/_captcha_confirm.html (captcha_question/action_url/
+confirm_text/submit_label/extra_hidden). Обычный full-page POST: вьюха действия при
+не-AJAX проверяет капчу и делает redirect на нужную страницу.{% endcomment %}
+{% block title %}{{ title|default:'Подтверждение' }}{% endblock %}
+{% block content %}
+<h1>{{ title|default:'Подтверждение' }}</h1>
+<div class="card" style="max-width:520px;">
+    {% include 'blog/partials/_captcha_confirm.html' %}
+</div>
+{% endblock %}

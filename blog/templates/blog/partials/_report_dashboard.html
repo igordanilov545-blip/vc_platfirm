@@ -74,16 +74,16 @@ CSS-переменные, адаптивно, без сети). Данные —
     <div class="card chart-card chart-card--wide">
         <h3>Закрытие набора по мероприятиям</h3>
         {% if efficiency.events %}
-        <div class="recruit-rows">
+        <div class="rc-rows">
             {% for e in efficiency.events %}
-            <div class="recruit-row {% if e.understaffed %}recruit-row--under{% endif %}">
-                <div class="recruit-row-title" title="{{ e.title }}">{{ e.title }}</div>
-                <div class="recruit-bar" style="width:100%;"><span class="recruit-bar-fill {% if e.pct_closed > 100 %}recruit-bar-fill--over{% endif %}" style="width:{% if e.pct_closed > 100 %}100{% else %}{{ e.pct_closed }}{% endif %}%; --pct:{{ e.pct_closed }};"></span></div>
-                <div class="recruit-row-num mono">{{ e.attended }}/{{ e.needed }} · {{ e.pct_closed }}%</div>
+            <div class="rc-row {% if e.understaffed %}rc-row--under{% endif %}">
+                <div class="rc-row-title">{{ e.title }}</div>
+                <div class="recruit-bar" style="width:100%;"><span class="recruit-bar-fill" style="width:{% if e.pct_closed > 100 %}100{% else %}{{ e.pct_closed }}{% endif %}%; --pct:{{ e.pct_closed }};"></span></div>
+                <div class="rc-row-num mono">{{ e.attended }}/{{ e.needed }} · {{ e.pct_closed }}%</div>
             </div>
             {% endfor %}
         </div>
-        <div class="chart-note">Красным — недобор (&lt;80% плановой потребности). Сортировка: худшие сверху.</div>
+        <div class="chart-note">Цвет полосы — % закрытия (красный → зелёный). Сортировка: худшие сверху.</div>
         {% else %}
         <p class="chart-empty">Ни у одного мероприятия охвата не задана плановая потребность в волонтёрах.</p>
         {% endif %}

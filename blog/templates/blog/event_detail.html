@@ -25,7 +25,11 @@
         <button type="button" class="btn secondary" data-share-url="{{ share_url }}">🔗 Поделиться</button>
         {% endif %}
         {% if event.event_status == 'finished' %}
-        <a href="{% url 'event_reopen' event.id %}" class="btn secondary" data-modal data-modal-title="Открыть завершённое: {{ event.title }}">🔓 Открыть обратно</a>
+        {% comment %}Завершённое меро редактируем ПОЛНОЦЕННО (общая инфо + явка/часы/набор):
+        кнопка ведёт на отдельную СТРАНИЦУ подтверждения (капча), а не в модалку —
+        после подтверждения меро открывается обратно (finished→passed) и вся страница
+        мероприятия становится редактируемой (таблица явки, часы, набор). Не data-modal.{% endcomment %}
+        <a href="{% url 'event_reopen' event.id %}" class="btn secondary">✏️ Редактировать (явку, часы, набор)</a>
         {% else %}
         <a href="{% url 'event_edit' event.id %}" class="btn secondary" data-modal data-modal-title="Редактировать: {{ event.title }}">Редактировать</a>
         {% endif %}

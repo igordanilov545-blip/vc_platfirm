@@ -3149,8 +3149,10 @@ def render_captcha_modal(request, *, session_key, action_url, confirm_text=None,
     }
     if is_ajax(request):
         return render(request, 'blog/partials/_captcha_confirm.html', context)
-    # Не-AJAX запасной вариант — та же форма на отдельной странице через общий _modal_form хост.
-    return render(request, 'blog/const_form.html', context)
+    # Не-AJAX (прямой переход на страницу, напр. «Редактировать завершённое меро») —
+    # полностраничная версия того же окна капчи (captcha_page.html), а не const_form.html
+    # (который был захардкожен под редактирование константы и рендерил не ту форму).
+    return render(request, 'blog/captcha_page.html', context)
 
 
 # Секции назначения/снятия ролей в настройках: (action, role kind, глагол для сообщений).

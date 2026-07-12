@@ -396,6 +396,65 @@ def verify_telegram_start(request):
     return redirect(deep_link)
 
 
+@login_required
+@require_POST
+def pgas_certificate_download(request):
+    """«Получить справку на ПГАС» — условия уже проверены (кнопка недоступна иначе),
+    но сама генерация документа не реализована: пока просто сообщаем, что функция
+    в разработке, вместо настоящего скачивания файла."""
+    from blog.services.pgas_certificate import pgas_certificate_eligibility
+
+    result = pgas_certificate_eligibility(request.user)
+    if not result['eligible']:
+        messages.error(request, f'Не хватает: {", ".join(result["missing"])}.')
+        return redirect('profile_detail', user_id=request.user.id)
+
+    messages.info(request, 'Функция в разработке — справка на ПГАС скоро будет доступна для скачивания.')
+    return redirect('profile_detail', user_id=request.user.id)
+
+
+@login_required
+@require_POST
+def pgas_request_verification(request):
+    """«Запросить верификацию» — профиль полностью заполнен, не хватает только
+    ручного подтверждения менеджером; создаёт инцидент в разделе «Главное»."""
+    from blog.services.pgas_certificate import only_verification_missing
+    from blog.services.incidents import create_incident
+
+    if not only_verification_missing(request.user):
+        messages.error(request, 'Сначала заполните профиль полностью.')
+        return redirect('profile_detail', user_id=request.user.id)
+
+    create_incident(
+        'pgas_verification',
+        f'«{request.user.full_name}» запросил(а) верификацию для справки ПГАС.',
+        related_user=request.user,
+    )
+    messages.success(request, 'Заявка на верификацию отправлена менеджеру.')
+    return redirect('profile_detail', user_id=request.user.id)
+
+
+@manager_required
+@require_POST
+def pgas_verify_user(request, user_id):
+    """Менеджер подтверждает верификацию волонтёра для справки ПГАС — с чужого
+    профиля. Резолвит связанный инцидент `pgas_verification`, если он есть."""
+    from blog.models import Incident
+
+    target = get_object_or_404(User, pk=user_id)
+    target.verified_by_manager_at = timezone.now()
+    target.verified_by_manager_by = request.user
+    target.save(update_fields=['verified_by_manager_at', 'verified_by_manager_by'])
+
+    Incident.objects.filter(
+        kind='pgas_verification', related_user=target, resolved_at__isnull=True,
+    ).update(resolved_at=timezone.now(), resolved_by=request.user)
+
+    logger.info('Верификация для ПГАС подтверждена: user=%s by=%s', target.id, actor(request.user))
+    messages.success(request, f'«{target.full_name}» верифицирован(а) для справки ПГАС.')
+    return redirect('profile_detail', user_id=target.id)
+
+
 def tg_link_login(request, token):
     """Вход по одноразовой ссылке из бота (deep-link `?start=weblogin`): проверяем
     токен (не использован и не старше 5 минут), логиним и гасим токен."""
@@ -2040,6 +2099,13 @@ def profile_detail(request, user_id):
         ),
         'experience_form': ExternalExperienceForm() if is_owner else None,
     }
+
+    if is_owner:
+        from blog.services.pgas_certificate import pgas_certificate_eligibility, only_verification_missing
+        pgas = pgas_certificate_eligibility(target)
+        context['pgas_eligible'] = pgas['eligible']
+        context['pgas_missing'] = pgas['missing']
+        context['pgas_only_verification_missing'] = only_verification_missing(target)
 
     # Публичный блок ТЛ/менеджера (reports.md: кол-во меро как ТЛ, дата назначения).
     tl_role = target.team_leader_roles.filter(revoked_at__isnull=True).first()

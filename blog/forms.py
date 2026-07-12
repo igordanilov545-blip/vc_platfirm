@@ -279,7 +279,7 @@ class EventForm(forms.ModelForm):
     class Meta:
         model = Event
         fields = [
-            'title', 'description',
+            'title', 'description', 'scale',
             'organization', 'organizer', 'location',
             'chat_link', 'post_in_chanel_link', 'dobro_ru_link',
             'people_helped', 'internal_comment', 'letter',
@@ -287,6 +287,7 @@ class EventForm(forms.ModelForm):
         labels = {
             'title': 'Название',
             'description': 'Описание',
+            'scale': 'Масштаб мероприятия',
             'location': 'Локация',
             'chat_link': 'Ссылка на чат',
             'post_in_chanel_link': 'Ссылка на пост в канале',
@@ -701,6 +702,7 @@ class ProfileForm(forms.ModelForm):
         fields = [
             'first_name', 'last_name', 'middle_name', 'system_username',
             'telegram_username', 'phone', 'email', 'birthday', 'about', 'VK_username',
+            'faculty', 'education_program', 'admission_year',
         ]
         widgets = {
             'birthday': forms.DateInput(
@@ -712,6 +714,7 @@ class ProfileForm(forms.ModelForm):
                 format='%Y-%m-%d',
             ),
             'about': forms.Textarea(attrs={'rows': 3}),
+            'admission_year': forms.NumberInput(attrs={'min': 2000, 'max': 2100}),
         }
         labels = {
             'system_username': 'Юзернейм для системы',
@@ -721,6 +724,9 @@ class ProfileForm(forms.ModelForm):
             'birthday': 'Дата рождения',
             'about': 'О себе',
             'VK_username': 'Ссылка на ВК',
+            'faculty': 'Факультет',
+            'education_program': 'Образовательная программа (ОП)',
+            'admission_year': 'Год поступления',
         }
         help_texts = {
             'telegram_username': 'Ваш ник в Telegram (можно с @ или без).',

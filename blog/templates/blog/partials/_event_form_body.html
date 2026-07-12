@@ -16,6 +16,12 @@
     </div>
 
     <div class="field">
+        {{ form.scale.label_tag }}
+        {{ form.scale }}
+        {% if form.scale.errors %}<div class="field-error">{{ form.scale.errors|striptags }}</div>{% endif %}
+    </div>
+
+    <div class="field">
         <label>Категории</label>
         <div class="category-chips" data-chip-select="{{ form.categories.id_for_label }}" data-chip-empty="Категории не выбраны">
             <div class="cat-chips-row" data-chips-selected></div>

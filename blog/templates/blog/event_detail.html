@@ -160,7 +160,7 @@
     <p style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
        {% event_status_pill event %}
     </p>
-    <p>Локация: {{ event.location.name|default:"—" }} · Организация: {{ event.organization.name|default:"—" }}</p>
+    <p>Локация: {{ event.location.name|default:"—" }} · Организация: {{ event.organization.name|default:"—" }}{% if event.scale %} · Масштаб: {{ event.get_scale_display }}{% endif %}</p>
     <div class="cat-chips-row" style="margin-top:6px;">
         <span style="color:var(--text-secondary); font-size:13px;">Категории:</span>
         {% for category in categories %}

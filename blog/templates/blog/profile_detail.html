@@ -175,4 +175,46 @@
     </table>
 </div>
 {% endif %}
+
+{% if is_owner %}
+<div class="card">
+    <h3>📄 Справка ВЦ для ПГАС</h3>
+    <p style="color:var(--text-secondary); font-size:13px; margin-top:-8px;">
+        Подтверждение от Волонтёрского центра о работе за текущий сезон. Учитываются часы
+        за сезон ({{ target.season_hours }} ч).
+    </p>
+    {% if pgas_eligible %}
+        <form method="post" action="{% url 'pgas_certificate_download' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn">📄 Получить справку на ПГАС</button>
+        </form>
+    {% else %}
+        <p>Чтобы получить справку, не хватает: <b>{{ pgas_missing|join:", " }}</b>.</p>
+        {% if pgas_only_verification_missing %}
+            <form method="post" action="{% url 'pgas_request_verification' %}">
+                {% csrf_token %}
+                <button type="submit" class="btn secondary">Запросить верификацию</button>
+            </form>
+        {% else %}
+            <a href="{% url 'profile_edit' %}" class="btn secondary">Заполнить профиль</a>
+        {% endif %}
+    {% endif %}
+</div>
+{% endif %}
+
+{% if has_extended_access and not is_owner and target.verified_by_manager_at is None %}
+<div class="card">
+    <h3>📄 Верификация для справки ПГАС</h3>
+    <p style="color:var(--text-secondary); font-size:13px; margin-top:-8px;">
+        Подтвердите, что лично удостоверились в личности и данных этого волонтёра —
+        это условие для выдачи ему справки ВЦ для ПГАС.
+    </p>
+    <form method="post" action="{% url 'pgas_verify_user' target.id %}" data-confirm="Подтвердить верификацию профиля «{{ target.full_name }}» для ПГАС?">
+        {% csrf_token %}
+        <button type="submit" class="btn secondary">✅ Подтвердить верификацию</button>
+    </form>
+</div>
+{% elif has_extended_access and not is_owner and target.verified_by_manager_at %}
+<p class="pill success"><span class="dot"></span>Верифицирован(а) для ПГАС {{ target.verified_by_manager_at|date:"d.m.Y" }}</p>
+{% endif %}
 {% endblock %}

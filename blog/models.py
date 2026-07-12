@@ -105,6 +105,20 @@ class User(AbstractBaseUser):
     # волонтёрского опыта без входа (раздел «Мой опыт»). Не угадывается перебором id.
     experience_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
 
+    # Данные для справки ВЦ о работе для ПГАС (заочно требует подтверждения факультета/
+    # ОП/курса вуза). Курс не хранится отдельным полем — считается от admission_year.
+    faculty = models.CharField(max_length=150, blank=True, null=True, verbose_name='Факультет')
+    education_program = models.CharField(max_length=150, blank=True, null=True, verbose_name='Образовательная программа')
+    admission_year = models.IntegerField(blank=True, null=True, verbose_name='Год поступления')
+
+    # Верификация вручную менеджером ВЦ (НЕ то же самое, что telegram_verified —
+    # там подтверждение владения Telegram через бота; здесь менеджер лично
+    # удостоверяется в личности/данных человека, это условие для справки ПГАС).
+    verified_by_manager_at = models.DateTimeField(blank=True, null=True)
+    verified_by_manager_by = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+
     objects = UserManager()
 
     USERNAME_FIELD = 'telegram_id'
@@ -378,6 +392,12 @@ class Event(models.Model):
         ('shared', 'Общая ссылка'),
         ('unique', 'Уникальная ссылка'),
     ]
+    SCALE_CHOICES = [
+        ('university', 'Университетское'),
+        ('city', 'Городское'),
+        ('russia', 'Всероссийское'),
+        ('international', 'Международное'),
+    ]
 
     id = models.AutoField(primary_key=True)
     title = models.CharField(max_length=255)
@@ -385,6 +405,9 @@ class Event(models.Model):
     location = models.ForeignKey(Location, on_delete=models.SET_NULL, null=True, blank=True, related_name='events')
     chat_link = models.URLField(blank=True, null=True)
     post_in_chanel_link = models.URLField(blank=True, null=True)
+    # Масштаб мероприятия — используется, среди прочего, для условий выдачи справки
+    # ВЦ для ПГАС (какие мероприятия считаются "весомыми" для подтверждения).
+    scale = models.CharField(max_length=20, choices=SCALE_CHOICES, blank=True, null=True)
 
     # Учёт часов на Добро.ру (db.md, правило 7e): none — не ведётся, unique — своя ссылка,
     # shared — общая ссылка на несколько мелких меро (DobroRuSharedLink).

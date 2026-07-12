@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Бот — Тим-лидер · Волонтёрский центр</title>
+  <link rel="stylesheet" href="bot-tree.css">
+</head>
+<body>
+  <div class="cjm-app">
+    <div class="cjm-topbar">
+      <div>
+        <h1>Бот — Тим-лидер</h1>
+        <div class="sub"></div>
+      </div>
+      <div class="cjm-legend">
+        <span class="chip"><span class="sw act"></span><b>действие</b></span>
+        <span class="chip"><span class="sw warn"></span><b>предупреждение</b></span>
+        <span class="chip"><span class="sw proact"></span><b>бот сам</b></span>
+      </div>
+      <nav class="cjm-nav">
+        <a href="index.html">Обзор</a>
+        <a href="guest.html">Гость</a>
+        <a href="volunteer.html">Волонтёр</a>
+        <a href="team-leader.html" class="active">Тим-лидер</a>
+        <a href="manager.html">Менеджер</a>
+      </nav>
+    </div>
+    <div class="cjm-stage-wrap">
+      <svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="cjm-hint">👆 Кликни по узлу — ответ бота, кнопки и ветки. Всё меню волонтёра сохраняется; здесь — только доп. функции ТЛ. Права контекстны: только свои меро.</div>
+      <div class="cjm-controls">
+        <button id="zoom-in" title="Приблизить">+</button>
+        <button id="zoom-out" title="Отдалить">−</button>
+        <button id="zoom-fit" class="wide" title="Вписать в экран">Вписать</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  window.BOT_DATA = {
+    title: 'Бот — Тим-лидер',
+    subtitle: 'Меню волонтёра + «Мои меро (ТЛ)». Права контекстны — только свои мероприятия',
+    nodes: [
+      { id: 'menu', kind: 'root', code: 'меню ТЛ', title: 'Меню тим-лидера',
+        bot: '👋 С возвращением, {Имя}!\n\nТебе доступно всё меню волонтёра плюс раздел по твоим мероприятиям.\n\nБыстрые команды: /events · /myapps · /myevents · /appnotify · /help',
+        menu: ['👥 Мои мероприятия (ТЛ)', '🔔 Заявки: уведомления', '📅 Мероприятия', '📝 Мои заявки', '📊 Статистика'] },
+
+      // Список своих меро (добавлено явно)
+      { id: 'myevents', kind: 'stage', code: '/myevents', title: 'Мои меро (где я ТЛ)',
+        bot: '👥 Твои мероприятия (тим-лидер):\n\n1. «Помощь приюту "Лапки"» — 3 новых заявки   [Открыть]\n2. «Забег "Спорт для всех"» — набор закрыт     [Открыть]\n\n(Список — только те меро, где ты назначен тим-лидером: event_staff.staff_role=team_lead.)',
+        menu: ['Открыть (под каждым меро)'] },
+      { id: 'myevents_empty', kind: 'leaf', code: '∅', title: 'Нет своих меро',
+        bot: '👥 Ты пока не назначен тим-лидером ни на одно мероприятие.' },
+
+      // Подробная карточка меро (добавлено явно: описание, контакты организатора, набор)
+      { id: 'event_card', kind: 'stage', code: 'ТЛ·карточка', title: 'Подробная карточка меро',
+        bot: '👥 «Помощь приюту "Лапки"»\nПомощь в выгуле и уходе за животными в приюте. Смена 4 часа.\n📍 Парк Горького · 📆 12.07.2026\n\n🏢 Организатор: Анна Кузнецова\n✈ @anna_priut · ☎ +7 903 555-11-22\n\n👥 Набор: нужно 10 · есть 6 · осталось 4\n\n[📥 Заявки]  [✅ Одобрить все]  [📋 Явка]  [🙋 Моя полная смена]',
+        menu: ['📥 Заявки', '✅ Одобрить все', '📋 Явка', '🙋 Моя полная смена'],
+        note: 'Показывает: название, описание, ФИО организатора + его Telegram и телефон, и счётчики набора нужно/есть/осталось.' },
+
+      // Заявки на меро
+      { id: 'apps_list', kind: 'stage', code: 'ТЛ·заявки', title: 'Заявки на меро',
+        bot: '📥 Заявки на «Помощь приюту "Лапки"» (новых: 3):\n\n1. Иван Петров (@ivan_p) · ☎ +7 900 123-45-67\n   [✅ Одобрить] [💤 В резерв] [👤 Профиль]\n2. Мария Смирнова (@masha) …\n3. …\n\n[✅ Одобрить все]',
+        menu: ['✅ Одобрить', '💤 В резерв', '👤 Профиль', '✅ Одобрить все'] },
+
+      // Проактивно: карточка новой заявки
+      { id: 'app_card', kind: 'proact', code: 'TL2', title: 'Новая заявка (проактивно)',
+        bot: '📥 Новая заявка на «Помощь приюту "Лапки"»\n👤 Иван Петров (@ivan_p)\n☎ +7 900 123-45-67\n\n[✅ Одобрить]   [💤 В резерв]   [👤 Профиль]',
+        note: 'Приходит только ТЛ этого меро и активным менеджерам, у кого notify_applications=true.' },
+
+      // Одобрение одной
+      { id: 'approve_one', kind: 'leaf', code: '✓', title: 'Заявка одобрена',
+        bot: '✅ Заявка Ивана Петрова одобрена. Волонтёр получил уведомление.\n\n(status=approved, assigned_at/by, авто-participations на все дни, пересчёт recruit_status.)' },
+      { id: 'reserve_one', kind: 'leaf', code: '💤', title: 'Заявка в резерв',
+        bot: '💤 Заявка переведена в резерв.' },
+      { id: 'recruit_closed', kind: 'proact', code: 'ℹ', title: 'Набор закрылся',
+        bot: 'ℹ️ Набор на «Помощь приюту "Лапки"» закрыт — одобренных заявок достаточно.' },
+
+      // Профиль кандидата + комментарий
+      { id: 'profile', kind: 'stage', code: 'TL5', title: 'Профиль кандидата (контекст)',
+        bot: '👤 Иван Петров\n☎ +7 900 123-45-67 · @ivan_p\nЧасов: 42 · Меро: 7 · Отмен: 0\n\n[📝 Оставить комментарий]',
+        menu: ['📝 Оставить комментарий'],
+        note: 'Расширенный профиль доступен, пока меро не завершено и волонтёр с ним связан (правило 5 ACL).' },
+      { id: 'profile_closed', kind: 'warn', code: '🔒', title: 'Профиль закрыт',
+        bot: '🔒 Доступ к расширенному профилю закрыт: мероприятие завершено.' },
+      { id: 'comment_done', kind: 'leaf', code: '✓', title: 'Комментарий сохранён',
+        bot: '📝 Комментарий сохранён (виден менеджерам и тебе в рамках этого меро).\n\n(Волонтёр эти комментарии никогда не видит.)' },
+
+      // TL4 — массовое одобрение + предупреждение при переборе
+      { id: 'approve_all', kind: 'stage', code: 'TL4', title: 'Одобрить все заявки',
+        bot: 'Массовое одобрение всех новых заявок на меро с пересчётом набора. Если заявок не больше, чем осталось добрать — одобряются все сразу.',
+        note: 'Порог перебора: заявок > (нужно × 1.2 − набрано).' },
+      { id: 'over_quota', kind: 'warn', code: 'TL4·⚠', title: 'Заявок больше, чем нужно',
+        bot: '⚠️ Волонтёров больше, чем мест: заявок больше, чем (нужно × 1.2 − набрано).\n\nКак поступить?\n\n[✋ Разобрать вручную]\n[➕ Всё равно добавить всех]\n[⏱ Принять в порядке поступления]',
+        menu: ['✋ Разобрать вручную', '➕ Всё равно добавить всех', '⏱ Принять в порядке поступления'] },
+      { id: 'oq_manual', kind: 'leaf', code: '✋', title: 'Разобрать вручную',
+        bot: 'Ок, открываю список заявок (📥 Заявки) — обрабатывай по одной кнопками [✅ Одобрить] / [💤 В резерв].' },
+      { id: 'oq_all', kind: 'leaf', code: '➕', title: 'Добавить всех',
+        bot: '✅ Все заявки одобрены. Волонтёры получили уведомления. Набор может превысить план — это допускается вручную.' },
+      { id: 'oq_order', kind: 'leaf', code: '⏱', title: 'В порядке поступления',
+        bot: '✅ Одобрены заявки в порядке поступления, пока не заполнен набор (нужно × 1.2 − набрано). Остальные — в резерв.' },
+
+      // TL6 — явка + «моя полная смена»
+      { id: 'attend', kind: 'stage', code: 'TL6', title: 'Простановка явки',
+        bot: '📋 Явка на «Помощь приюту "Лапки"» — 12.07.2026\n\nИван Петров:    [✅ Был] [🙁 Уваж.] [⛔ Неявка]\nМария Смирнова: [✅ Был] [🙁 Уваж.] [⛔ Неявка]',
+        menu: ['✅ Был', '🙁 Уваж.', '⛔ Неявка'] },
+      { id: 'attend_done', kind: 'leaf', code: '✓', title: 'Явка сохранена',
+        bot: '✅ Явка сохранена. Часы и статистика волонтёров пересчитаны.\n\n(Был → attended +часы · Уваж. → absent_excused · Неявка → absent_unexcused +churn, при пороге — авто-блэклист, статус не озвучивается.)' },
+      { id: 'tl_full_shift', kind: 'leaf', code: 'TL6·ТЛ', title: 'Моя полная смена (ТЛ)',
+        bot: '🙋 Отмечено: ты отработал(а) полную смену как тим-лидер на «Помощь приюту "Лапки"» (12.07.2026). Часы начислены тебе так же, как участнику.\n\n(ТЛ проставляет себе полную смену — своё участие фиксируется наравне с волонтёрами.)' },
+
+      // appnotify — явный тумблер уведомлений о заявках
+      { id: 'appnotify', kind: 'stage', code: '/appnotify', title: 'Уведомления о заявках — вкл/выкл',
+        bot: '🔔 Тумблер: включает или выключает уведомления о НОВЫХ ЗАЯВКАХ на твои меро (флаг notify_applications). Одна кнопка переключает состояние.',
+        menu: ['🔔 Заявки: уведомления'] },
+      { id: 'appnotify_on', kind: 'leaf', code: 'on', title: 'Уведомления о заявках вкл',
+        bot: '🔔 Уведомления о новых заявках включены. На каждую новую заявку придёт карточка с кнопками [Одобрить/Резерв/Профиль].' },
+      { id: 'appnotify_off', kind: 'leaf', code: 'off', title: 'Уведомления о заявках выкл',
+        bot: '🔕 Уведомления о новых заявках выключены. Карточки приходить не будут, но сами заявки остаются видны в /myevents.' },
+
+      // TL8 — чужие меро как обычный волонтёр
+      { id: 'other_events', kind: 'leaf', code: 'TL8', title: 'Чужие меро — как волонтёр',
+        bot: 'Мероприятия ДРУГИХ тим-лидеров ты видишь как обычный волонтёр: в /events — карточка с кнопкой «✅ Подать заявку», и всё. Заявок на них и кнопок обработки у тебя нет.',
+        note: 'Права ТЛ контекстны — только свои меро. На чужих ты равен волонтёру.' },
+      { id: 'other_denied', kind: 'warn', code: '⛔', title: 'Чужое меро — обработка',
+        bot: '⛔ Ты не тим-лидер этого мероприятия.' },
+    ],
+    edges: [
+      { from: 'menu', to: 'myevents', action: '👥 Мои мероприятия (ТЛ) / /myevents', kind: 'act' },
+      { from: 'menu', to: 'appnotify', action: '🔔 Заявки: уведомления / /appnotify', kind: 'act' },
+      { from: 'menu', to: 'app_card', action: 'волонтёр подал заявку', kind: 'proact' },
+      { from: 'menu', to: 'other_events', action: '📅 Мероприятия (чужие меро)', kind: 'act' },
+
+      { from: 'myevents', to: 'myevents_empty', action: 'нет своих меро', kind: 'warn' },
+      { from: 'myevents', to: 'event_card', action: 'Открыть', kind: 'act' },
+
+      { from: 'event_card', to: 'apps_list', action: '📥 Заявки', kind: 'act' },
+      { from: 'event_card', to: 'approve_all', action: '✅ Одобрить все', kind: 'act' },
+      { from: 'event_card', to: 'attend', action: '📋 Явка', kind: 'act' },
+      { from: 'event_card', to: 'tl_full_shift', action: '🙋 Моя полная смена', kind: 'act' },
+
+      { from: 'apps_list', to: 'approve_one', action: '✅ Одобрить', kind: 'act' },
+      { from: 'apps_list', to: 'reserve_one', action: '💤 В резерв', kind: 'act' },
+      { from: 'apps_list', to: 'profile', action: '👤 Профиль', kind: 'act' },
+      { from: 'approve_one', to: 'recruit_closed', action: 'достигнут recruit_close_ratio', kind: 'proact' },
+
+      { from: 'app_card', to: 'approve_one', action: '✅ Одобрить', kind: 'act' },
+      { from: 'app_card', to: 'reserve_one', action: '💤 В резерв', kind: 'act' },
+      { from: 'app_card', to: 'profile', action: '👤 Профиль', kind: 'act' },
+
+      { from: 'profile', to: 'comment_done', action: '📝 Оставить комментарий', kind: 'act' },
+      { from: 'profile', to: 'profile_closed', action: 'меро завершено', kind: 'warn' },
+
+      { from: 'approve_all', to: 'oq_all', action: 'заявок не больше квоты — одобряются все', kind: 'act' },
+      { from: 'approve_all', to: 'over_quota', action: 'заявок > (нужно×1.2 − набрано)', kind: 'warn' },
+      { from: 'over_quota', to: 'oq_manual', action: '✋ Разобрать вручную', kind: 'act' },
+      { from: 'over_quota', to: 'oq_all', action: '➕ Всё равно добавить всех', kind: 'act' },
+      { from: 'over_quota', to: 'oq_order', action: '⏱ Принять в порядке поступления', kind: 'act' },
+
+      { from: 'attend', to: 'attend_done', action: 'проставил явку', kind: 'act' },
+
+      { from: 'appnotify', to: 'appnotify_on', action: 'было выкл → включить', kind: 'act' },
+      { from: 'appnotify', to: 'appnotify_off', action: 'было вкл → выключить', kind: 'act' },
+
+      { from: 'other_events', to: 'other_denied', action: 'прямая попытка обработать чужое', kind: 'warn' },
+    ],
+  };
+  </script>
+  <script src="bot-tree.js"></script>
+</body>
+</html>

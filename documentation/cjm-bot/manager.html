@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Бот — Менеджер · Волонтёрский центр</title>
+  <link rel="stylesheet" href="bot-tree.css">
+</head>
+<body>
+  <div class="cjm-app">
+    <div class="cjm-topbar">
+      <div>
+        <h1>Бот — Менеджер</h1>
+        <div class="sub"></div>
+      </div>
+      <div class="cjm-legend">
+        <span class="chip"><span class="sw act"></span><b>действие</b></span>
+        <span class="chip"><span class="sw warn"></span><b>предупреждение</b></span>
+        <span class="chip"><span class="sw proact"></span><b>бот сам</b></span>
+      </div>
+      <nav class="cjm-nav">
+        <a href="index.html">Обзор</a>
+        <a href="guest.html">Гость</a>
+        <a href="volunteer.html">Волонтёр</a>
+        <a href="team-leader.html">Тим-лидер</a>
+        <a href="manager.html" class="active">Менеджер</a>
+      </nav>
+    </div>
+    <div class="cjm-stage-wrap">
+      <svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="cjm-hint">👆 Кликни по узлу — ответ бота, кнопки и ветки. Менеджер видит всё меню волонтёра и ТЛ; здесь — только доп. функции менеджера (все меро, контакты, публикация).</div>
+      <div class="cjm-controls">
+        <button id="zoom-in" title="Приблизить">+</button>
+        <button id="zoom-out" title="Отдалить">−</button>
+        <button id="zoom-fit" class="wide" title="Вписать в экран">Вписать</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  window.BOT_DATA = {
+    title: 'Бот — Менеджер',
+    subtitle: 'Все заявки · контакты организаторов · публикация меро и рассылка по нему',
+    nodes: [
+      { id: 'menu', kind: 'root', code: 'меню менеджера', title: 'Меню менеджера',
+        bot: '👋 С возвращением, {Имя}!\n\nТебе доступно всё меню волонтёра и тим-лидера плюс раздел «Управление».\n\nБыстрые команды: /allapplications · /appnotify · /help',
+        menu: ['⚙️ Управление', '🔔 Заявки: уведомления', '👥 Мои мероприятия (ТЛ)', '📅 Мероприятия'] },
+
+      { id: 'manage', kind: 'stage', code: '⚙️ Управление', title: 'Раздел «Управление»',
+        bot: '⚙️ Управление:\n\n[📋 Все заявки]\n[📢 Опубликовать меро]\n[🔔 Заявки: уведомления]',
+        menu: ['📋 Все заявки', '📢 Опубликовать меро', '🔔 Заявки: уведомления'] },
+
+      // M1 — все заявки
+      { id: 'allapps', kind: 'stage', code: '/allapplications', title: 'Все заявки (все меро)',
+        bot: '📋 Все заявки (последние 20):\n\n• «Помощь приюту "Лапки"» — Иван Петров — 🕓 На рассмотрении\n• «Забег "Спорт для всех"» — Мария Смирнова — ✅ Одобрена\n• «Городской субботник» — Пётр Сидоров — 💤 Резерв\n\n(Не ограничено «своими» меро — все меро системы.)',
+        menu: ['Открыть заявку'] },
+      { id: 'allapps_empty', kind: 'leaf', code: '∅', title: 'Заявок нет',
+        bot: '📋 Заявок пока нет.' },
+
+      // M2 — обработка на любом меро
+      { id: 'process_any', kind: 'stage', code: 'M2', title: 'Обработка на любом меро',
+        bot: '📥 Заявка на «Городской субботник»\n👤 Пётр Сидоров (@petya) · ☎ +7 905 000-00-00\n\n[✅ Одобрить]  [💤 В резерв]  [👤 Профиль]  [📋 Явка]\n\n(Как у ТЛ, но БЕЗ контекстного ограничения — на всех меро.)',
+        menu: ['✅ Одобрить', '💤 В резерв', '👤 Профиль', '📋 Явка'] },
+
+      // M3 — контакты организатора активного меро
+      { id: 'organizer', kind: 'stage', code: 'M3', title: 'Контакты организатора',
+        bot: '👥 «Помощь приюту "Лапки"»\n…\n\n🏢 Организация: Приют "Лапки" (рейтинг: 8/10)\n👤 Организатор: Анна Кузнецова\n☎ +7 903 555-11-22\n✉ anna@example.com\n✈ @anna_priut',
+        note: 'Блок организатора виден только менеджеру и только по активным меро (upcoming/ongoing).' },
+      { id: 'organizer_closed', kind: 'warn', code: '⚠', title: 'Меро завершено',
+        bot: 'Блок организатора в боте не показывается — мероприятие завершено. Полная история контактов — в Web/Mini App.' },
+
+      // M — публикация сформированного меро (добавлено)
+      { id: 'publish', kind: 'stage', code: 'M·publish', title: 'Опубликовать меро',
+        bot: '📢 Сформированные, но ещё не опубликованные мероприятия:\n\n1. «Городской субботник» — 18.07.2026 · черновик   [Опубликовать]\n2. «Эко-акция» — 20.07.2026 · черновик              [Опубликовать]\n\n(Публикуется по кнопке уже сформированное меро — набор открывается, оно появляется в /events.)',
+        menu: ['📢 Опубликовать (под каждым)'] },
+      { id: 'publish_confirm', kind: 'stage', code: 'M·confirm', title: 'Подтверждение публикации',
+        bot: '📢 Опубликовать «Городской субботник» (18.07.2026) и открыть набор?\nПосле публикации можно сразу разослать анонс подписанным волонтёрам.\n\n[✅ Опубликовать]   [Отмена]',
+        menu: ['✅ Опубликовать', 'Отмена'] },
+      { id: 'published', kind: 'stage', code: '✓', title: 'Меро опубликовано',
+        bot: '✅ «Городской субботник» опубликовано, набор открыт — теперь оно видно в /events.\n\nСделать рассылку по этому мероприятию?\n\n[📨 Разослать анонс]   [Позже]',
+        menu: ['📨 Разослать анонс', 'Позже'] },
+
+      // M — рассылка по опубликованному меро (добавлено)
+      { id: 'broadcast', kind: 'proact', code: 'M·broadcast', title: 'Рассылка по меро',
+        bot: '📨 Анонс разослан подписанным активным волонтёрам (notify_new_events=true).\n\nИм пришло:\n🆕 Новое мероприятие: «Городской субботник»\n📆 18.07.2026 · 📍 Сокольники\nПодать заявку: /events',
+        note: 'Рассылка = broadcast_new_event по опубликованному меро: анонс уходит только подписанным волонтёрам через очередь bot_outbox.' },
+
+      // тумблер уведомлений о заявках (у менеджера тоже есть)
+      { id: 'appnotify', kind: 'stage', code: '/appnotify', title: 'Уведомления о заявках — вкл/выкл',
+        bot: '🔔 Тумблер: включает/выключает уведомления о новых заявках по ВСЕМ меро (notify_applications). Менеджер получает карточку каждой новой заявки, если тумблер включён.',
+        menu: ['🔔 Заявки: уведомления'] },
+      { id: 'appnotify_on', kind: 'leaf', code: 'on', title: 'Уведомления вкл',
+        bot: '🔔 Уведомления о новых заявках включены.' },
+      { id: 'appnotify_off', kind: 'leaf', code: 'off', title: 'Уведомления выкл',
+        bot: '🔕 Уведомления о новых заявках выключены. Сами заявки остаются в /allapplications.' },
+
+      // M4 — проактивно
+      { id: 'app_card', kind: 'proact', code: 'M4', title: 'Новая заявка (проактивно)',
+        bot: '📥 Новая заявка на «Городской субботник»\n👤 Пётр Сидоров (@petya)\n\n[✅ Одобрить] [💤 В резерв] [👤 Профиль]',
+        note: 'Любая новая заявка по любому меро уходит всем активным менеджерам с notify_applications=true.' },
+
+      // граница: остальное — не в боте
+      { id: 'not_in_bot', kind: 'warn', code: 'граница', title: 'Не в боте',
+        bot: 'Импорт Excel, отчёты за период, аналитика, CRUD организаций/организаторов, сезоны/константы, блокировка волонтёров, благодарственные письма — не в боте, только Web/Mini App.' },
+    ],
+    edges: [
+      { from: 'menu', to: 'manage', action: '⚙️ Управление', kind: 'act' },
+      { from: 'menu', to: 'appnotify', action: '🔔 Заявки: уведомления / /appnotify', kind: 'act' },
+      { from: 'menu', to: 'app_card', action: 'пришла новая заявка', kind: 'proact' },
+      { from: 'menu', to: 'not_in_bot', action: 'управленческое действие вне бота', kind: 'warn' },
+
+      { from: 'manage', to: 'allapps', action: '📋 Все заявки / /allapplications', kind: 'act' },
+      { from: 'manage', to: 'publish', action: '📢 Опубликовать меро', kind: 'act' },
+      { from: 'manage', to: 'appnotify', action: '🔔 Заявки: уведомления', kind: 'act' },
+
+      { from: 'allapps', to: 'allapps_empty', action: 'заявок нет', kind: 'warn' },
+      { from: 'allapps', to: 'process_any', action: 'Открыть заявку', kind: 'act' },
+      { from: 'process_any', to: 'organizer', action: 'меро активно → контакты', kind: 'act' },
+      { from: 'organizer', to: 'organizer_closed', action: 'меро завершено', kind: 'warn' },
+
+      { from: 'app_card', to: 'process_any', action: '✅ Одобрить / 💤 Резерв', kind: 'act' },
+
+      { from: 'publish', to: 'publish_confirm', action: '📢 Опубликовать', kind: 'act' },
+      { from: 'publish_confirm', to: 'published', action: '✅ Опубликовать', kind: 'act' },
+      { from: 'published', to: 'broadcast', action: '📨 Разослать анонс', kind: 'act',
+        note: 'Рассылка по опубликованному меро — подписанным волонтёрам.' },
+
+      { from: 'appnotify', to: 'appnotify_on', action: 'было выкл → включить', kind: 'act' },
+      { from: 'appnotify', to: 'appnotify_off', action: 'было вкл → выключить', kind: 'act' },
+    ],
+  };
+  </script>
+  <script src="bot-tree.js"></script>
+</body>
+</html>

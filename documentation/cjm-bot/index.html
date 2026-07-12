@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Функционал ТГ-бота · Волонтёрский центр</title>
+  <link rel="stylesheet" href="bot-tree.css">
+  <style>
+    html, body { overflow: auto; }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 32px 20px 60px; }
+    .lead { color: var(--ink-dim); font-size: 15px; line-height: 1.6; margin: 0 0 26px; }
+    h1.page { font-size: 26px; margin: 0 0 6px; }
+    .legend-row { display: flex; gap: 22px; flex-wrap: wrap; margin: 22px 0 30px;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+    .legend-row .item { font-size: 14px; display: flex; align-items: center; gap: 8px; }
+    .legend-row .sw { width: 26px; height: 5px; border-radius: 3px; display: inline-block; }
+    .legend-row .sw.act { background: var(--act); }
+    .legend-row .sw.warn { background: var(--warn); }
+    .legend-row .sw.proact { background: var(--proact); }
+    .legend-row b { font-size: 12.5px; color: var(--ink-dim); font-weight: 500; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+    a.card { display: block; text-decoration: none; color: inherit;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 18px 16px;
+      transition: border-color .15s, transform .15s; }
+    a.card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    a.card .tag { font-size: 11px; letter-spacing: .5px; color: var(--ink-dim); text-transform: uppercase; }
+    a.card h3 { margin: 6px 0 8px; font-size: 18px; }
+    a.card p { margin: 0; font-size: 13.5px; color: var(--ink-dim); line-height: 1.5; }
+    .how { margin: 30px 0 10px; background: var(--panel); border: 1px solid var(--line);
+      border-radius: 12px; padding: 16px 20px; }
+    .how h2 { font-size: 16px; margin: 0 0 10px; }
+    .how ol, .how ul { margin: 0; padding-left: 20px; color: var(--ink-dim); font-size: 14px; line-height: 1.7; }
+    .how b { color: var(--ink); }
+    .foot { margin-top: 34px; font-size: 13px; color: var(--ink-dim); }
+    .foot a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="page">Функционал Telegram-бота Волонтёрского центра</h1>
+    <p class="lead">
+      Интерактивные деревья <b>состояний бота</b> по каждой роли. Узел — это экран бота
+      (в нём лежит текст, который бот отвечает, и его кнопки-меню). Ребро — это
+      <b>действие пользователя</b> (нажал кнопку / ввёл команду), ведущее в следующее
+      состояние. Открой узел — увидишь полный ответ бота и все ветки, куда из него можно
+      уйти. Это карта, по которой тим-лидер утверждает поведение бота.
+    </p>
+
+    <div class="legend-row">
+      <div class="item"><span class="sw act"></span><span>действие<b> — обычная ветка (нажал кнопку / команду)</b></span></div>
+      <div class="item"><span class="sw warn"></span><span>предупреждение<b> — ошибочный / пограничный исход</b></span></div>
+      <div class="item"><span class="sw proact"></span><span>бот сам<b> — проактивно, без действия пользователя</b></span></div>
+    </div>
+
+    <div class="grid">
+      <a class="card" href="guest.html">
+        <span class="tag">первое касание</span>
+        <h3>Гость</h3>
+        <p>/start, просмотр мероприятий без регистрации, попытка подать заявку → регистрация (имя + телефон), контекстная справка.</p>
+      </a>
+      <a class="card" href="volunteer.html">
+        <span class="tag">базовое меню</span>
+        <h3>Волонтёр</h3>
+        <p>Мероприятия и подача заявок (в т.ч. повторная — посмотреть/изменить), мои заявки, статистика, подписка на новые меро, доступ к сайту, оценка после участия.</p>
+      </a>
+      <a class="card" href="team-leader.html">
+        <span class="tag">свои меро (контекст)</span>
+        <h3>Тим-лидер</h3>
+        <p>Список своих меро, подробная карточка (контакты организатора, набор), обработка заявок (в т.ч. пачкой и при переборе), явка, «полная смена» ТЛ, тумблер уведомлений о заявках.</p>
+      </a>
+      <a class="card" href="manager.html">
+        <span class="tag">все меро + публикация</span>
+        <h3>Менеджер</h3>
+        <p>Все заявки системы, контакты организаторов активных меро, публикация сформированного меро и рассылка по нему, тумблер уведомлений о заявках.</p>
+      </a>
+    </div>
+
+    <div class="how">
+      <h2>Как читать дерево</h2>
+      <ul>
+        <li><b>Узел</b> = состояние/экран бота. Клик по узлу открывает панель: <b>что отвечает бот</b> (реплика + кнопки меню) и <b>ветки</b> — куда можно уйти дальше.</li>
+        <li><b>Ребро</b> = действие пользователя, подпись на ребре — какую кнопку он нажал / что ввёл. Клик по ребру подсвечивает ветку у родительского состояния.</li>
+        <li>Внутри панели ветки кликабельны — переходишь к следующему состоянию, не теряя нить.</li>
+        <li>Тяни мышью — панорама · колесо / кнопки — зум · «Вписать» — общий вид. Точки зафиксированы, интернет не нужен.</li>
+      </ul>
+    </div>
+
+    <div class="how">
+      <h2>Роли аддитивны</h2>
+      <ol>
+        <li><b>Гость</b> — есть запись в <code>users</code>, регистрация не завершена. Только просмотр меро.</li>
+        <li><b>Волонтёр</b> — регистрация завершена. Полное базовое меню.</li>
+        <li><b>Тим-лидер</b> — видит всё меню волонтёра + функции по <b>своим</b> меро. Чужие меро видит как обычный волонтёр.</li>
+        <li><b>Менеджер</b> — всё вышестоящее + все заявки, контакты организаторов, публикация и рассылка.</li>
+      </ol>
+    </div>
+
+    <p class="foot">
+      Текстовый источник — <a href="../tg-bot.md">tg-bot.md</a> и
+      <a href="../cjm/user-journeys-bot.md">user-journeys-bot.md</a>.
+      См. также эмоциональные CJM-деревья: <a href="../cjm/index.html">documentation/cjm</a>.
+    </p>
+  </div>
+</body>
+</html>

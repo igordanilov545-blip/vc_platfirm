@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Бот — Гость · Волонтёрский центр</title>
+  <link rel="stylesheet" href="bot-tree.css">
+</head>
+<body>
+  <div class="cjm-app">
+    <div class="cjm-topbar">
+      <div>
+        <h1>Бот — Гость</h1>
+        <div class="sub"></div>
+      </div>
+      <div class="cjm-legend">
+        <span class="chip"><span class="sw act"></span><b>действие</b></span>
+        <span class="chip"><span class="sw warn"></span><b>предупреждение</b></span>
+        <span class="chip"><span class="sw proact"></span><b>бот сам</b></span>
+      </div>
+      <nav class="cjm-nav">
+        <a href="index.html">Обзор</a>
+        <a href="guest.html" class="active">Гость</a>
+        <a href="volunteer.html">Волонтёр</a>
+        <a href="team-leader.html">Тим-лидер</a>
+        <a href="manager.html">Менеджер</a>
+      </nav>
+    </div>
+    <div class="cjm-stage-wrap">
+      <svg id="stage" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="cjm-hint">👆 Кликни по узлу (состоянию бота) — увидишь полный текст ответа бота, его кнопки и ветки дальше. Клик по ребру подсветит ветку. Тяни — панорама · колесо — зум · «Вписать» — обзор.</div>
+      <div class="cjm-controls">
+        <button id="zoom-in" title="Приблизить">+</button>
+        <button id="zoom-out" title="Отдалить">−</button>
+        <button id="zoom-fit" class="wide" title="Вписать в экран">Вписать</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  window.BOT_DATA = {
+    title: 'Бот — Гость',
+    subtitle: 'Первое касание, просмотр меро, регистрация. registration_status = guest',
+    nodes: [
+      { id: 'start', kind: 'root', code: '/start', title: 'Первое касание',
+        bot: '👋 Привет! Я бот Волонтёрского центра.\n\nЗдесь можно:\n• 📅 смотреть мероприятия и подавать заявки\n• 📊 следить за статистикой — часами и меро\n• 🔔 получать уведомления о новых меро и статусах заявок\n\nПосмотреть список — /events.\nЧтобы подавать заявки — короткая регистрация: /register',
+        menu: ['📝 Зарегистрироваться', '📅 Мероприятия'] },
+
+      { id: 'help', kind: 'leaf', code: '/help', title: 'Справка гостя',
+        bot: 'ℹ️ Что я умею:\n\n/events — посмотреть открытые мероприятия\n/register — зарегистрироваться, чтобы подавать заявки\n\nПосле регистрации станут доступны: подача заявок, статистика, подписка на новые меро.' },
+
+      { id: 'events', kind: 'stage', code: '/events', title: 'Открытые мероприятия',
+        bot: '📅 Открытые мероприятия (ближайшие 7):\n\n1. «Помощь приюту "Лапки"»\n   📍 Парк Горького · 📆 12.07.2026\n   [✅ Подать заявку]\n\n2. «Забег "Спорт для всех"»\n   📍 Лужники · 📆 14.07.2026\n   [✅ Подать заявку]',
+        menu: ['✅ Подать заявку (под каждой карточкой)'] },
+
+      { id: 'events_empty', kind: 'leaf', code: '/events ∅', title: 'Нет открытых меро',
+        bot: '📅 Сейчас нет мероприятий с открытым набором.\nПодпишись на уведомления (🔔 Подписка) — сообщу, как только появятся новые.' },
+
+      { id: 'guest_apply', kind: 'warn', code: 'G3', title: 'Заявка гостем — нельзя',
+        bot: '📝 Чтобы подать заявку, сначала нужно зарегистрироваться — это буквально имя и телефон, 30 секунд.\n\n[📝 Зарегистрироваться]',
+        menu: ['📝 Зарегистрироваться'] },
+
+      { id: 'reg_name', kind: 'stage', code: '/register', title: 'Регистрация — имя',
+        bot: '📝 Регистрация\n\nКак тебя зовут? (имя и фамилия)' },
+
+      { id: 'reg_phone', kind: 'stage', code: 'FSM', title: 'Регистрация — телефон',
+        bot: 'Отлично, {Имя}! Оставишь номер телефона? Он понадобится тим-лидерам мероприятий, на которые ты подашь заявку.',
+        menu: ['📱 Поделиться контактом'] },
+
+      { id: 'reg_done', kind: 'stage', code: 'registered', title: 'Регистрация завершена',
+        bot: '✅ Готово, ты зарегистрирован! Теперь доступны заявки на мероприятия и вся статистика.\n\nБыстрые команды: /events · /myapps · /stats · /help',
+        menu: ['📅 Мероприятия', '📝 Мои заявки', '📊 Статистика', '🔔 Подписка', '🔐 Доступ к сайту'] },
+
+      { id: 'reg_pending', kind: 'proact', code: 'G3→G4', title: 'Отложенная заявка',
+        bot: '✅ Регистрация завершена!\n\nКстати, ты хотел подать заявку на «Помощь приюту "Лапки"» — подать сейчас?\n\n[✅ Да, подать заявку]   [Не сейчас]',
+        menu: ['✅ Да, подать заявку', 'Не сейчас'] },
+
+      { id: 'volunteer', kind: 'leaf', code: '→ Волонтёр', title: 'Теперь волонтёр',
+        bot: 'Полное меню волонтёра. См. дерево «Волонтёр»: подача заявок, мои заявки, статистика, подписка, доступ к сайту.' },
+    ],
+    edges: [
+      { from: 'start', to: 'help', action: '/help', kind: 'act' },
+      { from: 'start', to: 'events', action: '📅 Мероприятия', kind: 'act' },
+      { from: 'start', to: 'reg_name', action: '📝 Зарегистрироваться', kind: 'act' },
+      { from: 'help', to: 'events', action: '/events', kind: 'act' },
+      { from: 'help', to: 'reg_name', action: '/register', kind: 'act' },
+
+      { from: 'events', to: 'events_empty', action: 'нет набора', kind: 'warn',
+        note: 'Если открытых меро нет — карточек не будет, только подсказка про подписку.' },
+      { from: 'events', to: 'guest_apply', action: '✅ Подать заявку', kind: 'warn',
+        note: 'Гость подать не может: бот запоминает event_id (pending_application_event_id) и ведёт на регистрацию.' },
+
+      { from: 'guest_apply', to: 'reg_name', action: '📝 Зарегистрироваться', kind: 'act' },
+      { from: 'reg_name', to: 'reg_phone', action: 'ввёл имя и фамилию', kind: 'act' },
+      { from: 'reg_phone', to: 'reg_pending', action: 'ввёл телефон + была отложенная заявка', kind: 'proact',
+        note: 'Если гость до регистрации жал «Подать заявку» — бот сам предложит довести дело до конца.' },
+      { from: 'reg_phone', to: 'reg_done', action: 'ввёл телефон (без отложенной заявки)', kind: 'act' },
+
+      { from: 'reg_pending', to: 'volunteer', action: '✅ Да, подать заявку', kind: 'act',
+        note: 'Вызывается тот же apply_to_event с сохранённым event_id.' },
+      { from: 'reg_pending', to: 'reg_done', action: 'Не сейчас', kind: 'act',
+        note: 'Очищает состояние — меро остаётся доступным через /events.' },
+      { from: 'reg_done', to: 'volunteer', action: 'полное меню', kind: 'act' },
+    ],
+  };
+  </script>
+  <script src="bot-tree.js"></script>
+</body>
+</html>

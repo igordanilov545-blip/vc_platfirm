@@ -203,12 +203,15 @@ def application_decision(application_id: int) -> InlineKeyboardMarkup:
 
 def application_shift_decision(application_id: int, shifts) -> InlineKeyboardMarkup:
     """Заявка на несколько смен (bot-update.md §2.3.C) — решение по каждой смене отдельно:
-    `[✅ Одобрить на <day>]` на каждую смену + общий `[💤 В резерв]` (резервируем сразу все
-    смены заявки одним нажатием — дерево не требует резерва по отдельным сменам)."""
+    `[✅ Одобрить на <day>]` на каждую смену, общая `[✅ Одобрить на все смены]` (через
+    существующий app_approve — одобряет заявку целиком, проставляя ApplicationShiftDecision
+    сразу на все смены), + общий `[💤 В резерв]` (резервируем сразу все смены одним нажатием —
+    дерево не требует резерва по отдельным сменам)."""
     builder = InlineKeyboardBuilder()
     for shift in shifts:
         day = shift.day.strftime('%d.%m')
         builder.button(text=f'✅ Одобрить на {day}', callback_data=f'app_shift_approve:{application_id}:{shift.id}')
+    builder.button(text='✅ Одобрить на все смены', callback_data=f'app_approve:{application_id}')
     builder.button(text='💤 В резерв', callback_data=f'app_reject:{application_id}')
     builder.button(text='👤 Профиль', callback_data=f'app_profile:{application_id}')
     builder.adjust(1)

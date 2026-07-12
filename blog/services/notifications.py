@@ -129,6 +129,27 @@ def notify_feedback_request(user: User, event):
     notify_user(user, text)
 
 
+def notify_became_team_leader(user: User):
+    """Пользователя назначили тим-лидером (bot-update.md §2.3.A, узел `became_tl`) —
+    проактивная отбивка о новых функциях бота, волонтёрский функционал сохраняется."""
+    text = (
+        '🎉 Поздравляем, вы стали тим-лидером Волонтёрского центра!\n\n'
+        'Новые функции:\n👥 /myevents — ваши мероприятия и заявки на них\n'
+        '🔔 /appnotify — уведомления о заявках\n\n'
+        'У вас остаётся весь функционал волонтёра: /events, /myapps, /stats, /subscribe.'
+    )
+    notify_user(user, text)
+
+
+def notify_assigned_to_event(user: User, event):
+    """Пользователя назначили тим-лидером НА КОНКРЕТНОЕ мероприятие (bot-update.md
+    §2.3.A, узел `assigned_event`)."""
+    first_shift = event.shifts.order_by('day').first()
+    when = f' ({first_shift.day.strftime("%d.%m.%Y")})' if first_shift else ''
+    text = f'📌 Вы назначены тим-лидером на «{event.title}»{when}.'
+    notify_user(user, text)
+
+
 def notify_manager_processed(application, manager: User):
     """Заявку обработал именно менеджер (bot-update.md §2.4.A) → тим-лидерам этого меро
     (не самому менеджеру — он и так знает, что сделал)."""

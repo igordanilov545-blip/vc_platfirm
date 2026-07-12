@@ -450,9 +450,14 @@ class EventForm(forms.ModelForm):
         selected_ids = {u.id for u in selected}
         event.staff.filter(staff_role='team_lead').exclude(user_id__in=selected_ids).delete()
         for user in selected:
-            EventStaff.objects.get_or_create(event=event, user=user, staff_role='team_lead')
+            _, created = EventStaff.objects.get_or_create(event=event, user=user, staff_role='team_lead')
             if not TeamLeader.objects.filter(user=user, revoked_at__isnull=True).exists():
                 TeamLeader.objects.create(user=user, assigned_by=self.assigned_by)
+                from blog.services.notifications import notify_became_team_leader
+                notify_became_team_leader(user)
+            if created:
+                from blog.services.notifications import notify_assigned_to_event
+                notify_assigned_to_event(user, event)
 
     def _save_manager(self, event):
         """Ровно один ответственный менеджер. Без явного выбора при СОЗДАНИИ —

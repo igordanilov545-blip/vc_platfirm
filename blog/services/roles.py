@@ -167,6 +167,9 @@ def assign_role(kind: str, users, assigned_by: User):
         affected.append(user)
         if kind == 'manager' and not TeamLeader.objects.filter(user=user, revoked_at__isnull=True).exists():
             TeamLeader.objects.create(user=user, assigned_by=assigned_by)
+        if kind == 'team_lead':
+            from blog.services.notifications import notify_became_team_leader
+            notify_became_team_leader(user)
     if affected:
         logger.info(
             'Выдана роль %s: subjects=%s by=%s',

@@ -614,6 +614,21 @@ class ParticipationForm(forms.ModelForm):
         }
 
 
+class ShiftMultipleSelect(forms.SelectMultiple):
+    """Select для выбора смен, где у каждого <option> проставлен `data-closed="1"`,
+    если набор на эту смену закрыт — JS (initCategoryChips) красит такой chip серым,
+    но смена остаётся кликабельной (заявка на неё просто сразу уйдёт в резерв)."""
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        # value приходит как ModelChoiceIteratorValue (Django 4+), не голым pk — берём
+        # обёрнутое значение через .value перед использованием в фильтре.
+        raw_value = value.value if hasattr(value, 'value') else value
+        shift = self.choices.queryset.filter(pk=raw_value).first() if raw_value else None
+        if shift and shift.recruit_status != 'open':
+            option['attrs']['data-closed'] = '1'
+        return option
+
+
 class ApplicationForm(forms.ModelForm):
     """Заявка на участие через веб (в отличие от Excel-импорта): ФИО/Telegram/телефон
     система уже знает из профиля авторизованного пользователя, поэтому их не спрашивает —
@@ -627,7 +642,7 @@ class ApplicationForm(forms.ModelForm):
         queryset=EventShift.objects.none(),
         required=False,
         label='Смены',
-        widget=forms.SelectMultiple,
+        widget=ShiftMultipleSelect,
     )
 
     class Meta:
@@ -647,15 +662,18 @@ class ApplicationForm(forms.ModelForm):
         # гарантированно не предлагать прошедшие меро (нет отдельного планировщика задач).
         for event in Event.objects.filter(shifts__recruit_status='open').distinct():
             event.close_recruit_if_passed()
-        # Подать заявку можно на любое ОПУБЛИКОВАННОЕ меро (published_at задан) — даже
-        # если набор на все смены уже закрыт: такая заявка просто сразу уходит в резерв
-        # (см. application_create), а не блокируется целиком.
+        # Подать заявку можно на любое ОПУБЛИКОВАННОЕ меро (published_at задан), у
+        # которого есть хотя бы одна смена, которая ещё не началась — даже если набор
+        # на все смены уже закрыт (такая заявка просто сразу уходит в резерв, см.
+        # application_create), но НЕ на меро, которое уже закончилось целиком.
+        now = timezone.now()
         self.fields['event'].queryset = Event.objects.filter(
-            published_at__isnull=False,
+            published_at__isnull=False, shifts__start_time__gt=now,
         ).distinct().order_by('-created_at')
 
-        # Пул смен для чипов — все смены выбранного меро (открытые и закрытые): закрытая
-        # смена всё ещё выбираема, просто заявка на неё сразу пойдёт в резерв.
+        # Пул смен для чипов — только смены выбранного меро, которые ещё не начались
+        # (открытые и закрытые по набору — закрытая смена всё ещё выбираема, просто
+        # заявка на неё сразу пойдёт в резерв; прошедшие/начавшиеся не предлагаются).
         event = self.instance.event if self.instance and self.instance.pk else None
         if 'event' in self.data:
             try:
@@ -663,7 +681,9 @@ class ApplicationForm(forms.ModelForm):
             except (Event.DoesNotExist, ValueError, TypeError):
                 event = None
         if event:
-            self.fields['selected_shifts'].queryset = event.shifts.all().order_by('day')
+            self.fields['selected_shifts'].queryset = event.shifts.filter(
+                start_time__gt=now
+            ).order_by('day')
         if self.instance and self.instance.pk:
             self.initial.setdefault('selected_shifts', self.instance.selected_shifts.all())
             # При редактировании существующей заявки мероприятие не меняем — только

@@ -1097,9 +1097,14 @@
                 var availableCount = 0;
                 Array.prototype.forEach.call(select.options, function (opt) {
                     var color = chipColorClass(opt.value);
+                    // Смена с закрытым набором (data-closed="1" на <option>, см.
+                    // ShiftMultipleSelect в forms.py) — серый chip вместо цветного, но
+                    // всё ещё кликабельный (заявка на неё уйдёт в резерв).
+                    var closed = opt.getAttribute('data-closed') === '1';
+                    var colorClass = closed ? 'cat-chip--closed' : color;
                     if (opt.selected) {
                         var chip = document.createElement('span');
-                        chip.className = 'cat-chip ' + color;
+                        chip.className = 'cat-chip ' + colorClass;
                         chip.innerHTML = '<span class="cat-chip-label"></span>' +
                             '<button type="button" class="cat-chip-x" aria-label="Убрать">×</button>';
                         chip.querySelector('.cat-chip-label').textContent = opt.textContent;
@@ -1113,7 +1118,7 @@
                         availableCount++;
                         var avail = document.createElement('button');
                         avail.type = 'button';
-                        avail.className = 'cat-chip cat-chip--add ' + color;
+                        avail.className = 'cat-chip cat-chip--add ' + colorClass;
                         avail.innerHTML = '<span class="cat-chip-label"></span><span class="cat-chip-plus">+</span>';
                         avail.querySelector('.cat-chip-label').textContent = opt.textContent;
                         avail.addEventListener('click', function () {

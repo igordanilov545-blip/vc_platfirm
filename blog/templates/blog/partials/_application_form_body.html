@@ -35,10 +35,12 @@
         {% if form.role_in_event.errors %}<div class="field-error">{{ form.role_in_event.errors|striptags }}</div>{% endif %}
     </div>
 
-    <div class="event-form-actions">
-        <button type="submit" class="btn">{{ submit_label|default:'Отправить заявку' }}</button>
+    <div class="event-form-actions" style="justify-content:space-between; align-items:center;">
         {% if application %}
-        <a href="{% url 'application_cancel' application.id %}" class="btn danger" data-modal data-modal-title="Отказаться от участия">Отказаться от участия</a>
+        <a href="{% url 'application_cancel' application.id %}" class="btn secondary btn-sm" style="opacity:0.6;" data-modal data-modal-title="Отказаться от участия">Отказаться от участия</a>
+        {% else %}
+        <span></span>
         {% endif %}
+        <button type="submit" class="btn">{{ submit_label|default:'Отправить заявку' }}</button>
     </div>
 </form>

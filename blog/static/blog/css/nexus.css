@@ -800,6 +800,8 @@ input:focus, select:focus, textarea:focus {
 .cat-chip--c5 { --_main: var(--cat-c5); --_soft: var(--cat-c5-soft); }
 .cat-chip--c6 { --_main: var(--cat-c6); --_soft: var(--cat-c6-soft); }
 .cat-chip--c7 { --_main: var(--cat-c7); --_soft: var(--cat-c7-soft); }
+/* Смена с закрытым набором (см. ShiftMultipleSelect) — серая, но кликабельная. */
+.cat-chip--closed { --_main: var(--text-secondary, #666); --_soft: var(--neutral-soft, #eee); }
 
 /* Чеклист условий завершения мероприятия / других проверок перед действием */
 .checklist { list-style: none; padding: 0; margin: 0 0 1rem; display: flex; flex-direction: column; gap: 10px; }

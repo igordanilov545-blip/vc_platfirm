@@ -840,10 +840,13 @@ def event_detail(request, event_id):
     # через клики по таблице); данные показываются только для просмотра.
     is_finished = event.event_status == 'finished'
 
-    # Кнопка «Подать заявку» доступна на любое ОПУБЛИКОВАННОЕ меро — даже если набор
-    # на все смены уже закрыт: такая заявка примется и сразу уйдёт в резерв (см.
-    # application_create), а не блокируется целиком до публикации.
-    has_open_recruitment = bool(event.published_at)
+    # Кнопка «Подать заявку» доступна на ОПУБЛИКОВАННОЕ меро, у которого есть хотя бы
+    # одна смена, что ещё не началась — даже если набор на все смены уже закрыт: такая
+    # заявка примется и сразу уйдёт в резерв (см. application_create). На уже
+    # закончившееся меро (все смены начались/прошли) заявку подать нельзя.
+    has_open_recruitment = bool(event.published_at) and any(
+        s.start_time > timezone.now() for s in shifts
+    )
     my_active_application = Application.objects.filter(
         user=request.user, event=event, status__in=['new', 'approved'],
     ).first()

@@ -39,11 +39,11 @@
             {% if form.password2.errors %}<div class="field-error">{{ form.password2.errors|striptags }}</div>{% endif %}
         </div>
 
-        <div class="event-form-actions">
-            <button type="submit" class="btn">Зарегистрироваться</button>
-            <a href="{% url 'login' %}" class="btn secondary">Уже есть аккаунт — войти</a>
-        </div>
+        <button type="submit" class="btn" style="width:100%; justify-content:center; margin-top:6px;">Зарегистрироваться</button>
     </form>
+    <div style="margin-top:12px; text-align:center;">
+        <a href="{% url 'login' %}" class="btn secondary" style="width:100%; justify-content:center;">Уже есть аккаунт — войти</a>
+    </div>
 </div>
 
 <script>

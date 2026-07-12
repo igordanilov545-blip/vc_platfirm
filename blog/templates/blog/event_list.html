@@ -4,7 +4,12 @@
 {% block content %}
 <div class="page-header">
     <h1>Мероприятия</h1>
-    {% if is_manager %}<a href="{% url 'event_create' %}" class="btn" data-modal data-modal-title="Новое мероприятие">+ Новое мероприятие</a>{% endif %}
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        {% comment %}Подача заявки живёт здесь (отдельной страницы подачи больше нет):
+        кнопка сверху справа открывает ту же модалку application_create.{% endcomment %}
+        <a href="{% url 'application_create' %}" class="btn" data-modal data-modal-title="Подать заявку на мероприятие">📝 Подать заявку</a>
+        {% if is_manager %}<a href="{% url 'event_create' %}" class="btn secondary" data-modal data-modal-title="Новое мероприятие">+ Новое мероприятие</a>{% endif %}
+    </div>
 </div>
 
 <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">

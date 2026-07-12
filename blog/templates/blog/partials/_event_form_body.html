@@ -98,17 +98,17 @@
     </div>
 
     {% comment %}Смены (обязательны при создании — без хотя бы одной смены меро не создать).
-    Добавленные смены показываются чипами сверху (как категории), с крестиком для удаления.
-    Ниже — поля одной новой смены + кнопка «＋». Итоговый список хранится в JSON и уходит
-    на сервер в shifts_json. Кнопка «Создать» блокируется на клиенте, пока смен нет или они
-    пересекаются по времени (initShiftChips в base.html).{% endcomment %}
+    Сверху — поля одной новой смены + кнопка «＋»; добавленные смены показываются чипами
+    ПОД формой ввода (как галочка выполненного действия), с крестиком для удаления.
+    Итоговый список хранится в JSON и уходит на сервер в shifts_json. Кнопка «Создать»
+    блокируется на клиенте, пока смен нет или они пересекаются по времени
+    (initShiftChips в base.html).{% endcomment %}
     {% if form.require_shift %}
     <hr class="form-divider">
     <h3 style="margin-top:0;">Смены мероприятия</h3>
     <p class="field-hint" style="margin-top:-8px;">У мероприятия должна быть хотя бы одна смена.</p>
     {% if form.non_field_errors %}{% for e in form.non_field_errors %}{% if 'смену' in e %}<div class="form-errors">{{ e }}</div>{% endif %}{% endfor %}{% endif %}
 
-    <div class="shift-chips-row" data-shift-chips-selected></div>
     <input type="hidden" name="shifts_json" data-shift-chips-json value="[]">
 
     <div class="field">
@@ -137,6 +137,9 @@
     {% for sf in form.shift_forms %}
         {% if sf.errors %}<div class="field-error">Смена {{ forloop.counter }}: {{ sf.errors.as_text }}</div>{% endif %}
     {% endfor %}
+
+    <div class="field-hint" style="margin-top:8px;">Добавленные смены:</div>
+    <div class="shift-chips-row" data-shift-chips-selected></div>
     {% endif %}
 
     {# ─── Ссылки ─── #}

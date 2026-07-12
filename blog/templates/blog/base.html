@@ -644,6 +644,7 @@
                     volunteer_needed: needed,
                 });
                 sync();
+                if (typeof window.showToast === 'function') window.showToast('Смена добавлена', 'success');
             });
 
             sync();

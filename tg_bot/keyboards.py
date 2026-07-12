@@ -42,8 +42,7 @@ def main_menu(is_team_leader: bool = False, is_manager: bool = False) -> ReplyKe
     builder.button(text='📝 Мои заявки')
     builder.button(text='📊 Статистика')
     builder.button(text='🔔 Подписка')
-    builder.button(text='🔐 Авторизоваться на сайте')
-    builder.button(text='🔐 Доступ к сайту')
+    builder.button(text='🌐 Перейти на сайт')
     if is_team_leader:
         builder.button(text='👥 Мои мероприятия (ТЛ)')
     if is_manager:
@@ -123,6 +122,41 @@ def existing_application_actions(application_id: int, can_cancel: bool) -> Inlin
     builder.button(text='✏️ Изменить заявку', callback_data=f'app_edit:{application_id}')
     if can_cancel:
         builder.button(text='❌ Отменить заявку', callback_data=f'app_cancel:{application_id}')
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def need_auth_actions() -> InlineKeyboardMarkup:
+    """Гость жмёт «Откликнуться» — предлагаем войти по прошлым заявкам или
+    зарегистрироваться (bot-update.md §2.1.B/C, узел `need_auth`)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text='🔑 Войти через Telegram', callback_data='tg_login')
+    builder.button(text='📝 Зарегистрироваться', callback_data='register')
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def recognize_confirm_actions() -> InlineKeyboardMarkup:
+    """«Кажется, мы тебя знаем» — подтвердить/отклонить найденный аккаунт
+    (bot-update.md §2.1.B, узел `login`)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text='✅ Да, это я', callback_data='tglogin_yes')
+    builder.button(text='Нет, это не я', callback_data='tglogin_no')
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def shift_selection_keyboard(event_id: int, shifts, selected_ids: set) -> InlineKeyboardMarkup:
+    """Экран выбора смен при подаче/редактировании заявки (bot-update.md §2.1.E):
+    «Выбрать все смены», по кнопке на каждую смену (отмеченные — с ✅), «Подать заявку»."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text='✅ Выбрать все смены', callback_data=f'shift_all:{event_id}')
+    for shift in shifts:
+        label = f"{shift.day.strftime('%d.%m')} · {shift.start_time.strftime('%H:%M')}–{shift.end_time.strftime('%H:%M')}"
+        if shift.id in selected_ids:
+            label = f'✅ {label}'
+        builder.button(text=label, callback_data=f'shift_pick:{event_id}:{shift.id}')
+    builder.button(text='Подать заявку' if not selected_ids else 'Подать заявку ✅', callback_data=f'shift_apply:{event_id}')
     builder.adjust(1)
     return builder.as_markup()
 

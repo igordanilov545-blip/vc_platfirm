@@ -146,6 +146,61 @@ def reject_telegram_verification(token: str):
     return reject_verify_token(token)
 
 
+def recognize_by_telegram(user_id: int, telegram_username: str, first_name: str = None, last_name: str = None):
+    """«Вход через Telegram» — узнавание гостя по прошлым заявкам (bot-update.md §2.1.B):
+    сначала по текущему username, а если он сменился в Telegram — по ФИО, которое
+    просим на этом же экране. Возвращает (кандидат: User|None, имя_кандидата: str|None).
+    Ничего не привязывает — только просмотр; привязка — в `confirm_recognized_account`."""
+    close_old_connections()
+    current_user = get_user(user_id)
+    candidate = dc.find_candidate_user_by_telegram(
+        telegram_username, first_name, last_name, exclude_user_id=current_user.id,
+    )
+    if not candidate:
+        return None, None
+    name = (f'{candidate.last_name or ""} {candidate.first_name or ""}'.strip()) or candidate.telegram_username
+    return candidate, name
+
+
+def confirm_recognized_account(guest_user_id: int, candidate_user_id: int, telegram_id, telegram_username: str = None):
+    """«Да, это я» — переключает текущий Telegram-чат на найденный аккаунт (личность уже
+    подтверждена интерактивно). `telegram_id` уникален, поэтому гостевую запись, созданную
+    первым касанием в этом же чате (guest_user_id), нужно освободить: если она ещё
+    гость без активности (никаких заявок/ролей) — удаляем её и переносим telegram_id на
+    кандидата; иначе (уже что-то успел сделать под этим id) — коллизию не разруливаем
+    автоматически, только логируем для менеджера (bot-update.md §3 — без миграции)."""
+    close_old_connections()
+    from blog.models import User
+
+    candidate = User.objects.filter(pk=candidate_user_id).first()
+    guest = User.objects.filter(pk=guest_user_id).first()
+    if not candidate or not guest:
+        return None, 'not_found'
+    if candidate.id == guest.id:
+        return candidate, None
+
+    guest_has_activity = (
+        guest.applications.exists() or guest.manager_roles.exists() or guest.team_leader_roles.exists()
+    )
+    if guest_has_activity:
+        logger.warning(
+            'Коллизия Telegram при узнавании: guest=%s (с активностью) пытался войти как candidate=%s '
+            'telegram_id=%s username=%s — не перепривязываем.',
+            guest.id, candidate.id, telegram_id, telegram_username,
+        )
+        return None, 'collision'
+
+    guest.delete()
+    dc.update_user_fields(candidate, telegram_id=str(telegram_id))
+    if telegram_username:
+        dc.update_user_fields(candidate, telegram_username=telegram_username)
+    if candidate.registration_status != 'registered':
+        dc.update_user_fields(candidate, registration_status='registered')
+    logger.info('Вход через Telegram (узнавание): candidate=%s telegram_id=%s (гость %s удалён)',
+                candidate.id, telegram_id, guest.id)
+    return candidate, None
+
+
 def user_role_label(user) -> str:
     """Роль называем пользователю (не путать с внутренним `status`, см. tg-bot.md §2)."""
     return roles_service.role_label(user)
@@ -199,8 +254,21 @@ def set_web_credentials(user_id: int, login: str, password: str):
 # ---------------------------------------------------------------------------
 
 def user_stats(user_id: int) -> dict:
+    """Статистика волонтёра (tg-bot.md/bot-update.md §2.2.B — порядок вывода: сезон,
+    «до Звёздочки ПГАС», потенциал по активным заявкам, итог за всё время внизу)."""
     close_old_connections()
+    from data_base.data_controller import get_const
+
     user = get_user(user_id)
+    threshold = get_const('pgas_hours_threshold', default=100)
+    hours_to_pgas = max(0, threshold - (user.season_hours or 0))
+
+    potential_hours = 0
+    for app in dc.get_user_active_applications(user_id):
+        shifts = list(app.selected_shifts.all()) or list(app.event.shifts.all())
+        for shift in shifts:
+            potential_hours += max(0, round((shift.end_time - shift.start_time).total_seconds() / 3600))
+
     return {
         'total_hours': user.total_hours,
         'season_hours': user.season_hours,
@@ -208,6 +276,8 @@ def user_stats(user_id: int) -> dict:
         'season_events': user.season_event_count,
         'is_star': is_pgas_star(user),
         'blacklisted': user.status == 'blacklisted',
+        'hours_to_pgas': hours_to_pgas,
+        'potential_hours': potential_hours,
     }
 
 
@@ -249,9 +319,21 @@ def open_events(limit: int = 7, user_id: int = None) -> list:
     return result[:limit]
 
 
-def apply_to_event(user_id: int, event_id: int):
-    """Подача заявки из бота (tg-bot.md §4.2–4.3). Каждый вызов — независимая заявка
-    на конкретное меро; несколько заявок на разные меро подаются отдельными вызовами.
+def event_open_shifts(event_id: int) -> list:
+    """Смены меро с открытым набором (для экрана выбора смен, tg-bot.md §4.2)."""
+    close_old_connections()
+    event = dc.get_event_by_id(event_id)
+    if not event:
+        return []
+    return list(event.shifts.filter(recruit_status='open').order_by('day', 'start_time'))
+
+
+def apply_to_event(user_id: int, event_id: int, shift_ids: list = None):
+    """Подача заявки из бота (tg-bot.md §4.2–4.3, bot-update.md §2.1.E). Каждый вызов —
+    независимая заявка на конкретное меро; несколько заявок на разные меро подаются
+    отдельными вызовами. `shift_ids` — id выбранных `EventShift` (чипы выбора смен);
+    если не переданы/пусты — заявка подаётся на все открытые смены меро (старое
+    поведение, совместимость с прямой подачей без выбора).
     Возвращает (application|None, код ошибки|None). При `already_applied` объект
     существующей заявки кладётся в `application`, чтобы хендлер мог сразу предложить
     посмотреть/изменить/отменить её (db.md правило 7d), не делая второй запрос."""
@@ -260,7 +342,8 @@ def apply_to_event(user_id: int, event_id: int):
     event = next((e for e in dc.get_events() if e.id == event_id), None)
     if not event:
         return None, 'not_found'
-    if not event.shifts.filter(recruit_status='open').exists():
+    open_shifts = list(event.shifts.filter(recruit_status='open'))
+    if not open_shifts:
         return None, 'closed'
     if user.status == 'blacklisted':
         return None, 'blacklisted'
@@ -269,6 +352,8 @@ def apply_to_event(user_id: int, event_id: int):
     existing = dc.get_user_application_for_event(user_id, event_id)
     if existing:
         return existing, 'already_applied'
+
+    shifts = [s for s in open_shifts if s.id in shift_ids] if shift_ids else open_shifts
 
     # Требования меро (db.md правило 6) — та же логика, что и на веб-подаче: если
     # волонтёр не соответствует хотя бы одному, заявка сразу уходит в резерв, без
@@ -288,6 +373,7 @@ def apply_to_event(user_id: int, event_id: int):
         status='rejected' if req_check['auto_reject'] else 'new',
         auto_reject_reason='; '.join(req_check['reasons']) if req_check['auto_reject'] else None,
     )
+    dc.set_application_shifts(application, shifts)
     notify_application_submitted(application, unknown_age=req_check['unknown_age'])
     logger.info(
         'Заявка подана из бота: application=%s event=%s by=%s%s',

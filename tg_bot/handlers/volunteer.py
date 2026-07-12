@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 
 from tg_bot import services, keyboards as kb
-from tg_bot.states import ApplicationCancel, ApplicationEdit, PendingApplication, Feedback
+from tg_bot.states import ApplicationCancel, ApplicationEdit, PendingApplication, Feedback, ShiftSelection
 from tg_bot.ui import answer_with_expiring_keyboard
 
 router = Router(name='volunteer')
@@ -77,6 +77,8 @@ ERROR_TEXTS = {
 
 @router.callback_query(F.data.startswith('apply:'))
 async def cb_apply(callback: CallbackQuery, state: FSMContext):
+    """«Откликнуться на «…»» — гостя отправляет на регистрацию (запомнив меро),
+    авторизованного волонтёра — сразу на экран выбора смен (bot-update.md §2.1.E)."""
     event_id = int(callback.data.split(':', 1)[1])
     user, _ = await sync_to_async(services.get_or_create_user)(
         callback.from_user.id, callback.from_user.username
@@ -86,25 +88,89 @@ async def cb_apply(callback: CallbackQuery, state: FSMContext):
         await state.update_data(pending_event_id=event_id)
         await callback.answer()
         await callback.message.answer(
-            '📝 Чтобы подать заявку, сначала нужно зарегистрироваться — это буквально '
-            'имя и телефон, 30 секунд.',
+            '📝 Чтобы подать заявку, сначала нужно войти. Ты уже оставлял(а) заявки раньше?',
             reply_markup=None,
         )
-        from tg_bot.handlers.common import start_registration
-        await start_registration(callback.message, state)
+        await answer_with_expiring_keyboard(
+            callback.message, 'Выбери вариант:', kb.need_auth_actions(),
+        )
         return
 
-    application, error = await sync_to_async(services.apply_to_event)(user.id, event_id)
+    await _show_shift_selection(callback.message, state, event_id)
+    await callback.answer()
+
+
+async def _show_shift_selection(message: Message, state: FSMContext, event_id: int, selected_ids: set = None):
+    shifts = await sync_to_async(services.event_open_shifts)(event_id)
+    if not shifts:
+        await message.answer(ERROR_TEXTS['closed'])
+        return
+    selected_ids = selected_ids or set()
+    await state.update_data(shift_event_id=event_id, shift_selected_ids=list(selected_ids))
+    await state.set_state(ShiftSelection.choosing)
+    title = await sync_to_async(get_event_title)(event_id)
+    await answer_with_expiring_keyboard(
+        message, f'🗓 «{title}» — выбери смены:',
+        kb.shift_selection_keyboard(event_id, shifts, selected_ids),
+    )
+
+
+@router.callback_query(ShiftSelection.choosing, F.data.startswith('shift_pick:'))
+async def cb_shift_pick(callback: CallbackQuery, state: FSMContext):
+    _, event_id_s, shift_id_s = callback.data.split(':')
+    event_id, shift_id = int(event_id_s), int(shift_id_s)
+    data = await state.get_data()
+    selected_ids = set(data.get('shift_selected_ids') or [])
+    if shift_id in selected_ids:
+        selected_ids.discard(shift_id)
+    else:
+        selected_ids.add(shift_id)
+    await callback.answer()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await _show_shift_selection(callback.message, state, event_id, selected_ids)
+
+
+@router.callback_query(ShiftSelection.choosing, F.data.startswith('shift_all:'))
+async def cb_shift_all(callback: CallbackQuery, state: FSMContext):
+    event_id = int(callback.data.split(':', 1)[1])
+    await callback.answer()
+    await _finalize_application(callback, state, event_id, shift_ids=None)
+
+
+@router.callback_query(ShiftSelection.choosing, F.data.startswith('shift_apply:'))
+async def cb_shift_apply(callback: CallbackQuery, state: FSMContext):
+    event_id = int(callback.data.split(':', 1)[1])
+    data = await state.get_data()
+    selected_ids = data.get('shift_selected_ids') or []
+    await callback.answer()
+    if not selected_ids:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await _show_shift_selection(callback.message, state, event_id, set())
+        await callback.message.answer('Сначала выбери смену 🙂')
+        return
+    await _finalize_application(callback, state, event_id, shift_ids=selected_ids)
+
+
+async def _finalize_application(callback: CallbackQuery, state: FSMContext, event_id: int, shift_ids):
+    await state.set_state(None)
+    await state.clear()
+
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        callback.from_user.id, callback.from_user.username
+    )
+    message = callback.message
+    application, error = await sync_to_async(services.apply_to_event)(user.id, event_id, shift_ids)
 
     if error == 'need_registration':
-        await callback.answer()
-        await callback.message.answer('📝 Сначала нужно зарегистрироваться — используй /register.')
+        await message.answer('📝 Сначала нужно зарегистрироваться — используй /register.')
         return
     if error == 'already_applied':
-        # db.md правило 7d: не молчаливая ошибка, а предложение посмотреть/изменить/
-        # отменить существующую заявку — `application` тут уже сама заявка (см.
-        # `services.apply_to_event`), а не None.
-        await callback.answer()
         can_cancel, _, _ = await sync_to_async(services.application_cancel_eligibility)(
             user.id, application.id
         )
@@ -113,19 +179,16 @@ async def cb_apply(callback: CallbackQuery, state: FSMContext):
             f'({application.get_status_display()}).'
         )
         await answer_with_expiring_keyboard(
-            callback.message, text, kb.existing_application_actions(application.id, can_cancel)
+            message, text, kb.existing_application_actions(application.id, can_cancel)
         )
         return
     if error:
-        await callback.answer()
-        await callback.message.answer(ERROR_TEXTS.get(error, '⚠️ Не получилось подать заявку.'))
+        await message.answer(ERROR_TEXTS.get(error, '⚠️ Не получилось подать заявку.'))
         return
 
-    await callback.message.edit_reply_markup(reply_markup=kb.applied_button())
-    await callback.answer('Заявка отправлена!')
-    await callback.message.answer(
-        f'✅ Заявка на «{application.event.title}» отправлена! '
-        'Тим-лидер рассмотрит её и пришлёт ответ сюда, в бот.'
+    await message.answer(
+        f'✅ Твоя заявка на «{application.event.title}» принята на рассмотрение. '
+        'Бот пришлёт ответ сюда.'
     )
 
 
@@ -275,16 +338,19 @@ async def cmd_stats(message: Message):
     )
     stats = await sync_to_async(services.user_stats)(user.id)
 
-    lines = [
-        '📊 Твоя статистика\n',
-        f"Всего часов: {stats['total_hours']}",
-    ]
-    season_line = f"Часов за сезон: {stats['season_hours']}"
+    lines = ['📊 За этот сезон:']
+    lines.append(f"• Часов: {stats['season_hours']}")
+    lines.append(f"• Мероприятий: {stats['season_events']}")
     if stats['is_star']:
-        season_line += '  ⭐ Звёздочка ПГАС!'
-    lines.append(season_line)
-    lines.append(f"Мероприятий всего: {stats['total_events']}")
-    lines.append(f"Мероприятий за сезон: {stats['season_events']}")
+        lines.append('⭐ Звёздочка ПГАС!')
+    else:
+        lines.append(f"⭐ До «Звёздочки ПГАС» осталось {stats['hours_to_pgas']:g} ч")
+    if stats['potential_hours']:
+        lines.append(f"⏳ По активным заявкам может добавиться ещё ~{stats['potential_hours']} ч")
+
+    lines.append('\n— За всё время —')
+    lines.append(f"• Часов всего: {stats['total_hours']}")
+    lines.append(f"• Мероприятий всего: {stats['total_events']}")
 
     if stats['blacklisted']:
         lines.append('\n⛔ Твой аккаунт заблокирован. Обратись к менеджеру центра.')

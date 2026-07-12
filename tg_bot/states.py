@@ -13,6 +13,20 @@ class PendingApplication(StatesGroup):
     event_id = State()
 
 
+class ShiftSelection(StatesGroup):
+    """Выбор смен при подаче/редактировании заявки (bot-update.md §2.1.E) — пул
+    отмеченных `EventShift.id` хранится в данных состояния (`selected_shift_ids`)."""
+    choosing = State()
+
+
+class TelegramLogin(StatesGroup):
+    """Узнавание гостя по прошлым заявкам, «Вход через Telegram» (bot-update.md §2.1.B).
+    Если username сменился и совпадения по нему нет — просим ФИО (`waiting_name`), затем
+    ждём подтверждения «Да, это я» / «Нет» по найденному кандидату (`waiting_confirm`)."""
+    waiting_name = State()
+    waiting_confirm = State()
+
+
 class WebCredentials(StatesGroup):
     """Установка/сброс логина и пароля для Web Platform (tg-bot.md §3.2–3.3)."""
     waiting_login = State()

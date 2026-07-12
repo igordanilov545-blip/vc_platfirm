@@ -20,7 +20,7 @@ logger = get_db_logger(__name__)
 __all__ = [
     'create_user', 'get_users',
     'get_user_by_telegram_id', 'get_or_create_user_by_telegram_id', 'update_user_fields',
-    'sync_user_from_applications',
+    'sync_user_from_applications', 'find_candidate_user_by_telegram',
     'create_manager', 'get_managers',
     'create_team_leader', 'get_team_leaders',
     'create_organization', 'get_organizations',
@@ -34,7 +34,7 @@ __all__ = [
     'add_category_to_event', 'get_event_categories_map',
     'create_event_shift', 'get_event_shifts',
     'assign_staff_to_event', 'get_event_staff',
-    'create_application', 'get_applications', 'get_user_active_applications',
+    'create_application', 'set_application_shifts', 'get_applications', 'get_user_active_applications',
     'count_applications', 'count_events_with_open_recruitment',
     'get_user_application_for_event', 'update_application_status',
     'create_participation', 'get_participations', 'update_participation_status',
@@ -142,6 +142,30 @@ def get_or_create_user_by_telegram_id(
     sync_user_from_applications(user)
 
     return user, created
+
+
+def find_candidate_user_by_telegram(
+    username: Optional[str] = None, first_name: Optional[str] = None, last_name: Optional[str] = None,
+    exclude_user_id: Optional[int] = None,
+) -> Optional[User]:
+    """Кандидат «мы тебя знаем» для узнавания гостя по Telegram (bot-update.md §2.1.B):
+    сопоставление по текущему `telegram_username` — а если он сменился (пользователь
+    переименовался в Telegram) или совпадение — это сам текущий гость (`exclude_user_id`)
+    — по ФИО, как и матчинг заявок (username → ФИО). Ничего не создаёт и не привязывает."""
+    uname = (username or '').lstrip('@')
+    if uname:
+        qs = User.objects.filter(telegram_username__iexact=uname)
+        if exclude_user_id:
+            qs = qs.exclude(pk=exclude_user_id)
+        found = qs.order_by('-id').first()
+        if found:
+            return found
+    if (first_name or '').strip() and (last_name or '').strip():
+        qs = User.objects.filter(first_name__iexact=first_name.strip(), last_name__iexact=last_name.strip())
+        if exclude_user_id:
+            qs = qs.exclude(pk=exclude_user_id)
+        return qs.order_by('-id').first()
+    return None
 
 
 def sync_user_from_applications(user: User) -> User:
@@ -376,6 +400,19 @@ def create_application(
         application.id, event.id, status, actor(user) if user else 'user=?',
     )
     return application
+
+def set_application_shifts(application: Application, shifts: List[EventShift]) -> Application:
+    """Привязывает заявку к выбранным сменам меро (M2M `selected_shifts`, чипы на
+    веб-форме — тот же паттерн для бота) + человекочитаемая сводка в `Application.shifts`
+    (обратная совместимость с Excel-импортом, где выбора смен нет)."""
+    application.selected_shifts.set(shifts)
+    if shifts:
+        application.shifts = ', '.join(s.day.isoformat() for s in sorted(shifts, key=lambda s: s.day))
+    else:
+        application.shifts = 'Все смены'
+    application.save(update_fields=['shifts'])
+    return application
+
 
 def create_participation(
     user: User,

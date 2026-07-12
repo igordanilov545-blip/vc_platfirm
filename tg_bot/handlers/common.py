@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
 from tg_bot import services, keyboards as kb
-from tg_bot.states import Registration, PendingApplication
+from tg_bot.states import Registration, PendingApplication, TelegramLogin
 from tg_bot.templates_loader import render
 from tg_bot.ui import answer_with_expiring_keyboard
 
@@ -84,9 +84,8 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
     await message.answer(render('start_new'), reply_markup=kb.guest_menu())
 
 
-@router.message(Command('login'))
 @router.message(Command('weblogin'))
-@router.message(F.text == '🔐 Авторизоваться на сайте')
+@router.message(F.text == '🌐 Перейти на сайт')
 async def cmd_weblogin(message: Message, state: FSMContext):
     """Прислать одноразовую ссылку для входа на сайт (действует 5 минут). Работает
     сразу после /start — не важно, зарегистрирован пользователь в боте или нет:
@@ -139,6 +138,115 @@ async def cmd_register(message: Message, state: FSMContext):
 @router.callback_query(F.data == 'register')
 async def cb_register(callback: CallbackQuery, state: FSMContext):
     await start_registration(callback, state)
+
+
+@router.message(Command('login'))
+@router.callback_query(F.data == 'tg_login')
+async def cmd_or_cb_tg_login(event, state: FSMContext):
+    """«Вход через Telegram» — узнавание гостя по прошлым заявкам (bot-update.md §2.1.B,
+    узел `login`). Сначала пробуем найти кандидата по текущему username; если username
+    сменился (переименовался в Telegram) и совпадения нет — просим ФИО на этом же
+    экране и ищем по нему тоже (та же логика матчинга, что и у заявок: username → ФИО)."""
+    message = event.message if isinstance(event, CallbackQuery) else event
+    tg_username = (event.from_user.username if isinstance(event, CallbackQuery) else message.from_user.username)
+    tg_id = event.from_user.id if isinstance(event, CallbackQuery) else message.from_user.id
+
+    user, _ = await sync_to_async(services.get_or_create_user)(tg_id, tg_username)
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+
+    candidate, name = await sync_to_async(services.recognize_by_telegram)(user.id, tg_username)
+    if candidate:
+        await _offer_recognized_candidate(message, state, candidate, name)
+        return
+
+    await state.set_state(TelegramLogin.waiting_name)
+    await message.answer(
+        '🔑 Не нашли совпадение по твоему текущему Telegram-имени — возможно, ты менял(а) '
+        'username. Напиши, пожалуйста, своё ФИО (как указывал(а) раньше в заявках), '
+        'попробуем найти тебя по нему:',
+        reply_markup=kb.remove_keyboard(),
+    )
+
+
+async def _offer_recognized_candidate(message: Message, state: FSMContext, candidate, name: str):
+    await state.update_data(tglogin_candidate_id=candidate.id)
+    await state.set_state(TelegramLogin.waiting_confirm)
+    await message.answer(
+        f'🔑 Проверяю… Кажется, мы тебя знаем:\n\n👤 {name}\n\nЭто ты?',
+        reply_markup=kb.recognize_confirm_actions(),
+    )
+
+
+@router.message(TelegramLogin.waiting_name)
+async def tglogin_got_name(message: Message, state: FSMContext):
+    parts = (message.text or '').strip().split()
+    if not parts:
+        await message.answer('Напиши, пожалуйста, ФИО (Фамилия Имя).')
+        return
+    last_name = parts[0] if len(parts) >= 2 else None
+    first_name = parts[1] if len(parts) >= 2 else parts[0]
+
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        message.from_user.id, message.from_user.username
+    )
+    candidate, name = await sync_to_async(services.recognize_by_telegram)(
+        user.id, message.from_user.username, first_name, last_name,
+    )
+    await state.set_state(None)
+    if not candidate:
+        await message.answer('Не нашли совпадение по ФИО. Давай зарегистрируемся 👇')
+        await start_registration(message, state)
+        return
+    await _offer_recognized_candidate(message, state, candidate, name)
+
+
+@router.callback_query(TelegramLogin.waiting_confirm, F.data == 'tglogin_yes')
+async def cb_tglogin_yes(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    candidate_id = data.get('tglogin_candidate_id')
+    await state.set_state(None)
+    await state.clear()
+    await callback.answer()
+
+    guest, _ = await sync_to_async(services.get_or_create_user)(
+        callback.from_user.id, callback.from_user.username
+    )
+    account, error = await sync_to_async(services.confirm_recognized_account)(
+        guest.id, candidate_id, callback.from_user.id, callback.from_user.username,
+    )
+    if error == 'collision':
+        await callback.message.edit_text(
+            '⚠️ Не получилось войти автоматически — обратись к менеджеру центра, поможем разобраться.'
+        )
+        return
+    if not account:
+        await callback.message.edit_text('⚠️ Не получилось найти аккаунт — попробуй зарегистрироваться заново.')
+        return
+
+    is_tl, is_mgr = await _menu_for(account)
+    await callback.message.edit_text(f'✅ С возвращением, {account.first_name}! Ты вошёл(ла) — весь твой прежний опыт (часы, меро) на месте.')
+    await callback.message.answer('Что дальше?', reply_markup=kb.main_menu(is_tl, is_mgr))
+
+    pending = await state.get_data()
+    pending_event_id = pending.get('pending_event_id')
+    await state.clear()
+    if pending_event_id:
+        from tg_bot.handlers.volunteer import get_event_title, _show_shift_selection
+        title = await sync_to_async(get_event_title)(pending_event_id)
+        if title:
+            await answer_with_expiring_keyboard(
+                callback.message, f'Кстати, ты хотел(а) откликнуться на «{title}» — завершить заявку сейчас?',
+                kb.confirm_pending_application(pending_event_id),
+            )
+
+
+@router.callback_query(TelegramLogin.waiting_confirm, F.data == 'tglogin_no')
+async def cb_tglogin_no(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(None)
+    await callback.answer()
+    await callback.message.edit_text('Ок, тогда заведём новый аккаунт. Регистрируемся 👇')
+    await start_registration(callback.message, state)
 
 
 @router.message(Registration.waiting_name)
@@ -231,7 +339,10 @@ async def cb_dismiss(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith('tgverify_yes:'))
 async def cb_tgverify_yes(callback: CallbackQuery):
-    """«Да, это я» — верифицируем Telegram и (если был web:*) привязываем реальный id."""
+    """«Да, это я» — верифицируем Telegram и (если был web:*) привязываем реальный id.
+    bot-update.md §2.1.A.0: пользователь при этом автоматически логинится в боте под
+    подтверждённым аккаунтом — если он был там ещё гостем, считаем регистрацию/вход
+    завершёнными и сразу показываем основное меню его роли."""
     token = callback.data.split(':', 1)[1]
     user, err = await sync_to_async(services.confirm_telegram_verification)(
         token, callback.from_user.id, callback.from_user.username,
@@ -251,6 +362,14 @@ async def cb_tgverify_yes(callback: CallbackQuery):
     markup = kb.back_to_site_button()
     await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer('Аккаунт верифицирован')
+
+    if err != 'conflict' and await sync_to_async(services.is_guest)(user):
+        await sync_to_async(services.complete_registration)(user.id, user.first_name or 'Волонтёр')
+        is_tl, is_mgr = await _menu_for(user)
+        await callback.message.answer(
+            'Ты уже авторизован(а) в боте под этим аккаунтом — вот что доступно:',
+            reply_markup=kb.main_menu(is_tl, is_mgr),
+        )
 
 
 @router.callback_query(F.data.startswith('tgverify_no:'))

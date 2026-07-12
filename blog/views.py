@@ -619,7 +619,20 @@ def dashboard(request):
         from data_base import data_controller as dc
         context['new_applications_count'] = dc.count_applications(status_filter='new')
         context['open_events_count'] = dc.count_events_with_open_recruitment()
+
+        from blog.services.incidents import get_open_incidents
+        context['incidents'] = get_open_incidents()
     return render(request, 'blog/dashboard.html', context)
+
+
+@manager_required
+def incident_resolve(request, incident_id):
+    """Отметить пункт «Главного» решённым — галочка сбоку у инцидента (чек-лист)."""
+    from blog.services.incidents import resolve_incident
+    if request.method == 'POST':
+        resolve_incident(incident_id, request.user)
+        messages.success(request, 'Отмечено как решённое.')
+    return redirect('dashboard')
 
 
 # ---------------------------------------------------------------------------

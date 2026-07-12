@@ -769,6 +769,38 @@ class UserComment(models.Model):
         verbose_name_plural = 'Комментарии к волонтёрам'
 
 
+class Incident(models.Model):
+    """Пункт раздела «Главное» менеджера — что-то, требующее внимания или решения
+    (коллизия Telegram-аккаунтов, идущее/скоро начинающееся мероприятие, запрос
+    верификации для справки ПГАС и т.п.). Список работает как чек-лист: менеджер
+    отмечает пункт решённым (resolved_at), и он пропадает из списка активных."""
+    KIND_CHOICES = [
+        ('tg_collision', 'Коллизия Telegram-аккаунта'),
+        ('event_ongoing', 'Мероприятие идёт/скоро начнётся'),
+        ('pgas_verification', 'Требуется верификация для справки ПГАС'),
+    ]
+
+    id = models.AutoField(primary_key=True)
+    kind = models.CharField(max_length=30, choices=KIND_CHOICES)
+    text = models.TextField()
+    related_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    related_event = models.ForeignKey(Event, on_delete=models.CASCADE, null=True, blank=True, related_name='+')
+    resolved_at = models.DateTimeField(blank=True, null=True)
+    resolved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'incidents'
+        verbose_name = 'Инцидент'
+        verbose_name_plural = 'Инциденты'
+        indexes = [
+            models.Index(fields=['kind', 'resolved_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.get_kind_display()}: {self.text[:50]}'
+
+
 class EventFeedback(models.Model):
     """Отзывы о мероприятии."""
     id = models.AutoField(primary_key=True)

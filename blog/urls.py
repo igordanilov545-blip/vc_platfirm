@@ -12,6 +12,7 @@ urlpatterns = [
     path('profile/edit/', views.profile_edit, name='profile_edit'),
     path('profile/verify-telegram/', views.verify_telegram_start, name='verify_telegram_start'),
     path('', views.dashboard, name='dashboard'),
+    path('incidents/<int:incident_id>/resolve/', views.incident_resolve, name='incident_resolve'),
     path('healthz/', views.healthz, name='healthz'),
 
     path('webapp/', views.webapp_entry, name='webapp_entry'),

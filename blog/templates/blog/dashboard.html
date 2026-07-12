@@ -29,6 +29,31 @@
     {% endif %}
 </div>
 
+{% if is_manager %}
+<div class="card" style="margin-top:1.5rem;">
+    <h3>🔔 Что нужно посмотреть</h3>
+    {% for incident in incidents %}
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid var(--border-subtle); padding:10px 0;">
+            <div>
+                {% if incident.kind == 'tg_collision' %}<span class="pill danger"><span class="dot"></span>Коллизия Telegram</span>
+                {% elif incident.kind == 'event_ongoing' %}<span class="pill warning"><span class="dot"></span>Мероприятие идёт</span>
+                {% elif incident.kind == 'pgas_verification' %}<span class="pill info"><span class="dot"></span>Верификация ПГАС</span>
+                {% else %}<span class="pill neutral"><span class="dot"></span>{{ incident.get_kind_display }}</span>{% endif %}
+                <span style="margin-left:6px;">{{ incident.text }}</span>
+                {% if incident.related_user_id %}<a href="{% url 'profile_detail' incident.related_user_id %}" style="margin-left:6px;">профиль →</a>{% endif %}
+                {% if incident.related_event_id %}<a href="{% url 'event_detail' incident.related_event_id %}" style="margin-left:6px;">мероприятие →</a>{% endif %}
+            </div>
+            <form method="post" action="{% url 'incident_resolve' incident.id %}" class="inline">
+                {% csrf_token %}
+                <button type="submit" class="btn secondary btn-sm" title="Отметить решённым">✓</button>
+            </form>
+        </div>
+    {% empty %}
+        <p style="color:var(--text-secondary); margin:0;">Новостей нет.</p>
+    {% endfor %}
+</div>
+{% endif %}
+
 <div class="card" style="margin-top:1.5rem;">
     <h3>Быстрые действия</h3>
     <a href="{% url 'event_list' %}" class="btn">Мероприятия</a>

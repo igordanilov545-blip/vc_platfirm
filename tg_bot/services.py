@@ -188,6 +188,13 @@ def confirm_recognized_account(guest_user_id: int, candidate_user_id: int, teleg
             'telegram_id=%s username=%s — не перепривязываем.',
             guest.id, candidate.id, telegram_id, telegram_username,
         )
+        from blog.services.incidents import create_incident
+        create_incident(
+            'tg_collision',
+            f'Два разных пользователя с одним Telegram: «{guest.full_name}» (id={guest.id}) '
+            f'пытался войти как «{candidate.full_name}» (id={candidate.id}) — требуется ручной разбор.',
+            related_user=candidate,
+        )
         return None, 'collision'
 
     guest.delete()

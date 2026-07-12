@@ -21,6 +21,7 @@
     <div class="stat-tile"><div class="value">{{ target.season_hours }}</div><div class="label">Часов за сезон</div></div>
     <div class="stat-tile"><div class="value">{{ target.total_event_count }}</div><div class="label">Мероприятий всего</div></div>
     <div class="stat-tile"><div class="value">{{ target.season_event_count }}</div><div class="label">Мероприятий за сезон</div></div>
+    <div class="stat-tile"><div class="value">{{ target.external_experiences.count }}</div><div class="label">Внешние мероприятия</div></div>
 </div>
 
 {% comment %}Для менеджера/ТЛ, смотрящего ЧУЖОЙ профиль, сразу вверху — данные, статус и
@@ -121,9 +122,10 @@
                 <td data-label="Присутствие" data-sort-value="">—</td>
                 <td data-label="Часы" class="num mono" data-sort-value="0">—</td>
                 {% else %}
-                <td data-label="Что делал" data-sort-value="{{ row.note|default:'' }}">
-                    <input type="text" class="profile-note-input" data-profile-note-input="{{ a.id }}" value="{{ row.note|default:'' }}" placeholder="—" autocomplete="off">
-                </td>
+                {% comment %}«Что делал» — только для чтения: менеджер/ТЛ не редактирует
+                эту заявку напрямую в таблице, для заметок о волонтёре есть комментарии
+                (см. блок «Комментарии к волонтёру» выше).{% endcomment %}
+                <td data-label="Что делал" data-sort-value="{{ row.note|default:'' }}">{{ row.note|default:"—" }}</td>
                 <td data-label="Статус заявки" data-sort-value="{{ a.status }}">
                     {% if a.status == 'approved' %}<span class="pill success"><span class="dot"></span>{{ a.get_status_display }}</span>
                     {% elif a.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>{{ a.get_status_display }}</span>

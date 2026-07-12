@@ -28,12 +28,13 @@
                 <td data-label="Мероприятие">
                     {% if item.event_id %}<a href="{% url 'event_detail' item.event_id %}">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}
                 </td>
-                <td data-label="Дата" class="mono">{% if item.kind == 'external' %}{{ item.date_display|default:"—" }}{% else %}{{ item.date|default:"—" }}{% endif %}</td>
+                <td data-label="Дата" class="mono">{% if item.kind == 'external' or item.kind == 'upcoming' %}{{ item.date_display|default:"—" }}{% else %}{{ item.date|default:"—" }}{% endif %}</td>
                 <td data-label="Тип">
                     {% if item.kind == 'external' %}<span class="pill neutral"><span class="dot"></span>Внешнее</span>
+                    {% elif item.kind == 'upcoming' %}<span class="pill warning"><span class="dot"></span>Предстоит</span>
                     {% else %}<span class="pill success"><span class="dot"></span>Центр</span>{% endif %}
                 </td>
-                <td data-label="Что делал">{% if item.kind == 'external' %}{{ item.description|default:"—" }}{% else %}—{% endif %}</td>
+                <td data-label="Что делал">{% if item.kind == 'external' or item.kind == 'upcoming' %}{{ item.description|default:"—" }}{% else %}—{% endif %}</td>
                 {% if can_edit %}
                 <td data-label="">
                     {% if item.kind == 'external' %}

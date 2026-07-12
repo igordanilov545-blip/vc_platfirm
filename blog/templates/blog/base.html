@@ -400,7 +400,7 @@
         ['initSortableTables', 'initHideableColumns', 'initTableFilter', 'initCharCounters',
          'bindConfirmForms', 'initCategoryChips', 'initShiftChips', 'initDatepickers',
          'initDateRangePair', 'initTimepickers', 'initUserPickers', 'initInfiniteScroll',
-         'bindRoleForms', 'initAttendanceHoursInputs', 'initProfileNoteInputs',
+         'bindRoleForms', 'initAttendanceHoursInputs',
          'initPasswordToggle', 'initToasts'].forEach(function (fn) {
             if (typeof window[fn] === 'function') window[fn](root);
         });
@@ -2195,45 +2195,6 @@
         });
     }
     initAttendanceHoursInputs(document);
-
-    // «Что делал» — инлайн-редактирование прямо в единой таблице «Опыт и заявки»
-    // профиля (тот же паттерн, что часы явки выше): сохраняется по blur/Enter, без
-    // отдельной формы/модалки.
-    function sendProfileNote(input) {
-        var id = input.getAttribute('data-profile-note-input');
-        input.disabled = true;
-        fetch('/applications/' + id + '/set-profile-note/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-Requested-With': 'XMLHttpRequest',
-            },
-            body: 'profile_note=' + encodeURIComponent(input.value) + '&csrfmiddlewaretoken=' + encodeURIComponent(getCsrfToken()),
-        })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            if (data.error) { alert(data.error); return; }
-            input.value = data.profile_note;
-            var cell = input.closest('td');
-            if (cell) cell.setAttribute('data-sort-value', data.profile_note);
-        })
-        .catch(function () { alert('Не удалось сохранить. Попробуйте ещё раз.'); })
-        .finally(function () { input.disabled = false; });
-    }
-    function initProfileNoteInputs(root) {
-        (root || document).querySelectorAll('[data-profile-note-input]').forEach(function (input) {
-            if (input.dataset.noteInit) return;
-            input.dataset.noteInit = '1';
-            var lastSaved = input.value;
-            input.addEventListener('change', function () {
-                if (input.value !== lastSaved) { lastSaved = input.value; sendProfileNote(input); }
-            });
-            input.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-            });
-        });
-    }
-    initProfileNoteInputs(document);
 
     var quickAddBackdrop = document.getElementById('quick-add-backdrop');
     var quickAddBody = document.getElementById('quick-add-body');

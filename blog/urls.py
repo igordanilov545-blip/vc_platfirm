@@ -44,7 +44,6 @@ urlpatterns = [
     path('participations/<int:participation_id>/edit/', views.participation_edit, name='participation_edit'),
     path('participations/<int:participation_id>/set-status/', views.participation_set_status, name='participation_set_status'),
     path('participations/<int:participation_id>/set-hours/', views.participation_set_hours, name='participation_set_hours'),
-    path('applications/<int:application_id>/set-profile-note/', views.application_set_profile_note, name='application_set_profile_note'),
 
     path('applications/new/', views.application_create, name='application_create'),
     path('applications/manual-create/', views.application_manual_create, name='application_manual_create'),

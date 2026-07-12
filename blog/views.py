@@ -1505,25 +1505,6 @@ def participation_set_hours(request, participation_id):
 
 
 @login_required
-def application_set_profile_note(request, application_id):
-    """Инлайн-редактирование «Что делал» в единой таблице «Опыт и заявки» профиля
-    (AJAX, тот же паттерн, что participation_set_hours) — свободный текст, который
-    менеджер/ТЛ вписывает постфактум про заявку волонтёра. Доступно только тому, у
-    кого расширенный доступ к профилю ВЛАДЕЛЬЦА заявки (менеджер всегда; ТЛ — пока
-    контекстные условия выполняются), сам волонтёр эту заметку не редактирует."""
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Метод не поддерживается.'}, status=405)
-
-    application = get_object_or_404(Application.objects.select_related('user'), pk=application_id)
-    if not application.user or not has_extended_access_to_profile(request.user, application.user):
-        raise PermissionDenied('Нет доступа к профилю этого волонтёра.')
-
-    note = (request.POST.get('profile_note') or '').strip()
-    application.profile_note = note or None
-    application.save(update_fields=['profile_note'])
-    return JsonResponse({'profile_note': application.profile_note or ''})
-
-
 @login_required
 def participation_edit(request, participation_id):
     participation = get_object_or_404(

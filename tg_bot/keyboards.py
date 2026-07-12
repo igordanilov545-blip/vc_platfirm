@@ -178,6 +178,20 @@ def application_decision(application_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def application_shift_decision(application_id: int, shifts) -> InlineKeyboardMarkup:
+    """Заявка на несколько смен (bot-update.md §2.3.C) — решение по каждой смене отдельно:
+    `[✅ Одобрить на <day>]` на каждую смену + общий `[💤 В резерв]` (резервируем сразу все
+    смены заявки одним нажатием — дерево не требует резерва по отдельным сменам)."""
+    builder = InlineKeyboardBuilder()
+    for shift in shifts:
+        day = shift.day.strftime('%d.%m')
+        builder.button(text=f'✅ Одобрить на {day}', callback_data=f'app_shift_approve:{application_id}:{shift.id}')
+    builder.button(text='💤 В резерв', callback_data=f'app_reject:{application_id}')
+    builder.button(text='👤 Профиль', callback_data=f'app_profile:{application_id}')
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def event_actions(event_id: int) -> InlineKeyboardMarkup:
     """Кнопки под мероприятием в списке `/myevents` (tg-bot.md §5.2, TL4):
     открыть все заявки на рассмотрении или одобрить их одним действием."""

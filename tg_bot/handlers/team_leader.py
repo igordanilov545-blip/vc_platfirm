@@ -44,11 +44,16 @@ async def _send_pending_applications(message: Message, user_id: int, event_id: i
     for a in apps:
         contact = f' (@{a.telegram_username.lstrip("@")})' if a.telegram_username else ''
         phone = f'\n☎ {a.phone}' if a.phone else ''
+        shifts = await sync_to_async(services.application_shifts_for_decision)(a.id)
+        shifts_line = f"\nГотов на смены: {', '.join(s.day.strftime('%d.%m') for s in shifts)}" if len(shifts) > 1 else ''
         text = (
             f'📥 Заявка на «{a.event.title}»\n'
-            f'👤 {a.first_name} {a.last_name or ""}'.strip() + contact + phone
+            f'👤 {a.first_name} {a.last_name or ""}'.strip() + contact + phone + shifts_line
         )
-        await answer_with_expiring_keyboard(message, text, kb.application_decision(a.id))
+        # Несколько смен → решение по каждой отдельно (bot-update.md §2.3.C); одна смена
+        # (или заявка ещё без выбора смен) → как раньше, одобрить/резерв целиком.
+        markup = kb.application_shift_decision(a.id, shifts) if len(shifts) > 1 else kb.application_decision(a.id)
+        await answer_with_expiring_keyboard(message, text, markup)
 
 
 @router.callback_query(F.data.startswith('app_approve:'))
@@ -87,6 +92,30 @@ async def _decide(callback: CallbackQuery, approve: bool):
             )
     else:
         await callback.message.answer('💤 Заявка переведена в резерв.')
+
+
+@router.callback_query(F.data.startswith('app_shift_approve:'))
+async def cb_shift_approve(callback: CallbackQuery):
+    """Одобрение заявки НА КОНКРЕТНУЮ СМЕНУ (bot-update.md §2.3.C) — остальные смены той
+    же заявки (если их несколько) не затрагиваются."""
+    _, application_id_s, shift_id_s = callback.data.split(':')
+    application_id, shift_id = int(application_id_s), int(shift_id_s)
+    user, _ = await sync_to_async(services.get_or_create_user)(
+        callback.from_user.id, callback.from_user.username
+    )
+    application, error = await sync_to_async(services.process_application_shift_decision)(
+        user.id, application_id, shift_id, approve=True
+    )
+    await callback.answer()
+    if error == 'forbidden':
+        await callback.message.answer('⛔ Ты не тим-лидер этого мероприятия.')
+        return
+    if error:
+        await callback.message.answer('⚠️ Заявка или смена не найдена.')
+        return
+
+    name = f'{application.first_name} {application.last_name or ""}'.strip()
+    await callback.message.answer(f'✅ Заявка {name} одобрена на выбранную смену. Волонтёр получил уведомление.')
 
 
 @router.callback_query(F.data.startswith('app_profile:'))

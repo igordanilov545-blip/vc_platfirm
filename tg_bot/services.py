@@ -527,6 +527,44 @@ def process_application_decision(user_id: int, application_id: int, approve: boo
     return application, None
 
 
+def process_application_shift_decision(user_id: int, application_id: int, shift_id: int, approve: bool):
+    """Одобрить/резерв заявки ТОЛЬКО на конкретную смену (bot-update.md §2.3.C) — если
+    заявка подана на несколько смен, решение по одной не трогает остальные. Переиспользует
+    веб-эталон `blog.services.applications.process_shift_decision` (создание/удаление
+    Participation, ApplicationShiftDecision, пересчёт статистики, уведомление волонтёру —
+    уже всё реализовано там, здесь только права и вызов)."""
+    close_old_connections()
+    from blog.models import Application, EventShift
+    from blog.services.applications import process_shift_decision
+
+    user = get_user(user_id)
+    application = Application.objects.select_related('event').filter(pk=application_id).first()
+    if not application:
+        return None, 'not_found'
+    if not roles_service.can_process_applications(user, application.event_id):
+        return None, 'forbidden'
+    shift = EventShift.objects.filter(pk=shift_id, event_id=application.event_id).first()
+    if not shift:
+        return None, 'not_found'
+
+    new_status = 'approved' if approve else 'rejected'
+    process_shift_decision(application, shift, new_status, processed_by=user)
+    return application, None
+
+
+def application_shifts_for_decision(application_id: int):
+    """Смены конкретной заявки (выбранные чипами, либо все смены меро) — для отрисовки
+    кнопок по сменам на карточке заявки у ТЛ (bot-update.md §2.3.C)."""
+    close_old_connections()
+    from blog.models import Application
+    application = Application.objects.select_related('event').prefetch_related(
+        'selected_shifts', 'event__shifts'
+    ).filter(pk=application_id).first()
+    if not application:
+        return []
+    return list(application.selected_shifts.all()) or list(application.event.shifts.all())
+
+
 def process_all_applications(user_id: int, event_id: int):
     """Одобрить все заявки на рассмотрении по меро одним действием (tg-bot.md §5.2, TL4).
     Права те же, что и для одиночного решения. Возвращает (список одобренных заявок, ошибка)."""

@@ -646,14 +646,15 @@ class ApplicationForm(forms.ModelForm):
         # гарантированно не предлагать прошедшие меро (нет отдельного планировщика задач).
         for event in Event.objects.filter(shifts__recruit_status='open').distinct():
             event.close_recruit_if_passed()
-        # Подать заявку можно только на ОПУБЛИКОВАННОЕ меро (published_at задан) хотя бы
-        # с одной сменой с открытым набором — неопубликованные меро и меро, где все смены
-        # закрыты (вручную или автоматически), в пул выбора не попадают.
+        # Подать заявку можно на любое ОПУБЛИКОВАННОЕ меро (published_at задан) — даже
+        # если набор на все смены уже закрыт: такая заявка просто сразу уходит в резерв
+        # (см. application_create), а не блокируется целиком.
         self.fields['event'].queryset = Event.objects.filter(
-            shifts__recruit_status='open', published_at__isnull=False,
+            published_at__isnull=False,
         ).distinct().order_by('-created_at')
 
-        # Пул смен для чипов — только смены уже выбранного меро с открытым набором.
+        # Пул смен для чипов — все смены выбранного меро (открытые и закрытые): закрытая
+        # смена всё ещё выбираема, просто заявка на неё сразу пойдёт в резерв.
         event = self.instance.event if self.instance and self.instance.pk else None
         if 'event' in self.data:
             try:
@@ -661,7 +662,7 @@ class ApplicationForm(forms.ModelForm):
             except (Event.DoesNotExist, ValueError, TypeError):
                 event = None
         if event:
-            self.fields['selected_shifts'].queryset = event.shifts.filter(recruit_status='open').order_by('day')
+            self.fields['selected_shifts'].queryset = event.shifts.all().order_by('day')
         if self.instance and self.instance.pk:
             self.initial.setdefault('selected_shifts', self.instance.selected_shifts.all())
             # При редактировании существующей заявки мероприятие не меняем — только
@@ -673,7 +674,8 @@ class ApplicationCancelForm(forms.Form):
     """Отмена заявки волонтёром — причина обязательна (доступно только пока до
     мероприятия осталось больше const.late_cancel_hours, проверяется во view)."""
     reason = forms.CharField(
-        label='Причина отмены', widget=forms.Textarea(attrs={'rows': 3}),
+        label='Подскажите, пожалуйста, почему вы отказываетесь от участия — нам это поможет',
+        widget=forms.Textarea(attrs={'rows': 3, 'placeholder': 'Например: изменились планы, не подхожу по времени и т.п.'}),
     )
 
 

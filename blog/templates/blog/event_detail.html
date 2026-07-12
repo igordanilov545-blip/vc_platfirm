@@ -46,7 +46,9 @@
         {% if my_active_application %}
         <a href="{% url 'application_edit' my_active_application.id %}" class="btn secondary" data-modal data-modal-title="Моя заявка: {{ event.title }}">📝 Моя заявка на это мероприятие</a>
         {% else %}
-        <a href="{% url 'application_create' %}?event={{ event.id }}" class="btn" data-modal data-modal-title="Подать заявку: {{ event.title }}">✅ Подать заявку на мероприятие</a>
+        {% with any_open=shifts|has_open_shift %}
+        <a href="{% url 'application_create' %}?event={{ event.id }}" class="btn" data-modal data-modal-title="Подать заявку: {{ event.title }}">✅ {% if any_open %}Подать заявку на мероприятие{% else %}Подать заявку (в резерв — набор закрыт){% endif %}</a>
+        {% endwith %}
         {% endif %}
     {% endif %}
 </div>
@@ -88,15 +90,15 @@
     <div class="event-dash-recruit">
         <div class="event-dash-recruit-head">
             <span class="event-dash-label">Набор всего: {{ approved_count }} / {{ needed }}</span>
-            <span class="recruit-pct" style="--pct:{{ recruit_percent }}">{{ recruit_percent }}%</span>
+            <span class="recruit-pct {% if recruit_overflow %}recruit-pct--over{% endif %}" style="--pct:{{ recruit_percent }}">{{ recruit_percent }}%</span>
         </div>
-        <div class="recruit-bar"><span class="recruit-bar-fill" style="width:{{ recruit_percent }}%; --pct:{{ recruit_percent }}"></span></div>
+        <div class="recruit-bar"><span class="recruit-bar-fill {% if recruit_overflow %}recruit-bar-fill--over{% endif %}" style="width:{% if recruit_overflow %}100{% else %}{{ recruit_percent }}{% endif %}%; --pct:{{ recruit_percent }}"></span></div>
         <div class="event-dash-days">
             {% for entry in shifts_with_recruitment %}
             <div class="event-dash-day" title="{{ entry.shift.day|date:'d.m.y' }}: {{ entry.approved_count }} из {{ entry.needed }}">
                 <div class="event-dash-day-label mono">{{ entry.shift.day|date:"d.m" }}</div>
-                <div class="recruit-bar"><span class="recruit-bar-fill" style="width:{{ entry.percent }}%; --pct:{{ entry.percent }}"></span></div>
-                <div class="event-dash-day-pct" style="--pct:{{ entry.percent }}">{{ entry.approved_count }}/{{ entry.needed }} · {{ entry.percent }}%</div>
+                <div class="recruit-bar"><span class="recruit-bar-fill {% if entry.recruit_overflow %}recruit-bar-fill--over{% endif %}" style="width:{% if entry.recruit_overflow %}100{% else %}{{ entry.percent }}{% endif %}%; --pct:{{ entry.percent }}"></span></div>
+                <div class="event-dash-day-pct {% if entry.recruit_overflow %}recruit-pct--over{% endif %}" style="--pct:{{ entry.percent }}">{{ entry.approved_count }}/{{ entry.needed }} · {{ entry.percent }}%</div>
             </div>
             {% endfor %}
         </div>
@@ -187,7 +189,9 @@
     <table class="responsive-table shift-table" data-sortable>
         <thead>
             <tr>
-                <th data-sort-key="date">Дата</th><th data-sort-key="start">Начало</th><th data-sort-key="end">Окончание</th><th data-sort-key="location">Локация</th><th data-sort-key="needed" class="num">Нужно волонтёров</th><th data-sort-key="recruit">Набор</th>
+                <th data-sort-key="date">Дата</th><th data-sort-key="start">Начало</th><th data-sort-key="end">Окончание</th><th data-sort-key="location">Локация</th>
+                {% if can_manage_applications %}<th data-sort-key="needed" class="num">Нужно волонтёров</th>{% endif %}
+                <th data-sort-key="recruit">Набор</th>
                 {% if is_manager and event.event_status != 'finished' %}<th></th>{% endif %}
             </tr>
         </thead>
@@ -199,7 +203,9 @@
                 <td data-label="Начало" class="mono" data-sort-value="{{ shift.start_time|date:'U' }}">{{ shift.start_time|time:"H:i" }}</td>
                 <td data-label="Окончание" class="mono" data-sort-value="{{ shift.end_time|date:'U' }}">{{ shift.end_time|time:"H:i" }}</td>
                 <td data-label="Локация" data-sort-value="{{ shift.location.name }}">{{ shift.location.name|default:"—" }}</td>
+                {% if can_manage_applications %}
                 <td data-label="Нужно волонтёров" class="num mono" data-sort-value="{{ shift.volunteer_needed }}">{{ shift.volunteer_needed }}</td>
+                {% endif %}
                 <td data-label="Набор" data-sort-value="{{ shift.recruit_status }}">
                     {% if shift.recruit_status == 'open' %}<span class="pill success"><span class="dot"></span>Открыт</span>
                     {% else %}<span class="pill neutral"><span class="dot"></span>Закрыт</span>{% endif %}
@@ -227,7 +233,7 @@
             </tr>
             {% endwith %}
         {% empty %}
-            <tr><td colspan="{% if is_manager %}7{% else %}6{% endif %}">Смены не заданы.</td></tr>
+            <tr><td colspan="{% if is_manager %}7{% elif can_manage_applications %}6{% else %}5{% endif %}">Смены не заданы.</td></tr>
         {% endfor %}
         </tbody>
     </table>

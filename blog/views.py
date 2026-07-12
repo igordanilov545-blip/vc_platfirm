@@ -768,10 +768,10 @@ def event_detail(request, event_id):
     # через клики по таблице); данные показываются только для просмотра.
     is_finished = event.event_status == 'finished'
 
-    # Кнопка «Подать заявку» доступна только на ОПУБЛИКОВАННОЕ меро с открытым набором —
-    # до публикации у смен recruit_status='open' по умолчанию, но подавать заявку ещё
-    # нельзя (публикация — это то, что открывает набор для волонтёров).
-    has_open_recruitment = bool(event.published_at) and any(s.recruit_status == 'open' for s in shifts)
+    # Кнопка «Подать заявку» доступна на любое ОПУБЛИКОВАННОЕ меро — даже если набор
+    # на все смены уже закрыт: такая заявка примется и сразу уйдёт в резерв (см.
+    # application_create), а не блокируется целиком до публикации.
+    has_open_recruitment = bool(event.published_at)
     my_active_application = Application.objects.filter(
         user=request.user, event=event, status__in=['new', 'approved'],
     ).first()
@@ -867,8 +867,9 @@ def event_detail(request, event_id):
             rows.sort(key=_row_sort_key)
             approved_total += shift_approved
             # Процент набора смены (для мини-дашборда): если нужно 0 волонтёров —
-            # считаем смену укомплектованной (100%), иначе approved/needed, максимум 100.
-            pct = 100 if shift.volunteer_needed == 0 else min(100, round(shift_approved * 100 / shift.volunteer_needed))
+            # считаем смену укомплектованной (100%), иначе approved/needed — БЕЗ потолка
+            # в 100%, перенабор должен быть виден как есть (напр. 17/5 -> 340%).
+            pct = 100 if shift.volunteer_needed == 0 else round(shift_approved * 100 / shift.volunteer_needed)
             shifts_with_recruitment.append({
                 'shift': shift,
                 'rows': rows,
@@ -877,18 +878,21 @@ def event_detail(request, event_id):
                 'needed': shift.volunteer_needed,
                 'remaining': max(shift.volunteer_needed - shift_approved, 0),
                 'percent': pct,
+                'recruit_overflow': pct > 100,
                 # Кол-во строк в резерве — чтобы показать это на кнопке «показать резерв».
                 'reserve_count': sum(1 for r in rows if r['decision'].status == 'rejected'),
             })
 
+        # Общий процент набора по меро (для мини-дашборда наверху) — тоже без потолка.
+        recruit_percent = 100 if needed == 0 else round(approved_total * 100 / needed)
         context.update({
             'shifts_with_recruitment': shifts_with_recruitment,
             'needed': needed,
             'approved_count': approved_total,
             'remaining': max(needed - approved_total, 0),
             'pending_count': pending_count,
-            # Общий процент набора по меро (для мини-дашборда наверху).
-            'recruit_percent': 100 if needed == 0 else min(100, round(approved_total * 100 / needed)),
+            'recruit_percent': recruit_percent,
+            'recruit_overflow': recruit_percent > 100,
         })
 
     # 👥 Расширенная карточка — только для участников мероприятия
@@ -1496,8 +1500,12 @@ def _fill_application_shifts(application, selected_shifts):
         application.shifts = ', '.join(s.day.isoformat() for s in selected_shifts.order_by('day'))
     else:
         # Смены не выбраны — считаем заявку на все открытые смены меро (одна смена
-        # или пользователь ничего не отмечал вручную).
+        # или пользователь ничего не отмечал вручную). Если открытых смен нет вовсе
+        # (набор закрыт целиком) — берём все смены меро, заявка всё равно уйдёт в
+        # резерв целиком (см. application_create).
         all_shifts = application.event.shifts.filter(recruit_status='open').order_by('day')
+        if not all_shifts.exists():
+            all_shifts = application.event.shifts.all().order_by('day')
         application.selected_shifts.set(all_shifts)
         application.shifts = 'Все смены'
     application.save(update_fields=['shifts'])
@@ -1571,6 +1579,14 @@ def application_create(request):
             application.status = 'rejected'
             application.auto_reject_reason = '; '.join(req_check['reasons'])
 
+        # Набор закрыт на все выбранные (или на все смены меро, если ничего не
+        # выбирали) смены — заявку всё равно принимаем, но сразу в резерв: волонтёр
+        # заранее видит, что мест нет, вместо того чтобы блокировать подачу целиком.
+        selected_shifts = form.cleaned_data.get('selected_shifts') or application.event.shifts.all()
+        if not application.auto_reject_reason and not selected_shifts.filter(recruit_status='open').exists():
+            application.status = 'rejected'
+            application.auto_reject_reason = 'Набор на выбранные смены закрыт — заявка в резерве'
+
         application.save()
         _fill_application_shifts(application, form.cleaned_data.get('selected_shifts'))
         notifications_service.notify_application_submitted(application, unknown_age=req_check['unknown_age'])
@@ -1579,7 +1595,14 @@ def application_create(request):
             application.id, application.event_id, actor(request.user),
             f' auto_reject={application.auto_reject_reason!r}' if application.auto_reject_reason else '',
         )
-        messages.success(request, 'Заявка отправлена.')
+        if application.status == 'rejected' and 'закрыт' in (application.auto_reject_reason or ''):
+            messages.success(
+                request,
+                'Заявка принята! Набор на это мероприятие уже закрыт, поэтому вы в резерве — '
+                'мы свяжемся, если освободится место.',
+            )
+        else:
+            messages.success(request, 'Заявка отправлена.')
         return modal_form_response(request, None, None, success_redirect=_referer_or(request))
     return modal_form_response(
         request, 'blog/application_form.html',

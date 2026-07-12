@@ -37,5 +37,8 @@
 
     <div class="event-form-actions">
         <button type="submit" class="btn">{{ submit_label|default:'Отправить заявку' }}</button>
+        {% if application %}
+        <a href="{% url 'application_cancel' application.id %}" class="btn danger" data-modal data-modal-title="Отказаться от участия">Отказаться от участия</a>
+        {% endif %}
     </div>
 </form>

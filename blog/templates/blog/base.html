@@ -268,29 +268,61 @@
     initPasswordToggle(document);
 
     // ======================================================================
-    // Всплывающие оповещения (django messages вверху страницы) автоматически
-    // пропадают через 15 секунд после появления — плавным fade-out, чтобы не
-    // висели на экране бесконечно и не загромождали страницу.
+    // Toast-уведомления — плавающий контейнер поверх контента (fixed, верхний
+    // правый угол), не привязан к прокрутке страницы, поэтому заметен даже если
+    // #page-main был подменён soft-nav'ом и пользователь не наверху страницы.
+    // Django messages при первой загрузке страницы переносятся сюда же (initToasts),
+    // а showToast(text, kind) можно вызывать и из любого другого JS-кода на странице
+    // (напр. после успешной AJAX-модалки или клиентского действия вроде «Смена добавлена»).
     // ======================================================================
-    (function () {
-        var messageItems = document.querySelectorAll('.messages li');
-        if (!messageItems.length) return;
-        messageItems.forEach(function (li) {
-            setTimeout(function () {
-                li.style.transition = 'opacity 0.4s ease, max-height 0.4s ease, margin 0.4s ease, padding 0.4s ease';
-                li.style.opacity = '0';
-                li.style.maxHeight = li.offsetHeight + 'px';
-                requestAnimationFrame(function () {
-                    li.style.maxHeight = '0';
-                    li.style.marginBottom = '0';
-                    li.style.paddingTop = '0';
-                    li.style.paddingBottom = '0';
-                    li.style.overflow = 'hidden';
-                });
-                setTimeout(function () { li.remove(); }, 450);
-            }, 15000);
+    var toastHost = document.getElementById('toast-host');
+    if (!toastHost) {
+        toastHost = document.createElement('div');
+        toastHost.id = 'toast-host';
+        toastHost.style.cssText = 'position:fixed; top:16px; right:16px; z-index:9999; ' +
+            'display:flex; flex-direction:column; gap:8px; max-width:360px;';
+        document.body.appendChild(toastHost);
+    }
+
+    function showToast(text, kind) {
+        var el = document.createElement('div');
+        el.className = 'messages-toast ' + (kind || 'success');
+        el.style.cssText = 'padding:12px 16px; border-radius:var(--radius-lg, 10px); ' +
+            'box-shadow:0 4px 16px rgba(0,0,0,0.18); font-size:0.9rem; opacity:0; ' +
+            'transition:opacity 0.3s ease, transform 0.3s ease; transform:translateY(-8px);';
+        if (kind === 'error' || kind === 'danger') {
+            el.style.background = 'var(--danger, #d33)'; el.style.color = '#fff';
+        } else if (kind === 'warning') {
+            el.style.background = 'var(--warning, #e0a800)'; el.style.color = '#fff';
+        } else {
+            el.style.background = 'var(--success, #2a9d5c)'; el.style.color = '#fff';
+        }
+        el.textContent = text;
+        toastHost.appendChild(el);
+        requestAnimationFrame(function () {
+            el.style.opacity = '1';
+            el.style.transform = 'translateY(0)';
         });
-    })();
+        setTimeout(function () {
+            el.style.opacity = '0';
+            el.style.transform = 'translateY(-8px)';
+            setTimeout(function () { el.remove(); }, 350);
+        }, 6000);
+    }
+    window.showToast = showToast;
+
+    // Django messages, отрендеренные сервером (полная загрузка страницы ИЛИ
+    // подмена #page-main через soft-nav) — переносим в тот же toast-контейнер и
+    // убираем исходный статичный блок, чтобы не дублировать текст на странице.
+    function initToasts(root) {
+        (root || document).querySelectorAll('.messages li').forEach(function (li) {
+            if (li.dataset.toastInit) return;
+            li.dataset.toastInit = '1';
+            showToast(li.textContent.trim(), li.className);
+            li.remove();
+        });
+    }
+    initToasts(document);
 
     // ======================================================================
     // Модалка (десктоп) / bottom sheet (мобайл) для форм создания/редактирования.
@@ -369,7 +401,7 @@
          'bindConfirmForms', 'initCategoryChips', 'initShiftChips', 'initDatepickers',
          'initDateRangePair', 'initTimepickers', 'initUserPickers', 'initInfiniteScroll',
          'bindRoleForms', 'initAttendanceHoursInputs', 'initProfileNoteInputs',
-         'initPasswordToggle'].forEach(function (fn) {
+         'initPasswordToggle', 'initToasts'].forEach(function (fn) {
             if (typeof window[fn] === 'function') window[fn](root);
         });
     }

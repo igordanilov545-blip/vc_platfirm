@@ -979,14 +979,18 @@ def event_feedback_add(request, event_id):
 
 @manager_required
 def event_create(request):
-    form = EventForm(request.POST or None, assigned_by=request.user)
+    # Создание меро из превью Excel-импорта (bot-update.md-подобный флоу для веба):
+    # кнопка «Создать мероприятие «X»» на import_preview передаёт название и метку,
+    # что нужно вернуться назад на превью импорта, а не на страницу меро.
+    initial = {'title': request.GET.get('title')} if request.GET.get('title') else None
+    from_import = request.GET.get('from_import') == '1'
+
+    form = EventForm(request.POST or None, initial=initial, assigned_by=request.user)
     if request.method == 'POST' and form.is_valid():
         event = form.save()
         messages.success(request, 'Мероприятие создано.')
-        return modal_form_response(
-            request, None, None,
-            success_redirect=reverse('event_detail', args=[event.id]),
-        )
+        redirect_url = reverse('import_preview') if from_import else reverse('event_detail', args=[event.id])
+        return modal_form_response(request, None, None, success_redirect=redirect_url)
     return modal_form_response(
         request, 'blog/event_form.html',
         {'form': form, 'title': 'Новое мероприятие', 'submit_label': 'Создать',
@@ -1929,6 +1933,7 @@ def import_preview(request):
             })
         return render(request, 'blog/import_preview.html', {
             'rows': result['rows'], 'errors': result['errors'], 'fixed_event': fixed_event,
+            'has_missing_events': any(row.get('event_missing') for row in result['rows']),
         })
 
     # Подтверждение "всё равно добавить" после экрана расхождений — строки уже в
@@ -1937,6 +1942,18 @@ def import_preview(request):
         rows = request.session.get('import_rows', [])
         return render(request, 'blog/import_preview.html', {
             'rows': rows, 'errors': [], 'fixed_event': fixed_event,
+            'has_missing_events': any(row.get('event_missing') for row in rows),
+        })
+
+    # Возврат на превью без нового файла (напр. после создания мероприятия из
+    # модалки, открытой прямо с этого экрана) — строки уже в сессии, пересчитываем
+    # event_missing по актуальному состоянию БД и показываем то же превью снова.
+    if request.method == 'GET' and request.session.get('import_rows'):
+        rows = import_service.refresh_missing_events(request.session['import_rows'])
+        request.session['import_rows'] = rows
+        return render(request, 'blog/import_preview.html', {
+            'rows': rows, 'errors': [], 'fixed_event': fixed_event,
+            'has_missing_events': any(row.get('event_missing') for row in rows),
         })
 
     return render(request, 'blog/import_form.html', {'form': form, 'fixed_event': fixed_event})
@@ -1947,7 +1964,19 @@ def import_commit(request):
     if request.method != 'POST':
         return redirect('import_preview')
 
-    rows = request.session.pop('import_rows', [])
+    rows = request.session.get('import_rows', [])
+    rows = import_service.refresh_missing_events(rows)
+    still_missing = sorted({row['event_title'] for row in rows if row.get('event_missing')})
+    if still_missing:
+        request.session['import_rows'] = rows
+        titles = '», «'.join(still_missing)
+        messages.error(
+            request,
+            f'Сначала создайте мероприятие(я) «{titles}» — без этого заявки на них загрузить нельзя.',
+        )
+        return redirect('import_preview')
+
+    request.session.pop('import_rows', None)
     fixed_event_id = request.session.pop('import_fixed_event_id', None)
     for row in rows:
         if row.get('submitted_at'):

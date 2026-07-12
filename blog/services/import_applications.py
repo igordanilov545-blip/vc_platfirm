@@ -5,9 +5,10 @@
 Дата начала (опционально), Дата окончания (опционально).
 
 Если мероприятие с таким названием не найдено — строка помечается как
-"мероприятие отсутствует" и на превью менеджеру предлагается создать его
-(по умолчанию с сегодняшней датой; если указан период дат — на каждый день
-периода создаётся отдельная смена EventShift).
+"мероприятие отсутствует"; менеджер обязан создать его вручную через обычную
+форму создания мероприятия (кнопка на экране превью открывает эту форму с
+предзаполненным названием) до подтверждения импорта — автоматического
+создания меро "втихую" больше нет (см. refresh_missing_events/_get_or_create_event).
 
 Колонка "Смена" (functions/shifts из Excel) — если пустая, считаем, что у
 мероприятия одна смена; если задана, пока заглушка: волонтёр допускается на
@@ -20,7 +21,7 @@ import openpyxl
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
-from blog.models import Event, EventShift
+from blog.models import Event
 from blog.services.applications import ensure_shift_decisions, find_matching_user
 
 COLUMN_MAP = {
@@ -165,35 +166,28 @@ def parse_excel(file, fixed_event=None) -> dict:
     return {'rows': rows, 'errors': errors, 'mismatched_titles': sorted(mismatched_titles)}
 
 
-def _create_event_with_days(row: dict) -> Event:
-    """Создаёт мероприятие со сменой (EventShift) на каждый день периода (или одна смена
-    на сегодня по умолчанию)."""
-    event = Event.objects.create(title=row['event_title'])
-
-    start = row['event_start_date']
-    end = row['event_end_date']
-    if isinstance(start, str):
-        start = datetime.date.fromisoformat(start)
-    if isinstance(end, str):
-        end = datetime.date.fromisoformat(end)
-
-    day = start
-    while day <= end:
-        EventShift.objects.create(
-            event=event,
-            day=day,
-            start_time=timezone.make_aware(datetime.datetime.combine(day, datetime.time(0, 0))),
-            end_time=timezone.make_aware(datetime.datetime.combine(day, datetime.time(23, 59))),
-        )
-        day += datetime.timedelta(days=1)
-
-    return event
+def refresh_missing_events(rows: list) -> list:
+    """Пересчитывает `event_id`/`event_missing` для строк, у которых меро раньше не
+    было найдено (`event_missing=True`) — вызывается при повторном показе превью
+    (напр. менеджер только что создал мероприятие вручную через модалку и вернулся).
+    Никаких мероприятий не создаёт — только ищет точное совпадение по названию."""
+    for row in rows:
+        if not row.get('event_missing'):
+            continue
+        event = Event.objects.filter(title__iexact=row['event_title']).first()
+        if event:
+            row['event_id'] = event.id
+            row['event_missing'] = False
+    return rows
 
 
 def _get_or_create_event(row: dict, events_cache: dict) -> Event:
-    """Возвращает мероприятие для строки импорта, создавая его не более одного
-    раза за импорт: несколько строк с одинаковым новым названием мероприятия
-    должны попасть в одно и то же созданное мероприятие, а не плодить дубли."""
+    """Возвращает мероприятие для строки импорта. Мероприятия из строк с
+    `event_missing=True` больше НЕ создаются автоматически (bot-update.md-подобный
+    флоу для веба) — менеджер обязан создать их явно через форму создания меро
+    ДО коммита (см. import_commit/refresh_missing_events); если к моменту коммита
+    меро всё ещё не существует — это ошибка вызывающего кода (сюда попадать не должно,
+    import_commit проверяет это заранее)."""
     if row.get('event_id'):
         return Event.objects.get(pk=row['event_id'])
 
@@ -201,11 +195,9 @@ def _get_or_create_event(row: dict, events_cache: dict) -> Event:
     if title in events_cache:
         return events_cache[title]
 
-    # На случай, если это же мероприятие уже создала более ранняя строка
-    # того же импорта (event_id мог быть не проставлен на этапе превью).
     event = Event.objects.filter(title__iexact=title).first()
     if event is None:
-        event = _create_event_with_days(row)
+        raise ValueError(f'Мероприятие «{title}» не найдено — сначала создайте его.')
 
     events_cache[title] = event
     return event

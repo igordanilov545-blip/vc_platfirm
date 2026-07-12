@@ -1957,6 +1957,13 @@ def application_process_all(request, event_id=None):
     return redirect(redirect_url)
 
 
+def _rows_missing_last(rows):
+    """Строки превью импорта с недостающим мероприятием (event_missing) — в конец
+    списка: сначала показываем то, что уже готово к загрузке, а «незакрытые вопросы»
+    (нужно создать меро) — внизу, стабильно сохраняя исходный порядок внутри групп."""
+    return sorted(rows, key=lambda row: bool(row.get('event_missing')))
+
+
 @manager_required
 def import_preview(request):
     """Excel-импорт заявок. Обычный вход (со страницы «Заявки») — мероприятие
@@ -1988,7 +1995,7 @@ def import_preview(request):
                 'rows_count': len(result['rows']),
             })
         return render(request, 'blog/import_preview.html', {
-            'rows': result['rows'], 'errors': result['errors'], 'fixed_event': fixed_event,
+            'rows': _rows_missing_last(result['rows']), 'errors': result['errors'], 'fixed_event': fixed_event,
             'has_missing_events': any(row.get('event_missing') for row in result['rows']),
         })
 
@@ -1997,7 +2004,7 @@ def import_preview(request):
     if request.method == 'POST' and request.POST.get('confirm_mismatch') == 'yes':
         rows = request.session.get('import_rows', [])
         return render(request, 'blog/import_preview.html', {
-            'rows': rows, 'errors': [], 'fixed_event': fixed_event,
+            'rows': _rows_missing_last(rows), 'errors': [], 'fixed_event': fixed_event,
             'has_missing_events': any(row.get('event_missing') for row in rows),
         })
 
@@ -2008,7 +2015,7 @@ def import_preview(request):
         rows = import_service.refresh_missing_events(request.session['import_rows'])
         request.session['import_rows'] = rows
         return render(request, 'blog/import_preview.html', {
-            'rows': rows, 'errors': [], 'fixed_event': fixed_event,
+            'rows': _rows_missing_last(rows), 'errors': [], 'fixed_event': fixed_event,
             'has_missing_events': any(row.get('event_missing') for row in rows),
         })
 

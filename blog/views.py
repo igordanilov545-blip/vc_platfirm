@@ -455,6 +455,58 @@ def pgas_verify_user(request, user_id):
     return redirect('profile_detail', user_id=target.id)
 
 
+@manager_required
+@require_POST
+def pgas_unverify_user(request, user_id):
+    """Отзыв верификации для справки ПГАС — симметрично выдаче (без капчи: это
+    возврат в исходное состояние, а не запуск нового необратимого процесса)."""
+    target = get_object_or_404(User, pk=user_id)
+    target.verified_by_manager_at = None
+    target.verified_by_manager_by = None
+    target.save(update_fields=['verified_by_manager_at', 'verified_by_manager_by'])
+
+    logger.info('Верификация для ПГАС отозвана: user=%s by=%s', target.id, actor(request.user))
+    messages.success(request, f'Верификация «{target.full_name}» для справки ПГАС отозвана.')
+    return redirect('profile_detail', user_id=target.id)
+
+
+@manager_required
+def user_blacklist(request, user_id):
+    """Ручная блокировка волонтёра менеджером — двухфакторное подтверждение (капча
+    x+y) и обязательная причина, как и другие необратимые/чувствительные действия
+    (event_delete). Причина сохраняется в User.comment (внутреннее поле, видно только
+    менеджеру). Пользователь НЕ уведомляется о блокировке."""
+    target = get_object_or_404(User, pk=user_id)
+    session_key = f'captcha_user_blacklist_{target.id}'
+
+    if request.method == 'POST':
+        reason = (request.POST.get('reason') or '').strip()
+        if not reason:
+            messages.error(request, 'Укажите причину блокировки.')
+            return redirect('profile_detail', user_id=target.id)
+        if not _check_captcha(request, session_key, request.POST.get('captcha_answer')):
+            messages.error(request, 'Неверный ответ на пример — блокировка отменена. Попробуйте ещё раз.')
+            return modal_form_response(request, None, None, success_redirect=reverse('profile_detail', args=[target.id]))
+
+        target.status = 'blacklisted'
+        target.comment = reason
+        target.save(update_fields=['status', 'comment'])
+        logger.info('Волонтёр внесён в чёрный список: user=%s by=%s reason=%r', target.id, actor(request.user), reason)
+        messages.success(request, f'«{target.full_name}» внесён(а) в чёрный список.')
+        return modal_form_response(request, None, None, success_redirect=reverse('profile_detail', args=[target.id]))
+
+    return render_captcha_modal(
+        request,
+        session_key=session_key,
+        action_url=reverse('user_blacklist', args=[target.id]),
+        confirm_text=f'Внести «{target.full_name}» в чёрный список? Пользователь не будет уведомлён об этом.',
+        submit_label='Внести в чёрный список',
+        title=f'Блокировка: {target.full_name}',
+        reason_field=True,
+        reason_label='Причина блокировки (обязательно)',
+    )
+
+
 def tg_link_login(request, token):
     """Вход по одноразовой ссылке из бота (deep-link `?start=weblogin`): проверяем
     токен (не использован и не старше 5 минут), логиним и гасим токен."""
@@ -2098,6 +2150,10 @@ def profile_detail(request, user_id):
         context['pgas_missing'] = pgas['missing']
         context['pgas_only_verification_missing'] = only_verification_missing(target)
 
+    if has_extended and not is_owner:
+        from blog.services.pgas_certificate import compute_course_and_graduation
+        context['course_info'] = compute_course_and_graduation(target)
+
     # Публичный блок ТЛ/менеджера (reports.md: кол-во меро как ТЛ, дата назначения).
     tl_role = target.team_leader_roles.filter(revoked_at__isnull=True).first()
     if tl_role:
@@ -3362,11 +3418,15 @@ def _check_captcha(request, session_key, answer_raw):
 
 
 def render_captcha_modal(request, *, session_key, action_url, confirm_text=None,
-                         submit_label='Подтвердить', extra_hidden=None, title='Подтверждение'):
+                         submit_label='Подтвердить', extra_hidden=None, title='Подтверждение',
+                         reason_field=False, reason_label='Причина'):
     """Отдаёт переиспользуемое окно капчи-2FA (partials/_captcha_confirm.html) в модалку.
     Генерирует новый пример x+y и кладёт ответ в сессию под session_key. Используется
     для «двухфакторного» подтверждения опасных действий (удаление меро, редактирование
-    завершённого меро и т.п.) — см. _captcha_confirm.html."""
+    завершённого меро, блокировка волонтёра и т.п.) — см. _captcha_confirm.html.
+
+    `reason_field=True` добавляет обязательное текстовое поле `reason` в форму (напр.
+    для блокировки волонтёра, где причина должна быть зафиксирована)."""
     context = {
         'captcha_question': _new_captcha(request, session_key),
         'action_url': action_url,
@@ -3374,6 +3434,8 @@ def render_captcha_modal(request, *, session_key, action_url, confirm_text=None,
         'submit_label': submit_label,
         'extra_hidden': extra_hidden or [],
         'title': title,
+        'reason_field': reason_field,
+        'reason_label': reason_label,
     }
     if is_ajax(request):
         return render(request, 'blog/partials/_captcha_confirm.html', context)

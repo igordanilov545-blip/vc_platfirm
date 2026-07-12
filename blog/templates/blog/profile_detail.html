@@ -24,8 +24,9 @@
     <div class="stat-tile"><div class="value">{{ target.external_experiences.count }}</div><div class="label">Внешние мероприятия</div></div>
 </div>
 
-{% comment %}Для менеджера/ТЛ, смотрящего ЧУЖОЙ профиль, сразу вверху — данные, статус и
-комментарии (оперативная информация), и только потом история мероприятий.{% endcomment %}
+{% comment %}Для менеджера/ТЛ, смотрящего ЧУЖОЙ профиль, сразу вверху — данные, статус,
+верификация ПГАС и блокировка (оперативная информация), и только потом история
+мероприятий.{% endcomment %}
 {% if has_extended_access and not is_owner %}
 <div class="card">
     <h3>👤 ФИО и контакты</h3>
@@ -35,18 +36,46 @@
     <p>VK: {{ target.VK_username|default:"—" }}</p>
     <p>Дата рождения: {{ target.birthday|default:"—" }}</p>
     <p>Пол: {{ target.get_gender_display|default:"—" }}</p>
+    <p>Факультет: {{ target.faculty|default:"—" }}</p>
+    <p>Образовательная программа: {{ target.education_program|default:"—" }}</p>
+    <p>Курс: {% if course_info.course %}{{ course_info.course }}{% else %}—{% endif %}
+       {% if course_info.graduation_year %}(выпуск: {{ course_info.graduation_year }}){% endif %}</p>
 </div>
 {% endif %}
 
 {% if is_manager %}
 <div class="card">
-    <h3>🔒 Внутреннее: статус и чарн</h3>
+    <h3>🔒 Внутреннее: статус, чарн и верификация</h3>
     {% comment %}«Активен» не подписываем — это дефолт; показываем статус только когда он
     ограничивающий (блэклист/неактивен).{% endcomment %}
     {% if target.status == 'blacklisted' %}<p>Статус: <span class="pill danger"><span class="dot"></span>{{ target.get_status_display }}</span></p>
     {% elif target.status == 'inactive' %}<p>Статус: <span class="pill warning"><span class="dot"></span>{{ target.get_status_display }}</span></p>{% endif %}
     <p>Churn score: <span class="mono">{{ target.churn_score|floatformat:2 }}</span></p>
     <p>Комментарий менеджера: {{ target.comment|default:"—" }}</p>
+
+    {% if not is_owner %}
+    <div style="margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border-subtle);">
+        {% if target.verified_by_manager_at %}
+            <p><span class="pill success"><span class="dot"></span>Верифицирован(а) для ПГАС {{ target.verified_by_manager_at|date:"d.m.Y" }}</span></p>
+            <form method="post" action="{% url 'pgas_unverify_user' target.id %}" class="inline" data-confirm="Отозвать верификацию профиля «{{ target.full_name }}» для ПГАС?">
+                {% csrf_token %}
+                <button type="submit" class="btn secondary btn-sm">Отозвать верификацию</button>
+            </form>
+        {% else %}
+            <p style="color:var(--text-secondary); font-size:13px;">Не верифицирован(а) для справки ПГАС.</p>
+            <form method="post" action="{% url 'pgas_verify_user' target.id %}" class="inline" data-confirm="Подтвердить верификацию профиля «{{ target.full_name }}» для ПГАС?">
+                {% csrf_token %}
+                <button type="submit" class="btn secondary btn-sm">✅ Выдать верификацию</button>
+            </form>
+        {% endif %}
+    </div>
+
+    {% if target.status != 'blacklisted' %}
+    <div style="margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border-subtle);">
+        <a href="{% url 'user_blacklist' target.id %}" class="btn danger btn-sm" data-modal data-modal-title="Блокировка: {{ target.full_name }}">🚫 Внести в чёрный список</a>
+    </div>
+    {% endif %}
+    {% endif %}
 </div>
 {% endif %}
 
@@ -202,21 +231,5 @@
         {% endif %}
     {% endif %}
 </div>
-{% endif %}
-
-{% if has_extended_access and not is_owner and target.verified_by_manager_at is None %}
-<div class="card">
-    <h3>📄 Верификация для справки ПГАС</h3>
-    <p style="color:var(--text-secondary); font-size:13px; margin-top:-8px;">
-        Подтвердите, что лично удостоверились в личности и данных этого волонтёра —
-        это условие для выдачи ему справки ВЦ для ПГАС.
-    </p>
-    <form method="post" action="{% url 'pgas_verify_user' target.id %}" data-confirm="Подтвердить верификацию профиля «{{ target.full_name }}» для ПГАС?">
-        {% csrf_token %}
-        <button type="submit" class="btn secondary">✅ Подтвердить верификацию</button>
-    </form>
-</div>
-{% elif has_extended_access and not is_owner and target.verified_by_manager_at %}
-<p class="pill success"><span class="dot"></span>Верифицирован(а) для ПГАС {{ target.verified_by_manager_at|date:"d.m.Y" }}</p>
 {% endif %}
 {% endblock %}

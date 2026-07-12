@@ -10,11 +10,19 @@ _check_captcha и, если верно, выполняет действие и �
   confirm_text     — пояснение, что произойдёт (необязательно)
   submit_label     — текст кнопки (необязательно)
   extra_hidden     — список готовых hidden-input'ов (необязательно, напр. status)
+  reason_field     — bool, добавить обязательное текстовое поле причины (необязательно)
+  reason_label     — подпись поля причины (необязательно)
 {% endcomment %}
 <form method="post" action="{{ action_url }}" data-modal-form class="captcha-confirm">
     {% csrf_token %}
     {% for h in extra_hidden %}{{ h }}{% endfor %}
     {% if confirm_text %}<p style="margin-top:0;">{{ confirm_text }}</p>{% endif %}
+    {% if reason_field %}
+    <div class="field">
+        <label>{{ reason_label|default:'Причина' }}</label>
+        <textarea name="reason" rows="3" required autocomplete="off"></textarea>
+    </div>
+    {% endif %}
     <div class="field">
         <label>Подтвердите действие — решите пример: <b>{{ captcha_question }}</b> =</label>
         <input type="number" name="captcha_answer" required autocomplete="off" autofocus>

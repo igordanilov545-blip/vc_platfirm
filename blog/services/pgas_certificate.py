@@ -1,8 +1,33 @@
 """Справка ВЦ о работе волонтёра для ПГАС (за сезон). Условия выдачи: полностью
 заполненный и верифицированный профиль. Сама генерация документа (PDF/текст) не
 реализована — только реальная проверка условий доступности кнопки (см. views.py)."""
+from django.utils import timezone
+
 from blog.models import User
 from blog.services.roles import account_is_complete, account_missing_fields
+
+# Длительность обучения по образовательной программе, лет. Жёсткий словарь без
+# UI-управления (по требованию — всё по умолчанию 4 года, точечные исключения
+# добавляются сюда вручную по мере необходимости).
+PROGRAM_YEARS = {}
+DEFAULT_PROGRAM_YEARS = 4
+
+
+def program_duration_years(education_program: str) -> int:
+    return PROGRAM_YEARS.get((education_program or '').strip(), DEFAULT_PROGRAM_YEARS)
+
+
+def compute_course_and_graduation(user: User) -> dict:
+    """Возвращает {'course': int|None, 'graduation_year': int|None} по
+    admission_year/education_program. `course` — текущий курс обучения (не выше
+    длительности программы); None, если admission_year не заполнен."""
+    if not user.admission_year:
+        return {'course': None, 'graduation_year': None}
+    years = program_duration_years(user.education_program)
+    current_year = timezone.now().year
+    course = max(1, current_year - user.admission_year + 1)
+    graduation_year = user.admission_year + years
+    return {'course': min(course, years), 'graduation_year': graduation_year}
 
 
 def pgas_certificate_eligibility(user: User) -> dict:

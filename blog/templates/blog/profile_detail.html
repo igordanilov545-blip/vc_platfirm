@@ -80,22 +80,23 @@
 </div>
 {% endif %}
 
-{% comment %}«Мой опыт» — мероприятия центра (участия) + внешний опыт: это видит и сам
-волонтёр, и менеджер. Отдельная таблица «Мероприятия и заявки» (со статусами заявок,
-включая отклонённые/резерв) — ТОЛЬКО для менеджера/ТЛ на ЧУЖОМ профиле: волонтёр не должен
-видеть свои неудачные заявки, а менеджер должен.{% endcomment %}
-<h2 style="margin-top:1.5rem;">{% if is_owner %}Мой опыт{% else %}Опыт и заявки{% endif %}</h2>
-
-{% include 'blog/partials/_experience_block.html' with can_edit=is_owner %}
-
-{% if has_extended_access and not is_owner %}
+{% comment %}Волонтёр у себя видит только «Мой опыт» (участия центра + внешний опыт,
+без заявок и без статусов — не должен видеть свои неудачные заявки).
+Менеджер/ТЛ на ЧУЖОМ профиле видит вместо этого блока единую таблицу «Мероприятия
+и заявки»: и заявки (включая отклонённые/резерв — их волонтёр не видит), и внешний
+опыт — в одном списке, а не в двух разных блоках.{% endcomment %}
+{% if is_owner %}
+<h2 style="margin-top:1.5rem;">Мой опыт</h2>
+{% include 'blog/partials/_experience_block.html' with can_edit=True %}
+{% else %}
+<h2 style="margin-top:1.5rem;">Опыт и заявки</h2>
 <div class="card" style="padding:0; overflow:hidden;">
-    <h3 style="padding:20px 20px 0;">📝 Мероприятия и заявки <span style="font-weight:400; font-size:13px; color:var(--text-tertiary);">(включая отклонённые — не видны волонтёру)</span></h3>
     <table class="responsive-table" data-sortable data-collapse-rows="5">
         <thead>
             <tr>
                 <th data-sort-key="event">Мероприятие</th>
-                <th data-sort-key="dates" data-sort-default="desc">Даты</th>
+                <th data-sort-key="date" data-sort-default="desc">Дата</th>
+                <th data-sort-key="kind">Тип</th>
                 <th data-sort-key="app-status">Статус заявки</th>
                 <th data-sort-key="attendance">Присутствие</th>
                 <th data-sort-key="hours" class="num">Часы</th>
@@ -104,11 +105,20 @@
         <tbody>
         {% for row in profile_experience_rows %}
             {% with a=row.application %}
-            <tr data-href="{% url 'event_detail' a.event.id %}">
-                <td data-label="Мероприятие" data-sort-value="{{ a.event.title }}"><a href="{% url 'event_detail' a.event.id %}">{{ a.event.title }}</a></td>
-                <td data-label="Даты" class="mono" data-sort-value="{{ row.shift_days.0|date:'Y-m-d' }}">
-                    {% for d in row.shift_days %}{{ d|date:"d.m.y" }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+            <tr {% if row.event_id %}data-href="{% url 'event_detail' row.event_id %}"{% endif %}>
+                <td data-label="Мероприятие" data-sort-value="{{ row.title }}">
+                    {% if row.event_id %}<a href="{% url 'event_detail' row.event_id %}">{{ row.title }}</a>{% else %}{{ row.title }}{% endif %}
                 </td>
+                <td data-label="Дата" class="mono" data-sort-value="{{ row.sort_date|date:'Y-m-d' }}">{{ row.date_display }}</td>
+                <td data-label="Тип" data-sort-value="{{ row.kind }}">
+                    {% if row.kind == 'external' %}<span class="pill neutral"><span class="dot"></span>Внешнее</span>
+                    {% else %}<span class="pill success"><span class="dot"></span>Внутреннее</span>{% endif %}
+                </td>
+                {% if row.kind == 'external' %}
+                <td data-label="Статус заявки" data-sort-value="">—</td>
+                <td data-label="Присутствие" data-sort-value="">—</td>
+                <td data-label="Часы" class="num mono" data-sort-value="0">—</td>
+                {% else %}
                 <td data-label="Статус заявки" data-sort-value="{{ a.status }}">
                     {% if a.status == 'approved' %}<span class="pill success"><span class="dot"></span>{{ a.get_status_display }}</span>
                     {% elif a.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>{{ a.get_status_display }}</span>
@@ -117,10 +127,11 @@
                 </td>
                 <td data-label="Присутствие" data-sort-value="{{ row.attendance_display|default:'' }}">{{ row.attendance_display|default:"—" }}</td>
                 <td data-label="Часы" class="num mono" data-sort-value="{{ row.total_hours }}">{{ row.total_hours }}</td>
+                {% endif %}
             </tr>
             {% endwith %}
         {% empty %}
-            <tr><td colspan="5">Заявок нет.</td></tr>
+            <tr><td colspan="6">Опыта пока нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>

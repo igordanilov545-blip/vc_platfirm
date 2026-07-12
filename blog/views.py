@@ -1948,16 +1948,14 @@ def profile_detail(request, user_id):
     if mgr_role:
         context['mgr_role'] = mgr_role
 
-    # Единый список заявок для профиля (объединённый блок «Опыт и заявки»): виден
-    # владельцу (свои заявки) и менеджеру/ТЛ с расширенным доступом (чужие). Таблица
-    # на странице сворачивается до 5 строк (data-collapse-rows), поэтому лимит не нужен.
-    #
-    # Раньше это были два раздельных блока (заявки / прошедшие мероприятия) — теперь
-    # одна строка на мероприятие: даты смен, статус заявки, статус явки (агрегат по
-    # сменам заявки — "был" если хоть на одной attended, иначе первый непустой статус;
-    # "-" если заявка отклонена/отменена, там являться было не на что) и сумма часов
-    # (0, если заявка отклонена/отменена/не был).
-    if is_owner or has_extended:
+    # Единая таблица «Мероприятия и заявки» — ТОЛЬКО для менеджера/ТЛ на ЧУЖОМ
+    # профиле (has_extended and not is_owner). Волонтёр сам эту таблицу не видит
+    # вовсе — у себя видит только блок «Мой опыт» (_experience_block.html:
+    # участия центра + внешний опыт, без заявок и без статусов). Здесь — один
+    # список строк на все заявки волонтёра (включая новые/отклонённые/отменённые,
+    # которых волонтёр у себя не видит) + отдельными строками внешний опыт
+    # (для него статус заявки/присутствие — прочерк, часы — 0).
+    if has_extended and not is_owner:
         applications = list(
             target.applications.select_related('event')
             .prefetch_related('selected_shifts', 'event__shifts')
@@ -1989,11 +1987,29 @@ def profile_detail(request, user_id):
                     status = 'attended' if any(p.status == 'attended' for p in shift_parts) else shift_parts[0].status
                     attendance_display = attendance_labels.get(status)
             rows.append({
+                'kind': 'internal',
+                'title': app.event.title,
+                'event_id': app.event_id,
+                'sort_date': shifts[0].day if shifts else None,
+                'date_display': ', '.join(s.day.strftime('%d.%m.%y') for s in shifts) or '—',
                 'application': app,
-                'shift_days': [s.day for s in shifts],
                 'attendance_display': attendance_display,
                 'total_hours': total_hours,
             })
+        for exp in target.external_experiences.all():
+            rows.append({
+                'kind': 'external',
+                'title': exp.title,
+                'event_id': None,
+                'sort_date': exp.date,
+                'date_display': exp.date.strftime('%d.%m.%y') if exp.date else '—',
+                'application': None,
+                'attendance_display': None,
+                'total_hours': 0,
+            })
+        # Свежие сверху; записи без даты — в конец (в отдельной группе, чтобы обратная
+        # сортировка по дате не утаскивала их наверх).
+        rows.sort(key=lambda r: (r['sort_date'] is None, r['sort_date'] and -r['sort_date'].toordinal()))
         context['profile_experience_rows'] = rows
 
     if has_extended:

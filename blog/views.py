@@ -1592,13 +1592,20 @@ def application_manual_create(request):
         redirect_url = reverse('event_detail', args=[event.id]) if fixed_event else _referer_or(request, default='pending_applications')
         return modal_form_response(request, None, None, success_redirect=redirect_url)
 
-    # GET → форма в модалке. Список меро для выбора (если не зафиксировано).
+    # GET → форма в модалке. Список меро для выбора (если не зафиксировано) + пул всех
+    # волонтёров (алфавит по фамилии/имени) для чип-выбора (как категории мероприятия).
     events = None if fixed_event else Event.objects.order_by('-created_at')
+    volunteers = [
+        {'id': u.id, 'label': (f"{u.last_name or ''} {u.first_name or ''}".strip() or u.telegram_username or f'#{u.id}')}
+        for u in User.objects.order_by('last_name', 'first_name', 'id')
+    ]
+    volunteers.sort(key=lambda v: v['label'].lower())
     return modal_form_response(
         request, 'blog/application_manual_form.html',
         {
             'fixed_event': fixed_event,
             'events': events,
+            'volunteers': volunteers,
             'title': ('Добавить волонтёров на «%s»' % fixed_event.title) if fixed_event else 'Добавить заявки волонтёров',
             'submit_label': 'Добавить',
         },

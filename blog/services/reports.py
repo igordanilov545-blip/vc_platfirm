@@ -714,18 +714,20 @@ def managers_table(date_from=None, date_to=None, event_ids=None):
     return _role_table('manager', date_from, date_to, event_ids)
 
 
-# Место появления заявки в системе — по служебному telegram_id (веб/бот) или import:* id.
+# Место появления заявки в системе — по служебному telegram_id (веб/бот/Excel/менеджер).
 def _application_source(app):
-    """Откуда заявка: 'Бот' / 'Веб' / 'Excel-выгрузка'. Excel-импорт создаёт заявки с
-    привязкой к пользователю со служебным telegram_id вида 'import:*'; заявки без user
-    или с submitted_at, но без telegram — веб/бот различаем по наличию telegram_username."""
+    """Откуда заявка: 'Добавлен менеджером' / 'Excel-выгрузка' / 'Бот' / 'Веб'.
+    Служебные telegram_id: 'manual:*' — волонтёр создан менеджером вручную (кнопка
+    «Добавить волонтёра»), 'import:*' — Excel-импорт. Реальный (цифровой) telegram_id —
+    бот/веб (различаем по наличию telegram_username)."""
     user = app.user
-    if user and (user.telegram_id or '').startswith('import:'):
+    tid = (user.telegram_id or '') if user else ''
+    if tid.startswith('manual:'):
+        return 'Добавлен менеджером'
+    if tid.startswith('import:'):
         return 'Excel-выгрузка'
-    # Заявка, поданная через бот, имеет telegram_username и реальный telegram_id.
-    if user and (user.telegram_id or '').isdigit():
+    if tid.isdigit():
         return 'Бот' if app.telegram_username else 'Веб'
-    # Резерв: по наличию telegram_username в самой заявке.
     return 'Бот' if app.telegram_username else 'Веб'
 
 

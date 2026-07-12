@@ -1905,11 +1905,14 @@
         volunteer: {
             title: 'Новый волонтёр',
             createUrl: '{% url "quick_create_volunteer" %}',
+            // Заполняется как профиль (пришёл «извне», как Excel-импорт): фамилия/имя
+            // обязательны, связь — Telegram ИЛИ телефон (проверяется на сервере). В заявке
+            // такого волонтёра источник = «Добавлен менеджером» (manual:* telegram_id).
             fields: [
+                { name: 'last_name', label: 'Фамилия', type: 'text', required: true },
                 { name: 'first_name', label: 'Имя', type: 'text', required: true },
-                { name: 'last_name', label: 'Фамилия', type: 'text', required: false },
                 { name: 'phone', label: 'Телефон', type: 'text', required: false },
-                { name: 'telegram_username', label: 'Telegram', type: 'text', required: false },
+                { name: 'telegram_username', label: 'Telegram (@username)', type: 'text', required: false },
             ],
         },
     };

@@ -1,11 +1,11 @@
 {% comment %}
 Модальная форма ручного добавления заявок волонтёров менеджером (application_manual_create).
-За раз — на одно меро, на нескольких волонтёров. Использует общий пикер волонтёров
-(data-user-picker, multiple). Новый волонтёр создаётся через вложенную quick-add
-модалку (data-add-ref-picker, как ＋ у локаций/организаций) и сразу попадает в тот же
-пул выбранных чипов — без отдельного сабмита, форму можно продолжать заполнять.
-Мероприятие либо зафиксировано (fixed_event, кнопка со страницы меро), либо
-выбирается из списка.
+За раз — на одно меро, на нескольких волонтёров. Выбор волонтёров — теми же ЧИПАМИ, что и
+категории мероприятия (initCategoryChips): весь пул волонтёров (алфавит) виден сразу и
+листается, поиск фильтрует доступных, клик добавляет чип. «Создать нового» (data-add-ref
+volunteer) открывает вложенную мини-форму профиля (фамилия/имя + Telegram/телефон), новый
+волонтёр сразу попадает в пул выбора; в его заявке источник = «Добавлен менеджером».
+Мероприятие либо зафиксировано (fixed_event), либо выбирается из списка.
 {% endcomment %}
 <form method="post" action="{% url 'application_manual_create' %}{% if fixed_event %}?event={{ fixed_event.id }}{% endif %}" data-modal-form>
     {% csrf_token %}
@@ -25,14 +25,22 @@
 
     <div class="field">
         <label>Волонтёры</label>
-        <div class="category-chips" data-user-picker data-mode="multiple" data-field-name="users" data-empty-text="Волонтёры не выбраны" data-linkable>
-            <div class="cat-chips-search has-add-btn">
-                <input type="text" placeholder="Начните вводить имя или фамилию…" data-chips-search readonly>
-                <button type="button" class="btn secondary add-ref-btn" data-add-ref-picker="volunteer" title="Создать нового волонтёра">＋</button>
-            </div>
+        <div class="category-chips" data-chip-select="manual-volunteers-select" data-chip-empty="Волонтёры не выбраны">
             <div class="cat-chips-row" data-chips-selected></div>
+            <div class="cat-chips-available-wrap">
+                <div class="cat-chips-available-label">Все волонтёры (алфавит) — нажмите, чтобы добавить:</div>
+                <div class="cat-chips-search">
+                    <input type="text" placeholder="Поиск по фамилии или имени…" data-chips-search>
+                </div>
+                <div class="cat-chips-row cat-chips-scroll" data-chips-available></div>
+                <button type="button" class="btn secondary btn-sm add-ref-btn" data-add-ref="volunteer" data-target="manual-volunteers-select" style="margin-top:8px;">＋ Создать нового волонтёра</button>
+            </div>
         </div>
-        <div class="field-hint">Нет волонтёра в списке — нажмите «＋», чтобы создать нового и сразу добавить его сюда.</div>
+        {# Скрытый источник истины выбора — как у категорий мероприятия. #}
+        <select name="users" id="manual-volunteers-select" multiple hidden>
+            {% for v in volunteers %}<option value="{{ v.id }}">{{ v.label }}</option>{% endfor %}
+        </select>
+        <div class="field-hint">Нет волонтёра в списке — «＋ Создать нового»: заполните профиль (фамилия, имя и Telegram или телефон), он сразу появится здесь.</div>
     </div>
 
     <div class="modal-footer-actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">

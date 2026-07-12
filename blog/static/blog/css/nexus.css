@@ -1331,3 +1331,10 @@ input:focus, select:focus, textarea:focus {
   background: var(--bg-card); color: var(--text-primary);
 }
 [data-dobro-link-cell] { cursor: pointer; }
+
+/* Пул волонтёров в «Добавить волонтёра» (чипы, как категории): область доступных
+   ограничена по высоте и листается, чтобы весь список (алфавит) не растягивал модалку. */
+.cat-chips-scroll { max-height: 240px; overflow-y: auto; padding-right: 4px; }
+/* В этом блоке поле поиска — обычный текстовый фильтр (не readonly-триггер модалки),
+   поэтому обычный текстовый курсор. */
+.cat-chips-available-wrap .cat-chips-search input[data-chips-search] { cursor: text; }

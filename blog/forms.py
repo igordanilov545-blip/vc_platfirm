@@ -101,13 +101,22 @@ class QuickOrganizerForm(forms.ModelForm):
 
 
 class QuickVolunteerForm(forms.Form):
-    """Мини-форма быстрого создания волонтёра прямо из пикера (data-user-picker) —
-    новый пользователь попадает в тот же пул выбранных, что и существующие, без
-    отдельного одноразового сабмита всей формы (см. quick_create_volunteer)."""
+    """Мини-форма создания волонтёра менеджером (кнопка «Создать нового» в блоке
+    «Добавить волонтёра»): заполняется как профиль пришедшего «извне» человека (как при
+    Excel-импорте). Обязательны фамилия, имя и ХОТЯ БЫ ОДИН способ связи — Telegram ИЛИ
+    телефон. Новый пользователь сразу попадает в пул выбора волонтёров."""
     first_name = forms.CharField(label='Имя', max_length=100)
-    last_name = forms.CharField(label='Фамилия', max_length=100, required=False)
+    last_name = forms.CharField(label='Фамилия', max_length=100)
     phone = forms.CharField(label='Телефон', max_length=20, required=False)
     telegram_username = forms.CharField(label='Telegram', max_length=100, required=False)
+
+    def clean(self):
+        cleaned = super().clean()
+        phone = (cleaned.get('phone') or '').strip()
+        tg = (cleaned.get('telegram_username') or '').strip()
+        if not phone and not tg:
+            raise forms.ValidationError('Укажите способ связи — Telegram или телефон (хотя бы одно).')
+        return cleaned
 
 
 class QuickCategoryForm(forms.ModelForm):

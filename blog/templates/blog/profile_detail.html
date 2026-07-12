@@ -8,11 +8,20 @@
     {% endif %}
 </div>
 <span class="pill neutral"><span class="dot"></span>{{ target.telegram_username|default:"без ника" }}</span>
+{% comment %}Статус показываем менеджеру только когда он «интересный» (блэклист/неактивен);
+обычный «активен» не подписываем — это дефолт и лишний шум (ToDo: убрать подпись «активен»).{% endcomment %}
 {% if is_manager %}
     {% if target.status == 'blacklisted' %}<span class="pill danger"><span class="dot"></span>{{ target.get_status_display }}</span>
-    {% elif target.status == 'inactive' %}<span class="pill warning"><span class="dot"></span>{{ target.get_status_display }}</span>
-    {% else %}<span class="pill success"><span class="dot"></span>{{ target.get_status_display }}</span>{% endif %}
+    {% elif target.status == 'inactive' %}<span class="pill warning"><span class="dot"></span>{{ target.get_status_display }}</span>{% endif %}
 {% endif %}
+
+{% comment %}Статистика (часы/мероприятия) — в самый верх, сразу под именем.{% endcomment %}
+<div class="stat-grid" style="margin-top:1rem;">
+    <div class="stat-tile"><div class="value">{{ target.total_hours }}</div><div class="label">Часов всего</div></div>
+    <div class="stat-tile"><div class="value">{{ target.season_hours }}</div><div class="label">Часов за сезон</div></div>
+    <div class="stat-tile"><div class="value">{{ target.total_event_count }}</div><div class="label">Мероприятий всего</div></div>
+    <div class="stat-tile"><div class="value">{{ target.season_event_count }}</div><div class="label">Мероприятий за сезон</div></div>
+</div>
 
 {% comment %}Для менеджера/ТЛ, смотрящего ЧУЖОЙ профиль, сразу вверху — данные, статус и
 комментарии (оперативная информация), и только потом история мероприятий.{% endcomment %}
@@ -31,11 +40,10 @@
 {% if is_manager %}
 <div class="card">
     <h3>🔒 Внутреннее: статус и чарн</h3>
-    <p>Статус:
-        {% if target.status == 'blacklisted' %}<span class="pill danger"><span class="dot"></span>{{ target.get_status_display }}</span>
-        {% elif target.status == 'inactive' %}<span class="pill warning"><span class="dot"></span>{{ target.get_status_display }}</span>
-        {% else %}<span class="pill success"><span class="dot"></span>{{ target.get_status_display }}</span>{% endif %}
-    </p>
+    {% comment %}«Активен» не подписываем — это дефолт; показываем статус только когда он
+    ограничивающий (блэклист/неактивен).{% endcomment %}
+    {% if target.status == 'blacklisted' %}<p>Статус: <span class="pill danger"><span class="dot"></span>{{ target.get_status_display }}</span></p>
+    {% elif target.status == 'inactive' %}<p>Статус: <span class="pill warning"><span class="dot"></span>{{ target.get_status_display }}</span></p>{% endif %}
     <p>Churn score: <span class="mono">{{ target.churn_score|floatformat:2 }}</span></p>
     <p>Комментарий менеджера: {{ target.comment|default:"—" }}</p>
 </div>
@@ -59,13 +67,6 @@
 </div>
 {% endif %}
 
-<div class="stat-grid">
-    <div class="stat-tile"><div class="value">{{ target.total_hours }}</div><div class="label">Часов всего</div></div>
-    <div class="stat-tile"><div class="value">{{ target.season_hours }}</div><div class="label">Часов за сезон</div></div>
-    <div class="stat-tile"><div class="value">{{ target.total_event_count }}</div><div class="label">Мероприятий всего</div></div>
-    <div class="stat-tile"><div class="value">{{ target.season_event_count }}</div><div class="label">Мероприятий за сезон</div></div>
-</div>
-
 {% if tl_role or mgr_role %}
 <div class="card">
     <h3>Роль в центре</h3>
@@ -79,16 +80,17 @@
 </div>
 {% endif %}
 
-{% comment %}Единый блок «Опыт и заявки» — объединяет волонтёрский опыт (участия +
-внешние мероприятия) и заявки в одном месте. Таблицы сворачиваются до 5 строк
-(data-collapse-rows) с кнопкой «Показать все».{% endcomment %}
-<h2 style="margin-top:1.5rem;">Опыт и заявки</h2>
+{% comment %}«Мой опыт» — мероприятия центра (участия) + внешний опыт: это видит и сам
+волонтёр, и менеджер. Отдельная таблица «Мероприятия и заявки» (со статусами заявок,
+включая отклонённые/резерв) — ТОЛЬКО для менеджера/ТЛ на ЧУЖОМ профиле: волонтёр не должен
+видеть свои неудачные заявки, а менеджер должен.{% endcomment %}
+<h2 style="margin-top:1.5rem;">{% if is_owner %}Мой опыт{% else %}Опыт и заявки{% endif %}</h2>
 
 {% include 'blog/partials/_experience_block.html' with can_edit=is_owner %}
 
-{% if is_owner or has_extended_access %}
+{% if has_extended_access and not is_owner %}
 <div class="card" style="padding:0; overflow:hidden;">
-    <h3 style="padding:20px 20px 0;">📝 Мероприятия и заявки</h3>
+    <h3 style="padding:20px 20px 0;">📝 Мероприятия и заявки <span style="font-weight:400; font-size:13px; color:var(--text-tertiary);">(включая отклонённые — не видны волонтёру)</span></h3>
     <table class="responsive-table" data-sortable data-collapse-rows="5">
         <thead>
             <tr>
@@ -97,13 +99,12 @@
                 <th data-sort-key="app-status">Статус заявки</th>
                 <th data-sort-key="attendance">Присутствие</th>
                 <th data-sort-key="hours" class="num">Часы</th>
-                <th></th>
             </tr>
         </thead>
         <tbody>
         {% for row in profile_experience_rows %}
             {% with a=row.application %}
-            <tr {% if not is_owner %}data-href="{% url 'event_detail' a.event.id %}"{% endif %}>
+            <tr data-href="{% url 'event_detail' a.event.id %}">
                 <td data-label="Мероприятие" data-sort-value="{{ a.event.title }}"><a href="{% url 'event_detail' a.event.id %}">{{ a.event.title }}</a></td>
                 <td data-label="Даты" class="mono" data-sort-value="{{ row.shift_days.0|date:'Y-m-d' }}">
                     {% for d in row.shift_days %}{{ d|date:"d.m.y" }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
@@ -116,16 +117,10 @@
                 </td>
                 <td data-label="Присутствие" data-sort-value="{{ row.attendance_display|default:'' }}">{{ row.attendance_display|default:"—" }}</td>
                 <td data-label="Часы" class="num mono" data-sort-value="{{ row.total_hours }}">{{ row.total_hours }}</td>
-                <td data-label="">
-                    {% if is_owner and a.status == 'new' or is_owner and a.status == 'approved' %}
-                    <a href="{% url 'application_edit' a.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Редактировать заявку">Изменить</a>
-                    <a href="{% url 'application_cancel' a.id %}" class="btn danger btn-sm" data-modal data-modal-title="Отменить заявку">Отменить</a>
-                    {% endif %}
-                </td>
             </tr>
             {% endwith %}
         {% empty %}
-            <tr><td colspan="6">{% if is_owner %}Вы ещё не подавали заявок. <a href="{% url 'application_create' %}">Подать заявку</a>.{% else %}Заявок нет.{% endif %}</td></tr>
+            <tr><td colspan="5">Заявок нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>

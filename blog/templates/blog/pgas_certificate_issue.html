@@ -1,0 +1,69 @@
+{% extends 'blog/base.html' %}
+{% comment %}Выдача справки ВЦ для ПГАС менеджером на выбранного волонтёра: диапазон
+дат (стандартный data-datepicker) + выбор мероприятий из тех, на которых волонтёр
+был. Шаг 1 (GET/выбор диапазона) — обновляет список мероприятий; шаг 2 — генерация
+PDF (кнопка «Сгенерировать»). Вьюха — pgas_certificate_issue.{% endcomment %}
+{% block content %}
+<div class="card">
+    <h2>📄 Справка ПГАС для «{{ target.full_name }}»</h2>
+    <p style="color:var(--text-secondary); font-size:13px;">
+        Выберите диапазон дат и мероприятия, которые нужно включить в справку.
+        В список попадают только мероприятия с подтверждённым участием волонтёра.
+    </p>
+
+    {# Шаг 1: диапазон дат — обычный GET, перезагружает список мероприятий за период. #}
+    <form method="get" action="{% url 'pgas_certificate_issue' target.id %}" class="row" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+        <div>
+            <label>С даты</label>
+            <input type="text" name="date_from" data-datepicker autocomplete="off"
+                   value="{{ date_from|date:'Y-m-d' }}">
+        </div>
+        <div>
+            <label>По дату</label>
+            <input type="text" name="date_to" data-datepicker autocomplete="off"
+                   value="{{ date_to|date:'Y-m-d' }}">
+        </div>
+        <button type="submit" class="btn secondary">Показать мероприятия</button>
+    </form>
+</div>
+
+{# Шаг 2: выбор мероприятий + генерация. #}
+<form method="post" action="{% url 'pgas_certificate_issue' target.id %}" class="card">
+    {% csrf_token %}
+    <input type="hidden" name="generate" value="1">
+    <input type="hidden" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+    <input type="hidden" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
+
+    <h3>Мероприятия{% if date_from and date_to %} за {{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }}{% else %} (за всё время){% endif %}</h3>
+
+    {% if available_events %}
+        <table class="responsive-table">
+            <thead>
+                <tr>
+                    <th style="width:36px;"></th>
+                    <th>Мероприятие</th>
+                    <th>Дата(ы)</th>
+                    <th>Часы</th>
+                    <th>Масштаб</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for e in available_events %}
+                <tr>
+                    <td><input type="checkbox" name="event_ids" value="{{ e.event_id }}" checked></td>
+                    <td>{{ e.title }}</td>
+                    <td>{{ e.dates }}</td>
+                    <td>{{ e.total_hours }}</td>
+                    <td>{{ e.scale }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <div style="margin-top:12px;">
+            <button type="submit" class="btn">Сгенерировать справку (PDF)</button>
+        </div>
+    {% else %}
+        <p style="color:var(--text-secondary);">Нет мероприятий с участием за выбранный период.</p>
+    {% endif %}
+</form>
+{% endblock %}

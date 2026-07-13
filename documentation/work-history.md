@@ -1244,3 +1244,40 @@ description сохранён). Живой прогон через runserver не
 разработки (соседняя параллельная работа над verify_telegram временно ломала
 manage.py check/urls.py) — на момент коммита `manage.py check` чист, обе части
 (моя и параллельная telegram_verify) консистентны вместе.
+
+## 2026-07-13 · opus · ветка `agent/opus/pgas-certificate`
+
+**Промт:**
+> Реализовать генератор справки ВЦ для ПГАС (без подписи, но со всеми полями):
+> редактируемый менеджером шаблон, выдача волонтёром себе (за сезон/всё время) и
+> менеджером на любого (диапазон дат + выбор мероприятий). Пайплайн «вордовский
+> файл → PDF», PDF без возможности копировать текст (как картинка). При изменении
+> ФИО/ОП/факультета/года пользователем — автоматически отзывать верификацию.
+
+**Тудушник:**
+- [x] Модель `PgasCertificateTemplate` (синглтон-шаблон в БД) + `User.verified_snapshot`; миграция 0027.
+- [x] Сервис `pgas_certificate`: `collect_events`, `render_template` (плейсхолдеры + блок `### EVENTS ###`), `get_template` (ленивый дефолт), `revoke_verification_if_changed`, снапшот верифиц. полей.
+- [x] Пайплайн `pgas_pdf.py`: HTML→WeasyPrint→PDF→PyMuPDF растр в «картиночный» PDF (текст не копируется).
+- [x] Вьюхи: переписан `pgas_certificate_download` (ЛС, scope season/all), новый `pgas_certificate_issue` (менеджер), settings-таб `pgas_template` + сохранение, snapshot в `pgas_verify_user`, hook в `profile_edit`.
+- [x] Шаблоны: `pgas_certificate_pdf.html`, `_settings_pgas_template.html`, `pgas_certificate_issue.html`, блок в `profile_detail.html`.
+- [x] `requirements.txt` += PyMuPDF; `manage.py check` чист.
+
+**Вопросы + ответы:**
+- В: чем реализовать пайплайн (на проде нет LibreOffice/растеризатора)? → О: HTML→WeasyPrint→PDF→растр в картинку (WeasyPrint уже в Docker-образе прода; +PyMuPDF).
+- В: что за «верификация на добро.ру»? → О: связей с dobro.ru нет; это внутренняя верификация менеджером ВЦ (ФИО/ОП/факультет/курс/TG). Изменил поля — верификацию снимаем, менеджер подтверждает заново.
+- В: кто и как редактирует шаблон? → О: менеджер, UI в «Настройках»; постоянные тексты + плейсхолдеры + блок мероприятий `### EVENTS ### … ### END BLOCK ###` (на будущее — подпись/смена руководителя).
+- В: проверять генерацию где? → О: на проде (разные ОС → разные бинарники; локальный Windows без WeasyPrint не показателен).
+
+**Итог:**
+Фича собрана end-to-end. Затронуты: `blog/models.py`, `blog/services/pgas_certificate.py`,
+`blog/services/pgas_pdf.py` (новый), `blog/views.py`, `blog/urls.py`,
+`blog/templates/blog/{pgas_certificate_pdf,pgas_certificate_issue}.html`,
+`blog/templates/blog/partials/_settings_pgas_template.html`,
+`blog/templates/blog/profile_detail.html`, `requirements.txt`, миграция
+`0027_user_verified_snapshot_pgascertificatetemplate.py`. Локально проверено:
+`manage.py check` чист, миграция применяется, рендер шаблона подставляет все
+плейсхолдеры и разворачивает блок EVENTS, PyMuPDF-растр делает текст
+неизвлекаемым (get_text() == ''). WeasyPrint локально не установлен (ожидаемо —
+Windows) → полный HTML→PDF прогон проверяется НА ПРОДЕ после деплоя. Риск/остаток:
+качество/размер растра (dpi=170) и вёрстку A4 финально валидировать на проде;
+подпись — заглушка по ТЗ (место в шаблоне).

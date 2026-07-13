@@ -5,6 +5,10 @@ FROM python:3.10-slim AS base
 
 # Системные зависимости:
 #  - WeasyPrint (PDF-отчёты в web) требует cairo/pango/gdk-pixbuf и шрифты;
+#  - libreoffice-writer — конвертация docx→pdf для справки ВЦ на ПГАС
+#    (менеджер загружает Word-шаблон, оформление сохраняется 1-в-1; см.
+#    blog/services/pgas_pdf.py). Ставим только Writer (--no-install-recommends),
+#    чтобы не тянуть весь офисный пакет;
 #  - libpq5 — рантайм для psycopg2 (Postgres);
 #  - curl — для healthcheck'ов в compose.
 # Ставим одним слоем и чистим кэш apt, чтобы образ был компактным.
@@ -15,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgdk-pixbuf-2.0-0 \
         libffi8 \
         libpq5 \
+        libreoffice-writer \
         fonts-dejavu-core \
         fonts-liberation \
         curl \

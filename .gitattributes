@@ -3,3 +3,6 @@
 *.sh              text eol=lf
 deploy/htaccess.* text eol=lf
 passenger_wsgi.py text eol=lf
+
+# Word-шаблоны — бинарные, git не нормализует переводы строк внутри zip-контейнера.
+*.docx binary

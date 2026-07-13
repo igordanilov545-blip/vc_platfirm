@@ -10,6 +10,7 @@ PDF (кнопка «Сгенерировать»). Вьюха — pgas_certifica
         Выберите диапазон дат и мероприятия, которые нужно включить в справку.
         В список попадают только мероприятия с подтверждённым участием волонтёра.
     </p>
+    {% include 'blog/partials/_pgas_placeholder_guide.html' %}
 
     {# Шаг 1: диапазон дат — обычный GET, перезагружает список мероприятий за период. #}
     <form method="get" action="{% url 'pgas_certificate_issue' target.id %}" class="row" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">

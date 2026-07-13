@@ -721,7 +721,7 @@ class ProfileForm(forms.ModelForm):
         model = User
         fields = [
             'first_name', 'last_name', 'middle_name', 'system_username',
-            'telegram_username', 'phone', 'email', 'birthday', 'about', 'VK_username',
+            'telegram_username', 'phone', 'email', 'birthday', 'gender', 'about', 'VK_username',
             'faculty', 'education_program', 'admission_year',
         ]
         widgets = {
@@ -742,6 +742,7 @@ class ProfileForm(forms.ModelForm):
             'phone': 'Номер телефона',
             'email': 'Почта',
             'birthday': 'Дата рождения',
+            'gender': 'Пол',
             'about': 'О себе',
             'VK_username': 'Ссылка на ВК',
             'faculty': 'Факультет',

@@ -1281,3 +1281,37 @@ manage.py check/urls.py) — на момент коммита `manage.py check` 
 Windows) → полный HTML→PDF прогон проверяется НА ПРОДЕ после деплоя. Риск/остаток:
 качество/размер растра (dpi=170) и вёрстку A4 финально валидировать на проде;
 подпись — заглушка по ТЗ (место в шаблоне).
+
+## 2026-07-13 · opus · ветка `agent/opus/pgas-docx-template`
+
+**Промт:**
+> Шаблон справки ПГАС — загружаемый менеджером Word-файл с блоком
+> `### START EVENTS ### … ### END EVENTS ###` (критично сохранять оформление).
+> Учитывать пол человека (не «студент(ка)») — добавить пол в ЛК. На странице
+> скачивания — гайд по плейсхолдерам.
+
+**Тудушник:**
+- [x] Модель `PgasCertificateTemplate`: `docx_file` (BinaryField) + `filename` вместо `body`; миграция 0028; дефолтный `.docx` в репо (`blog/services/pgas_default_template.docx`), ленивая загрузка в `get_template`.
+- [x] Поле `gender` в `ProfileForm`; гендерные плейсхолдеры `{student}`/`{participated}`/… (`GENDER_PLACEHOLDERS`), выбор по `user.gender` (default — муж. род + warning).
+- [x] `render_docx`: подстановка плейсхолдеров в параграфах/таблицах (склейка runs, сохранение стиля абзаца) + разворачивание блока `### START EVENTS ###`/`### END EVENTS ###` клонированием XML-параграфов (оформление строки сохраняется).
+- [x] Пайплайн `pgas_pdf.py`: `docx_to_pdf_bytes` через LibreOffice (`soffice --headless --convert-to pdf`, изолированный tmp-профиль) → PyMuPDF растр; `libreoffice-writer` в Dockerfile.
+- [x] Вьюхи: загрузка .docx (валидация расширения + наличие обоих маркеров) и скачивание текущего шаблона (`pgas_template_download`); `_build_certificate_pdf` через docx.
+- [x] Шаблоны: `_settings_pgas_template.html` (загрузка/скачивание файла), общий гайд `_pgas_placeholder_guide.html` (в настройках, у волонтёра, у менеджера). Удалён устаревший `pgas_certificate_pdf.html` (HTML-путь справки больше не нужен).
+
+**Вопросы + ответы:**
+- В: чем конвертировать docx→pdf на Linux? → О: ставим LibreOffice в Docker-образ.
+- В: синтаксис плейсхолдеров в Word? → О: фигурные скобки `{full_name}`.
+- В: учёт пола? → О: готовые плейсхолдеры по полу (`{student}` → студент/студентка и т.п.).
+
+**Итог:**
+Справка теперь генерится из загруженного Word-шаблона с сохранением оформления
+(docx→soffice→pdf→PyMuPDF-картинка). Затронуто: `blog/models.py`,
+`blog/services/pgas_certificate.py`, `blog/services/pgas_pdf.py`, `blog/views.py`,
+`blog/urls.py`, `blog/forms.py`, `Dockerfile`, `.gitattributes`, миграция 0028,
+`blog/services/pgas_default_template.docx` (новый), три шаблона + удалён один,
+`documentation/db.md`. Локально проверено: `manage.py check` чист, миграция
+применяется, `render_docx` подставляет плейсхолдеры, разворачивает блок EVENTS с
+сохранением оформления, гендерные формы (муж/жен) корректны. LibreOffice локально
+нет (Windows) → полный docx→pdf→картинка прогон проверяется НА ПРОДЕ после
+пересборки образа с `libreoffice-writer`. Риск: скорость/память soffice на 2ГБ VPS
+(выдачи нечастые, конвертации сериализованы tmp-профилем).

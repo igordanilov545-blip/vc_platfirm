@@ -14,6 +14,7 @@ urlpatterns = [
     path('profile/pgas-certificate/download/', views.pgas_certificate_download, name='pgas_certificate_download'),
     path('profile/pgas-certificate/request-verification/', views.pgas_request_verification, name='pgas_request_verification'),
     path('profile/<int:user_id>/pgas-certificate/issue/', views.pgas_certificate_issue, name='pgas_certificate_issue'),
+    path('settings/pgas-template/download/', views.pgas_template_download, name='pgas_template_download'),
     path('profile/<int:user_id>/pgas-verify/', views.pgas_verify_user, name='pgas_verify_user'),
     path('profile/<int:user_id>/pgas-unverify/', views.pgas_unverify_user, name='pgas_unverify_user'),
     path('profile/<int:user_id>/blacklist/', views.user_blacklist, name='user_blacklist'),

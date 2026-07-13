@@ -404,20 +404,17 @@ def verify_telegram_start(request):
 
 
 def _build_certificate_pdf(user, events, period_label):
-    """Общий хвост генерации справки: рендер шаблона → HTML → «картиночный» PDF.
-    Возвращает (pdf_bytes, filename). Используется и волонтёрской, и менеджерской
-    вьюхой (одно правило генерации — одно место)."""
-    from django.template.loader import render_to_string
+    """Общий хвост генерации справки: рендер загруженного .docx-шаблона (с
+    сохранением оформления) → LibreOffice в PDF → «картиночный» PDF. Возвращает
+    (pdf_bytes, filename). Используется и волонтёрской, и менеджерской вьюхой (одно
+    правило генерации — одно место)."""
     from django.utils.text import slugify
 
-    from blog.services.pgas_certificate import render_template
-    from blog.services.pgas_pdf import certificate_pdf_bytes
+    from blog.services.pgas_certificate import render_docx
+    from blog.services.pgas_pdf import certificate_pdf_from_docx
 
-    body_text = render_template(user, events, period_label=period_label)
-    html = render_to_string('blog/pgas_certificate_pdf.html', {
-        'user': user, 'body_text': body_text,
-    })
-    pdf_bytes = certificate_pdf_bytes(html)
+    docx_bytes = render_docx(user, events, period_label=period_label)
+    pdf_bytes = certificate_pdf_from_docx(docx_bytes)
     filename = f'pgas-{slugify(user.full_name) or user.id}.pdf'
     return pdf_bytes, filename
 
@@ -513,6 +510,23 @@ def pgas_certificate_issue(request, user_id):
         'date_from': date_from,
         'date_to': date_to,
     })
+
+
+@manager_required
+def pgas_template_download(request):
+    """Скачать текущий .docx-шаблон справки (чтобы менеджер отредактировал его в
+    Word и загрузил обратно)."""
+    from django.http import HttpResponse
+
+    from blog.services.pgas_certificate import get_template
+
+    template = get_template()
+    response = HttpResponse(
+        bytes(template.docx_file),
+        content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{template.filename or "pgas_template.docx"}"'
+    return response
 
 
 @login_required
@@ -3715,13 +3729,35 @@ def settings_view(request):
         return _settings_redirect('seasons')
 
     if request.method == 'POST' and request.POST.get('action') == 'save_pgas_template':
-        from blog.services.pgas_certificate import get_template
+        from blog.services.pgas_certificate import (
+            EVENTS_BLOCK_START, EVENTS_BLOCK_END, get_template,
+        )
+        upload = request.FILES.get('docx_file')
+        if not upload or not upload.name.lower().endswith('.docx'):
+            messages.error(request, 'Загрузите файл шаблона в формате .docx.')
+            return _settings_redirect('pgas_template')
+        data = upload.read()
+        # Проверяем, что в шаблоне есть оба маркера блока мероприятий — иначе
+        # перечисление меро не развернётся. Читаем текст docx через python-docx.
+        try:
+            import io as _io
+            from docx import Document
+            doc_text = '\n'.join(p.text for p in Document(_io.BytesIO(data)).paragraphs)
+        except Exception:
+            messages.error(request, 'Не удалось прочитать .docx — файл повреждён или не Word.')
+            return _settings_redirect('pgas_template')
+        if EVENTS_BLOCK_START not in doc_text or EVENTS_BLOCK_END not in doc_text:
+            messages.error(request, f'В шаблоне должны быть строки «{EVENTS_BLOCK_START}» и '
+                                    f'«{EVENTS_BLOCK_END}» вокруг блока мероприятий.')
+            return _settings_redirect('pgas_template')
+
         template = get_template()
-        template.body = request.POST.get('body', '')
+        template.docx_file = data
+        template.filename = upload.name
         template.updated_by = request.user
-        template.save(update_fields=['body', 'updated_by', 'updated_at'])
-        logger.info('Шаблон справки ПГАС обновлён: by=%s', actor(request.user))
-        messages.success(request, 'Шаблон справки ПГАС сохранён.')
+        template.save(update_fields=['docx_file', 'filename', 'updated_by', 'updated_at'])
+        logger.info('Шаблон справки ПГАС обновлён (.docx): by=%s', actor(request.user))
+        messages.success(request, 'Шаблон справки ПГАС загружен.')
         return _settings_redirect('pgas_template')
 
     if request.method == 'POST' and request.POST.get('action') in ROLE_ACTIONS:

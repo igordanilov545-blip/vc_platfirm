@@ -368,14 +368,18 @@ class Const(models.Model):
 class PgasCertificateTemplate(models.Model):
     """Редактируемый менеджером шаблон справки ВЦ для ПГАС (по нему рендерятся все
     справки). Синглтон: значимо только `pk=1` (см.
-    blog.services.pgas_certificate.get_template). Тело — текст с плейсхолдерами
-    ({full_name}, {faculty}, …) и блоком перечисления мероприятий
-    `### EVENTS ### … ### END BLOCK ###`, внутри которого идёт цикл по
-    мероприятиям волонтёра. Хранится в БД (а не в файле репозитория), чтобы
-    менеджер мог менять постоянные тексты, расположение плейсхолдеров, блок
-    мероприятий и — на будущее — подпись/руководителя без деплоя."""
+    blog.services.pgas_certificate.get_template).
+
+    Шаблон — это загруженный менеджером **Word-файл (.docx)**: так сохраняется
+    конкретное оформление (шапка ВШЭ, шрифты, отступы). Внутри файла — плейсхолдеры
+    `{full_name}`, `{faculty}`, гендерные `{student}`/`{participated}` и т.п., а
+    также блок перечисления мероприятий между строками `### START EVENTS ###` и
+    `### END EVENTS ###` (по нему идёт цикл). Байты docx храним прямо в БД
+    (BinaryField): в проекте нет MEDIA-хранилища/тома, а singleton-строка в
+    Postgres переживает пересборку контейнера — надёжнее FileField."""
     id = models.AutoField(primary_key=True)
-    body = models.TextField()
+    docx_file = models.BinaryField(null=True)
+    filename = models.CharField(max_length=255, blank=True, default='')
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+'

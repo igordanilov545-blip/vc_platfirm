@@ -1,42 +1,36 @@
-{% comment %}Панель настроек «Шаблон справки ПГАС»: редактор текста справки, по
-которому генерируются все письма. Менеджер правит постоянные тексты, расположение
-плейсхолдеров и блок перечисления мероприятий. Сохранение — action=save_pgas_template
-в settings_view.{% endcomment %}
+{% comment %}Панель настроек «Шаблон справки ПГАС»: загрузка Word-файла (.docx), по
+которому генерируются все справки. Менеджер редактирует оформление прямо в Word и
+загружает файл — оформление сохраняется 1-в-1. Сохранение — action=save_pgas_template
+в settings_view (multipart).{% endcomment %}
 <div class="settings-panel-head">
     <h2>Шаблон справки ПГАС</h2>
 </div>
 
 <p style="color:var(--text-secondary); font-size:13px;">
-    По этому шаблону генерируются все справки ВЦ для ПГАС. Поддерживаются плейсхолдеры
-    (подставляются при генерации) и блок перечисления мероприятий.
+    Шаблон — это Word-файл (.docx). Оформление (шапка, шрифты, отступы, подпись)
+    сохраняется точно как в файле. Скачайте текущий шаблон, отредактируйте в Word,
+    расставьте плейсхолдеры и загрузите обратно.
 </p>
 
-<div class="card" style="font-size:13px;">
-    <b>Плейсхолдеры «шапки»:</b>
-    <code>{full_name}</code>, <code>{faculty}</code>, <code>{education_program}</code>,
-    <code>{course}</code>, <code>{graduation_year}</code>, <code>{admission_year}</code>,
-    <code>{date}</code> (дата выдачи), <code>{period}</code> (охват).
-    <br><br>
-    <b>Блок мероприятий</b> — всё между маркерами повторяется по каждому мероприятию:
-    <pre style="white-space:pre-wrap; margin:6px 0;">### EVENTS ###
-{n}. {title} — {dates}
-Часы: {hours} · Масштаб: {scale}
-### END BLOCK ###</pre>
-    Внутри блока: <code>{n}</code> (номер), <code>{title}</code>, <code>{dates}</code>,
-    <code>{format}</code>, <code>{hours}</code>, <code>{scale}</code>,
-    <code>{description}</code>.
+<div style="margin:10px 0;">
+    <a href="{% url 'pgas_template_download' %}" class="btn secondary btn-sm">⬇️ Скачать текущий шаблон (.docx)</a>
+    {% if pgas_template.updated_at %}
+    <span style="color:var(--text-secondary); font-size:12px; margin-left:10px;">
+        {{ pgas_template.filename }} · обновлён {{ pgas_template.updated_at|date:"d.m.Y H:i" }}{% if pgas_template.updated_by %} · {{ pgas_template.updated_by.full_name }}{% endif %}
+    </span>
+    {% endif %}
 </div>
 
-<form method="post" action="{% url 'settings' %}">
+{% include 'blog/partials/_pgas_placeholder_guide.html' %}
+
+<form method="post" action="{% url 'settings' %}" enctype="multipart/form-data" style="margin-top:12px;">
     {% csrf_token %}
     <input type="hidden" name="action" value="save_pgas_template">
-    <textarea name="body" rows="22" style="width:100%; font-family:var(--mono, monospace); font-size:13px;">{{ pgas_template.body }}</textarea>
-    <div style="margin-top:10px; display:flex; align-items:center; gap:12px;">
-        <button type="submit" class="btn">Сохранить шаблон</button>
-        {% if pgas_template.updated_at %}
-        <span style="color:var(--text-secondary); font-size:12px;">
-            Обновлён {{ pgas_template.updated_at|date:"d.m.Y H:i" }}{% if pgas_template.updated_by %} · {{ pgas_template.updated_by.full_name }}{% endif %}
-        </span>
-        {% endif %}
-    </div>
+    <label>Загрузить новый шаблон (.docx)</label>
+    <input type="file" name="docx_file" accept=".docx" required>
+    <p style="color:var(--text-secondary); font-size:12px; margin:6px 0;">
+        В файле обязательно должны быть строки <code>### START EVENTS ###</code> и
+        <code>### END EVENTS ###</code> вокруг блока мероприятий.
+    </p>
+    <button type="submit" class="btn">Загрузить шаблон</button>
 </form>

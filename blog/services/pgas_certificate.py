@@ -220,88 +220,84 @@ def collect_events(user: User, date_from=None, date_to=None, event_ids=None) -> 
 
 
 # ---------------------------------------------------------------------------
-# Шаблон справки (редактируемый менеджером) и его рендер
+# Шаблон справки (загружаемый менеджером .docx) и его рендер
 # ---------------------------------------------------------------------------
 
-EVENTS_BLOCK_START = '### EVENTS ###'
-EVENTS_BLOCK_END = '### END BLOCK ###'
+# Строки-маркеры блока перечисления мероприятий (менеджер вставляет их в Word).
+EVENTS_BLOCK_START = '### START EVENTS ###'
+EVENTS_BLOCK_END = '### END EVENTS ###'
 
-# Дефолтный шаблон — структура справки-образца (шапка, «выдано…», нумерованный
-# список мероприятий, место под подпись). Плейсхолдеры документированы в
-# редакторе (partials/_settings_pgas_template.html). Создаётся лениво при первом
-# обращении (get_template), без data-миграции (coding-principles §9).
-DEFAULT_TEMPLATE_BODY = f"""Справка-подтверждение
+# Путь к дефолтному .docx-шаблону в репозитории (структура справки-образца).
+# Загружается лениво в БД при первом обращении (get_template), без data-миграции.
+import os
+DEFAULT_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'pgas_default_template.docx')
 
-{{date}}
+# Плейсхолдеры полей волонтёра — общие (вне блока мероприятий). {course}/{graduation_year}
+# считаются из admission_year (compute_course_and_graduation). Документированы в
+# гайде на странице выдачи (partials/_pgas_placeholder_guide.html).
+FIELD_PLACEHOLDERS_HELP = [
+    ('{full_name}', 'ФИО волонтёра'),
+    ('{faculty}', 'Факультет'),
+    ('{education_program}', 'Образовательная программа (ОП)'),
+    ('{course}', 'Текущий курс (из года поступления)'),
+    ('{graduation_year}', 'Год выпуска'),
+    ('{admission_year}', 'Год поступления'),
+    ('{date}', 'Дата выдачи справки'),
+    ('{period}', 'Охват (сезон / диапазон / всё время)'),
+]
 
-Настоящим Волонтёрский центр НИУ ВШЭ подтверждает, что {{full_name}}, студент(ка) {{course}} курса факультета «{{faculty}}» образовательной программы «{{education_program}}» (год поступления {{admission_year}}), за период {{period}} принял(а) участие в качестве волонтёра в следующих мероприятиях:
+# Гендерные плейсхолдеры: (мужская, женская) форма. Подставляются по user.gender;
+# если пол не указан — мужская форма (с предупреждением в лог). Документированы в
+# гайде. Так менеджер пишет {student} вместо «студент(ка)».
+GENDER_PLACEHOLDERS = {
+    '{student}': ('студент', 'студентка'),
+    '{participated}': ('принял', 'приняла'),
+    '{he_she}': ('он', 'она'),
+    '{his_her}': ('его', 'её'),
+    '{studying}': ('обучающийся', 'обучающаяся'),
+}
 
-{EVENTS_BLOCK_START}
-{{n}}. Название мероприятия: {{title}}
-Дата(ы) проведения: {{dates}}
-Формат участия: {{format}}
-Количество часов: {{hours}}
-Масштаб мероприятия: {{scale}}
-Описание деятельности: {{description}}
-{EVENTS_BLOCK_END}
-
-Данные мероприятия были проведены с участием Центра лидерства и волонтёрства
-Высшей школы экономики и при сотрудничестве с партнёрами университета.
-
-С уважением,
-директор Центра
-лидерства и волонтёрства НИУ ВШЭ
-"""
+# Плейсхолдеры внутри блока мероприятия (подставляются в каждой итерации).
+EVENT_PLACEHOLDERS_HELP = [
+    ('{n}', 'Порядковый номер мероприятия'),
+    ('{title}', 'Название мероприятия'),
+    ('{dates}', 'Дата(ы) проведения'),
+    ('{format}', 'Формат участия (волонтёр / тим-лидер)'),
+    ('{hours}', 'Количество часов по дням'),
+    ('{scale}', 'Масштаб мероприятия'),
+    ('{description}', 'Описание деятельности'),
+]
 
 
 def get_template() -> PgasCertificateTemplate:
-    """Синглтон-шаблон (pk=1). Создаётся лениво с дефолтным телом, если строки
-    ещё нет — чтобы не заводить data-миграцию и чтобы менеджер сразу увидел в
-    редакторе рабочий текст."""
+    """Синглтон-шаблон (pk=1). При первом обращении (или если файл ещё не загружен)
+    лениво заполняется дефолтным .docx из репозитория — чтобы менеджер сразу видел
+    рабочий шаблон и мог его скачать/заменить, без data-миграции."""
     template = PgasCertificateTemplate.objects.first()
     if template is None:
-        template = PgasCertificateTemplate.objects.create(body=DEFAULT_TEMPLATE_BODY)
+        template = PgasCertificateTemplate.objects.create()
+    if not template.docx_file:
+        with open(DEFAULT_TEMPLATE_PATH, 'rb') as f:
+            template.docx_file = f.read()
+        template.filename = 'pgas_default_template.docx'
+        template.save(update_fields=['docx_file', 'filename'])
     return template
 
 
-def _render_events_block(block: str, events: list) -> str:
-    """Разворачивает тело блока EVENTS в цикл по мероприятиям: для каждого меро
-    подставляет {n}/{title}/{dates}/{format}/{hours}/{scale}/{description}."""
-    parts = []
-    for i, event in enumerate(events, start=1):
-        parts.append(
-            block
-            .replace('{n}', str(i))
-            .replace('{title}', event['title'])
-            .replace('{dates}', event['dates'])
-            .replace('{format}', event['format'])
-            .replace('{hours}', event['hours'])
-            .replace('{scale}', event['scale'])
-            .replace('{description}', event['description'])
-        )
-    return ''.join(parts)
+def _gender_value(placeholder_forms, gender: str) -> str:
+    """Выбор формы слова по полу: female → вторая форма, иначе (male/None) — первая."""
+    male, female = placeholder_forms
+    return female if gender == 'female' else male
 
 
-def render_template(user: User, events: list, *, period_label: str, issue_date=None) -> str:
-    """Подставляет плейсхолдеры в шаблон и разворачивает блок EVENTS. Возвращает
-    готовый ТЕКСТ справки (переводы строк сохраняются). Блок между маркерами
-    ### EVENTS ### / ### END BLOCK ### повторяется по числу мероприятий; если
-    мероприятий нет — блок опускается."""
-    issue_date = issue_date or timezone.now().date()
+def build_replacements(user: User, *, period_label: str, issue_date) -> dict:
+    """Плейсхолдеры «шапки» (поля волонтёра + гендерные + дата/период) → значения.
+    Единый источник для рендера. Блоковые плейсхолдеры мероприятия — отдельно."""
     course_info = compute_course_and_graduation(user)
+    if not user.gender:
+        logger.warning('Пол не указан для справки ПГАС (user=%s) — берём мужскую форму', user.id)
 
-    body = get_template().body
-
-    # Развернуть блок мероприятий (простой сплит по маркерам; на некорректный
-    # шаблон без END-маркера не падаем — оставляем как есть).
-    if EVENTS_BLOCK_START in body and EVENTS_BLOCK_END in body:
-        before, rest = body.split(EVENTS_BLOCK_START, 1)
-        inner, after = rest.split(EVENTS_BLOCK_END, 1)
-        # Убираем пустые строки-обёртки вокруг маркеров, чтобы не копить пустоты.
-        rendered_events = _render_events_block(inner.strip('\n') + '\n', events)
-        body = before.rstrip('\n') + '\n\n' + rendered_events + after.lstrip('\n')
-
-    replacements = {
+    repl = {
         '{full_name}': user.full_name,
         '{faculty}': (user.faculty or '').strip(),
         '{education_program}': (user.education_program or '').strip(),
@@ -311,9 +307,108 @@ def render_template(user: User, events: list, *, period_label: str, issue_date=N
         '{date}': issue_date.strftime('%d.%m.%Y'),
         '{period}': period_label,
     }
+    for placeholder, forms in GENDER_PLACEHOLDERS.items():
+        repl[placeholder] = _gender_value(forms, user.gender)
+    return repl
+
+
+def _event_replacements(event: dict, index: int) -> dict:
+    return {
+        '{n}': str(index),
+        '{title}': event['title'],
+        '{dates}': event['dates'],
+        '{format}': event['format'],
+        '{hours}': event['hours'],
+        '{scale}': event['scale'],
+        '{description}': event['description'],
+    }
+
+
+def _replace_in_paragraph(paragraph, replacements: dict):
+    """Подстановка плейсхолдеров в параграфе. Плейсхолдер `{...}` в Word часто
+    разбит на несколько runs — поэтому склеиваем текст всего параграфа, делаем
+    замену и переписываем текст в первый run (остальные очищаем). Стиль абзаца и
+    первого run сохраняются — этого достаточно для справки (плейсхолдеры набирают
+    единым стилем)."""
+    full = ''.join(run.text for run in paragraph.runs)
+    if '{' not in full:
+        return
+    new_text = full
     for key, value in replacements.items():
-        body = body.replace(key, value)
-    return body
+        if key in new_text:
+            new_text = new_text.replace(key, value or '')
+    if new_text == full:
+        return
+    if paragraph.runs:
+        paragraph.runs[0].text = new_text
+        for run in paragraph.runs[1:]:
+            run.text = ''
+    else:
+        paragraph.add_run(new_text)
+
+
+def render_docx(user: User, events: list, *, period_label: str, issue_date=None) -> bytes:
+    """Рендер справки в .docx С СОХРАНЕНИЕМ оформления загруженного шаблона.
+
+    Открываем шаблонный docx, подставляем плейсхолдеры «шапки» во всех параграфах,
+    а блок между строками ### START EVENTS ### / ### END EVENTS ### разворачиваем в
+    цикл: параграфы-шаблоны блока клонируем (копия XML-элемента — сохраняет
+    оформление строки) под каждое мероприятие, подставляя {n}/{title}/… Строки-
+    маркеры удаляем. Возвращает байты готового docx (для конвертации в PDF)."""
+    import copy
+    import io
+
+    from docx import Document
+    from docx.text.paragraph import Paragraph
+
+    issue_date = issue_date or timezone.now().date()
+    replacements = build_replacements(user, period_label=period_label, issue_date=issue_date)
+
+    doc = Document(io.BytesIO(get_template().docx_file))
+    body = doc.element.body
+
+    # 1) Найти границы блока мероприятий по параграфам-маркерам.
+    paragraphs = doc.paragraphs
+    start_idx = end_idx = None
+    for i, p in enumerate(paragraphs):
+        text = p.text.strip()
+        if text == EVENTS_BLOCK_START:
+            start_idx = i
+        elif text == EVENTS_BLOCK_END:
+            end_idx = i
+            break
+
+    if start_idx is not None and end_idx is not None and end_idx > start_idx:
+        # Параграфы-шаблоны между маркерами (сам блок, без строк-маркеров).
+        template_paragraphs = paragraphs[start_idx + 1:end_idx]
+        template_elems = [copy.deepcopy(p._p) for p in template_paragraphs]
+        anchor = paragraphs[end_idx]._p  # маркер END — точка вставки (перед ним)
+
+        # Для каждого мероприятия вставляем клон блока перед END-маркером.
+        for idx, event in enumerate(events, start=1):
+            ev_repl = _event_replacements(event, idx)
+            for elem in template_elems:
+                clone = copy.deepcopy(elem)
+                anchor.addprevious(clone)
+                # Подставить плейсхолдеры мероприятия в клоне.
+                _replace_in_paragraph(Paragraph(clone, paragraphs[end_idx]._parent), ev_repl)
+
+        # Удалить исходные строки-маркеры и параграфы-шаблоны блока.
+        for p in [paragraphs[start_idx], *template_paragraphs, paragraphs[end_idx]]:
+            p._p.getparent().remove(p._p)
+
+    # 2) Подставить плейсхолдеры «шапки» во всех оставшихся параграфах и таблицах.
+    for p in doc.paragraphs:
+        _replace_in_paragraph(p, replacements)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    _replace_in_paragraph(p, replacements)
+
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
 
 
 def season_range():

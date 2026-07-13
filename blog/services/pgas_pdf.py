@@ -1,21 +1,51 @@
-"""Пайплайн генерации PDF справки ПГАС: HTML → WeasyPrint → PDF → PyMuPDF растр
-в «картиночный» PDF (текст нельзя выделить/скопировать — каждая страница вставлена
-как изображение).
+"""Пайплайн генерации PDF справки ПГАС: .docx (с сохранённым оформлением) →
+LibreOffice конвертирует в PDF → PyMuPDF растрирует страницы в «картиночный» PDF
+(текст нельзя выделить/скопировать — каждая страница вставлена как изображение).
 
-Здесь — единственное место, зависящее от системных библиотек (WeasyPrint требует
-cairo/pango; PyMuPDF — самодостаточен). Импорты weasyprint/fitz — ЛЕНИВЫЕ (внутри
-функций), чтобы `manage.py check` и локальная разработка на Windows (где WeasyPrint
-не установлен) не падали на импорте модуля. Проверять генерацию нужно на проде
-(Docker-образ уже несёт cairo/pango; локально Windows не показателен)."""
+Здесь — единственное место, зависящее от системных бинарей: LibreOffice (`soffice`)
+для docx→pdf и PyMuPDF (самодостаточен) для растра. Проверять генерацию нужно на
+проде (Docker-образ несёт libreoffice-writer; локально на Windows soffice обычно
+нет — конвертация упадёт, это ожидаемо)."""
+import os
+import shutil
+import subprocess
+import tempfile
+
+from django.conf import settings
 from django.http import HttpResponse
 
+# Путь к бинарю LibreOffice. Переопределяется настройкой SOFFICE_BIN при нужде.
+SOFFICE_BIN = getattr(settings, 'SOFFICE_BIN', 'soffice')
 
-def html_to_pdf_bytes(html: str, base_url: str = None) -> bytes:
-    """HTML-строка → PDF-байты через WeasyPrint. base_url нужен, если в HTML есть
-    относительные ссылки на статику/шрифты (у нас всё инлайново — можно None)."""
-    from weasyprint import HTML
 
-    return HTML(string=html, base_url=base_url).write_pdf()
+def docx_to_pdf_bytes(docx_bytes: bytes, timeout: int = 120) -> bytes:
+    """.docx → PDF-байты через LibreOffice (`soffice --headless --convert-to pdf`).
+
+    Пишем docx во временную директорию, конвертируем туда же и читаем результат.
+    `-env:UserInstallation` в отдельный tmp-профиль — чтобы параллельные вызовы не
+    конфликтовали за общий профиль LibreOffice (иначе второй процесс падает)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        src_path = os.path.join(tmp, 'template.docx')
+        with open(src_path, 'wb') as f:
+            f.write(docx_bytes)
+
+        profile = os.path.join(tmp, 'lo_profile')
+        cmd = [
+            SOFFICE_BIN, '--headless', '--norestore',
+            f'-env:UserInstallation=file://{profile}',
+            '--convert-to', 'pdf', '--outdir', tmp, src_path,
+        ]
+        result = subprocess.run(
+            cmd, capture_output=True, timeout=timeout,
+        )
+        pdf_path = os.path.join(tmp, 'template.pdf')
+        if result.returncode != 0 or not os.path.exists(pdf_path):
+            raise RuntimeError(
+                f'LibreOffice не сконвертировал docx→pdf (code={result.returncode}): '
+                f'{result.stderr.decode(errors="replace")[:500]}'
+            )
+        with open(pdf_path, 'rb') as f:
+            return f.read()
 
 
 def pdf_to_image_pdf(pdf_bytes: bytes, dpi: int = 170) -> bytes:
@@ -41,9 +71,14 @@ def pdf_to_image_pdf(pdf_bytes: bytes, dpi: int = 170) -> bytes:
         out.close()
 
 
-def certificate_pdf_bytes(html: str) -> bytes:
-    """Полный пайплайн: HTML → PDF → «картиночный» PDF-байты."""
-    return pdf_to_image_pdf(html_to_pdf_bytes(html))
+def certificate_pdf_from_docx(docx_bytes: bytes) -> bytes:
+    """Полный пайплайн справки: docx → PDF (LibreOffice) → «картиночный» PDF-байты."""
+    return pdf_to_image_pdf(docx_to_pdf_bytes(docx_bytes))
+
+
+def soffice_available() -> bool:
+    """Есть ли LibreOffice в системе (для дружелюбной ошибки вместо стектрейса)."""
+    return bool(shutil.which(SOFFICE_BIN))
 
 
 def certificate_response(pdf_bytes: bytes, filename: str) -> HttpResponse:

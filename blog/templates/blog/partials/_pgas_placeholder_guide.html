@@ -1,0 +1,43 @@
+{% comment %}Гайд по плейсхолдерам справки ПГАС (единый партиал — используется в
+настройках шаблона, на странице выдачи менеджером и в ЛК волонтёра). Держать в
+синхроне с blog/services/pgas_certificate.py (FIELD/GENDER/EVENT placeholders).{% endcomment %}
+<details class="card" style="font-size:13px;">
+    <summary style="cursor:pointer; font-weight:600;">📌 Гайд по плейсхолдерам шаблона</summary>
+
+    <p style="margin-top:10px;">В Word-файле шаблона используйте плейсхолдеры в фигурных скобках — при генерации они заменяются на данные волонтёра.</p>
+
+    <b>Поля волонтёра (в любом месте документа):</b>
+    <table class="responsive-table" style="margin:6px 0;">
+        <tbody>
+            <tr><td><code>{full_name}</code></td><td>ФИО волонтёра</td></tr>
+            <tr><td><code>{faculty}</code></td><td>Факультет</td></tr>
+            <tr><td><code>{education_program}</code></td><td>Образовательная программа (ОП)</td></tr>
+            <tr><td><code>{course}</code></td><td>Текущий курс (считается из года поступления)</td></tr>
+            <tr><td><code>{graduation_year}</code></td><td>Год выпуска</td></tr>
+            <tr><td><code>{admission_year}</code></td><td>Год поступления</td></tr>
+            <tr><td><code>{date}</code></td><td>Дата выдачи справки</td></tr>
+            <tr><td><code>{period}</code></td><td>Охват (сезон / диапазон дат / всё время)</td></tr>
+        </tbody>
+    </table>
+
+    <b>Пол волонтёра</b> (подставляется по указанному в профиле полу — мужская/женская форма):
+    <table class="responsive-table" style="margin:6px 0;">
+        <tbody>
+            <tr><td><code>{student}</code></td><td>студент / студентка</td></tr>
+            <tr><td><code>{participated}</code></td><td>принял / приняла</td></tr>
+            <tr><td><code>{he_she}</code></td><td>он / она</td></tr>
+            <tr><td><code>{his_her}</code></td><td>его / её</td></tr>
+            <tr><td><code>{studying}</code></td><td>обучающийся / обучающаяся</td></tr>
+        </tbody>
+    </table>
+
+    <b>Блок перечисления мероприятий</b> — всё между этими строками повторяется по каждому мероприятию:
+    <pre style="white-space:pre-wrap; margin:6px 0;">### START EVENTS ###
+{n}. {title} — {dates}
+Часы: {hours} · Масштаб: {scale}
+Описание: {description}
+### END EVENTS ###</pre>
+    Внутри блока: <code>{n}</code> (номер), <code>{title}</code>, <code>{dates}</code>,
+    <code>{format}</code> (волонтёр/тим-лидер), <code>{hours}</code>, <code>{scale}</code>,
+    <code>{description}</code>.
+</details>

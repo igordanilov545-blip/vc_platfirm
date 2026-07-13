@@ -227,6 +227,7 @@
             </div>
             <button type="submit" class="btn">📄 Получить справку на ПГАС</button>
         </form>
+        {% include 'blog/partials/_pgas_placeholder_guide.html' %}
     {% else %}
         <p>Чтобы получить справку, не хватает: <b>{{ pgas_missing|join:", " }}</b>.</p>
         {% if pgas_only_verification_missing %}

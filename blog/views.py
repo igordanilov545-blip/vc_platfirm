@@ -351,6 +351,13 @@ def profile_edit(request):
     form = ProfileForm(request.POST or None, instance=request.user)
     if request.method == 'POST' and form.is_valid():
         form.save()
+        # Если пользователь изменил верифицированные менеджером поля (ФИО/ОП/
+        # факультет/год/TG) — снимаем верификацию ПГАС: справку на новых данных не
+        # выдаём, менеджер должен подтвердить заново (см. pgas_certificate).
+        from blog.services.pgas_certificate import revoke_verification_if_changed
+        if revoke_verification_if_changed(request.user):
+            messages.info(request, 'Данные изменены — верификация для справки ПГАС снята, '
+                                   'потребуется повторное подтверждение менеджером.')
         if account_is_complete(request.user):
             if not was_complete:
                 messages.success(request, 'Профиль заполнен — теперь можно подавать заявки.')
@@ -396,21 +403,116 @@ def verify_telegram_start(request):
     return redirect(deep_link)
 
 
+def _build_certificate_pdf(user, events, period_label):
+    """Общий хвост генерации справки: рендер шаблона → HTML → «картиночный» PDF.
+    Возвращает (pdf_bytes, filename). Используется и волонтёрской, и менеджерской
+    вьюхой (одно правило генерации — одно место)."""
+    from django.template.loader import render_to_string
+    from django.utils.text import slugify
+
+    from blog.services.pgas_certificate import render_template
+    from blog.services.pgas_pdf import certificate_pdf_bytes
+
+    body_text = render_template(user, events, period_label=period_label)
+    html = render_to_string('blog/pgas_certificate_pdf.html', {
+        'user': user, 'body_text': body_text,
+    })
+    pdf_bytes = certificate_pdf_bytes(html)
+    filename = f'pgas-{slugify(user.full_name) or user.id}.pdf'
+    return pdf_bytes, filename
+
+
 @login_required
 @require_POST
 def pgas_certificate_download(request):
-    """«Получить справку на ПГАС» — условия уже проверены (кнопка недоступна иначе),
-    но сама генерация документа не реализована: пока просто сообщаем, что функция
-    в разработке, вместо настоящего скачивания файла."""
-    from blog.services.pgas_certificate import pgas_certificate_eligibility
+    """«Получить справку на ПГАС» (волонтёр на себя). Охват — за сезон (scope=season,
+    по умолчанию) или за всё время (scope=all). Условия проверяются (кнопка иначе
+    недоступна, но дублируем на бэке). Пайплайн — HTML→WeasyPrint→растр в PDF-картинку
+    (blog/services/pgas_pdf.py). Проверяется на проде (локально WeasyPrint нет)."""
+    from blog.services.pgas_certificate import (
+        collect_events, pgas_certificate_eligibility, season_range,
+    )
+    from blog.services.pgas_pdf import certificate_response
 
     result = pgas_certificate_eligibility(request.user)
     if not result['eligible']:
         messages.error(request, f'Не хватает: {", ".join(result["missing"])}.')
         return redirect('profile_detail', user_id=request.user.id)
 
-    messages.info(request, 'Функция в разработке — справка на ПГАС скоро будет доступна для скачивания.')
-    return redirect('profile_detail', user_id=request.user.id)
+    scope = request.POST.get('scope', 'season')
+    if scope == 'all':
+        events = collect_events(request.user)
+        period_label = 'всё время'
+    else:
+        date_from, date_to = season_range()
+        events = collect_events(request.user, date_from=date_from, date_to=date_to)
+        period_label = 'текущий сезон'
+
+    try:
+        pdf_bytes, filename = _build_certificate_pdf(request.user, events, period_label)
+    except Exception:
+        logger.exception('Ошибка генерации справки ПГАС: user=%s', request.user.id)
+        messages.error(request, 'Не удалось сгенерировать справку. Попробуйте позже.')
+        return redirect('profile_detail', user_id=request.user.id)
+
+    logger.info('Справка ПГАС выдана: user=%s scope=%s events=%s', request.user.id, scope, len(events))
+    return certificate_response(pdf_bytes, filename)
+
+
+@manager_required
+def pgas_certificate_issue(request, user_id):
+    """Менеджер выдаёт справку на выбранного волонтёра: диапазон дат + выбор
+    мероприятий (из тех, на которых волонтёр был). GET — форма (список мероприятий
+    за диапазон), POST — генерация PDF. Имя в справке — из выбранного пользователя
+    (менеджер может выдать на любого)."""
+    from blog.services.pgas_certificate import collect_events
+    from blog.services.pgas_pdf import certificate_response
+
+    target = get_object_or_404(User, pk=user_id)
+
+    def _parse_date(name):
+        raw = (request.POST.get(name) or request.GET.get(name) or '').strip()
+        if not raw:
+            return None
+        try:
+            return datetime.date.fromisoformat(raw)
+        except ValueError:
+            return None
+
+    date_from = _parse_date('date_from')
+    date_to = _parse_date('date_to')
+
+    if request.method == 'POST' and request.POST.get('generate'):
+        selected_ids = [int(x) for x in request.POST.getlist('event_ids') if x.isdigit()]
+        events = collect_events(
+            target, date_from=date_from, date_to=date_to,
+            event_ids=selected_ids or None,
+        )
+        if not events:
+            messages.error(request, 'Не выбрано ни одного мероприятия с участием.')
+            return redirect('pgas_certificate_issue', user_id=target.id)
+        if date_from and date_to:
+            period_label = f'{date_from:%d.%m.%Y} — {date_to:%d.%m.%Y}'
+        else:
+            period_label = 'всё время'
+        try:
+            pdf_bytes, filename = _build_certificate_pdf(target, events, period_label)
+        except Exception:
+            logger.exception('Ошибка генерации справки ПГАС менеджером: target=%s', target.id)
+            messages.error(request, 'Не удалось сгенерировать справку. Попробуйте позже.')
+            return redirect('pgas_certificate_issue', user_id=target.id)
+        logger.info('Справка ПГАС выдана менеджером: target=%s by=%s events=%s',
+                    target.id, actor(request.user), len(events))
+        return certificate_response(pdf_bytes, filename)
+
+    # GET / выбор диапазона — показываем доступные мероприятия за диапазон.
+    available = collect_events(target, date_from=date_from, date_to=date_to)
+    return render(request, 'blog/pgas_certificate_issue.html', {
+        'target': target,
+        'available_events': available,
+        'date_from': date_from,
+        'date_to': date_to,
+    })
 
 
 @login_required
@@ -441,10 +543,15 @@ def pgas_verify_user(request, user_id):
     профиля. Резолвит связанный инцидент `pgas_verification`, если он есть."""
     from blog.models import Incident
 
+    from blog.services.pgas_certificate import snapshot_verified_fields
+
     target = get_object_or_404(User, pk=user_id)
     target.verified_by_manager_at = timezone.now()
     target.verified_by_manager_by = request.user
-    target.save(update_fields=['verified_by_manager_at', 'verified_by_manager_by'])
+    # Снимок верифицированных значений — чтобы потом отследить именно их изменение
+    # (перевод на другую ОП, смену ФИО и т.п.) и снять верификацию.
+    target.verified_snapshot = snapshot_verified_fields(target)
+    target.save(update_fields=['verified_by_manager_at', 'verified_by_manager_by', 'verified_snapshot'])
 
     Incident.objects.filter(
         kind='pgas_verification', related_user=target, resolved_at__isnull=True,
@@ -463,7 +570,8 @@ def pgas_unverify_user(request, user_id):
     target = get_object_or_404(User, pk=user_id)
     target.verified_by_manager_at = None
     target.verified_by_manager_by = None
-    target.save(update_fields=['verified_by_manager_at', 'verified_by_manager_by'])
+    target.verified_snapshot = None
+    target.save(update_fields=['verified_by_manager_at', 'verified_by_manager_by', 'verified_snapshot'])
 
     logger.info('Верификация для ПГАС отозвана: user=%s by=%s', target.id, actor(request.user))
     messages.success(request, f'Верификация «{target.full_name}» для справки ПГАС отозвана.')
@@ -3472,6 +3580,7 @@ SETTINGS_TABS = [
     {'key': 'seasons', 'icon': '🗓️', 'title': 'Сезоны', 'desc': 'Периоды учёта и закрытие сезона', 'url': 'settings'},
     {'key': 'team_leaders', 'icon': '⭐', 'title': 'Тим-лидеры', 'desc': 'Назначение и снятие роли ТЛ', 'url': 'settings'},
     {'key': 'managers', 'icon': '🛡️', 'title': 'Менеджеры', 'desc': 'Назначение и снятие роли менеджера', 'url': 'settings'},
+    {'key': 'pgas_template', 'icon': '📄', 'title': 'Шаблон справки ПГАС', 'desc': 'Текст и плейсхолдеры справки ВЦ', 'url': 'settings'},
 ]
 
 # Панели настроек, которые обслуживает сама settings_view (не отдельные list-вьюхи).
@@ -3480,6 +3589,7 @@ SETTINGS_NATIVE_PANELS = {
     'seasons': 'blog/partials/_settings_seasons.html',
     'team_leaders': 'blog/partials/_settings_team_leaders.html',
     'managers': 'blog/partials/_settings_managers.html',
+    'pgas_template': 'blog/partials/_settings_pgas_template.html',
 }
 SETTINGS_DEFAULT_TAB = 'locations'
 
@@ -3604,6 +3714,16 @@ def settings_view(request):
         messages.success(request, msg)
         return _settings_redirect('seasons')
 
+    if request.method == 'POST' and request.POST.get('action') == 'save_pgas_template':
+        from blog.services.pgas_certificate import get_template
+        template = get_template()
+        template.body = request.POST.get('body', '')
+        template.updated_by = request.user
+        template.save(update_fields=['body', 'updated_by', 'updated_at'])
+        logger.info('Шаблон справки ПГАС обновлён: by=%s', actor(request.user))
+        messages.success(request, 'Шаблон справки ПГАС сохранён.')
+        return _settings_redirect('pgas_template')
+
     if request.method == 'POST' and request.POST.get('action') in ROLE_ACTIONS:
         action = request.POST.get('action')
         kind, verb = ROLE_ACTIONS[action]
@@ -3653,6 +3773,9 @@ def settings_view(request):
             context['season_form'] = SeasonForm()
         elif tab in ('team_leaders', 'managers'):
             context['role_sections'] = _build_role_sections(request)
+        elif tab == 'pgas_template':
+            from blog.services.pgas_certificate import get_template
+            context['pgas_template'] = get_template()
         return render(request, template, context)
 
     # Шелл хаба: активная вкладка из ?tab= (или дефолт), если такой нет — дефолт.

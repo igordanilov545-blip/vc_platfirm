@@ -118,6 +118,13 @@ class User(AbstractBaseUser):
     verified_by_manager_by = models.ForeignKey(
         'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
     )
+    # Снимок верифицированных менеджером полей (ФИО/ОП/факультет/год/TG) на момент
+    # верификации. Нужен, чтобы точно понять, изменил ли пользователь ИМЕННО
+    # верифицируемые данные (а не просто пересохранил профиль): если текущие
+    # значения разошлись со снимком — верификацию снимаем и просим менеджера
+    # подтвердить заново (перевёлся на другую ОП и т.п.). См.
+    # blog.services.pgas_certificate.VERIFIED_FIELDS / revoke_verification_if_changed.
+    verified_snapshot = models.JSONField(blank=True, null=True)
 
     objects = UserManager()
 
@@ -356,6 +363,31 @@ class Const(models.Model):
 
     def __str__(self):
         return f"{self.name} = {self.value}"
+
+
+class PgasCertificateTemplate(models.Model):
+    """Редактируемый менеджером шаблон справки ВЦ для ПГАС (по нему рендерятся все
+    справки). Синглтон: значимо только `pk=1` (см.
+    blog.services.pgas_certificate.get_template). Тело — текст с плейсхолдерами
+    ({full_name}, {faculty}, …) и блоком перечисления мероприятий
+    `### EVENTS ### … ### END BLOCK ###`, внутри которого идёт цикл по
+    мероприятиям волонтёра. Хранится в БД (а не в файле репозитория), чтобы
+    менеджер мог менять постоянные тексты, расположение плейсхолдеров, блок
+    мероприятий и — на будущее — подпись/руководителя без деплоя."""
+    id = models.AutoField(primary_key=True)
+    body = models.TextField()
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+
+    class Meta:
+        db_table = 'pgas_certificate_template'
+        verbose_name = 'Шаблон справки ПГАС'
+        verbose_name_plural = 'Шаблон справки ПГАС'
+
+    def __str__(self):
+        return f'Шаблон справки ПГАС (обновлён {self.updated_at:%d.%m.%Y})'
 
 
 class Season(models.Model):

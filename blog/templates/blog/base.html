@@ -158,13 +158,62 @@
     </a>
     {% else %}
     <a href="{% url 'profile_detail' user.id %}" class="tab-item {% if request.resolver_match.url_name == 'profile_detail' %}active{% endif %}">
-        <span class="tab-icon">📊</span>Статист.
-    </a>
-    {% endif %}
-    <a href="{% url 'profile_detail' user.id %}" class="tab-item {% if request.resolver_match.url_name == 'profile_detail' %}active{% endif %}">
         <span class="tab-icon">👤</span>Профиль
     </a>
+    {% endif %}
+    {% comment %}«Ещё» — доступ к остальным разделам, которые не влезают в 5 слотов таббара:
+    у волонтёра — Настройки/тема/гид/выход; у менеджера ещё Пользователи/Отчёты/Добро.ру;
+    у тех-админа — Аналитика. Без этого пункта на телефоне часть функций недостижима.{% endcomment %}
+    <button type="button" class="tab-item" id="more-tab-btn" aria-haspopup="true" aria-expanded="false" aria-controls="more-sheet">
+        <span class="tab-icon">☰</span>Ещё
+    </button>
 </nav>
+
+{% comment %}Мобильный лист «Ещё»: полный набор разделов роли + действия из подвала
+сайдбара (тема/гид/выход). Виден только на мобиле (CSS), открывается кнопкой «Ещё».{% endcomment %}
+<div class="more-sheet-backdrop" id="more-sheet-backdrop" hidden>
+    <div class="more-sheet" id="more-sheet" role="dialog" aria-modal="true" aria-label="Дополнительные разделы">
+        <div class="more-sheet-handle"></div>
+
+        <a href="{% url 'profile_detail' user.id %}" class="more-item {% if request.resolver_match.url_name == 'profile_detail' %}active{% endif %}">
+            <span class="more-icon">👤</span><span>Профиль и статистика</span>
+        </a>
+
+        {% if is_manager %}
+        <div class="more-section-title">Управление</div>
+        <a href="{% url 'user_list' %}" class="more-item {% if request.resolver_match.url_name == 'user_list' %}active{% endif %}">
+            <span class="more-icon">👥</span><span>Пользователи</span>
+        </a>
+        <a href="{% url 'report_period' %}" class="more-item {% if request.resolver_match.url_name == 'report_period' %}active{% endif %}">
+            <span class="more-icon">📊</span><span>Отчёты</span>
+        </a>
+        <a href="{% url 'report_period' %}?view=dobro" class="more-item">
+            <span class="more-icon">❤️</span><span>Добро.ру</span>
+        </a>
+        {% endif %}
+
+        {% if is_tech_admin %}
+        <div class="more-section-title">Диагностика</div>
+        <a href="{% url 'analytics_dashboard' %}" class="more-item {% if request.resolver_match.url_name == 'analytics_dashboard' %}active{% endif %}">
+            <span class="more-icon">📈</span><span>Аналитика</span>
+        </a>
+        {% endif %}
+
+        <div class="more-section-title">Ещё</div>
+        <a href="{% url 'settings' %}" class="more-item {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
+            <span class="more-icon">⚙️</span><span>Настройки</span>
+        </a>
+        <button type="button" class="more-item" id="more-theme-toggle">
+            <span class="more-icon" id="more-theme-icon">🌙</span><span id="more-theme-label">Тёмная тема</span>
+        </button>
+        <button type="button" class="more-item companion-guide-btn" id="more-guide-btn">
+            <span class="more-icon">🦆</span><span>Гайд по платформе</span>
+        </button>
+        <a href="{% url 'logout' %}" class="more-item more-item-danger">
+            <span class="more-icon">🚪</span><span>Выйти</span>
+        </a>
+    </div>
+</div>
 {% endif %}
 
 <script>
@@ -196,25 +245,65 @@
     }
 
     // Переключатель светлой/тёмной темы — состояние в localStorage.
+    // Два триггера: кнопка в сайдбаре (десктоп) и пункт в листе «Ещё» (мобайл) —
+    // делят одно состояние, поэтому подписи обновляются у обоих.
     var themeToggle = document.getElementById('theme-toggle');
-    if (themeToggle) {
+    var moreThemeToggle = document.getElementById('more-theme-toggle');
+    if (themeToggle || moreThemeToggle) {
         var systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         var currentTheme = localStorage.getItem('theme') || (systemPrefersDark ? 'dark' : 'light');
+        var setText = function (id, text) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = text;
+        };
         var updateThemeLabel = function () {
-            var icon = document.getElementById('theme-icon');
-            var label = document.getElementById('theme-label');
-            icon.textContent = currentTheme === 'dark' ? '☀️' : '🌙';
-            label.textContent = currentTheme === 'dark' ? ' Светлая тема' : ' Тёмная тема';
+            var dark = currentTheme === 'dark';
+            setText('theme-icon', dark ? '☀️' : '🌙');
+            setText('theme-label', dark ? ' Светлая тема' : ' Тёмная тема');
+            setText('more-theme-icon', dark ? '☀️' : '🌙');
+            setText('more-theme-label', dark ? 'Светлая тема' : 'Тёмная тема');
         };
         document.documentElement.setAttribute('data-theme', currentTheme);
         updateThemeLabel();
-        themeToggle.addEventListener('click', function () {
+        var toggleTheme = function () {
             currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
             document.documentElement.setAttribute('data-theme', currentTheme);
             localStorage.setItem('theme', currentTheme);
             updateThemeLabel();
-        });
+        };
+        if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
+        if (moreThemeToggle) moreThemeToggle.addEventListener('click', toggleTheme);
     }
+
+    // Мобильный лист «Ещё»: открытие/закрытие. Закрывается по клику вне листа,
+    // по Esc и по выбору пункта-действия (кнопки внутри — тема/гид).
+    (function () {
+        var moreBtn = document.getElementById('more-tab-btn');
+        var backdrop = document.getElementById('more-sheet-backdrop');
+        var sheet = document.getElementById('more-sheet');
+        if (!moreBtn || !backdrop || !sheet) return;
+        var openMore = function () {
+            backdrop.hidden = false;
+            document.body.classList.add('more-sheet-open');
+            moreBtn.setAttribute('aria-expanded', 'true');
+        };
+        var closeMore = function () {
+            backdrop.hidden = true;
+            document.body.classList.remove('more-sheet-open');
+            moreBtn.setAttribute('aria-expanded', 'false');
+        };
+        moreBtn.addEventListener('click', openMore);
+        backdrop.addEventListener('click', function (e) {
+            if (e.target === backdrop) closeMore();
+        });
+        // Клик по кнопкам-действиям (тема/гид) не уводит со страницы — закрываем лист вручную.
+        sheet.querySelectorAll('button.more-item').forEach(function (b) {
+            b.addEventListener('click', closeMore);
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !backdrop.hidden) closeMore();
+        });
+    })();
 
     // Счётчик символов для полей с maxlength (brandbook §6.2) — навешивается на любой
     // input/textarea с атрибутом maxlength в переданном контейнере (страница или модалка).

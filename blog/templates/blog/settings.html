@@ -1,4 +1,5 @@
 {% extends 'blog/base.html' %}
+{% load static %}
 {% block title %}Настройки{% endblock %}
 {% block content %}
 {# Хаб настроек: хедер-кнопки (визуальный язык .report-type со страницы отчётов) —
@@ -6,7 +7,18 @@
    организаций/требований подгружаются AJAX'ом со своих же вьюх (отдают partial при
    X-Requested-With), панели констант/сезонов/ролей — с этой же вьюхи (?tab=…&partial=1).
    Активная вкладка хранится в URL (?tab=…) для копируемых ссылок и кнопки «назад». #}
-<h1>Настройки</h1>
+<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+    <h1>Настройки</h1>
+    {# Кнопка запуска гайда компаньона (гусь) — аккуратно сбоку, доступна всем, кто на
+       странице настроек. Перезапускает пошаговый тур в любой момент. #}
+    <button type="button" class="companion-launch" id="companion-launch" style="max-width:320px;">
+        <img src="{% static 'blog/companion/goose_0.jpg' %}" alt="Компаньон">
+        <span class="companion-launch-text">
+            <span class="companion-launch-title">Гайд по настройкам</span>
+            <span class="companion-launch-desc">Гусь проведёт по разделам за руку</span>
+        </span>
+    </button>
+</div>
 
 <div class="card settings-hub-card">
     <div class="report-types settings-tabs" id="settings-tabs">
@@ -54,7 +66,7 @@
 
         function loadPanel(url, push) {
             panel.innerHTML = '<p style="color:var(--text-secondary);">Загрузка…</p>';
-            fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            return fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                 .then(function (r) { return r.text(); })
                 .then(function (html) {
                     panel.innerHTML = html;
@@ -74,8 +86,18 @@
             if (push) {
                 history.pushState({ tab: tabKey }, '', '?tab=' + tabKey);
             }
-            loadPanel(url, push);
+            return loadPanel(url, push);
         }
+
+        // Внешний хук для компаньон-тура: программно открыть вкладку по ключу и
+        // дождаться, пока её панель догрузится (тур подсвечивает вкладку синхронно, а
+        // текст объясняет её содержимое — панель сверху при этом реально переключается).
+        window.settingsOpenTab = function (tabKey) {
+            var btn = tabsRow.querySelector('.settings-tab[data-tab="' + tabKey + '"]');
+            if (!btn) return Promise.resolve();
+            if (btn.classList.contains('active')) return Promise.resolve();
+            return activateTab(btn, true) || Promise.resolve();
+        };
 
         tabsRow.addEventListener('click', function (event) {
             var btn = event.target.closest('.settings-tab');
@@ -95,11 +117,91 @@
         });
 
         // Первичная загрузка активной панели (активная вкладка уже отмечена сервером).
-        var initial = tabsRow.querySelector('.settings-tab.active') || tabsRow.querySelector('.settings-tab');
+        var initial = tabsRow.querySelectorAll('.settings-tab.active').length
+            ? tabsRow.querySelector('.settings-tab.active') : tabsRow.querySelector('.settings-tab');
         if (initial) {
             initial.classList.add('active');
             loadPanel(initial.getAttribute('data-url'), false);
         }
+    });
+</script>
+
+<script src="{% static 'blog/js/companion.js' %}"></script>
+<script>
+    // Сценарий компаньон-тура по настройкам: гусь ведёт по вкладкам-разделам за руку.
+    // Каждый шаг подсвечивает кнопку-вкладку и одновременно переключает панель сверху
+    // (settingsOpenTab), а текст объясняет, что в этом разделе. Тексты — из
+    // documentation/companion-guide/manager.md. Фото компаньона закреплены по слотам
+    // goose_0..3 (сейчас все указывают на один файл — заменить позже точечно).
+    document.addEventListener('DOMContentLoaded', function () {
+        var GOOSE = {
+            0: '{% static "blog/companion/goose_0.jpg" %}',
+            1: '{% static "blog/companion/goose_1.jpg" %}',
+            2: '{% static "blog/companion/goose_2.jpg" %}',
+            3: '{% static "blog/companion/goose_3.jpg" %}',
+        };
+        function tab(key) { return '.settings-tab[data-tab="' + key + '"]'; }
+
+        var STEPS = [
+            { target: null, placement: 'center', photo: GOOSE[0],
+              title: 'Заглянем в настройки',
+              text: 'Тут живёт всё «редко, но метко»: справочники, требования, сезоны, роли, константы, шаблон справки. Тыкать сюда будешь нечасто — так что пройдёмся разок вместе.' },
+            { target: tab('locations'), placement: 'bottom', photo: GOOSE[0], tabKey: 'locations',
+              title: '📍 Локации',
+              text: 'Площадки, где проходят мероприятия. Добавляешь адрес один раз — дальше просто выбираешь его при создании меро.' },
+            { target: tab('organizations'), placement: 'bottom', photo: GOOSE[1], tabKey: 'organizations',
+              title: '🏢 Организации',
+              text: 'Партнёры и заказчики мероприятий. К организации привязываются организаторы — контактные лица.' },
+            { target: tab('organizers'), placement: 'bottom', photo: GOOSE[1], tabKey: 'organizers',
+              title: '🤝 Организаторы',
+              text: 'Контактные лица организаций. Их можно завести прямо из формы меро через «＋», не выходя из неё.' },
+            { target: tab('requirements'), placement: 'bottom', photo: GOOSE[2], tabKey: 'requirements',
+              title: '✅ Требования',
+              text: 'Условия допуска волонтёров. По умолчанию все всем соответствуют — тут ведёшь только белый список исключений: кто на меро с этим требованием уходит в резерв.' },
+            { target: tab('seasons'), placement: 'bottom', photo: GOOSE[2], tabKey: 'seasons',
+              title: '🗓️ Сезоны',
+              text: 'Периоды учёта. Закрытие сезона обнуляет сезонную статистику и переносит часть чарна — критичное действие, поэтому под подтверждением.' },
+            { target: tab('team_leaders'), placement: 'bottom', photo: GOOSE[3], tabKey: 'team_leaders',
+              title: '⭐ Тим-лидеры',
+              text: 'Назначаешь и снимаешь роль ТЛ парой действий. Дальше заявки и явку на своих меро ведут они — делегируй.' },
+            { target: tab('managers'), placement: 'bottom', photo: GOOSE[3], tabKey: 'managers',
+              title: '🛡️ Менеджеры',
+              text: 'Выдаёшь роль менеджера — роль тим-лидера прилагается автоматически. Помнить про два назначения не нужно.' },
+            { target: tab('constants'), placement: 'bottom', photo: GOOSE[0], tabKey: 'constants',
+              title: '🔢 Константы',
+              text: 'Пороги churn, часы отмены и прочие коэффициенты. На реально опасных правках попросят капчу с пояснением — трение ровно там, где спасает от случайной ошибки.' },
+            { target: tab('pgas_template'), placement: 'bottom', photo: GOOSE[0], tabKey: 'pgas_template',
+              title: '📄 Шаблон справки ПГАС',
+              text: 'Текст справки ВЦ и плейсхолдеры (ФИО, часы, даты). Меняешь шаблон — меняется каждая выдаваемая справка.' },
+        ];
+
+        var OUTRO = {
+            photo: GOOSE[0],
+            title: 'Вот и всё по настройкам',
+            text: 'Вопросов зеро. Если что — я сижу в настройках, надо будет — я тут. Запустить гайд заново можно этой же кнопкой сбоку.',
+        };
+
+        function startTour() {
+            CompanionTour.start(STEPS, {
+                storageKey: 'companion_settings_seen',
+                outro: OUTRO,
+                onStepEnter: function (step) {
+                    // Переключаем панель сверху на раздел шага (если у шага есть вкладка).
+                    if (step.tabKey && typeof window.settingsOpenTab === 'function') {
+                        return window.settingsOpenTab(step.tabKey);
+                    }
+                    return null;
+                },
+            });
+        }
+
+        var launch = document.getElementById('companion-launch');
+        if (launch) launch.addEventListener('click', startTour);
+
+        // Автозапуск при первом заходе в настройки (один раз — дальше только по кнопке).
+        var seen = false;
+        try { seen = localStorage.getItem('companion_settings_seen') === '1'; } catch (e) {}
+        if (!seen) setTimeout(startTour, 600);
     });
 </script>
 {% endblock %}

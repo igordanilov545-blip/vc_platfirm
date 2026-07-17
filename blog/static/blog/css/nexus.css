@@ -1455,3 +1455,11 @@ input:focus, select:focus, textarea:focus {
   .ctour-root { animation: none; }
   .ctour-spot, .ctour-card { transition: none; }
 }
+
+/* Кнопка запуска гайда в сайдбаре — это <button> с классом .nav-link: сбрасываем
+   нативные button-стили, чтобы визуально совпадала со ссылками навигации. */
+button.nav-link.companion-guide-btn {
+  background: none; border: none; border-left: 3px solid transparent;
+  width: 100%; text-align: left; cursor: pointer; font-family: inherit;
+}
+button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); color: var(--text-primary); }

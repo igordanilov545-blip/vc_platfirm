@@ -4,8 +4,8 @@
 <div class="page-header">
     <h1>Заявки</h1>
     <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-        <a href="{% url 'application_manual_create' %}" class="btn secondary" data-modal data-modal-title="Добавить заявки волонтёров">➕ Добавить заявки</a>
-        <a href="{% url 'import_preview' %}" class="btn secondary">📥 Загрузить из Excel</a>
+        <a href="{% url 'application_manual_create' %}" class="btn secondary" data-modal data-modal-title="Добавить заявки волонтёров" data-tour="apps-add">➕ Добавить заявки</a>
+        <a href="{% url 'import_preview' %}" class="btn secondary" data-tour="apps-import">📥 Загрузить из Excel</a>
     </div>
 </div>
 
@@ -14,7 +14,7 @@
     <span class="pill warning"><span class="dot"></span>Осталось обработать: {{ pending_count }}</span>
     <form method="post" action="{% url 'application_process_all' %}" class="inline">
         {% csrf_token %}
-        <button type="submit" class="btn">Принять всех</button>
+        <button type="submit" class="btn" data-tour="apps-approve-all">Принять всех</button>
     </form>
 </div>
 {% endif %}

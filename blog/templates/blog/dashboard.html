@@ -31,7 +31,7 @@
 
 {% if is_manager %}
 <div class="card" style="margin-top:1.5rem;">
-    <h3>🔔 Что нужно посмотреть</h3>
+    <h3 data-tour="dash-incidents">🔔 Что нужно посмотреть</h3>
     {% for incident in incidents %}
         <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid var(--border-subtle); padding:10px 0;">
             <div>
@@ -55,7 +55,7 @@
 {% endif %}
 
 <div class="card" style="margin-top:1.5rem;">
-    <h3>Быстрые действия</h3>
+    <h3 data-tour="dash-quick-actions">Быстрые действия</h3>
     <a href="{% url 'event_list' %}" class="btn">Мероприятия</a>
     <a href="{% url 'application_create' %}" class="btn secondary" data-modal data-modal-title="Подать заявку на мероприятие">Подать заявку</a>
     {% if is_manager %}

@@ -159,10 +159,46 @@
 
     function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+    var RESUME_KEY = 'companion_resume'; // sessionStorage: {tourId, index}
+
+    // Текущая страница совпадает с url шага? (сравниваем pathname без хоста/квери).
+    function samePage(url) {
+        if (!url) return true;
+        var a = document.createElement('a');
+        a.href = url;
+        return a.pathname === window.location.pathname;
+    }
+
+    // Сохранить прогресс, чтобы продолжить тур после перехода на другую страницу.
+    function persist(index) {
+        if (!state.opts.tourId) return;
+        try {
+            sessionStorage.setItem(RESUME_KEY, JSON.stringify({ tourId: state.opts.tourId, index: index }));
+        } catch (e) {}
+    }
+    function clearPersist() {
+        try { sessionStorage.removeItem(RESUME_KEY); } catch (e) {}
+    }
+
     // Рендер текущего шага (данные + позиция + видимость кнопок).
     function render() {
-        var els = state.els;
         var step = state.steps[state.index];
+
+        // Межстраничный шаг: если он живёт на ДРУГОЙ странице — сохраняем прогресс и
+        // переходим туда. Тур продолжится сам после загрузки (CompanionTour.resume в
+        // base.html подхватит сохранённый прогресс). Карточку на текущей странице не
+        // показываем — мы уже уходим.
+        if (step.url && !samePage(step.url)) {
+            persist(state.index);
+            window.location.assign(step.url);
+            return;
+        }
+        // На всякий случай держим прогресс актуальным и внутри одной страницы (если
+        // юзер перезагрузит вручную — продолжим с этого шага). В финальном окне не
+        // сохраняем — тур уже завершён.
+        if (!state.showingOutro) persist(state.index);
+
+        var els = state.els;
         els.photo.src = step.photo || '';
         els.title.textContent = step.title || '';
         els.desc.textContent = step.text || '';
@@ -222,6 +258,7 @@
             state.els.skip.style.display = 'none';
             state.els.prev.style.display = 'none';
             state.els.next.textContent = 'Закрыть';
+            clearPersist(); // тур логически закончен — возобновлять после перехода нечего
             render();
             return;
         }
@@ -230,6 +267,7 @@
 
     function destroy() {
         if (!state) return;
+        clearPersist();
         window.removeEventListener('resize', layout);
         window.removeEventListener('scroll', layout, true);
         document.removeEventListener('keydown', onKey, true);
@@ -248,7 +286,9 @@
         start: function (steps, opts) {
             if (state) destroy();
             if (!steps || !steps.length) return;
-            state = { steps: steps.slice(), opts: opts || {}, index: 0, els: buildOverlay(), showingOutro: false };
+            opts = opts || {};
+            var startAt = Math.min(Math.max(0, opts.startAt || 0), steps.length - 1);
+            state = { steps: steps.slice(), opts: opts, index: startAt, els: buildOverlay(), showingOutro: false };
 
             state.els.next.addEventListener('click', function (e) {
                 // stopPropagation: иначе клик всплывёт до общего «клик = вперёд» и шаг
@@ -277,7 +317,25 @@
             render();
         },
         active: function () { return !!state; },
+
+        // Возобновление после межстраничного перехода. Вызывается на загрузке КАЖДОЙ
+        // страницы (base.html). resolver(tourId) должен вернуть { steps, opts } нужного
+        // тура (или null). Если сохранённого прогресса нет — ничего не делает.
+        // Возвращает true, если тур возобновлён (чтобы вызывающий не запускал автозапуск).
+        resume: function (resolver) {
+            var saved = null;
+            try { saved = JSON.parse(sessionStorage.getItem(RESUME_KEY) || 'null'); } catch (e) {}
+            if (!saved || typeof saved.index !== 'number') return false;
+            var cfg = resolver(saved.tourId);
+            if (!cfg || !cfg.steps || !cfg.steps.length) { clearPersistStatic(); return false; }
+            // Если сохранённый шаг за пределами (набор шагов изменился) — сбрасываем.
+            if (saved.index >= cfg.steps.length) { clearPersistStatic(); return false; }
+            CompanionTour.start(cfg.steps, Object.assign({}, cfg.opts, { tourId: saved.tourId, startAt: saved.index }));
+            return true;
+        },
     };
+
+    function clearPersistStatic() { try { sessionStorage.removeItem('companion_resume'); } catch (e) {} }
 
     window.CompanionTour = CompanionTour;
 })();

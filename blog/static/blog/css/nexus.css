@@ -308,6 +308,57 @@ main { max-width: 1100px; margin: 0 auto; padding: 1.75rem 1.5rem; }
     box-shadow: 0 4px 12px rgba(124,58,237,0.4);
     text-decoration: none;
   }
+  /* «Ещё» — кнопка-таб, выглядит как остальные, но без стрелок браузера. */
+  .bottom-tabbar button.tab-item {
+    background: none; border: none; cursor: pointer; font-family: inherit;
+  }
+}
+
+/* Мобильный лист «Ещё» — виден только когда открыт (JS снимает hidden). */
+.more-sheet-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 60;
+  display: flex; align-items: flex-end;
+}
+.more-sheet-backdrop[hidden] { display: none; }
+.more-sheet {
+  width: 100%;
+  background: var(--bg-card);
+  border-top-left-radius: 16px; border-top-right-radius: 16px;
+  padding: 8px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  max-height: 80vh; overflow-y: auto;
+  box-shadow: 0 -8px 24px rgba(0,0,0,0.25);
+  animation: sheet-up .18s ease-out;
+}
+.more-sheet-handle {
+  width: 40px; height: 4px; border-radius: 2px;
+  background: var(--border-subtle);
+  margin: 6px auto 10px;
+}
+.more-sheet .more-section-title {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-tertiary);
+  padding: 12px 8px 4px;
+}
+.more-sheet .more-item {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  padding: 13px 8px;
+  border: none; background: none; cursor: pointer;
+  font-family: inherit; font-size: .95rem; text-align: left;
+  color: var(--text-primary); text-decoration: none;
+  border-radius: 10px;
+}
+.more-sheet .more-item:hover,
+.more-sheet .more-item:active { background: var(--bg-card-hover); }
+.more-sheet .more-item.active { color: var(--accent); }
+.more-sheet .more-item-danger { color: var(--danger, #dc2626); }
+.more-sheet .more-icon { font-size: 20px; width: 24px; text-align: center; }
+
+/* Лист «Ещё» — исключительно мобильный элемент. */
+@media (min-width: 721px) {
+  .more-sheet-backdrop { display: none !important; }
 }
 
 /* ==========================================================================

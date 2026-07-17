@@ -155,7 +155,7 @@ def quick_create_category(request):
 
 @manager_required
 def quick_create_volunteer(request):
-    """Быстрое создание волонтёра прямо из пикера (data-user-picker) — новый
+    """Быстрое создание волонтёра прямо из виджета выбора (data-add-ref-picker) — новый
     пользователь сразу попадает в пул выбранных в текущей форме (напр. «Добавить
     заявки»), без отдельного одноразового сабмита всей формы (см. create_volunteer_by_name)."""
     if request.method != 'POST':
@@ -1849,7 +1849,7 @@ def application_create(request):
 def application_manual_create(request):
     """Ручное добавление заявок волонтёров менеджером (пайплайн как у веб-подачи/импорта).
     За раз — на ОДНО мероприятие, но сразу на нескольких волонтёров. Волонтёры выбираются
-    пикером (data-user-picker, multiple); новый волонтёр создаётся заранее отдельным
+    remote-виджетом выбора (data-select-remote="users"); новый волонтёр создаётся заранее отдельным
     AJAX-запросом (см. quick_create_volunteer) и приходит сюда уже обычным user_id —
     единая точка создания заявок, без спецлогики "нового по ФИО" в этой вьюхе.
 
@@ -1888,20 +1888,15 @@ def application_manual_create(request):
         redirect_url = reverse('event_detail', args=[event.id]) if fixed_event else _referer_or(request, default='pending_applications')
         return modal_form_response(request, None, None, success_redirect=redirect_url)
 
-    # GET → форма в модалке. Список меро для выбора (если не зафиксировано) + пул всех
-    # волонтёров (алфавит по фамилии/имени) для чип-выбора (как категории мероприятия).
+    # GET → форма в модалке. Список меро для выбора (если не зафиксировано). Пул
+    # волонтёров НЕ рендерим в контекст — его грузит единый remote-виджет выбора
+    # (data-select-remote="users") общим AJAX-запросом с ранжированием и лимитом.
     events = None if fixed_event else Event.objects.order_by('-created_at')
-    volunteers = [
-        {'id': u.id, 'label': (f"{u.last_name or ''} {u.first_name or ''}".strip() or u.telegram_username or f'#{u.id}')}
-        for u in User.objects.order_by('last_name', 'first_name', 'id')
-    ]
-    volunteers.sort(key=lambda v: v['label'].lower())
     return modal_form_response(
         request, 'blog/application_manual_form.html',
         {
             'fixed_event': fixed_event,
             'events': events,
-            'volunteers': volunteers,
             'title': ('Добавить волонтёров на «%s»' % fixed_event.title) if fixed_event else 'Добавить заявки волонтёров',
             'submit_label': 'Добавить',
         },
@@ -3406,7 +3401,7 @@ def organization_detail(request, org_id):
 @manager_required
 def users_picker_data(request):
     """Компактный JSON-список всех пользователей (id + ФИО + флаги активных ролей) для
-    JS-виджета выбора волонтёра (data-user-picker, base.html) — единственный источник
+    единого JS-виджета выбора в remote-режиме (data-select-remote="users", base.html) — единственный источник
     данных для ЛЮБОГО количества таких виджетов на любой странице: страница требований
     (список исключений на каждое требование) и страница настроек (назначение/снятие
     ролей) раньше рендерили серверный <select> со ВСЕМИ пользователями на КАЖДЫЙ такой
@@ -3416,10 +3411,31 @@ def users_picker_data(request):
 
     Флаги is_team_lead/is_manager нужны, чтобы виджет мог на клиенте отфильтровать
     список под конкретный блок (напр. «снять роль ТЛ» — показывать только действующих
-    ТЛ), не делая для этого отдельный серверный запрос/queryset на каждый блок."""
+    ТЛ), не делая для этого отдельный серверный запрос/queryset на каждый блок.
+
+    Ранжирование и лимит (легаси-база копит десятки тысяч пользователей, отдавать всех
+    сразу незачем):
+      - `?order=recent` (по умолчанию) — сначала те, кто был на меро недавно
+        (last_event_at DESC, никогда не участвовавшие — в конце);
+      - `?order=name` — по алфавиту (фамилия, имя);
+      - без `?all=1` отдаём только первые `users_picker_limit` (константа) записей
+        ВЫБРАННОГО порядка + флаг `truncated`, чтобы клиент показал «показать всех»;
+      - `?all=1` — весь список (менеджер нажал «показать всех»)."""
+    from data_base import data_controller as dc
+
     tl_ids = set(TeamLeader.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
     mgr_ids = set(Manager.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
-    users = User.objects.order_by('last_name', 'first_name').values('id', 'first_name', 'last_name')
+
+    order = 'name' if request.GET.get('order') == 'name' else 'recent'
+    qs = dc.users_ranked_qs(order)
+
+    show_all = request.GET.get('all') == '1'
+    limit = int(dc.get_const('users_picker_limit', default=200))
+    total = qs.count()
+    if not show_all:
+        qs = qs[:limit]
+
+    users = qs.values('id', 'first_name', 'last_name')
     data = [
         {
             'id': u['id'],
@@ -3429,7 +3445,12 @@ def users_picker_data(request):
         }
         for u in users
     ]
-    return JsonResponse({'users': data})
+    return JsonResponse({
+        'users': data,
+        'truncated': (not show_all) and total > limit,
+        'total': total,
+        'shown': len(data),
+    })
 
 
 @manager_required

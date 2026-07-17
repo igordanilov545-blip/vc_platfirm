@@ -1370,28 +1370,42 @@ input:focus, select:focus, textarea:focus {
    Компаньон-тур (companion.js): затемнение с вырезом-spotlight на
    активном элементе + прямоугольная карточка с текстом и фото гуся.
    =================================================================== */
-.ctour-root { position: fixed; inset: 0; z-index: 1000; }
-/* Затемнение — четыре прямоугольника вокруг выреза (клик по «дырке» проходит
-   к подсвеченному элементу; клик по затемнению — гасится, но не закрывает тур). */
-.ctour-mask-part {
-  position: fixed; background: var(--overlay);
-  transition: all 0.18s ease;
+.ctour-root {
+  position: fixed; inset: 0; z-index: 1000; cursor: pointer;
+  animation: ctour-fade-in 0.2s ease;
 }
-/* Обводка подсвеченного элемента. */
-.ctour-ring {
-  position: fixed; border-radius: var(--radius-md, 10px);
-  box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px rgba(124,92,255,0.25);
-  pointer-events: none; transition: all 0.18s ease;
+@keyframes ctour-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Единый spotlight-вырез: прозрачный прямоугольник с гигантской box-shadow, которая
+   заливает весь экран полупрозрачным (затемнение), + тёплая оранжевая обводка. Один
+   элемент → все стороны едут синхронно, переход между шагами плавный (cubic-bezier). */
+.ctour-spot {
+  position: fixed; border-radius: 12px;
+  box-shadow:
+    0 0 0 100vmax var(--overlay),
+    0 0 0 2px #E39A4E,
+    0 0 0 5px rgba(227,154,78,0.35);
+  transition: top 0.32s cubic-bezier(0.4,0,0.2,1),
+              left 0.32s cubic-bezier(0.4,0,0.2,1),
+              width 0.32s cubic-bezier(0.4,0,0.2,1),
+              height 0.32s cubic-bezier(0.4,0,0.2,1);
+  pointer-events: none;
 }
-/* Карточка компаньона. */
+
+/* Карточка компаньона — приятная оранжевая рамка (как деревянная табличка примера). */
 .ctour-card {
   position: fixed; z-index: 1001; width: 380px; max-width: calc(100vw - 32px);
   background: var(--bg-card); color: var(--text-primary);
-  border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card); padding: 18px 18px 14px;
-  transition: top 0.18s ease, left 0.18s ease;
+  border: 2px solid #E39A4E; border-radius: var(--radius-lg);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.22), 0 0 0 4px rgba(227,154,78,0.14);
+  padding: 18px 18px 14px; cursor: default;
+  transition: top 0.32s cubic-bezier(0.4,0,0.2,1), left 0.32s cubic-bezier(0.4,0,0.2,1);
 }
-.ctour-card-center { top: 50% !important; left: 50% !important; transform: translate(-50%, -50%); }
+.ctour-card-center {
+  top: 50% !important; left: 50% !important;
+  transform: translate(-50%, -50%);
+  transition: none; /* центр не «едет» — появляется на месте */
+}
 .ctour-close {
   position: absolute; top: 8px; right: 10px; border: none; background: none;
   color: var(--text-secondary); font-size: 22px; line-height: 1; cursor: pointer; padding: 2px;
@@ -1400,15 +1414,17 @@ input:focus, select:focus, textarea:focus {
 .ctour-card-body { display: flex; gap: 14px; align-items: flex-start; }
 .ctour-photo {
   width: 84px; height: 84px; flex-shrink: 0; border-radius: 50%;
-  object-fit: cover; border: 2px solid var(--border-subtle);
+  object-fit: cover; border: 2px solid #E39A4E;
   background: var(--bg-card-hover, #f0f0f3);
 }
 .ctour-text { flex: 1; min-width: 0; }
-.ctour-title { font-weight: 700; font-size: 16px; margin-bottom: 6px; line-height: 1.25; }
+.ctour-title { font-weight: 700; font-size: 16px; margin-bottom: 6px; line-height: 1.25; color: #C9791F; }
+:root[data-theme="dark"] .ctour-title { color: #ECAF67; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ctour-title { color: #ECAF67; } }
 .ctour-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
 .ctour-foot {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-subtle);
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(227,154,78,0.3);
 }
 .ctour-progress { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .ctour-actions { display: flex; gap: 8px; }
@@ -1432,4 +1448,10 @@ input:focus, select:focus, textarea:focus {
 @media (max-width: 640px) {
   .ctour-card { width: calc(100vw - 24px); }
   .ctour-card-body { flex-direction: column; align-items: center; text-align: center; }
+}
+
+/* Уважаем настройку «меньше движения» — без анимаций перехода и появления. */
+@media (prefers-reduced-motion: reduce) {
+  .ctour-root { animation: none; }
+  .ctour-spot, .ctour-card { transition: none; }
 }

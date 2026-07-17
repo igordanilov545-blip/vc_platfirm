@@ -43,14 +43,12 @@
         root.setAttribute('role', 'dialog');
         root.setAttribute('aria-modal', 'true');
 
-        // Затемнение — 4 прямоугольника вокруг выреза (top/right/bottom/left),
-        // чтобы «дырка» на подсвеченном элементе оставалась кликабельной/видимой.
-        var mask = el('div', 'ctour-mask');
-        ['top', 'right', 'bottom', 'left'].forEach(function (side) {
-            mask.appendChild(el('div', 'ctour-mask-part ctour-mask-' + side));
-        });
-        // Рамка-обводка вокруг подсвеченного элемента.
-        var ring = el('div', 'ctour-ring');
+        // Затемнение + подсветка одним элементом: «дырка» на подсвеченном элементе —
+        // это прозрачный прямоугольник с гигантской box-shadow (заливает весь экран
+        // полупрозрачным), плюс оранжевая обводка. Один элемент анимируется синхронно
+        // (top/left/width/height), поэтому переход между шагами плавный, без «рванья»
+        // (в отличие от 4 отдельных прямоугольников, которые ехали вразнобой).
+        var spot = el('div', 'ctour-spot');
 
         // Карточка компаньона: фото + текст + управление.
         var card = el('div', 'ctour-card');
@@ -72,13 +70,12 @@
                 '</div>' +
             '</div>';
 
-        root.appendChild(mask);
-        root.appendChild(ring);
+        root.appendChild(spot);
         root.appendChild(card);
         document.body.appendChild(root);
 
         return {
-            root: root, mask: mask, ring: ring, card: card,
+            root: root, spot: spot, card: card,
             photo: card.querySelector('.ctour-photo'),
             title: card.querySelector('.ctour-title'),
             desc: card.querySelector('.ctour-desc'),
@@ -90,7 +87,8 @@
         };
     }
 
-    // Позиционируем маску, кольцо и карточку под текущий целевой элемент.
+    // Позиционируем единый spotlight-вырез и карточку под текущий целевой элемент.
+    // Один элемент (spot) → синхронная плавная анимация всех сторон, без «рванья».
     function layout() {
         var els = state.els;
         var step = state.steps[state.index];
@@ -99,10 +97,10 @@
         var placement = step.placement || 'auto';
 
         if (!target || placement === 'center') {
-            // Окно по центру, без выреза — сплошное затемнение.
+            // Окно по центру: вырез схлопнут в точку в центре экрана (тень заливает
+            // всё → сплошное затемнение), карточка — по центру.
             els.root.classList.add('ctour-centered');
-            els.ring.style.display = 'none';
-            setMask(els, { top: 0, left: 0, width: 0, height: 0, empty: true });
+            css(els.spot, { top: vh / 2, left: vw / 2, width: 0, height: 0 });
             centerCard(els);
             return;
         }
@@ -115,36 +113,8 @@
             width: Math.min(vw, r.right + PAD) - Math.max(0, r.left - PAD),
             height: Math.min(vh, r.bottom + PAD) - Math.max(0, r.top - PAD),
         };
-        setMask(els, box);
-
-        els.ring.style.display = 'block';
-        els.ring.style.top = box.top + 'px';
-        els.ring.style.left = box.left + 'px';
-        els.ring.style.width = box.width + 'px';
-        els.ring.style.height = box.height + 'px';
-
+        css(els.spot, box);
         placeCard(els, box, placement, vw, vh);
-    }
-
-    // Четыре прямоугольника затемнения вокруг выреза box.
-    function setMask(els, box) {
-        var vw = window.innerWidth, vh = window.innerHeight;
-        var parts = {
-            top: els.mask.querySelector('.ctour-mask-top'),
-            right: els.mask.querySelector('.ctour-mask-right'),
-            bottom: els.mask.querySelector('.ctour-mask-bottom'),
-            left: els.mask.querySelector('.ctour-mask-left'),
-        };
-        if (box.empty) {
-            // Сплошное затемнение: верхняя часть на весь экран, остальные пустые.
-            css(parts.top, { top: 0, left: 0, width: vw, height: vh });
-            [parts.right, parts.bottom, parts.left].forEach(function (p) { css(p, { width: 0, height: 0 }); });
-            return;
-        }
-        css(parts.top, { top: 0, left: 0, width: vw, height: box.top });
-        css(parts.bottom, { top: box.top + box.height, left: 0, width: vw, height: Math.max(0, vh - box.top - box.height) });
-        css(parts.left, { top: box.top, left: 0, width: box.left, height: box.height });
-        css(parts.right, { top: box.top, left: box.left + box.width, width: Math.max(0, vw - box.left - box.width), height: box.height });
     }
 
     function css(node, o) {
@@ -201,22 +171,30 @@
         els.next.textContent = state.index === state.steps.length - 1 ? 'Готово' : 'Далее';
 
         // Хук: дать вызывающему подготовить экран (напр. открыть нужную вкладку
-        // настроек) ДО позиционирования. Может вернуть Promise — тогда ждём.
+        // настроек). Позиционируемся СРАЗУ (подсвечиваемая цель — обычно кнопка-вкладка,
+        // она уже в DOM и не двигается от загрузки панели), поэтому вырез плавно едет к
+        // ней немедленно. Если хук вернул Promise (догрузка AJAX-панели) — по его
+        // завершении делаем ещё один layout на случай, если размеры страницы изменились.
         var maybe = state.opts.onStepEnter ? state.opts.onStepEnter(step, state.index) : null;
+        relayoutSoon();
         if (maybe && typeof maybe.then === 'function') {
             maybe.then(function () { if (state) relayoutSoon(); });
-        } else {
-            relayoutSoon();
         }
     }
 
-    // Небольшая задержка перед layout: элемент вкладки мог только что смениться
-    // (AJAX-панель настроек), даём кадр на перерисовку и подскролл к цели.
+    // Готовим позицию к следующему layout. Ключ к плавности: НЕ анимируем скролл
+    // (иначе вырез считается по «едущему» rect и прыгает). Скроллим мгновенно и только
+    // если цель реально не влезает в вьюпорт; затем один кадр — и layout, а сам переход
+    // выреза/карточки анимирует CSS-transition уже от прежнего к новому положению.
     function relayoutSoon() {
         var step = state.steps[state.index];
         var target = step.target ? document.querySelector(step.target) : null;
-        if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        requestAnimationFrame(function () { setTimeout(function () { if (state) layout(); }, 60); });
+        if (target) {
+            var r = target.getBoundingClientRect();
+            var fullyVisible = r.top >= 0 && r.bottom <= window.innerHeight;
+            if (!fullyVisible) target.scrollIntoView({ block: 'center', behavior: 'auto' });
+        }
+        requestAnimationFrame(function () { if (state) layout(); });
     }
 
     function go(delta) {
@@ -269,14 +247,25 @@
             if (!steps || !steps.length) return;
             state = { steps: steps.slice(), opts: opts || {}, index: 0, els: buildOverlay(), showingOutro: false };
 
-            state.els.next.addEventListener('click', function () {
-                // На финальном окне «Далее» превращается в «Закрыть».
+            state.els.next.addEventListener('click', function (e) {
+                // stopPropagation: иначе клик всплывёт до общего «клик = вперёд» и шаг
+                // перескочит дважды. На финальном окне «Далее» превращается в «Закрыть».
+                e.stopPropagation();
                 if (state.showingOutro) { destroy(); return; }
                 go(1);
             });
             state.els.prev.addEventListener('click', function () { go(-1); });
-            state.els.skip.addEventListener('click', function () { finish(true); });
-            state.els.close.addEventListener('click', function () { finish(true); });
+            state.els.skip.addEventListener('click', function (e) { e.stopPropagation(); finish(true); });
+            state.els.close.addEventListener('click', function (e) { e.stopPropagation(); finish(true); });
+            // «Назад» не должен триггерить общий «клик = вперёд».
+            state.els.prev.addEventListener('click', function (e) { e.stopPropagation(); });
+
+            // Клик ГДЕ УГОДНО по экрану → следующий шаг (кроме кнопок управления, у них
+            // stopPropagation выше). На финальном окне — закрывает тур.
+            state.els.root.addEventListener('click', function () {
+                if (state.showingOutro) { destroy(); return; }
+                go(1);
+            });
 
             window.addEventListener('resize', layout);
             window.addEventListener('scroll', layout, true);

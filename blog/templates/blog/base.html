@@ -72,6 +72,7 @@
             <span class="icon" id="sidebar-toggle-icon">⬅️</span><span class="nav-label" id="sidebar-toggle-label"> Свернуть</span>
         </button>
         <a href="{% url 'settings' %}" class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" title="Настройки"><span class="icon">⚙️</span><span class="nav-label"> Настройки</span></a>
+        <button type="button" class="nav-link companion-guide-btn" id="companion-guide-btn" title="Показать гайд по платформе"><span class="icon">🦆</span><span class="nav-label"> Гайд по платформе</span></button>
         <a href="{% url 'logout' %}" class="nav-link" title="Выйти"><span class="icon">🚪</span><span class="nav-label"> Выйти</span></a>
     </div>
 </aside>
@@ -89,7 +90,10 @@
             <span class="guest-account-hint">Войти в аккаунт</span>
         </span>
     </a>
-    <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" class="btn">Войти</a>
+    <div style="display:flex; gap:10px; align-items:center;">
+        <button type="button" class="btn secondary companion-guide-btn" id="companion-guide-btn" title="Показать гайд по платформе">🦆 Гайд</button>
+        <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" class="btn">Войти</a>
+    </div>
 </header>
 {% endif %}
 
@@ -2446,6 +2450,139 @@
     });
 </script>
 <script src="{% static 'blog/js/analytics.js' %}"></script>
+
+<script src="{% static 'blog/js/companion.js' %}"></script>
+<script>
+    // Глобальный компаньон-тур (онбординг), доступный на ЛЮБОЙ странице и ЛЮБОЙ роли,
+    // включая гостей. Набор шагов зависит от роли; якоря берём из элементов, которые
+    // есть на каждой странице (сайдбар / гостевой хедер) плюс, если на экране, — общие
+    // навигационные ссылки. Полный тур по разделам настроек — отдельно (settings.html),
+    // здесь — обзорный «кто ты и что вокруг».
+    (function () {
+        var ROLE = {
+            authenticated: {{ user.is_authenticated|yesno:"true,false" }},
+            is_manager: {{ is_manager|yesno:"true,false" }},
+            is_team_leader: {{ is_team_leader|yesno:"true,false" }},
+        };
+        var GOOSE = {
+            0: '{% static "blog/companion/goose_0.jpg" %}',
+            1: '{% static "blog/companion/goose_1.jpg" %}',
+            2: '{% static "blog/companion/goose_2.jpg" %}',
+            3: '{% static "blog/companion/goose_3.jpg" %}',
+        };
+        // Якорь берём, только если он реально есть на текущей странице (иначе шаг
+        // пропускаем — тур не должен показывать подсказку в пустоту).
+        function has(sel) { return !!document.querySelector(sel); }
+        function step(sel, opt) {
+            if (sel && !has(sel)) return null;
+            return Object.assign({ target: sel, photo: GOOSE[0], placement: 'auto' }, opt);
+        }
+
+        function buildSteps() {
+            var s = [];
+            if (!ROLE.authenticated) {
+                // ---- Гость ----
+                s.push({ target: null, placement: 'center', photo: GOOSE[0],
+                    title: 'Привет! Я тут за гида 🦆',
+                    text: 'Ты смотришь центр как гость. Покажу за полминуты, что тут есть и зачем логиниться.' });
+                s.push(step('.guest-account', { photo: GOOSE[1],
+                    title: 'Пока ты гость',
+                    text: 'Здесь — вход в аккаунт. Залогинишься — появятся заявки, профиль, часы и справки. Без входа только смотришь.' }));
+                s.push(step('.guest-header .btn:not(.companion-guide-btn)', { photo: GOOSE[2], placement: 'bottom',
+                    title: 'Войти',
+                    text: 'Вход — через Telegram-бота: быстро и без пароля. Многое подтянется из профиля само.' }));
+                s.push(step('.event-card, .public-event-card, .card', { photo: GOOSE[3], placement: 'top',
+                    title: 'Мероприятия центра',
+                    text: 'Актуальные наборы видно даже гостю. Присмотрел своё — логинься и подавай заявку в один клик.' }));
+            } else {
+                // ---- Общий путь (волонтёр и выше) ----
+                s.push({ target: null, placement: 'center', photo: GOOSE[0],
+                    title: 'Привет! Я твой гид 🦆',
+                    text: 'Покажу за минуту, где что лежит. Скучно не будет — обещаю. Погнали?' });
+                s.push(step('.sidebar-account', { photo: GOOSE[1],
+                    title: 'Твой аккаунт',
+                    text: 'Это ты. Клик — и ты в профиле: часы, мероприятия, справки — всё нужное тут.' }));
+                s.push(step('[data-track="nav:dashboard"]', { photo: GOOSE[0],
+                    title: 'Главная',
+                    text: 'Стартовая: что нового, что требует внимания, быстрые действия под рукой.' }));
+                s.push(step('[data-track="nav:event_list"]', { photo: GOOSE[2],
+                    title: 'Мероприятия',
+                    text: 'Вся движуха центра — открытые наборы. Заходишь, смотришь, подаёшь заявку.' }));
+
+                if (ROLE.is_team_leader) {
+                    s.push({ target: null, placement: 'center', photo: GOOSE[3],
+                        title: 'Ты — тим-лидер ⭐',
+                        text: 'База позади. Дальше — твоё: на своих меро ведёшь заявки, явку и часы. Права действуют, пока меро не завершено.' });
+                    s.push(step('[data-track="nav:event_list"]', { photo: GOOSE[3],
+                        title: 'Твои меро',
+                        text: 'В списке твои меро подсвечены, рядом счётчик новых заявок. Работа сама тебя находит.' }));
+                }
+                if (ROLE.is_manager) {
+                    s.push({ target: null, placement: 'center', photo: GOOSE[0],
+                        title: 'Ты — менеджер 🛡️',
+                        text: 'Центр управления. Видишь и можешь всё: любое меро, любую заявку, все отчёты.' });
+                    s.push(step('[data-track="nav:pending_applications"]', { photo: GOOSE[1],
+                        title: 'Заявки',
+                        text: 'Вмешиваешься в любую заявку на любом меро. Там, где ТЛ застрял, — решаешь сам.' }));
+                    s.push(step('[data-track="nav:user_list"]', { photo: GOOSE[2],
+                        title: 'Пользователи',
+                        text: 'Все волонтёры: карточки, история, комментарии. Тут же верификация для ПГАС и чёрный список.' }));
+                    s.push(step('[data-track="nav:report_period"]', { photo: GOOSE[0],
+                        title: 'Отчёты',
+                        text: 'Отчёт для начальства/ПГАС — в пару кликов, сразу в XLSX/PDF. То, что раньше сводили вручную до ночи.' }));
+                    s.push(step('.companion-guide-btn', { photo: GOOSE[3], placement: 'top',
+                        title: 'А детали — в настройках',
+                        text: 'Полный разбор справочников, ролей и констант — в настройках: там гусь проведёт отдельно по каждому разделу.' }));
+                }
+
+                s.push(step('#theme-toggle', { photo: GOOSE[2],
+                    title: 'Тёмная тема',
+                    text: 'Глаза устали? Вот переключатель темы. Мелочь, а приятно.' }));
+            }
+            return s.filter(Boolean);
+        }
+
+        var OUTRO = {
+            photo: GOOSE[0],
+            title: 'Ну вот и всё 🎉',
+            text: ROLE.authenticated
+                ? 'Ты знаешь маршрут. Дальше — твори добро: мир подождёт, но недолго. Захочешь повторить — я всегда сбоку, кнопка «🦆 Гайд».'
+                : 'Вот и весь беглый тур. Заходи в аккаунт — и центр раскроется целиком. До встречи внутри! ✨',
+        };
+        var INTERRUPTED = {
+            photo: GOOSE[0],
+            title: 'Понял, не буду мешать',
+            text: 'Вопросов зеро. Если что — я сижу сбоку, кнопка «🦆 Гайд». Надо будет — я там.',
+        };
+
+        function startTour() {
+            var steps = buildSteps();
+            if (!steps.length) return;
+            CompanionTour.start(steps, {
+                storageKey: 'companion_tour_seen',
+                outro: OUTRO,
+                interrupted: INTERRUPTED,
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('.companion-guide-btn').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    // Ручной запуск с кнопки — всегда показываем заново.
+                    try { localStorage.removeItem('companion_tour_seen'); } catch (e) {}
+                    startTour();
+                });
+            });
+
+            // Автозапуск при первом визите (один раз). На странице настроек — не мешаем:
+            // там свой, более подробный тур с автозапуском (settings.html).
+            if (document.getElementById('settings-tabs')) return;
+            var seen = false;
+            try { seen = localStorage.getItem('companion_tour_seen') === '1'; } catch (e) {}
+            if (!seen) setTimeout(startTour, 700);
+        });
+    })();
+</script>
 {% block extra_scripts %}{% endblock %}
 </body>
 </html>

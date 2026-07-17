@@ -205,17 +205,20 @@
         render();
     }
 
-    // Завершение: skipped=true — нажали «я знаю, бб»/крестик; иначе дошли до конца.
-    // В обоих случаях (если задан outro) показываем финальное окно один раз.
+    // Завершение тура. Финальное окно РАЗНОЕ в зависимости от того, как закончили:
+    //   - skipped=true (крестик / «я знаю, бб» / Esc) → opts.interrupted («вопросов зеро…»);
+    //   - дошли до последнего шага          → opts.outro («ну вот и всё…»).
+    // Показывается один раз; на нём кнопки навигации скрыты, только «Закрыть».
     function finish(skipped) {
         if (state.opts.storageKey) {
             try { localStorage.setItem(state.opts.storageKey, '1'); } catch (e) {}
         }
-        if (state.opts.outro && !state.showingOutro) {
+        var final = skipped ? state.opts.interrupted : state.opts.outro;
+        if (final && !state.showingOutro) {
             state.showingOutro = true;
-            state.steps = [Object.assign({ placement: 'center', target: null }, state.opts.outro)];
+            state.steps = [Object.assign({ placement: 'center', target: null }, final)];
             state.index = 0;
-            state.opts = Object.assign({}, state.opts, { onStepEnter: null, outro: null });
+            state.opts = Object.assign({}, state.opts, { onStepEnter: null, outro: null, interrupted: null });
             state.els.skip.style.display = 'none';
             state.els.prev.style.display = 'none';
             state.els.next.textContent = 'Закрыть';

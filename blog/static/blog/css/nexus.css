@@ -1365,3 +1365,71 @@ input:focus, select:focus, textarea:focus {
 /* В этом блоке поле поиска — обычный текстовый фильтр (не readonly-триггер модалки),
    поэтому обычный текстовый курсор. */
 .cat-chips-available-wrap .cat-chips-search input[data-chips-search] { cursor: text; }
+
+/* ===================================================================
+   Компаньон-тур (companion.js): затемнение с вырезом-spotlight на
+   активном элементе + прямоугольная карточка с текстом и фото гуся.
+   =================================================================== */
+.ctour-root { position: fixed; inset: 0; z-index: 1000; }
+/* Затемнение — четыре прямоугольника вокруг выреза (клик по «дырке» проходит
+   к подсвеченному элементу; клик по затемнению — гасится, но не закрывает тур). */
+.ctour-mask-part {
+  position: fixed; background: var(--overlay);
+  transition: all 0.18s ease;
+}
+/* Обводка подсвеченного элемента. */
+.ctour-ring {
+  position: fixed; border-radius: var(--radius-md, 10px);
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px rgba(124,92,255,0.25);
+  pointer-events: none; transition: all 0.18s ease;
+}
+/* Карточка компаньона. */
+.ctour-card {
+  position: fixed; z-index: 1001; width: 380px; max-width: calc(100vw - 32px);
+  background: var(--bg-card); color: var(--text-primary);
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card); padding: 18px 18px 14px;
+  transition: top 0.18s ease, left 0.18s ease;
+}
+.ctour-card-center { top: 50% !important; left: 50% !important; transform: translate(-50%, -50%); }
+.ctour-close {
+  position: absolute; top: 8px; right: 10px; border: none; background: none;
+  color: var(--text-secondary); font-size: 22px; line-height: 1; cursor: pointer; padding: 2px;
+}
+.ctour-close:hover { color: var(--text-primary); }
+.ctour-card-body { display: flex; gap: 14px; align-items: flex-start; }
+.ctour-photo {
+  width: 84px; height: 84px; flex-shrink: 0; border-radius: 50%;
+  object-fit: cover; border: 2px solid var(--border-subtle);
+  background: var(--bg-card-hover, #f0f0f3);
+}
+.ctour-text { flex: 1; min-width: 0; }
+.ctour-title { font-weight: 700; font-size: 16px; margin-bottom: 6px; line-height: 1.25; }
+.ctour-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
+.ctour-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-subtle);
+}
+.ctour-progress { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ctour-actions { display: flex; gap: 8px; }
+
+/* Кнопка запуска гайда сбоку в настройках (с фото гуся) — для всех ролей. */
+.companion-launch {
+  display: flex; align-items: center; gap: 12px; cursor: pointer;
+  background: var(--bg-card); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: 12px 16px; width: 100%; text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.companion-launch:hover { background: var(--bg-card-hover, #f6f6f9); border-color: var(--accent); }
+.companion-launch img {
+  width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
+  border: 2px solid var(--border-subtle);
+}
+.companion-launch-text { flex: 1; min-width: 0; }
+.companion-launch-title { font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.companion-launch-desc { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+@media (max-width: 640px) {
+  .ctour-card { width: calc(100vw - 24px); }
+  .ctour-card-body { flex-direction: column; align-items: center; text-align: center; }
+}

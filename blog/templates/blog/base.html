@@ -111,10 +111,10 @@
 </div>
 
 {% if not user.is_authenticated %}
-{# Плашка «авторизуйтесь» снизу — для гостя (несанкционированный просмотр сайта). #}
+{# Плашка-приглашение войти (нейтральная — без «вы смотрите как гость»). #}
 <div class="guest-banner">
-    <span>Вы просматриваете сайт как гость.</span>
-    <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" class="btn">Авторизуйтесь</a>
+    <span>Войдите, чтобы подавать заявки и вести свой профиль.</span>
+    <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" class="btn">Войти</a>
 </div>
 <div class="guest-banner-spacer"></div>{# отступ, чтобы плашка не перекрывала контент #}
 {% endif %}
@@ -2463,7 +2463,12 @@
             authenticated: {{ user.is_authenticated|yesno:"true,false" }},
             is_manager: {{ is_manager|yesno:"true,false" }},
             is_team_leader: {{ is_team_leader|yesno:"true,false" }},
+            userId: {{ user.id|default:"null" }},
         };
+        // Флаг «тур уже видел» — СВОЙ на каждый аккаунт (и отдельный для гостя): иначе,
+        // если гость на этом же браузере закрыл тур, у только что зарегавшегося аккаунта
+        // автозапуск бы не сработал (localStorage общий для вкладки, не для аккаунта).
+        var SEEN_KEY = ROLE.authenticated ? 'companion_tour_seen_u' + ROLE.userId : 'companion_tour_seen_guest';
         var GOOSE = {
             0: '{% static "blog/companion/goose_0.jpg" %}',
             1: '{% static "blog/companion/goose_1.jpg" %}',
@@ -2484,16 +2489,16 @@
                 // ---- Гость ----
                 s.push({ target: null, placement: 'center', photo: GOOSE[0],
                     title: 'Привет! Я тут за гида 🦆',
-                    text: 'Ты смотришь центр как гость. Покажу за полминуты, что тут есть и зачем логиниться.' });
+                    text: 'Покажу за полминуты, что тут есть и как начать. Погнали?' });
                 s.push(step('.guest-account', { photo: GOOSE[1],
-                    title: 'Пока ты гость',
-                    text: 'Здесь — вход в аккаунт. Залогинишься — появятся заявки, профиль, часы и справки. Без входа только смотришь.' }));
+                    title: 'Вход в аккаунт',
+                    text: 'Отсюда входишь. После входа появятся заявки, профиль, часы и справки — всё твоё.' }));
                 s.push(step('.guest-header .btn:not(.companion-guide-btn)', { photo: GOOSE[2], placement: 'bottom',
                     title: 'Войти',
                     text: 'Вход — через Telegram-бота: быстро и без пароля. Многое подтянется из профиля само.' }));
                 s.push(step('.event-card, .public-event-card, .card', { photo: GOOSE[3], placement: 'top',
                     title: 'Мероприятия центра',
-                    text: 'Актуальные наборы видно даже гостю. Присмотрел своё — логинься и подавай заявку в один клик.' }));
+                    text: 'Вот актуальные наборы. Присмотрел своё — входишь и подаёшь заявку в один клик.' }));
             } else {
                 // ---- Общий путь (волонтёр и выше) ----
                 s.push({ target: null, placement: 'center', photo: GOOSE[0],
@@ -2559,7 +2564,7 @@
             var steps = buildSteps();
             if (!steps.length) return;
             CompanionTour.start(steps, {
-                storageKey: 'companion_tour_seen',
+                storageKey: SEEN_KEY,
                 outro: OUTRO,
                 interrupted: INTERRUPTED,
             });
@@ -2569,16 +2574,16 @@
             document.querySelectorAll('.companion-guide-btn').forEach(function (btn) {
                 btn.addEventListener('click', function () {
                     // Ручной запуск с кнопки — всегда показываем заново.
-                    try { localStorage.removeItem('companion_tour_seen'); } catch (e) {}
+                    try { localStorage.removeItem(SEEN_KEY); } catch (e) {}
                     startTour();
                 });
             });
 
-            // Автозапуск при первом визите (один раз). На странице настроек — не мешаем:
-            // там свой, более подробный тур с автозапуском (settings.html).
+            // Автозапуск при первом визите (один раз на аккаунт). На странице настроек —
+            // не мешаем: там свой, более подробный тур с автозапуском (settings.html).
             if (document.getElementById('settings-tabs')) return;
             var seen = false;
-            try { seen = localStorage.getItem('companion_tour_seen') === '1'; } catch (e) {}
+            try { seen = localStorage.getItem(SEEN_KEY) === '1'; } catch (e) {}
             if (!seen) setTimeout(startTour, 700);
         });
     })();

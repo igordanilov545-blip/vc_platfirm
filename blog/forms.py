@@ -163,10 +163,10 @@ class RequirementExceptionForm(forms.ModelForm):
     """Добавление волонтёра в список «не соответствует требованию». Пользователь НЕ
     выбирается через серверный <select> (при тысячах волонтёров рендер queryset'а в
     <option> — сам по себе главная причина медленной загрузки страницы требований).
-    Вместо этого — скрытое числовое поле `user`, заполняемое JS-виджетом «пикер
-    волонтёров» (data-user-picker, base.html): список пользователей грузится через
-    один общий на всю страницу AJAX-запрос (см. users_picker_data), кэшируется на
-    клиенте и переиспользуется всеми такими виджетами страницы без повторных загрузок."""
+    Вместо этого — скрытое числовое поле `user`, заполняемое единым JS-виджетом выбора
+    в remote-режиме (data-chip-select data-select-remote="users", base.html): список
+    пользователей грузится AJAX-запросом (см. users_picker_data) с ранжированием и
+    лимитом, кэшируется на клиенте и переиспользуется всеми такими виджетами страницы."""
     user = forms.IntegerField(widget=forms.HiddenInput, label='Волонтёр')
 
     class Meta:
@@ -903,9 +903,9 @@ class MultipleHiddenIntegerField(forms.Field):
 
 class RoleUsersForm(forms.Form):
     """Выбор пользователей для назначения/снятия роли (настройки) — id приходят от
-    JS-пикера волонтёров (data-user-picker) скрытыми полями `<prefix->users`,
-    без серверного рендера queryset'а в <select> (тысячи пользователей иначе грузятся
-    на каждую из нескольких секций страницы)."""
+    единого JS-виджета выбора в remote-режиме (data-chip-select data-select-remote)
+    скрытыми полями `<prefix->users`, без серверного рендера queryset'а в <select>
+    (тысячи пользователей иначе грузятся на каждую из нескольких секций страницы)."""
     users = MultipleHiddenIntegerField(required=True, label='Волонтёры')
 
     def __init__(self, *args, queryset=None, **kwargs):

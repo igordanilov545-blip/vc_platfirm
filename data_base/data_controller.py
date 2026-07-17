@@ -51,7 +51,7 @@ __all__ = [
     'get_const', 'get_all_consts',
     # Базовые queryset'ы для аналитики (отчёты) + скалярные срезы.
     'events_qs', 'event_shifts_qs', 'participations_qs', 'applications_qs',
-    'event_staff_qs', 'users_qs', 'feedbacks_qs', 'managers_qs', 'team_leaders_qs',
+    'event_staff_qs', 'users_qs', 'users_ranked_qs', 'feedbacks_qs', 'managers_qs', 'team_leaders_qs',
     'dobro_ru_shared_links_qs', 'get_current_season', 'get_event_by_id',
     'get_full_table', 'create_record_generic'
 ]
@@ -855,6 +855,18 @@ def event_staff_qs():
 
 def users_qs():
     return User.objects.all()
+
+
+def users_ranked_qs(order: str = 'recent'):
+    """Ленивый queryset пользователей для виджета выбора (data-select-remote="users"):
+      - order='name'   — по алфавиту (фамилия, имя);
+      - order='recent' (по умолчанию) — сначала кто был на меро недавно
+        (last_event_at DESC), никогда не участвовавшие (NULL) — в самый конец.
+    Срез/лимит и .count() навешивает вызывающая вьюха (users_picker_data)."""
+    from django.db.models import F
+    if order == 'name':
+        return User.objects.order_by('last_name', 'first_name')
+    return User.objects.order_by(F('last_event_at').desc(nulls_last=True), 'last_name', 'first_name')
 
 
 def feedbacks_qs():

@@ -134,8 +134,8 @@
 | Утилиты дат (локализация, ISO, формат) — **единый источник** | `base.html` (`<head>`) → `window.CalendarUtils` | `CalendarUtils.MONTHS/DOW/parseISO/toISO/fmt/sameDay` — любой календарь берёт даты отсюда, свои копии не заводим |
 | Выбор диапазона дат (Date Range Picker) | `report_period.html` (двухмесячный, пресеты/сравнение) | пока единственный экран; при появлении второго — выносить в общий компонент (см. hot_fix_1 §B) |
 | Выбор времени | `base.html` → `initTimepickers` (`data-timepicker`) | поле с `data-timepicker` |
-| Чипы выбора (категории/смены/роли) | `base.html` → `initCategoryChips` (`data-chip-select`) | скрытый `<select multiple>` + разметка чипов |
-| **Поиск и выбор пользователя(ей)** | `base.html` → `initUserPickers` (`data-user-picker`) | `data-user-picker data-mode data-field-name`, ленивый `/users/picker-data/` |
+| **Выбор «n из m» (единый виджет)** | `base.html` → `initCategoryChips` (`data-chip-select`) | ОДНА точка входа решает по числу вариантов: ≤40 — инлайн-чипы (выбранные сверху с ×, доступные снизу), >40 — общая прокручиваемая модалка с поиском по подстроке. Источник: скрытый `<select multiple>` (id = `data-chip-select`). `data-chip-single` — одиночный выбор. Порог — `SELECT_INLINE_MAX` в base.html |
+| **Выбор пользователя(ей) — remote-режим того же виджета** | `base.html` → `initCategoryChips` + `initRemoteSelect` (`data-chip-select data-select-remote="users"`) | людей тысячи, поэтому НЕ рендерим в `<select>`, а грузим `/users/picker-data/` (общий кэш на страницу) с ранжированием (табы 🕑 недавние / А—Я по имени), лимитом `users_picker_limit` (константа) и кнопкой «показать всех». Разметка: `data-field-name`, `data-empty-text`, опц. `data-filter` (`USER_FILTERS`), `data-linkable`. Выбранные уходят скрытыми `<input name=field>` перед сабмитом |
 | Сортировка таблицы по колонкам | `base.html` → `initSortableTables` (`data-sortable`) | `<table data-sortable>`, `<th data-sort-key>` |
 | **Скрытие/возврат колонок** (как в Excel) | `base.html` → `initHideableColumns` (`data-hideable-columns`) | `<table data-hideable-columns>` — «глаз» в заголовке прячет колонку; стрелка между соседними колонками возвращает всё скрытое между ними |
 | Бесконечная подгрузка таблицы | `base.html` → `initInfiniteScroll` (`data-infinite-scroll`) | `<table data-infinite-scroll="url">`, `<tbody data-rows data-next-page>` |
@@ -160,8 +160,9 @@
 - ❌ Писать **второй** календарь / date-picker в шаблоне страницы, когда уже есть
   `initDatepickers`/`.cal-grid`. Нужен диапазон дат — расширяем общий компонент, а не
   клонируем его в новый `<script>`.
-- ❌ Своя модалка выбора со своим полем поиска, когда подходит `data-user-picker` или
-  общая модалка `#modal-backdrop`.
+- ❌ Своя модалка/чипы/`getlist` выбора «n из m», когда подходит единый виджет
+  `data-chip-select` (инлайн/модалка — сам выберет по числу вариантов; для людей —
+  `data-select-remote="users"`) или общая модалка `#modal-backdrop`.
 - ❌ Инлайновые `<script>` с бизнес-поведением в шаблоне страницы. Общее поведение
   живёт в `base.html` (или отдельном подключаемом JS), навешивается по `data-*`-атрибуту.
 

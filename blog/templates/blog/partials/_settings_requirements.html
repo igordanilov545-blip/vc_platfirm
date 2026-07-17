@@ -63,7 +63,7 @@
                     {% csrf_token %}
                     <div class="field">
                         <label>Волонтёр</label>
-                        <div class="category-chips" data-user-picker data-mode="single" data-field-name="user" data-empty-text="Волонтёр не выбран" data-linkable>
+                        <div class="category-chips" data-chip-select data-chip-single data-select-remote="users" data-field-name="user" data-empty-text="Волонтёр не выбран" data-linkable>
                             <div class="cat-chips-search">
                                 <input type="text" placeholder="Начните вводить имя или фамилию…" data-chips-search readonly>
                             </div>

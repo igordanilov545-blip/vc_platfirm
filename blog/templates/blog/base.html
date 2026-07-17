@@ -399,7 +399,7 @@
     function initPageContent(root) {
         ['initSortableTables', 'initHideableColumns', 'initTableFilter', 'initCharCounters',
          'bindConfirmForms', 'initCategoryChips', 'initShiftChips', 'initDatepickers',
-         'initDateRangePair', 'initTimepickers', 'initUserPickers', 'initInfiniteScroll',
+         'initDateRangePair', 'initTimepickers', 'initInfiniteScroll',
          'bindRoleForms', 'initAttendanceHoursInputs',
          'initPasswordToggle', 'initToasts'].forEach(function (fn) {
             if (typeof window[fn] === 'function') window[fn](root);
@@ -1058,11 +1058,28 @@
     }
 
     // ======================================================================
-    // Обобщённый виджет выбора через чипы: выбранные сверху (с крестиком),
-    // доступные снизу (клик добавляет). Источник истины — скрытый
-    // <select multiple>. Каждый вариант получает стабильный цвет из палитры.
-    // Используется для категорий и тим-лидеров.
+    // ЕДИНЫЙ ВИДЖЕТ ВЫБОРА «n из m» (data-chip-select).
+    //
+    // Одна точка входа решает, КАК показать выбор, по числу вариантов:
+    //   • вариантов ≤ SELECT_INLINE_MAX  → чипы прямо на форме (выбранные сверху с
+    //     крестиком, доступные снизу — клик добавляет). Как выбор тим-лидеров/категорий.
+    //   • вариантов >  SELECT_INLINE_MAX → компактное поле-триггер; по клику открывается
+    //     ОДНА НА СТРАНИЦУ прокручиваемая модалка со строкой поиска (фильтр по подстроке)
+    //     и списком всех вариантов подряд. Выбранные всё равно рендерятся чипами под полем.
+    //
+    // Источник вариантов:
+    //   • по умолчанию — скрытый <select multiple> (id = значение data-chip-select).
+    //     Значения известны на клиенте сразу, число считаем по <option>.
+    //   • data-select-remote="users" — варианты грузятся с сервера (тысячи людей нельзя
+    //     рендерить в <select>): всегда модалка, с ранжированием (недавние/по имени),
+    //     лимитом и кнопкой «показать всех». <select> для таких виджетов не нужен —
+    //     значения уходят скрытыми <input name=data-field-name> перед сабмитом формы.
+    //
+    // data-chip-single — одиночный выбор (напр. ответственный менеджер): новый выбор
+    //   снимает предыдущий, для remote — модалка закрывается сразу.
     // ======================================================================
+    var SELECT_INLINE_MAX = 40; // ≤ этого — инлайн-чипы, иначе модалка (совпадает с PAGE_SIZE модалки)
+
     var CHIP_PALETTE = ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7'];
     function chipColorClass(value) {
         var h = 0, s = String(value);
@@ -1070,160 +1087,173 @@
         return 'cat-chip--' + CHIP_PALETTE[h % CHIP_PALETTE.length];
     }
 
+    // Рендер строки выбранных чипов (общий для inline и модалочного режима).
+    // getItems() → [{value, label, closed}], onRemove(value) — снять выбор.
+    function renderSelectedChips(container, items, emptyText, onRemove) {
+        container.innerHTML = '';
+        if (!items.length) {
+            var empty = document.createElement('span');
+            empty.className = 'cat-chips-empty';
+            empty.textContent = emptyText;
+            container.appendChild(empty);
+            return;
+        }
+        items.forEach(function (it) {
+            var chip = document.createElement('span');
+            chip.className = 'cat-chip ' + (it.closed ? 'cat-chip--closed' : chipColorClass(it.value));
+            chip.innerHTML = '<span class="cat-chip-label"></span>' +
+                '<button type="button" class="cat-chip-x" aria-label="Убрать">×</button>';
+            chip.querySelector('.cat-chip-label').textContent = it.label;
+            chip.querySelector('.cat-chip-x').addEventListener('click', function () { onRemove(it.value); });
+            container.appendChild(chip);
+        });
+    }
+
     function initCategoryChips(root) {
-        var widgets = root.querySelectorAll('[data-chip-select]');
-        widgets.forEach(function (widget) {
+        root.querySelectorAll('[data-chip-select]').forEach(function (widget) {
             if (widget.dataset.chipsInit) return;
             widget.dataset.chipsInit = '1';
 
-            var selectId = widget.getAttribute('data-chip-select');
-            var select = document.getElementById(selectId);
+            var remote = widget.getAttribute('data-select-remote'); // 'users' | null
+            var single = widget.hasAttribute('data-chip-single');
+            var emptyText = widget.getAttribute('data-chip-empty')
+                || widget.getAttribute('data-empty-text') || 'Ничего не выбрано';
+            var selectedRow = widget.querySelector('[data-chips-selected]');
+
+            if (remote) {
+                initRemoteSelect(widget, { single: single, emptyText: emptyText, selectedRow: selectedRow, source: remote });
+                return;
+            }
+
+            // --- Локальный источник: скрытый <select multiple> ---
+            var select = document.getElementById(widget.getAttribute('data-chip-select'));
             if (!select) return;
             select.hidden = true;
-
-            var emptyText = widget.getAttribute('data-chip-empty') || 'Ничего не выбрано';
-            // Одиночный выбор (напр. ответственный менеджер — ровно один, в отличие от
-            // тим-лидеров) — тот же пул чипов "выбрано/доступно" без строки поиска,
-            // просто выбор нового кандидата снимает предыдущий.
-            var single = widget.hasAttribute('data-chip-single');
-            var selectedRow = widget.querySelector('[data-chips-selected]');
             var availableRow = widget.querySelector('[data-chips-available]');
-            var searchInput = widget.querySelector('[data-chips-search]');
+            var inlineSearch = widget.querySelector('[data-chips-search]');
 
+            function optionItems(onlySelected) {
+                var items = [];
+                Array.prototype.forEach.call(select.options, function (opt) {
+                    if (onlySelected && !opt.selected) return;
+                    items.push({ value: opt.value, label: opt.textContent, closed: opt.getAttribute('data-closed') === '1', opt: opt });
+                });
+                return items;
+            }
+            function setSelected(value, on) {
+                Array.prototype.forEach.call(select.options, function (o) {
+                    if (o.value === value) o.selected = on;
+                    else if (on && single) o.selected = false;
+                });
+            }
+
+            // Число вариантов определяет режим показа. Пересчитывается на каждый
+            // render (у формы заявки пул смен подгружается по chips:refresh — меро
+            // с 3 сменами показываем инлайн, с 60 — модалкой, без перепривязки).
             function render() {
-                var query = searchInput ? searchInput.value.trim().toLowerCase() : '';
-                selectedRow.innerHTML = '';
+                var total = select.options.length;
+                if (total > SELECT_INLINE_MAX) renderModalMode();
+                else renderInlineMode();
+            }
+
+            // ——— Инлайн-режим (≤ порога): выбранные сверху, доступные снизу ———
+            function renderInlineMode() {
+                widget.classList.remove('chips--modal');
+                if (widget._modalTrigger) widget._modalTrigger.style.display = 'none';
+                if (availableRow) availableRow.style.display = '';
+                var query = inlineSearch ? inlineSearch.value.trim().toLowerCase() : '';
+                renderSelectedChips(selectedRow, optionItems(true), emptyText, function (value) {
+                    setSelected(value, false); render();
+                });
+                if (!availableRow) return;
                 availableRow.innerHTML = '';
                 var availableCount = 0;
-                Array.prototype.forEach.call(select.options, function (opt) {
-                    var color = chipColorClass(opt.value);
-                    // Смена с закрытым набором (data-closed="1" на <option>, см.
-                    // ShiftMultipleSelect в forms.py) — серый chip вместо цветного, но
-                    // всё ещё кликабельный (заявка на неё уйдёт в резерв).
-                    var closed = opt.getAttribute('data-closed') === '1';
-                    var colorClass = closed ? 'cat-chip--closed' : color;
-                    if (opt.selected) {
-                        var chip = document.createElement('span');
-                        chip.className = 'cat-chip ' + colorClass;
-                        chip.innerHTML = '<span class="cat-chip-label"></span>' +
-                            '<button type="button" class="cat-chip-x" aria-label="Убрать">×</button>';
-                        chip.querySelector('.cat-chip-label').textContent = opt.textContent;
-                        chip.querySelector('.cat-chip-x').addEventListener('click', function () {
-                            opt.selected = false;
-                            render();
-                        });
-                        selectedRow.appendChild(chip);
-                    } else {
-                        if (query && opt.textContent.toLowerCase().indexOf(query) === -1) return;
-                        availableCount++;
-                        var avail = document.createElement('button');
-                        avail.type = 'button';
-                        avail.className = 'cat-chip cat-chip--add ' + colorClass;
-                        avail.innerHTML = '<span class="cat-chip-label"></span><span class="cat-chip-plus">+</span>';
-                        avail.querySelector('.cat-chip-label').textContent = opt.textContent;
-                        avail.addEventListener('click', function () {
-                            if (single) {
-                                Array.prototype.forEach.call(select.options, function (o) { o.selected = false; });
-                            }
-                            opt.selected = true;
-                            // Поиск намеренно не сбрасывается — можно добавить несколько
-                            // элементов подряд, продолжая фильтровать по тому же запросу.
-                            render();
-                        });
-                        availableRow.appendChild(avail);
-                    }
+                optionItems(false).forEach(function (it) {
+                    if (it.opt.selected) return;
+                    if (query && it.label.toLowerCase().indexOf(query) === -1) return;
+                    availableCount++;
+                    var avail = document.createElement('button');
+                    avail.type = 'button';
+                    avail.className = 'cat-chip cat-chip--add ' + (it.closed ? 'cat-chip--closed' : chipColorClass(it.value));
+                    avail.innerHTML = '<span class="cat-chip-label"></span><span class="cat-chip-plus">+</span>';
+                    avail.querySelector('.cat-chip-label').textContent = it.label;
+                    avail.addEventListener('click', function () { setSelected(it.value, true); render(); });
+                    availableRow.appendChild(avail);
                 });
-                if (!selectedRow.children.length) {
-                    var empty = document.createElement('span');
-                    empty.className = 'cat-chips-empty';
-                    empty.textContent = emptyText;
-                    selectedRow.appendChild(empty);
-                }
-                if (searchInput && query && !availableCount) {
-                    var noResults = document.createElement('span');
-                    noResults.className = 'cat-chips-empty';
-                    noResults.textContent = 'Никого не найдено';
-                    availableRow.appendChild(noResults);
+                if (inlineSearch && query && !availableCount) {
+                    var nr = document.createElement('span');
+                    nr.className = 'cat-chips-empty';
+                    nr.textContent = 'Ничего не найдено';
+                    availableRow.appendChild(nr);
                 }
             }
 
-            if (searchInput) {
-                // Фильтрация запускается через 1.5с после того, как пользователь перестал
-                // печатать — не при каждом нажатии клавиши.
-                var debounceTimer = null;
-                searchInput.addEventListener('input', function () {
-                    clearTimeout(debounceTimer);
-                    debounceTimer = setTimeout(render, 1500);
+            // ——— Модалочный режим (> порога): поле-триггер + общая модалка ———
+            function renderModalMode() {
+                widget.classList.add('chips--modal');
+                if (availableRow) availableRow.style.display = 'none';
+                if (widget._modalTrigger) widget._modalTrigger.style.display = '';
+                renderSelectedChips(selectedRow, optionItems(true), emptyText, function (value) {
+                    setSelected(value, false); render();
+                });
+                ensureModalTrigger(widget, function () {
+                    ensureSelectModal().open({
+                        single: single,
+                        candidates: function (query) {
+                            return optionItems(false).filter(function (it) {
+                                return !it.opt.selected && (!query || it.label.toLowerCase().indexOf(query) !== -1);
+                            });
+                        },
+                        onPick: function (it) { setSelected(it.value, true); render(); },
+                    });
                 });
             }
 
-            // Перерисовать после быстрого создания записи (＋ добавляет <option>).
             select.addEventListener('chips:refresh', render);
             render();
         });
     }
 
-    // ======================================================================
-    // Пикер волонтёра(ов) по id+ФИО (data-user-picker) — замена серверному
-    // <select> со всеми пользователями. При тысячах пользователей рендер их всех
-    // в <option> на сервере (тем более на нескольких блоках одной страницы —
-    // требования, назначение/снятие ролей, отчёты) был главной причиной медленной
-    // загрузки страниц. Вместо этого:
-    //   - список (id, label) грузится ОДНИМ AJAX-запросом на /users/picker-data/,
-    //     запускается лениво по первому клику в поле поиска ЛЮБОГО из виджетов
-    //     на странице;
-    //   - результат кэшируется в module-level Promise — все виджеты страницы
-    //     переиспользуют один и тот же запрос/данные, повторных загрузок не будет;
-    //   - клик в поле поиска открывает ОДНУ ОБЩУЮ НА СТРАНИЦУ модалку (не встроенный
-    //     блок): базово показывает всех допустимых для этого виджета пользователей
-    //     porциями (виртуальный рендер при прокрутке — из уже загруженного кэша,
-    //     без новых запросов), а ввод текста фильтрует эту же выдачу;
-    //   - двойной клик по карточке в модалке в РЕЖИМЕ ПРОСМОТРА (data-linkable, см.
-    //     ниже) открывает профиль пользователя в новой вкладке; в режиме выбора для
-    //     действия (assign role и т.п.) двойной клик не используется, чтобы не
-    //     конфликтовать с обычным выбором;
-    //   - выбранные пользователи рендерятся скруглёнными чипсами под полем поиска.
-    // Разметка ожидает: [data-user-picker][data-field-name][data-mode=single|multiple]
-    // с дочерними [data-chips-search], [data-chips-selected]. Опционально
-    // [data-linkable] — включает двойной клик → переход в профиль.
-    // Виджет сам создаёт нужные <input type="hidden"> с именем data-field-name прямо
-    // перед сабмитом формы (на submit), поэтому не мешает остальной валидации формы.
-    // ======================================================================
-    var userPickerDataPromise = null;
-    function loadUserPickerData() {
-        if (!userPickerDataPromise) {
-            userPickerDataPromise = fetch('{% url "users_picker_data" %}', {
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            })
-                .then(function (r) { return r.json(); })
-                .then(function (data) { return data.users || []; })
-                .catch(function () {
-                    userPickerDataPromise = null; // разрешаем повторную попытку при сбое сети
-                    return [];
-                });
-        }
-        return userPickerDataPromise;
+    // Поле-триггер «＋ выбрать» под чипами (создаётся один раз на виджет). onOpen —
+    // открыть модалку. Отдельно от строки инлайн-поиска: в модалочном режиме своего
+    // поиска у виджета нет, он внутри модалки.
+    function ensureModalTrigger(widget, onOpen) {
+        if (widget._modalTrigger) return;
+        var wrap = widget.querySelector('[data-chips-available-wrap]') || widget;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cat-chip cat-chip--add cat-chip--pick';
+        btn.innerHTML = '<span class="cat-chip-label">Выбрать из списка…</span><span class="cat-chip-plus">+</span>';
+        btn.addEventListener('click', onOpen);
+        (widget.querySelector('[data-chips-selected]') || widget).insertAdjacentElement('afterend', btn);
+        widget._modalTrigger = btn;
     }
 
-    var FILTERS = {
-        team_lead: function (u) { return u.is_team_lead; },
-        not_team_lead: function (u) { return !u.is_team_lead; },
-        manager: function (u) { return u.is_manager; },
-        not_manager: function (u) { return !u.is_manager; },
-    };
-
-    // Одна модалка на всю страницу (переиспользуется ЛЮБЫМ количеством виджетов —
-    // создаётся лениво при первом открытии, а не в разметке каждого виджета).
-    var pickerModal = null;
-    function ensurePickerModal() {
-        if (pickerModal) return pickerModal;
+    // ======================================================================
+    // ОБЩАЯ МОДАЛКА ВЫБОРА (одна на страницу, лениво создаётся при первом открытии).
+    // Обслуживает оба режима единого виджета:
+    //   • локальный — кандидаты приходят функцией candidates(query) из уже
+    //     отрендеренного <select> (виджет с >40 вариантами: смены большого меро и т.п.);
+    //   • remote — источник людей: список грузится с /users/picker-data/ с
+    //     ранжированием (недавние/по имени), лимитом и кнопкой «показать всех».
+    // Список рендерится порциями по PAGE_SIZE (догрузка при прокрутке вниз), поиск —
+    // по подстроке. Выбор кладётся через cfg.onPick; single-режим закрывает модалку.
+    // ======================================================================
+    var selectModal = null;
+    function ensureSelectModal() {
+        if (selectModal) return selectModal;
+        var PAGE_SIZE = 40;
         var backdrop = document.createElement('div');
         backdrop.className = 'user-picker-modal-backdrop';
         backdrop.hidden = true;
         backdrop.innerHTML =
             '<div class="user-picker-modal">' +
                 '<div class="user-picker-modal-head">' +
-                    '<input type="text" class="user-picker-modal-search" placeholder="Начните вводить имя или фамилию…">' +
+                    '<input type="text" class="user-picker-modal-search" placeholder="Поиск по подстроке…">' +
+                    '<div class="user-picker-modes" data-modes hidden>' +
+                        '<button type="button" class="picker-mode-btn is-active" data-mode-btn="recent" title="Сначала недавние">🕑</button>' +
+                        '<button type="button" class="picker-mode-btn" data-mode-btn="name" title="По алфавиту">А—Я</button>' +
+                    '</div>' +
                     '<button type="button" class="user-picker-modal-close" aria-label="Закрыть">×</button>' +
                 '</div>' +
                 '<div class="user-picker-modal-body"></div>' +
@@ -1231,78 +1261,94 @@
             '</div>';
         document.body.appendChild(backdrop);
 
-        var state = {
-            active: null, // виджет, для которого сейчас открыта модалка
-            visibleCount: 0,
-            PAGE_SIZE: 40,
-        };
-
         var bodyEl = backdrop.querySelector('.user-picker-modal-body');
         var searchEl = backdrop.querySelector('.user-picker-modal-search');
         var footEl = backdrop.querySelector('.user-picker-modal-foot');
         var closeBtn = backdrop.querySelector('.user-picker-modal-close');
+        var modesEl = backdrop.querySelector('[data-modes]');
 
-        function currentCandidates() {
-            var w = state.active;
-            var pool = w.filterFn ? w.allUsers.filter(w.filterFn) : w.allUsers;
+        var cfg = null;          // конфиг текущего открытия
+        var visibleCount = 0;
+
+        function candidates() {
             var query = searchEl.value.trim().toLowerCase();
-            var candidates = pool.filter(function (u) { return !w.selected.has(u.id); });
-            if (query) candidates = candidates.filter(function (u) { return u.label.toLowerCase().indexOf(query) !== -1; });
-            return candidates;
+            return cfg.candidates(query);
         }
 
         function renderPage(reset) {
-            var candidates = currentCandidates();
-            if (reset) { state.visibleCount = 0; bodyEl.innerHTML = ''; }
-            if (!candidates.length) {
-                bodyEl.innerHTML = '<div class="cat-chips-empty" style="padding:16px;">Никого не найдено.</div>';
-                footEl.textContent = '';
+            var list = candidates();
+            if (reset) { visibleCount = 0; bodyEl.innerHTML = ''; }
+            if (!list.length) {
+                bodyEl.innerHTML = '<div class="cat-chips-empty" style="padding:16px;">Ничего не найдено.</div>';
+                footEl.innerHTML = '';
                 return;
             }
-            var slice = candidates.slice(state.visibleCount, state.visibleCount + state.PAGE_SIZE);
-            slice.forEach(function (u) {
+            var slice = list.slice(visibleCount, visibleCount + PAGE_SIZE);
+            slice.forEach(function (it) {
                 var row = document.createElement('button');
                 row.type = 'button';
                 row.className = 'user-picker-row';
-                row.textContent = u.label;
+                row.textContent = it.label;
                 row.addEventListener('click', function () {
-                    var w = state.active;
-                    if (w.mode === 'single') w.selected.clear();
-                    w.selected.set(u.id, u.label);
-                    w.renderSelected();
-                    if (w.mode === 'single') closeModal();
+                    cfg.onPick(it);
+                    if (cfg.single) closeModal();
                     else renderPage(true);
                 });
-                if (state.active.linkable) {
+                if (cfg.linkable && it.value) {
                     row.title = 'Клик — выбрать, двойной клик — открыть профиль';
                     row.addEventListener('dblclick', function (e) {
                         e.stopPropagation();
-                        window.open('/profile/' + u.id + '/', '_blank');
+                        window.open('/profile/' + it.value + '/', '_blank');
                     });
                 }
                 bodyEl.appendChild(row);
             });
-            state.visibleCount += slice.length;
-            footEl.textContent = 'Показано ' + state.visibleCount + ' из ' + candidates.length;
+            visibleCount += slice.length;
+            renderFoot(list.length);
         }
 
-        // Подгрузка следующей порции при прокрутке до низа списка — без новых
-        // сетевых запросов, просто рендерим ещё кусок уже загруженного кэша.
-        bodyEl.addEventListener('scroll', function () {
-            if (bodyEl.scrollTop + bodyEl.clientHeight >= bodyEl.scrollHeight - 80) {
-                renderPage(false);
+        // Подвал: счётчик + (для remote при усечении) кнопка «показать всех».
+        function renderFoot(shownTotal) {
+            footEl.innerHTML = '';
+            var info = document.createElement('span');
+            info.textContent = 'Показано ' + visibleCount + ' из ' + shownTotal;
+            footEl.appendChild(info);
+            if (cfg.truncated && cfg.onShowAll) {
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'btn secondary btn-sm';
+                btn.textContent = 'Показать всех';
+                btn.addEventListener('click', function () {
+                    btn.disabled = true; btn.textContent = 'Загрузка…';
+                    cfg.onShowAll();
+                });
+                footEl.appendChild(btn);
             }
+        }
+
+        bodyEl.addEventListener('scroll', function () {
+            if (bodyEl.scrollTop + bodyEl.clientHeight >= bodyEl.scrollHeight - 80) renderPage(false);
         });
 
         var debounceTimer = null;
         searchEl.addEventListener('input', function () {
             clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(function () { renderPage(true); }, 250);
+            debounceTimer = setTimeout(function () { renderPage(true); }, 200);
+        });
+
+        // Табы ранжирования (только remote): переключение режима перезагружает данные.
+        modesEl.querySelectorAll('[data-mode-btn]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                if (!cfg || !cfg.onOrderChange) return;
+                modesEl.querySelectorAll('[data-mode-btn]').forEach(function (o) { o.classList.remove('is-active'); });
+                b.classList.add('is-active');
+                cfg.onOrderChange(b.getAttribute('data-mode-btn'));
+            });
         });
 
         function closeModal() {
             backdrop.hidden = true;
-            state.active = null;
+            cfg = null;
             searchEl.value = '';
             document.body.style.overflow = '';
         }
@@ -1310,106 +1356,156 @@
         backdrop.addEventListener('click', function (e) { if (e.target === backdrop) closeModal(); });
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !backdrop.hidden) closeModal(); });
 
-        pickerModal = {
-            open: function (widgetState) {
-                state.active = widgetState;
+        selectModal = {
+            open: function (config) {
+                cfg = config;
                 backdrop.hidden = false;
                 document.body.style.overflow = 'hidden';
                 searchEl.value = '';
-                searchEl.focus();
-                if (widgetState.allUsers) {
-                    renderPage(true);
-                } else {
+                modesEl.hidden = !config.onOrderChange; // табы — только у remote
+                if (config.loading) {
                     bodyEl.innerHTML = '<div class="cat-chips-empty" style="padding:16px;">Загрузка…</div>';
-                    loadUserPickerData().then(function (users) {
-                        widgetState.allUsers = users;
-                        if (state.active === widgetState) renderPage(true);
-                    });
+                    footEl.innerHTML = '';
+                } else {
+                    renderPage(true);
                 }
+                searchEl.focus();
             },
+            // Перерисовать открытую модалку (remote: после дозагрузки/смены порядка).
+            refresh: function (config) {
+                if (config) { cfg = config; modesEl.hidden = !config.onOrderChange; }
+                if (!backdrop.hidden) renderPage(true);
+            },
+            isFor: function (token) { return cfg && cfg.token === token; },
         };
-        return pickerModal;
+        return selectModal;
     }
 
-    function initUserPickers(root) {
-        root.querySelectorAll('[data-user-picker]').forEach(function (widget) {
-            if (widget.dataset.pickerInit) return;
-            widget.dataset.pickerInit = '1';
+    // ----------------------------------------------------------------------
+    // Remote-режим единого виджета: люди (data-select-remote="users").
+    // Данные грузятся с /users/picker-data/ по выбранному порядку. Кэшируем ответ
+    // per-order в module-level Map — общий на все виджеты страницы, повторных запросов
+    // при том же порядке нет. Выбранные значения уходят скрытыми input[name=field]
+    // перед сабмитом формы.
+    // ----------------------------------------------------------------------
+    var USER_FILTERS = {
+        team_lead: function (u) { return u.is_team_lead; },
+        not_team_lead: function (u) { return !u.is_team_lead; },
+        manager: function (u) { return u.is_manager; },
+        not_manager: function (u) { return !u.is_manager; },
+    };
+    var usersCache = {}; // key `${order}|${all}` -> Promise<{users, truncated}>
+    function loadUsers(order, all) {
+        var key = order + '|' + (all ? '1' : '0');
+        if (!usersCache[key]) {
+            var url = '{% url "users_picker_data" %}?order=' + encodeURIComponent(order) + (all ? '&all=1' : '');
+            usersCache[key] = fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function (r) { return r.json(); })
+                .then(function (d) { return { users: d.users || [], truncated: !!d.truncated, total: d.total || 0 }; })
+                .catch(function () { delete usersCache[key]; return { users: [], truncated: false, total: 0 }; });
+        }
+        return usersCache[key];
+    }
 
-            var mode = widget.getAttribute('data-mode') || 'multiple';
-            var fieldName = widget.getAttribute('data-field-name');
-            var searchInput = widget.querySelector('[data-chips-search]');
-            var selectedRow = widget.querySelector('[data-chips-selected]');
-            var form = widget.closest('form');
+    function initRemoteSelect(widget, opts) {
+        var fieldName = widget.getAttribute('data-field-name');
+        var filterFn = USER_FILTERS[widget.getAttribute('data-filter')] || null;
+        var linkable = widget.hasAttribute('data-linkable');
+        var form = widget.closest('form');
+        var selected = new Map(); // value(str) -> label
+        var searchInput = widget.querySelector('[data-chips-search]');
 
-            var widgetState = {
-                mode: mode,
-                allUsers: null, // заполняется после первой загрузки (лениво, при первом открытии модалки)
-                selected: new Map(), // id -> label
-                filterFn: FILTERS[widget.getAttribute('data-filter')] || null,
-                linkable: widget.hasAttribute('data-linkable'),
-                renderSelected: renderSelected,
-            };
-            // Доступ извне (напр. обработчику подтверждения перед отправкой формы,
-            // см. [data-role-form]; или quick-add "＋" волонтёра — см. data-add-ref-picker)
-            // — без этих JS-свойств пришлось бы парсить DOM/дублировать рендер чипов.
-            widget._pickerSelected = widgetState.selected;
-            widget._pickerRenderSelected = function () { renderSelected(); };
-            widget._pickerAddUser = function (user) {
-                // Свежесозданный волонтёр — сразу в кэш кандидатов модалки поиска (если
-                // она уже открывалась и allUsers загружен), чтобы не пропал при повторном
-                // открытии/поиске, раз он уже выбран.
-                if (widgetState.allUsers) widgetState.allUsers.push(user);
-            };
+        // Локальное состояние загрузки: текущий порядок и «показаны все».
+        var st = { order: 'recent', all: false, users: [], truncated: false };
+        var token = {}; // идентификатор этого виджета для модалки
 
-            function renderSelected() {
-                selectedRow.innerHTML = '';
-                if (!widgetState.selected.size) {
-                    var empty = document.createElement('span');
-                    empty.className = 'cat-chips-empty';
-                    empty.textContent = widget.getAttribute('data-empty-text') || 'Никто не выбран';
-                    selectedRow.appendChild(empty);
-                    return;
-                }
-                widgetState.selected.forEach(function (label, id) {
-                    var chip = document.createElement('span');
-                    chip.className = 'cat-chip ' + chipColorClass(id);
-                    chip.innerHTML = '<span class="cat-chip-label"></span>' +
-                        '<button type="button" class="cat-chip-x" aria-label="Убрать">×</button>';
-                    chip.querySelector('.cat-chip-label').textContent = label;
-                    chip.querySelector('.cat-chip-x').addEventListener('click', function () {
-                        widgetState.selected.delete(id);
-                        renderSelected();
-                    });
-                    selectedRow.appendChild(chip);
-                });
-            }
+        function items(query) {
+            var pool = filterFn ? st.users.filter(filterFn) : st.users;
+            return pool
+                .filter(function (u) { return !selected.has(String(u.id)); })
+                .filter(function (u) { return !query || u.label.toLowerCase().indexOf(query) !== -1; })
+                .map(function (u) { return { value: String(u.id), label: u.label }; });
+        }
 
-            searchInput.setAttribute('readonly', 'readonly'); // ввод текста — только внутри модалки
-            searchInput.addEventListener('click', function () {
-                ensurePickerModal().open(widgetState);
+        function renderSelected() {
+            var arr = [];
+            selected.forEach(function (label, value) { arr.push({ value: value, label: label }); });
+            renderSelectedChips(opts.selectedRow, arr, opts.emptyText, function (value) {
+                selected.delete(value); renderSelected();
             });
+        }
 
-            renderSelected();
+        function modalConfig() {
+            return {
+                token: token,
+                single: opts.single,
+                linkable: linkable,
+                truncated: st.truncated,
+                candidates: items,
+                onPick: function (it) {
+                    if (opts.single) selected.clear();
+                    selected.set(it.value, it.label);
+                    renderSelected();
+                },
+                onOrderChange: function (order) {
+                    st.order = order;
+                    load(function () { ensureSelectModal().refresh(modalConfig()); });
+                },
+                onShowAll: function () {
+                    st.all = true;
+                    load(function () { ensureSelectModal().refresh(modalConfig()); });
+                },
+            };
+        }
 
-            if (form) {
-                form.addEventListener('submit', function () {
-                    widget.querySelectorAll('input[type=hidden][data-picker-value]').forEach(function (el) { el.remove(); });
-                    widgetState.selected.forEach(function (label, id) {
-                        var hidden = document.createElement('input');
-                        hidden.type = 'hidden';
-                        hidden.name = fieldName;
-                        hidden.value = id;
-                        hidden.setAttribute('data-picker-value', '1');
-                        widget.appendChild(hidden);
-                    });
-                });
+        function load(after) {
+            loadUsers(st.order, st.all).then(function (res) {
+                st.users = res.users; st.truncated = res.truncated;
+                if (after) after();
+            });
+        }
+
+        function openPicker() {
+            var modal = ensureSelectModal();
+            var cfg = modalConfig();
+            if (st.users.length) { modal.open(cfg); }
+            else {
+                modal.open(Object.assign({ loading: true }, cfg));
+                load(function () { if (modal.isFor(token)) modal.refresh(modalConfig()); });
             }
-        });
+        }
+
+        // Клик по (readonly) полю поиска открывает модалку — ввод только внутри неё.
+        if (searchInput) {
+            searchInput.setAttribute('readonly', 'readonly');
+            searchInput.addEventListener('click', openPicker);
+        }
+        // Если поля поиска в разметке нет — вешаем на всё поле.
+        else widget.addEventListener('click', openPicker);
+
+        // Внешний API (создание нового волонтёра «＋» подкладывает его в выбранные).
+        widget._pickerSelected = selected;
+        widget._pickerRenderSelected = renderSelected;
+        widget._pickerAddUser = function (u) { st.users.push(u); };
+
+        renderSelected();
+
+        if (form) {
+            form.addEventListener('submit', function () {
+                widget.querySelectorAll('input[type=hidden][data-picker-value]').forEach(function (el) { el.remove(); });
+                selected.forEach(function (label, value) {
+                    var hidden = document.createElement('input');
+                    hidden.type = 'hidden';
+                    hidden.name = fieldName;
+                    hidden.value = value;
+                    hidden.setAttribute('data-picker-value', '1');
+                    widget.appendChild(hidden);
+                });
+            });
+        }
     }
 
     initEventForm(document);
-    initUserPickers(document);
 
     // ======================================================================
     // Сортировка таблиц по клику на заголовок — три режима, переключаются по
@@ -1962,10 +2058,10 @@
             if (form.dataset.roleFormInit) return;
             form.dataset.roleFormInit = '1';
             form.addEventListener('submit', function (event) {
-                // Источник выбранных пользователей — JS-виджет data-user-picker
-                // (widget._pickerSelected, Map id->label), а не серверный <select multiple>:
+                // Источник выбранных пользователей — remote-виджет выбора
+                // (widget._pickerSelected, Map value->label), а не серверный <select multiple>:
                 // страница настроек больше не рендерит все тысячи пользователей в HTML.
-                var picker = form.querySelector('[data-user-picker]');
+                var picker = form.querySelector('[data-chip-select][data-select-remote]');
                 var selected = picker && picker._pickerSelected ? picker._pickerSelected : new Map();
                 if (!selected.size) {
                     event.preventDefault();
@@ -2294,10 +2390,11 @@
         if (pickerBtn) {
             event.preventDefault();
             var pickerKind = pickerBtn.getAttribute('data-add-ref-picker');
-            var pickerWidget = pickerBtn.closest('[data-user-picker]');
+            var pickerWidget = pickerBtn.closest('[data-chip-select][data-select-remote]');
             if (!pickerWidget || !pickerWidget._pickerSelected || !pickerWidget._pickerRenderSelected) return;
             openQuickAddModal(pickerKind, function (data) {
-                pickerWidget._pickerSelected.set(data.id, data.label);
+                // Ключи выбранного в remote-виджете — строковые id (см. initRemoteSelect).
+                pickerWidget._pickerSelected.set(String(data.id), data.label);
                 pickerWidget._pickerAddUser({ id: data.id, label: data.label, is_team_lead: false, is_manager: false });
                 pickerWidget._pickerRenderSelected();
             });

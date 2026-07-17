@@ -125,6 +125,7 @@ class Command(BaseCommand):
             ('churn_no_show_penalty', 1), ('churn_activity_base', 3),
             ('churn_blacklist_threshold', 5), ('churn_carryover_min_seasons', 2),
             ('pgas_hours_threshold', 100), ('recruit_close_ratio', 1.2), ('late_cancel_hours', 24),
+            ('users_picker_limit', 200),
         ]
         for name, value in defaults:
             Const.objects.get_or_create(name=name, defaults={'value': value})

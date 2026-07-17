@@ -25,22 +25,18 @@ volunteer) открывает вложенную мини-форму профи�
 
     <div class="field">
         <label>Волонтёры</label>
-        <div class="category-chips" data-chip-select="manual-volunteers-select" data-chip-empty="Волонтёры не выбраны">
-            <div class="cat-chips-row" data-chips-selected></div>
-            <div class="cat-chips-available-wrap">
-                <div class="cat-chips-available-label">Все волонтёры (алфавит) — нажмите, чтобы добавить:</div>
-                <div class="cat-chips-search">
-                    <input type="text" placeholder="Поиск по фамилии или имени…" data-chips-search>
-                </div>
-                <div class="cat-chips-row cat-chips-scroll" data-chips-available></div>
-                <button type="button" class="btn secondary btn-sm add-ref-btn" data-add-ref="volunteer" data-target="manual-volunteers-select" style="margin-top:8px;">＋ Создать нового волонтёра</button>
+        {# Единый remote-виджет выбора (data-select-remote="users"): пул волонтёров —
+           тысячи, поэтому не рендерим их в HTML, а грузим общим AJAX-запросом с
+           ранжированием (недавние/по имени) и лимитом. Выбранные уходят скрытыми
+           <input name="users"> перед сабмитом (бэк — getlist('users')). #}
+        <div class="category-chips" data-chip-select data-select-remote="users" data-field-name="users" data-empty-text="Волонтёры не выбраны">
+            <div class="cat-chips-search">
+                <input type="text" placeholder="Начните вводить имя или фамилию…" data-chips-search readonly>
             </div>
+            <div class="cat-chips-row" data-chips-selected></div>
+            <button type="button" class="btn secondary btn-sm add-ref-btn" data-add-ref-picker="volunteer" style="margin-top:8px;">＋ Создать нового волонтёра</button>
         </div>
-        {# Скрытый источник истины выбора — как у категорий мероприятия. #}
-        <select name="users" id="manual-volunteers-select" multiple hidden>
-            {% for v in volunteers %}<option value="{{ v.id }}">{{ v.label }}</option>{% endfor %}
-        </select>
-        <div class="field-hint">Нет волонтёра в списке — «＋ Создать нового»: заполните профиль (фамилия, имя и Telegram или телефон), он сразу появится здесь.</div>
+        <div class="field-hint">Нет волонтёра в списке — «＋ Создать нового»: заполните профиль (фамилия, имя и Telegram или телефон), он сразу появится в выбранных.</div>
     </div>
 
     <div class="modal-footer-actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">

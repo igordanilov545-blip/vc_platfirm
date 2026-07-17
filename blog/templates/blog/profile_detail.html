@@ -4,7 +4,7 @@
 <div class="page-header">
     <h1>{{ target.full_name }}</h1>
     {% if is_owner %}
-    <a href="{% url 'profile_edit' %}" class="btn secondary">✎ Редактировать профиль</a>
+    <a href="{% url 'profile_edit' %}" class="btn secondary" data-tour="profile-edit">✎ Редактировать профиль</a>
     {% endif %}
 </div>
 <span class="pill neutral"><span class="dot"></span>{{ target.telegram_username|default:"без ника" }}</span>
@@ -59,23 +59,23 @@
             <p><span class="pill success"><span class="dot"></span>Верифицирован(а) для ПГАС {{ target.verified_by_manager_at|date:"d.m.Y" }}</span></p>
             <form method="post" action="{% url 'pgas_unverify_user' target.id %}" class="inline" data-confirm="Отозвать верификацию профиля «{{ target.full_name }}» для ПГАС?">
                 {% csrf_token %}
-                <button type="submit" class="btn secondary btn-sm">Отозвать верификацию</button>
+                <button type="submit" class="btn secondary btn-sm" data-tour="profile-verify">Отозвать верификацию</button>
             </form>
             {% if is_manager %}
-            <a href="{% url 'pgas_certificate_issue' target.id %}" class="btn btn-sm" style="margin-top:8px;">📄 Выдать справку ПГАС</a>
+            <a href="{% url 'pgas_certificate_issue' target.id %}" class="btn btn-sm" style="margin-top:8px;" data-tour="profile-pgas-issue">📄 Выдать справку ПГАС</a>
             {% endif %}
         {% else %}
             <p style="color:var(--text-secondary); font-size:13px;">Не верифицирован(а) для справки ПГАС.</p>
             <form method="post" action="{% url 'pgas_verify_user' target.id %}" class="inline" data-confirm="Подтвердить верификацию профиля «{{ target.full_name }}» для ПГАС?">
                 {% csrf_token %}
-                <button type="submit" class="btn secondary btn-sm">✅ Выдать верификацию</button>
+                <button type="submit" class="btn secondary btn-sm" data-tour="profile-verify">✅ Выдать верификацию</button>
             </form>
         {% endif %}
     </div>
 
     {% if target.status != 'blacklisted' %}
     <div style="margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border-subtle);">
-        <a href="{% url 'user_blacklist' target.id %}" class="btn danger btn-sm" data-modal data-modal-title="Блокировка: {{ target.full_name }}">🚫 Внести в чёрный список</a>
+        <a href="{% url 'user_blacklist' target.id %}" class="btn danger btn-sm" data-modal data-modal-title="Блокировка: {{ target.full_name }}" data-tour="profile-blacklist">🚫 Внести в чёрный список</a>
     </div>
     {% endif %}
     {% endif %}
@@ -95,7 +95,7 @@
     <form method="post" action="{% url 'profile_comment_add' target.id %}" style="margin-top:1rem; max-width:500px;">
         {% csrf_token %}
         {{ comment_form.as_p }}
-        <button type="submit" class="btn secondary">Добавить комментарий</button>
+        <button type="submit" class="btn secondary" data-tour="profile-comment">Добавить комментарий</button>
     </form>
 </div>
 {% endif %}

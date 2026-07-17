@@ -9,33 +9,33 @@
         {% if not event.published_at and event.event_status != 'finished' %}
         <form method="post" action="{% url 'event_publish' event.id %}" class="inline" data-confirm="Опубликовать мероприятие «{{ event.title }}»? После публикации откроется подача заявок.">
             {% csrf_token %}
-            <button type="submit" class="btn">📣 Опубликовать</button>
+            <button type="submit" class="btn" data-tour="event-publish">📣 Опубликовать</button>
         </form>
         {% endif %}
         {% if event.published_at and event.event_status != 'finished' %}
         <form method="post" action="{% url 'event_broadcast' event.id %}" class="inline" data-confirm="{% if event.broadcast_sent_at %}Рассылка по этому мероприятию уже была сделана. Отправить ещё раз (получат только те, кто пока не подал заявку)?{% else %}Сделать рассылку о мероприятии «{{ event.title }}» подписанным волонтёрам?{% endif %}">
             {% csrf_token %}
-            <button type="submit" class="btn secondary">🔔 {% if event.broadcast_sent_at %}Сделать рассылку ещё раз{% else %}Сделать рассылку{% endif %}</button>
+            <button type="submit" class="btn secondary" data-tour="event-broadcast">🔔 {% if event.broadcast_sent_at %}Сделать рассылку ещё раз{% else %}Сделать рассылку{% endif %}</button>
         </form>
         {% endif %}
         {% if event.broadcast_sent_at %}
         <span class="pill success"><span class="dot"></span>Рассылка отправлена {{ event.broadcast_sent_at|date:"d.m.Y H:i" }}</span>
         {% endif %}
         {% if event.published_at %}
-        <button type="button" class="btn secondary" data-share-url="{{ share_url }}">🔗 Поделиться</button>
+        <button type="button" class="btn secondary" data-share-url="{{ share_url }}" data-tour="event-share">🔗 Поделиться</button>
         {% endif %}
         {% if event.event_status == 'finished' %}
         {% comment %}Завершённое меро редактируем ПОЛНОЦЕННО (общая инфо + явка/часы/набор):
         кнопка ведёт на отдельную СТРАНИЦУ подтверждения (капча), а не в модалку —
         после подтверждения меро открывается обратно (finished→passed) и вся страница
         мероприятия становится редактируемой (таблица явки, часы, набор). Не data-modal.{% endcomment %}
-        <a href="{% url 'event_reopen' event.id %}" class="btn secondary">✏️ Редактировать (явку, часы, набор)</a>
+        <a href="{% url 'event_reopen' event.id %}" class="btn secondary" data-tour="event-reopen">✏️ Редактировать (явку, часы, набор)</a>
         {% else %}
         <a href="{% url 'event_edit' event.id %}" class="btn secondary" data-modal data-modal-title="Редактировать: {{ event.title }}">Редактировать</a>
         {% endif %}
         <a href="{% url 'report_event_pdf' event.id %}" class="btn secondary" target="_blank" title="Скачать DOCX-отчёт по мероприятию">📄 Отчёт (DOCX)</a>
         {% if closing_checklist %}
-        <a href="{% url 'event_close' event.id %}" class="btn {% if closing_checklist.ready %}danger{% else %}secondary{% endif %}">
+        <a href="{% url 'event_close' event.id %}" class="btn {% if closing_checklist.ready %}danger{% else %}secondary{% endif %}" data-tour="event-close">
             {% if closing_checklist.ready %}✅ Завершить мероприятие{% else %}Завершить мероприятие{% endif %}
         </a>
         {% endif %}
@@ -44,10 +44,10 @@
     {% endif %}
     {% if has_open_recruitment and not is_finished %}
         {% if my_active_application %}
-        <a href="{% url 'application_edit' my_active_application.id %}" class="btn secondary" data-modal data-modal-title="Моя заявка: {{ event.title }}">📝 Моя заявка на это мероприятие</a>
+        <a href="{% url 'application_edit' my_active_application.id %}" class="btn secondary" data-modal data-modal-title="Моя заявка: {{ event.title }}" data-tour="event-my-application">📝 Моя заявка на это мероприятие</a>
         {% else %}
         {% with any_open=shifts|has_open_shift %}
-        <a href="{% url 'application_create' %}?event={{ event.id }}" class="btn" data-modal data-modal-title="Подать заявку: {{ event.title }}">✅ {% if any_open %}Подать заявку на мероприятие{% else %}Подать заявку (в резерв — набор закрыт){% endif %}</a>
+        <a href="{% url 'application_create' %}?event={{ event.id }}" class="btn" data-modal data-modal-title="Подать заявку: {{ event.title }}" data-tour="event-apply">✅ {% if any_open %}Подать заявку на мероприятие{% else %}Подать заявку (в резерв — набор закрыт){% endif %}</a>
         {% endwith %}
         {% endif %}
     {% endif %}
@@ -137,7 +137,7 @@
 {% if application_change_logs %}
 <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-        <h3 style="margin:0;">🔔 Изменения по заявкам</h3>
+        <h3 style="margin:0;" data-tour="event-changelog">🔔 Изменения по заявкам</h3>
         <form method="post" action="{% url 'event_change_log_mark_read' event.id %}" class="inline">
             {% csrf_token %}
             <button type="submit" class="btn secondary btn-sm">Прочитано</button>
@@ -244,7 +244,7 @@
 
 {% if is_participant %}
 <div class="card">
-    <h3>👥 Для участников мероприятия</h3>
+    <h3 data-tour="event-participant">👥 Для участников мероприятия</h3>
     <p>Волонтёров участвовало: {{ volunteers_count }}</p>
     {% if event.chat_link %}<p>Ссылка на чат: <a href="{{ event.chat_link }}">{{ event.chat_link }}</a></p>{% endif %}
     {% if event.dobro_ru_link %}<p>Добро.ру: <a href="{{ event.dobro_ru_link }}">{{ event.dobro_ru_link }}</a></p>{% endif %}
@@ -291,7 +291,7 @@
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
             {% if can_edit_applications %}
             {% comment %}Ручное добавление волонтёров — зафиксировано на текущем меро (?event=).{% endcomment %}
-            <a href="{% url 'application_manual_create' %}?event={{ event.id }}" class="btn secondary btn-sm" data-modal data-modal-title="Добавить волонтёров">➕ Добавить волонтёров</a>
+            <a href="{% url 'application_manual_create' %}?event={{ event.id }}" class="btn secondary btn-sm" data-modal data-modal-title="Добавить волонтёров" data-tour="event-add-volunteers">➕ Добавить волонтёров</a>
             {% comment %}Excel-импорт зафиксирован на текущем меро — колонка «Мероприятие»
             в файле игнорируется (import_preview?event=), см. pipeline на странице «Заявки».{% endcomment %}
             <a href="{% url 'import_preview' %}?event={{ event.id }}" class="btn secondary btn-sm">📥 Загрузить заявки</a>
@@ -300,7 +300,7 @@
             <span class="pill warning"><span class="dot"></span>Осталось обработать: {{ pending_count }}</span>
             <form method="post" action="{% url 'event_application_process_all' event.id %}" class="inline">
                 {% csrf_token %}
-                <button type="submit" class="btn btn-sm">Принять всех</button>
+                <button type="submit" class="btn btn-sm" data-tour="event-approve-all">Принять всех</button>
             </form>
             {% endif %}
         </div>
@@ -439,7 +439,7 @@
 
 {% if comment_form %}
 <div class="card">
-    <h3>Добавить комментарий</h3>
+    <h3 data-tour="event-comment">Добавить комментарий</h3>
     <form method="post" action="{% url 'event_comment_add' event.id %}" style="max-width:500px;">
         {% csrf_token %}
         {{ comment_form.text }}

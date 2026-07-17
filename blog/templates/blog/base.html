@@ -2453,11 +2453,12 @@
 
 <script src="{% static 'blog/js/companion.js' %}"></script>
 <script>
-    // Глобальный компаньон-тур (онбординг), доступный на ЛЮБОЙ странице и ЛЮБОЙ роли,
-    // включая гостей. Набор шагов зависит от роли; якоря берём из элементов, которые
-    // есть на каждой странице (сайдбар / гостевой хедер) плюс, если на экране, — общие
-    // навигационные ссылки. Полный тур по разделам настроек — отдельно (settings.html),
-    // здесь — обзорный «кто ты и что вокруг».
+    // Глобальный сквозной компаньон-тур: гусь ведёт «за руку» по ВСЕМ страницам и
+    // функциям — сам переходит по страницам (шаг с url → движок сохраняет прогресс в
+    // sessionStorage, переходит и продолжается после загрузки, см. CompanionTour.resume).
+    // Набор шагов собирается наследованием по роли (волонтёр ⊂ тим-лидер ⊂ менеджер),
+    // тексты — из documentation/companion-guide/*. Якоря — nav-ссылки, id и data-tour в
+    // шаблонах. Шаг, чей якорь на текущей странице отсутствует, тихо пропускается.
     (function () {
         var ROLE = {
             authenticated: {{ user.is_authenticated|yesno:"true,false" }},
@@ -2465,123 +2466,194 @@
             is_team_leader: {{ is_team_leader|yesno:"true,false" }},
             userId: {{ user.id|default:"null" }},
         };
-        // Флаг «тур уже видел» — СВОЙ на каждый аккаунт (и отдельный для гостя): иначе,
-        // если гость на этом же браузере закрыл тур, у только что зарегавшегося аккаунта
-        // автозапуск бы не сработал (localStorage общий для вкладки, не для аккаунта).
+        // URL страниц для межстраничных переходов тура (реальные, из Django).
+        var URLS = {
+            {% if user.is_authenticated %}
+            dashboard: '{% url "dashboard" %}',
+            events: '{% url "event_list" %}',
+            profile: '{% url "profile_detail" user.id %}',
+            {% if companion_sample_event_id %}event: '{% url "event_detail" companion_sample_event_id %}',{% endif %}
+            {% if is_manager %}
+            applications: '{% url "pending_applications" %}',
+            users: '{% url "user_list" %}',
+            reports: '{% url "report_period" %}',
+            settings: '{% url "settings" %}',
+            {% endif %}
+            {% else %}
+            publicEvents: '{% url "public_event_list" %}',
+            {% endif %}
+        };
+        // Флаг «тур уже видел» — СВОЙ на каждый аккаунт (и отдельный для гостя).
         var SEEN_KEY = ROLE.authenticated ? 'companion_tour_seen_u' + ROLE.userId : 'companion_tour_seen_guest';
+        var TOUR_ID = ROLE.authenticated ? ('u' + ROLE.userId) : 'guest';
         var GOOSE = {
             0: '{% static "blog/companion/goose_0.jpg" %}',
             1: '{% static "blog/companion/goose_1.jpg" %}',
             2: '{% static "blog/companion/goose_2.jpg" %}',
             3: '{% static "blog/companion/goose_3.jpg" %}',
         };
-        // Якорь берём, только если он реально есть на текущей странице (иначе шаг
-        // пропускаем — тур не должен показывать подсказку в пустоту).
-        function has(sel) { return !!document.querySelector(sel); }
-        function step(sel, opt) {
-            if (sel && !has(sel)) return null;
-            return Object.assign({ target: sel, photo: GOOSE[0], placement: 'auto' }, opt);
+
+        // Шаг-подсказка на элементе (target). Если задан url — движок сам перейдёт туда
+        // перед показом. При сборке шаг НЕ отбраковываем по наличию якоря, если у него
+        // есть url (мы ещё не на той странице). Отбраковка «пустых» — при показе на месте.
+        function s(target, opt) { return Object.assign({ target: target, photo: GOOSE[0], placement: 'auto' }, opt); }
+        function center(opt) { return Object.assign({ target: null, placement: 'center', photo: GOOSE[0] }, opt); }
+
+        // Сборка полного набора шагов по роли (тот же порядок, что в companion-guide/*).
+        function buildSteps() {
+            var s0 = [];
+            if (!ROLE.authenticated) return guestSteps();
+
+            // === Волонтёрская база (проходят все роли) ===
+            s0.push(center({ title: 'Привет! Я гусь-гид 🦆',
+                text: 'Проведу за руку по всей платформе — сам буду открывать нужные страницы. Скучно не будет, погнали?' }));
+            s0.push(s('.sidebar-account', { photo: GOOSE[1], placement: 'right', url: URLS.dashboard,
+                title: 'Твой аккаунт', text: 'Это ты: имя и роль. Клик — и ты в профиле, где часы, мероприятия и справки.' }));
+            s0.push(s('[data-track="nav:dashboard"]', { placement: 'right', url: URLS.dashboard,
+                title: '🏠 Главная', text: 'Твоя стартовая: часы, мероприятия и быстрые действия одним экраном. Заблудился — жми сюда.' }));
+            // Профиль
+            s0.push(s('[data-tour="profile-edit"]', { photo: GOOSE[1], placement: 'bottom', url: URLS.profile,
+                title: '✎ Профиль', text: 'Тут правишь свои данные. Многое подтянуто из Telegram — часто хватает просто подтвердить. 30 секунд.' }));
+            s0.push(s('.stat-grid', { photo: GOOSE[2], placement: 'bottom', url: URLS.profile,
+                title: 'Твои часы', text: 'Часы и мероприятия считаются сами, без бумажек. Пришёл, отработал — цифры капнули в тот же день.' }));
+            // Мероприятия
+            s0.push(s('[data-track="nav:event_list"]', { photo: GOOSE[2], placement: 'right', url: URLS.events,
+                title: '📅 Мероприятия', text: 'Тут вся движуха — открытые наборы центра. Заходишь, смотришь, выбираешь своё.' }));
+            s0.push(s('#event-search', { placement: 'bottom', url: URLS.events,
+                title: 'Поиск и фильтр', text: 'Ищи по названию, локации или организации. «Скрыть прошедшие» рядом — чтобы старое не мешалось.' }));
+            s0.push(s('#events-table', { photo: GOOSE[3], placement: 'top', url: URLS.events,
+                title: 'Список меро', text: 'Каждая строка — мероприятие: дата, локация, статус, открыт ли набор. Клик по строке — детали.' }));
+            s0.push(s('[data-tour="events-apply"]', { placement: 'left', url: URLS.events,
+                title: '📝 Подать заявку', text: 'Главная кнопка. Открывает форму заявки прямо тут, окном — без ухода со страницы. One tap, и ты в деле.' }));
+            if (URLS.event) {
+                s0.push(s('table, .card', { photo: GOOSE[3], placement: 'top', url: URLS.event,
+                    title: 'Внутри мероприятия', text: 'Описание, категории, требования и все смены: когда и во сколько. Всё, чтобы решить «моё / не моё».' }));
+            }
+            // Статистика/ПГАС
+            s0.push(s('.stat-grid', { photo: GOOSE[0], placement: 'bottom', url: URLS.profile,
+                title: 'Звёздочка ПГАС ⭐', text: 'Набрал часов за сезон — открывается справка для ПГАС. За ней не надо бегать по кабинетам.' }));
+            // Мелочи
+            s0.push(s('#theme-toggle', { photo: GOOSE[2], placement: 'right',
+                title: 'Тёмная тема', text: 'Глаза устали? Тут переключается тёмная тема. Мелочь, а приятно.' }));
+            s0.push(s('#companion-guide-btn', { placement: 'right',
+                title: 'Перезапуск гида 🦆', text: 'Забыл, где что? Жми меня на любой странице — проведу заново. Я всегда рядом.' }));
+
+            // === Надстройка тим-лидера ===
+            if (ROLE.is_team_leader) {
+                s0.push(center({ photo: GOOSE[3], title: 'Ты — тим-лидер ⭐',
+                    text: 'База позади. Дальше — то, что умеет ТЛ. Права работают на твоих меро, пока они не завершены. Погнали.' }));
+                if (URLS.event) {
+                    s0.push(s('.event-dashboard', { photo: GOOSE[3], placement: 'bottom', url: URLS.event,
+                        title: 'Сводка меро', text: 'Вверху карточки — тим-лидеры, ответственный менеджер, статус и набор по каждой смене. Картина одним взглядом.' }));
+                    s0.push(s('#applications', { placement: 'top', url: URLS.event,
+                        title: 'Блок набора', text: 'Сердце работы ТЛ: заявки твоих волонтёров с контактами, разбитые по сменам. «Набор X из Y» — сразу видно, сколько ещё нужно.' }));
+                    s0.push(s('[data-tour="event-approve-all"], #applications', { placement: 'bottom', url: URLS.event,
+                        title: 'Принять всех', text: 'Берёшь всех, кто пришёл? Одна кнопка вместо десятка кликов. Рутину — машине.' }));
+                    s0.push(s('.attendance-btns, #applications', { photo: GOOSE[1], placement: 'top', url: URLS.event,
+                        title: 'Явка', text: 'В день меро на каждого — три кнопки: Был / Не был / Уважит. Пара тапов с телефона на площадке, часы посчитаются сами.' }));
+                    s0.push(s('[data-tour="event-add-volunteers"], #applications', { placement: 'left', url: URLS.event,
+                        title: '➕ Добавить вручную', text: 'Пришёл человек без заявки, прямо на месте? Заводишь его в набор руками, не дожидаясь бота.' }));
+                    s0.push(s('[data-tour="event-comment"], #applications', { photo: GOOSE[2], placement: 'top', url: URLS.event,
+                        title: 'Заметка о меро', text: 'Что прошло хорошо, что учесть — заметка копится в память центра, а не теряется в голове.' }));
+                }
+            }
+
+            // === Надстройка менеджера ===
+            if (ROLE.is_manager) {
+                s0.push(center({ photo: GOOSE[0], title: 'Ты — менеджер 🛡️',
+                    text: 'Центр управления. Видишь и можешь всё: любое меро, любую заявку, все отчёты. Держишь всё вместе.' }));
+                s0.push(s('[data-tour="dash-incidents"], [data-track="nav:dashboard"]', { placement: 'top', url: URLS.dashboard,
+                    title: 'Что горит', text: '«Что нужно посмотреть»: коллизии Telegram, идущие меро, заявки на верификацию ПГАС. Приоритеты расставлены за тебя.' }));
+                // Меро: создание и жизненный цикл
+                s0.push(s('[data-tour="events-create"]', { photo: GOOSE[1], placement: 'left', url: URLS.events,
+                    title: '+ Создать меро', text: 'Заводишь меро прямо в окне. Нет организации или локации в справочнике? Создаёшь тут же через «＋», не теряя введённое.' }));
+                if (URLS.event) {
+                    s0.push(s('.event-toolbar', { placement: 'bottom', url: URLS.event,
+                        title: 'Панель меро', text: 'На карточке — вся панель управления: опубликовать, рассылка, отчёт DOCX, завершить. Пройдёмся по ключевым.' }));
+                    s0.push(s('[data-tour="event-publish"], .event-toolbar', { placement: 'bottom', url: URLS.event,
+                        title: '📣 Опубликовать', text: 'До публикации меро скрыто от волонтёров. Жмёшь — появляется в подаче заявок, но уведомлений ещё никто не получил.' }));
+                    s0.push(s('[data-tour="event-broadcast"], .event-toolbar', { photo: GOOSE[2], placement: 'bottom', url: URLS.event,
+                        title: '🔔 Рассылка', text: 'Публикация и рассылка разведены. Оповестить можно позже и хоть несколько раз для добора — записавшиеся исключаются сами.' }));
+                    s0.push(s('[data-tour="event-close"], .event-toolbar', { placement: 'bottom', url: URLS.event,
+                        title: 'Завершить', text: 'Чеклист не даст закрыть меро с «хвостами»: висящие заявки, незаполненное «скольким помогли». Покажет, что доделать.' }));
+                }
+                // Заявки в масштабе
+                s0.push(s('[data-track="nav:pending_applications"]', { photo: GOOSE[1], placement: 'right', url: URLS.applications,
+                    title: '🕓 Заявки', text: 'Все необработанные заявки по всем меро — не только твоим. Где тим-лидер застрял, решаешь сам.' }));
+                s0.push(s('#apps-table', { placement: 'top', url: URLS.applications,
+                    title: 'Принять / отклонить', text: 'По каждой строке — решение, не заходя в меро. Двойной клик по строке проваливает в карточку меро, если нужен контекст.' }));
+                s0.push(s('[data-tour="apps-import"]', { photo: GOOSE[2], placement: 'left', url: URLS.applications,
+                    title: '📥 Импорт Excel', text: 'Заявки пришли выгрузкой? Грузишь файл — сначала превью: что создастся, обновится, пропустится. Дубли игнорируются, повторная загрузка безопасна.' }));
+                // Пользователи и ПГАС
+                s0.push(s('[data-track="nav:user_list"]', { placement: 'right', url: URLS.users,
+                    title: '👥 Пользователи', text: 'Все волонтёры: карточки, история, внутренние комментарии (сам волонтёр их не видит). Отсюда — в любой профиль.' }));
+                s0.push(s('[data-tour="profile-verify"], .stat-grid', { photo: GOOSE[3], placement: 'top', url: URLS.profile,
+                    title: 'Верификация ПГАС', text: 'В чужом профиле: проверил, что волонтёр реален и часы честные — «Выдать верификацию». Это ключ к справке ПГАС.' }));
+                // Отчёты
+                s0.push(s('[data-track="nav:report_period"]', { photo: GOOSE[0], placement: 'right', url: URLS.reports,
+                    title: '📊 Отчёты', text: 'ERP-хаб отчётности. Сверху режим, ниже охват (период или конкретные меро). Всё грузится без перезагрузки.' }));
+                s0.push(s('#report-scope-card', { placement: 'top', url: URLS.reports,
+                    title: 'Охват', text: 'Задаёшь период пресетами или календарём, лишние меро выключаешь чипами. Отчёт пересобирается сам.' }));
+                s0.push(s('.report-view-btn[data-view="tables"], #report-views', { placement: 'bottom', url: URLS.reports,
+                    title: 'Таблицы и экспорт', text: 'Детальные списки: волонтёры, меро, набор, заявки. Экспорт в XLSX/PDF — то, что раньше сводили в Excel до ночи.' }));
+                // Настройки (детально — отдельный тур; тут просто заводим на страницу)
+                s0.push(s('.settings-tab, [data-track="nav:report_period"]', { photo: GOOSE[3], placement: 'bottom', url: URLS.settings,
+                    title: '⚙️ Настройки', text: 'Тут всё «редко, но метко»: справочники, требования, роли, константы, шаблон ПГАС. На странице настроек гусь проведёт отдельно по каждой вкладке.' }));
+            }
+
+            return s0.filter(Boolean);
         }
 
-        function buildSteps() {
-            var s = [];
-            if (!ROLE.authenticated) {
-                // ---- Гость ----
-                s.push({ target: null, placement: 'center', photo: GOOSE[0],
-                    title: 'Привет! Я тут за гида 🦆',
-                    text: 'Покажу за полминуты, что тут есть и как начать. Погнали?' });
-                s.push(step('.guest-account', { photo: GOOSE[1],
-                    title: 'Вход в аккаунт',
-                    text: 'Отсюда входишь. После входа появятся заявки, профиль, часы и справки — всё твоё.' }));
-                s.push(step('.guest-header .btn:not(.companion-guide-btn)', { photo: GOOSE[2], placement: 'bottom',
-                    title: 'Войти',
-                    text: 'Вход — через Telegram-бота: быстро и без пароля. Многое подтянется из профиля само.' }));
-                s.push(step('.event-card, .public-event-card, .card', { photo: GOOSE[3], placement: 'top',
-                    title: 'Мероприятия центра',
-                    text: 'Вот актуальные наборы. Присмотрел своё — входишь и подаёшь заявку в один клик.' }));
-            } else {
-                // ---- Общий путь (волонтёр и выше) ----
-                s.push({ target: null, placement: 'center', photo: GOOSE[0],
-                    title: 'Привет! Я твой гид 🦆',
-                    text: 'Покажу за минуту, где что лежит. Скучно не будет — обещаю. Погнали?' });
-                s.push(step('.sidebar-account', { photo: GOOSE[1],
-                    title: 'Твой аккаунт',
-                    text: 'Это ты. Клик — и ты в профиле: часы, мероприятия, справки — всё нужное тут.' }));
-                s.push(step('[data-track="nav:dashboard"]', { photo: GOOSE[0],
-                    title: 'Главная',
-                    text: 'Стартовая: что нового, что требует внимания, быстрые действия под рукой.' }));
-                s.push(step('[data-track="nav:event_list"]', { photo: GOOSE[2],
-                    title: 'Мероприятия',
-                    text: 'Вся движуха центра — открытые наборы. Заходишь, смотришь, подаёшь заявку.' }));
-
-                if (ROLE.is_team_leader) {
-                    s.push({ target: null, placement: 'center', photo: GOOSE[3],
-                        title: 'Ты — тим-лидер ⭐',
-                        text: 'База позади. Дальше — твоё: на своих меро ведёшь заявки, явку и часы. Права действуют, пока меро не завершено.' });
-                    s.push(step('[data-track="nav:event_list"]', { photo: GOOSE[3],
-                        title: 'Твои меро',
-                        text: 'В списке твои меро подсвечены, рядом счётчик новых заявок. Работа сама тебя находит.' }));
-                }
-                if (ROLE.is_manager) {
-                    s.push({ target: null, placement: 'center', photo: GOOSE[0],
-                        title: 'Ты — менеджер 🛡️',
-                        text: 'Центр управления. Видишь и можешь всё: любое меро, любую заявку, все отчёты.' });
-                    s.push(step('[data-track="nav:pending_applications"]', { photo: GOOSE[1],
-                        title: 'Заявки',
-                        text: 'Вмешиваешься в любую заявку на любом меро. Там, где ТЛ застрял, — решаешь сам.' }));
-                    s.push(step('[data-track="nav:user_list"]', { photo: GOOSE[2],
-                        title: 'Пользователи',
-                        text: 'Все волонтёры: карточки, история, комментарии. Тут же верификация для ПГАС и чёрный список.' }));
-                    s.push(step('[data-track="nav:report_period"]', { photo: GOOSE[0],
-                        title: 'Отчёты',
-                        text: 'Отчёт для начальства/ПГАС — в пару кликов, сразу в XLSX/PDF. То, что раньше сводили вручную до ночи.' }));
-                    s.push(step('.companion-guide-btn', { photo: GOOSE[3], placement: 'top',
-                        title: 'А детали — в настройках',
-                        text: 'Полный разбор справочников, ролей и констант — в настройках: там гусь проведёт отдельно по каждому разделу.' }));
-                }
-
-                s.push(step('#theme-toggle', { photo: GOOSE[2],
-                    title: 'Тёмная тема',
-                    text: 'Глаза устали? Вот переключатель темы. Мелочь, а приятно.' }));
-            }
-            return s.filter(Boolean);
+        function guestSteps() {
+            return [
+                center({ title: 'Привет! Я гусь-гид 🦆', text: 'Покажу за полминуты, что тут есть и как начать. Погнали?' }),
+                s('.guest-account', { photo: GOOSE[1], placement: 'bottom',
+                    title: 'Вход в аккаунт', text: 'Отсюда входишь. После входа появятся заявки, профиль, часы и справки — всё твоё.' }),
+                s('.guest-header .btn:not(.companion-guide-btn)', { photo: GOOSE[2], placement: 'bottom',
+                    title: 'Войти', text: 'Вход — через Telegram-бота: быстро и без пароля. Многое подтянется из профиля само.' }),
+                s('.card', { photo: GOOSE[3], placement: 'top', url: URLS.publicEvents,
+                    title: 'Мероприятия центра', text: 'Вот актуальные наборы. Присмотрел своё — входишь и подаёшь заявку в один клик.' }),
+            ].filter(Boolean);
         }
 
         var OUTRO = {
-            photo: GOOSE[0],
-            title: 'Ну вот и всё 🎉',
+            photo: GOOSE[0], title: 'Ну вот и всё 🎉',
             text: ROLE.authenticated
-                ? 'Ты знаешь маршрут. Дальше — твори добро: мир подождёт, но недолго. Захочешь повторить — я всегда сбоку, кнопка «🦆 Гайд».'
+                ? 'Ты прошёл весь маршрут. Дальше — твори добро: мир подождёт, но недолго. Захочешь повторить — я всегда сбоку, кнопка «🦆 Гайд».'
                 : 'Вот и весь беглый тур. Заходи в аккаунт — и центр раскроется целиком. До встречи внутри! ✨',
         };
         var INTERRUPTED = {
-            photo: GOOSE[0],
-            title: 'Понял, не буду мешать',
+            photo: GOOSE[0], title: 'Понял, не мешаю',
             text: 'Вопросов зеро. Если что — я сижу сбоку, кнопка «🦆 Гайд». Надо будет — я там.',
         };
 
+        function tourConfig() {
+            return { steps: buildSteps(), opts: { storageKey: SEEN_KEY, outro: OUTRO, interrupted: INTERRUPTED } };
+        }
         function startTour() {
-            var steps = buildSteps();
-            if (!steps.length) return;
-            CompanionTour.start(steps, {
-                storageKey: SEEN_KEY,
-                outro: OUTRO,
-                interrupted: INTERRUPTED,
-            });
+            var cfg = tourConfig();
+            if (!cfg.steps.length) return;
+            CompanionTour.start(cfg.steps, Object.assign({ tourId: TOUR_ID }, cfg.opts));
         }
 
         document.addEventListener('DOMContentLoaded', function () {
             document.querySelectorAll('.companion-guide-btn').forEach(function (btn) {
                 btn.addEventListener('click', function () {
-                    // Ручной запуск с кнопки — всегда показываем заново.
                     try { localStorage.removeItem(SEEN_KEY); } catch (e) {}
                     startTour();
                 });
             });
 
-            // Автозапуск при первом визите (один раз на аккаунт). На странице настроек —
-            // не мешаем: там свой, более подробный тур с автозапуском (settings.html).
+            // 1) Возобновление после межстраничного перехода — приоритетнее автозапуска.
+            var resumed = CompanionTour.resume(function (tourId) {
+                if (tourId !== TOUR_ID) return null; // сохранён тур другой роли/аккаунта
+                return tourConfig();
+            });
+            if (resumed) return;
+
+            // 2) На странице настроек не автозапускаем — там свой подробный тур (settings.html).
             if (document.getElementById('settings-tabs')) return;
+            // 3) Автозапуск при первом визите (один раз на аккаунт).
             var seen = false;
             try { seen = localStorage.getItem(SEEN_KEY) === '1'; } catch (e) {}
             if (!seen) setTimeout(startTour, 700);

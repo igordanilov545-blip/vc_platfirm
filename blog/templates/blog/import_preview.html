@@ -36,9 +36,6 @@
                     {{ row.event_title }}
                     {% if row.event_missing %}
                         <br><span class="pill danger"><span class="dot"></span>Мероприятие не найдено</span>
-                        <div style="margin-top:0.4rem;">
-                            <a href="{% url 'event_create' %}?title={{ row.event_title|urlencode }}&from_import=1" class="btn secondary btn-sm" data-modal data-modal-title="Новое мероприятие: {{ row.event_title }}">+ Создать мероприятие «{{ row.event_title }}»</a>
-                        </div>
                     {% endif %}
                 </td>
                 <td data-label="ФИО">{{ row.first_name }}{% if row.last_name %} {{ row.last_name }}{% endif %}{% if row.middle_name %} {{ row.middle_name }}{% endif %}</td>
@@ -51,11 +48,22 @@
         {% endfor %}
         </tbody>
     </table>
+    {% if missing_event_titles %}
+    {% comment %}Кнопки создания — ОДНА на уникальное недостающее мероприятие (обычно
+    в файле 1–2 разных меро на десятки строк), отдельным блоком внизу, а не в каждой
+    строке.{% endcomment %}
+    <div class="card" style="margin:16px 20px; padding:16px;">
+        <h4 style="margin-top:0;">Нужно создать мероприятия</h4>
+        <p style="color:var(--text-secondary); font-size:0.85rem; margin-top:0;">Создайте недостающие мероприятия — до этого подтвердить импорт нельзя.</p>
+        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+        {% for title in missing_event_titles %}
+            <a href="{% url 'event_create' %}?title={{ title|urlencode }}&from_import=1" class="btn secondary btn-sm" data-modal data-modal-title="Новое мероприятие: {{ title }}">+ Создать «{{ title }}»</a>
+        {% endfor %}
+        </div>
+    </div>
+    {% endif %}
     {% if rows %}
     <div style="padding:16px 20px;">
-    {% if has_missing_events %}
-    <p style="color:var(--text-secondary); font-size:0.85rem; margin-top:0;">Сначала создайте недостающие мероприятия (отмечены выше) — до этого подтвердить импорт нельзя.</p>
-    {% endif %}
     <form method="post" action="{% url 'import_commit' %}">
         {% csrf_token %}
         <button type="submit" class="btn" {% if has_missing_events %}disabled title="Сначала создайте недостающие мероприятия"{% endif %}>Подтвердить импорт</button>

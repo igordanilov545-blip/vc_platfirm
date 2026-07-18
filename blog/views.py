@@ -2139,6 +2139,30 @@ def _rows_missing_last(rows):
     return sorted(rows, key=lambda row: bool(row.get('event_missing')))
 
 
+def _missing_event_titles(rows):
+    """Уникальные названия недостающих мероприятий (в порядке первого появления).
+    В превью импорта обычно 1–2 разных меро на десятки строк, поэтому кнопку «создать
+    меро» показываем ОДИН раз на уникальное название (отдельным блоком внизу), а не в
+    каждой строке — иначе получаем 25 одинаковых кнопок."""
+    seen = {}
+    for row in rows:
+        if row.get('event_missing'):
+            title = row.get('event_title') or ''
+            seen.setdefault(title, True)
+    return list(seen.keys())
+
+
+def _import_preview_context(rows, *, errors, fixed_event):
+    """Единый контекст экрана превью импорта (одинаков во всех точках входа)."""
+    return {
+        'rows': _rows_missing_last(rows),
+        'errors': errors,
+        'fixed_event': fixed_event,
+        'has_missing_events': any(row.get('event_missing') for row in rows),
+        'missing_event_titles': _missing_event_titles(rows),
+    }
+
+
 @manager_required
 def import_preview(request):
     """Excel-импорт заявок. Обычный вход (со страницы «Заявки») — мероприятие
@@ -2169,19 +2193,15 @@ def import_preview(request):
                 'errors': result['errors'],
                 'rows_count': len(result['rows']),
             })
-        return render(request, 'blog/import_preview.html', {
-            'rows': _rows_missing_last(result['rows']), 'errors': result['errors'], 'fixed_event': fixed_event,
-            'has_missing_events': any(row.get('event_missing') for row in result['rows']),
-        })
+        return render(request, 'blog/import_preview.html',
+                      _import_preview_context(result['rows'], errors=result['errors'], fixed_event=fixed_event))
 
     # Подтверждение "всё равно добавить" после экрана расхождений — строки уже в
     # сессии из предыдущего шага, просто показываем обычное превью.
     if request.method == 'POST' and request.POST.get('confirm_mismatch') == 'yes':
         rows = request.session.get('import_rows', [])
-        return render(request, 'blog/import_preview.html', {
-            'rows': _rows_missing_last(rows), 'errors': [], 'fixed_event': fixed_event,
-            'has_missing_events': any(row.get('event_missing') for row in rows),
-        })
+        return render(request, 'blog/import_preview.html',
+                      _import_preview_context(rows, errors=[], fixed_event=fixed_event))
 
     # Возврат на превью без нового файла (напр. после создания мероприятия из
     # модалки, открытой прямо с этого экрана) — строки уже в сессии, пересчитываем
@@ -2189,10 +2209,8 @@ def import_preview(request):
     if request.method == 'GET' and request.session.get('import_rows'):
         rows = import_service.refresh_missing_events(request.session['import_rows'])
         request.session['import_rows'] = rows
-        return render(request, 'blog/import_preview.html', {
-            'rows': _rows_missing_last(rows), 'errors': [], 'fixed_event': fixed_event,
-            'has_missing_events': any(row.get('event_missing') for row in rows),
-        })
+        return render(request, 'blog/import_preview.html',
+                      _import_preview_context(rows, errors=[], fixed_event=fixed_event))
 
     return render(request, 'blog/import_form.html', {'form': form, 'fixed_event': fixed_event})
 

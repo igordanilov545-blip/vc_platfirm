@@ -76,13 +76,19 @@
     </div>
 
     {# ─── Организатор ─── #}
-    <div class="field">
+    {# Зависимая фильтрация: выбрал организацию → ниже показываются только связанные
+       организаторы (и наоборот). Связи организация↔организатор — в data-org-links.
+       initOrgOrganizerLink (base.html) читает их и фильтрует <option> обоих полей. #}
+    <div class="field" data-org-links='{{ form.org_organizer_links_json }}'
+         data-org-select="{{ form.organization.id_for_label }}"
+         data-organizer-select="{{ form.organizer.id_for_label }}">
         {{ form.organization.label_tag }}
         <div class="select-with-add">
             {{ form.organization }}
             <button type="button" class="btn secondary add-ref-btn" data-add-ref="organization" data-target="{{ form.organization.id_for_label }}">＋</button>
         </div>
         {% if form.organization.errors %}<div class="field-error">{{ form.organization.errors|striptags }}</div>{% endif %}
+        <div class="field-hint" data-organizer-filter-hint hidden>Показаны только организации, связанные с выбранным организатором. <button type="button" class="link-btn" data-organizer-filter-reset>Показать все</button></div>
     </div>
 
     <div class="field">
@@ -92,6 +98,7 @@
             <button type="button" class="btn secondary add-ref-btn" data-add-ref="organizer" data-target="{{ form.organizer.id_for_label }}">＋</button>
         </div>
         {% if form.organizer.errors %}<div class="field-error">{{ form.organizer.errors|striptags }}</div>{% endif %}
+        <div class="field-hint" data-org-filter-hint hidden>Показаны только организаторы, связанные с выбранной организацией. <button type="button" class="link-btn" data-org-filter-reset>Показать всех</button></div>
     </div>
 
     <div class="field">

@@ -75,10 +75,6 @@
         {% if form.manager.errors %}<div class="field-error">{{ form.manager.errors|striptags }}</div>{% endif %}
     </div>
 
-    {# ─── Организатор ─── #}
-    {# Зависимая фильтрация: выбрал организацию → ниже показываются только связанные
-       организаторы (и наоборот). Связи организация↔организатор — в data-org-links.
-       initOrgOrganizerLink (base.html) читает их и фильтрует <option> обоих полей. #}
     <div class="field" data-org-links='{{ form.org_organizer_links_json }}'
          data-org-select="{{ form.organization.id_for_label }}"
          data-organizer-select="{{ form.organizer.id_for_label }}">
@@ -155,7 +151,6 @@
     <div class="shift-chips-row" data-shift-chips-selected></div>
     {% endif %}
 
-    {# ─── Ссылки ─── #}
     <div class="field">
         {{ form.chat_link.label_tag }}
         {{ form.chat_link }}

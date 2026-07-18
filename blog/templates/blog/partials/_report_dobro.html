@@ -14,7 +14,6 @@ views._dobro_rows): каждое меро периода в таблице, да
         {% else %}
         <button type="button" class="btn secondary btn-sm" data-report-table-toggle data-only-unlogged="1">Только не проставленные</button>
         {% endif %}
-        {# Фильтр «есть/нет ссылка» — три состояния (все / есть / нет), рядом с «часами». #}
         <div class="dobro-link-filter">
             <button type="button" class="btn secondary btn-sm {% if not has_link %}active{% endif %}" data-dobro-link-filter="">Все</button>
             <button type="button" class="btn secondary btn-sm {% if has_link == 'yes' %}active{% endif %}" data-dobro-link-filter="yes">Есть ссылка</button>

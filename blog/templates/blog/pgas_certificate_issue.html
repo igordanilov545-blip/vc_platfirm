@@ -1,16 +1,19 @@
 {% extends 'blog/base.html' %}
-{% comment %}Выдача справки ВЦ для ПГАС менеджером на выбранного волонтёра: диапазон
-дат (стандартный data-datepicker) + выбор мероприятий из тех, на которых волонтёр
-был. Шаг 1 (GET/выбор диапазона) — обновляет список мероприятий; шаг 2 — генерация
-PDF (кнопка «Сгенерировать»). Вьюха — pgas_certificate_issue.{% endcomment %}
+{% comment %}Выдача справки ВЦ для ПГАС с выбором периода и конкретных мероприятий.
+Один шаблон и для менеджера (на любого волонтёра), и для самого волонтёра (на себя):
+- диапазон дат (стандартный data-datepicker) — GET-шаг, обновляет список мероприятий;
+- выбор мероприятий — единый виджет «n из m» (data-chip-select), только те меро, где
+  была подтверждённая явка волонтёра;
+- генерация PDF (POST, кнопка «Сгенерировать»).
+Гайд по плейсхолдерам — только менеджеру (волонтёр о шаблоне знать не должен).{% endcomment %}
 {% block content %}
 <div class="card">
-    <h2>📄 Справка ПГАС для «{{ target.full_name }}»</h2>
+    <h2>📄 Справка ВЦ для ПГАС{% if not is_owner %} для «{{ target.full_name }}»{% endif %}</h2>
     <p style="color:var(--text-secondary); font-size:13px;">
-        Выберите диапазон дат и мероприятия, которые нужно включить в справку.
-        В список попадают только мероприятия с подтверждённым участием волонтёра.
+        Выберите период и мероприятия, которые нужно включить в справку.
+        В список попадают только мероприятия с подтверждённым участием.
     </p>
-    {% include 'blog/partials/_pgas_placeholder_guide.html' %}
+    {% if is_manager %}{% include 'blog/partials/_pgas_placeholder_guide.html' %}{% endif %}
 
     {# Шаг 1: диапазон дат — обычный GET, перезагружает список мероприятий за период. #}
     <form method="get" action="{% url 'pgas_certificate_issue' target.id %}" class="row" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
@@ -28,7 +31,7 @@ PDF (кнопка «Сгенерировать»). Вьюха — pgas_certifica
     </form>
 </div>
 
-{# Шаг 2: выбор мероприятий + генерация. #}
+{# Шаг 2: выбор мероприятий (чипы n из m) + генерация. #}
 <form method="post" action="{% url 'pgas_certificate_issue' target.id %}" class="card">
     {% csrf_token %}
     <input type="hidden" name="generate" value="1">
@@ -38,28 +41,23 @@ PDF (кнопка «Сгенерировать»). Вьюха — pgas_certifica
     <h3>Мероприятия{% if date_from and date_to %} за {{ date_from|date:"d.m.Y" }} — {{ date_to|date:"d.m.Y" }}{% else %} (за всё время){% endif %}</h3>
 
     {% if available_events %}
-        <table class="responsive-table">
-            <thead>
-                <tr>
-                    <th style="width:36px;"></th>
-                    <th>Мероприятие</th>
-                    <th>Дата(ы)</th>
-                    <th>Часы</th>
-                    <th>Масштаб</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for e in available_events %}
-                <tr>
-                    <td><input type="checkbox" name="event_ids" value="{{ e.event_id }}" checked></td>
-                    <td>{{ e.title }}</td>
-                    <td>{{ e.dates }}</td>
-                    <td>{{ e.total_hours }}</td>
-                    <td>{{ e.scale }}</td>
-                </tr>
-            {% endfor %}
-            </tbody>
-        </table>
+        {% comment %}Единый виджет выбора «n из m»: скрытый <select multiple> — источник,
+        все меро преотмечены (обычно нужны все посещённые). Имя поля — event_ids, как
+        ждёт вьюха.{% endcomment %}
+        <div class="field">
+            <div class="category-chips" data-chip-select="pgas-events-select" data-chip-empty="Не выбрано ни одного мероприятия">
+                <div class="cat-chips-row" data-chips-selected></div>
+                <div class="cat-chips-available-wrap">
+                    <div class="cat-chips-available-label">Доступные мероприятия — нажмите, чтобы добавить:</div>
+                    <div class="cat-chips-row" data-chips-available></div>
+                </div>
+            </div>
+            <select id="pgas-events-select" name="event_ids" multiple hidden>
+                {% for e in available_events %}
+                    <option value="{{ e.event_id }}" selected>{{ e.title }} · {{ e.dates }} · {{ e.total_hours }} ч</option>
+                {% endfor %}
+            </select>
+        </div>
         <div style="margin-top:12px;">
             <button type="submit" class="btn">Сгенерировать справку (PDF)</button>
         </div>

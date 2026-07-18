@@ -18,6 +18,7 @@ urlpatterns = [
     path('profile/<int:user_id>/pgas-verify/', views.pgas_verify_user, name='pgas_verify_user'),
     path('profile/<int:user_id>/pgas-unverify/', views.pgas_unverify_user, name='pgas_unverify_user'),
     path('profile/<int:user_id>/blacklist/', views.user_blacklist, name='user_blacklist'),
+    path('profile/<int:user_id>/unblacklist/', views.user_unblacklist, name='user_unblacklist'),
     path('', views.dashboard, name='dashboard'),
     path('incidents/<int:incident_id>/resolve/', views.incident_resolve, name='incident_resolve'),
     path('healthz/', views.healthz, name='healthz'),

@@ -871,6 +871,8 @@
                     var option = document.createElement('option');
                     option.value = shift.id;
                     option.textContent = shift.label;
+                    // Закрытая по набору смена — выбираема, но серым (заявка → резерв).
+                    if (shift.closed) option.setAttribute('data-closed', '1');
                     if (preselectedIds && preselectedIds.indexOf(String(shift.id)) !== -1) option.selected = true;
                     shiftsSelect.appendChild(option);
                 });

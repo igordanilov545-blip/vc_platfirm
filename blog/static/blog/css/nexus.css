@@ -1499,6 +1499,18 @@ input:focus, select:focus, textarea:focus {
 @media (max-width: 640px) {
   .ctour-card { width: calc(100vw - 24px); }
   .ctour-card-body { flex-direction: column; align-items: center; text-align: center; }
+
+  /* Мобильный режим: карточка во всю ширину, вертикальную позицию (top) ставит
+     companion.js — вплотную над/под подсвеченным блоком, никогда его не накрывая.
+     Высота ограничена, длинный текст скроллится внутри карточки. */
+  .ctour-card-dock {
+    left: 12px !important; right: 12px !important;
+    width: auto !important; max-width: none !important;
+    bottom: auto !important;
+    transform: none !important;
+    max-height: calc(100vh - 64px - 24px - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+  }
 }
 
 /* Уважаем настройку «меньше движения» — без анимаций перехода и появления. */

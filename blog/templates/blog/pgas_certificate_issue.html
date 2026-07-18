@@ -15,19 +15,24 @@
     </p>
     {% if is_manager %}{% include 'blog/partials/_pgas_placeholder_guide.html' %}{% endif %}
 
-    {# Шаг 1: диапазон дат — обычный GET, перезагружает список мероприятий за период. #}
-    <form method="get" action="{% url 'pgas_certificate_issue' target.id %}" class="row" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
-        <div>
-            <label>С даты</label>
+    {# Шаг 1: диапазон дат — два инлайн-календаря во всю ширину, бок о бок (как на
+       странице отчётов), а не «жмыхнутые» в узкие колонки. Каждому — своя колонка не
+       меньше ширины календаря (260px), поэтому .cal не сдавливается. #}
+    <form method="get" action="{% url 'pgas_certificate_issue' target.id %}"
+          style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap;">
+        <div style="min-width:260px; flex:1 1 260px;">
+            <label style="display:block; margin-bottom:6px;">С даты</label>
             <input type="text" name="date_from" data-datepicker autocomplete="off"
                    value="{{ date_from|date:'Y-m-d' }}">
         </div>
-        <div>
-            <label>По дату</label>
+        <div style="min-width:260px; flex:1 1 260px;">
+            <label style="display:block; margin-bottom:6px;">По дату</label>
             <input type="text" name="date_to" data-datepicker autocomplete="off"
                    value="{{ date_to|date:'Y-m-d' }}">
         </div>
-        <button type="submit" class="btn secondary">Показать мероприятия</button>
+        <div style="flex-basis:100%;">
+            <button type="submit" class="btn secondary">Показать мероприятия</button>
+        </div>
     </form>
 </div>
 

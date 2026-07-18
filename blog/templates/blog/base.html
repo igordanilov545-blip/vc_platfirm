@@ -2708,8 +2708,6 @@
                 center({ title: 'Привет! Я гусь-гид 🦆', text: 'Покажу за полминуты, что тут есть и как начать. Погнали?' }),
                 s('.guest-account', { photo: GOOSE[1], placement: 'bottom',
                     title: 'Вход в аккаунт', text: 'Отсюда входишь. После входа появятся заявки, профиль, часы и справки — всё твоё.' }),
-                s('.guest-header .btn:not(.companion-guide-btn)', { photo: GOOSE[2], placement: 'bottom',
-                    title: 'Войти', text: 'Вход — через Telegram-бота: быстро и без пароля. Многое подтянется из профиля само.' }),
                 s('.card', { photo: GOOSE[3], placement: 'top', url: URLS.publicEvents,
                     title: 'Мероприятия центра', text: 'Вот актуальные наборы. Присмотрел своё — входишь и подаёшь заявку в один клик.' }),
             ].filter(Boolean);
@@ -2752,7 +2750,14 @@
 
             // 2) На странице настроек не автозапускаем — там свой подробный тур (settings.html).
             if (document.getElementById('settings-tabs')) return;
-            // 3) Автозапуск при первом визите (один раз на аккаунт).
+            // 3) Автозапуск при первом визите — ТОЛЬКО при первом заходе в профиль (а не
+            //    после каждой авторизации на любой странице). Для гостя — как раньше, на
+            //    публичных страницах (профиля у него нет).
+            if (ROLE.authenticated) {
+                var onProfile = URLS.profile &&
+                    window.location.pathname.replace(/\/+$/, '') === URLS.profile.replace(/\/+$/, '');
+                if (!onProfile) return;
+            }
             var seen = false;
             try { seen = localStorage.getItem(SEEN_KEY) === '1'; } catch (e) {}
             if (!seen) setTimeout(startTour, 700);

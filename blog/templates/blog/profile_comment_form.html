@@ -1,0 +1,12 @@
+{% extends 'blog/base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="page-header"><h1>{{ title }}</h1></div>
+<div class="card" style="max-width:600px;">
+    <form method="post" action="{% url 'profile_comment_add' target.id %}">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit" class="btn">{{ submit_label|default:'Добавить комментарий' }}</button>
+    </form>
+</div>
+{% endblock %}

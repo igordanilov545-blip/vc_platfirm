@@ -1,0 +1,92 @@
+{% extends 'blog/base.html' %}
+{% block title %}Профиль{% endblock %}
+{% block content %}
+{% comment %}Страница профиля ГЛАЗАМИ ВЛАДЕЛЬЦА (сам смотрит себя). Управленческий вид
+(менеджер/ТЛ на чужом профиле) — отдельный файл profile_manage.html.{% endcomment %}
+<div class="page-header">
+    <h1>{{ target.full_name }}</h1>
+    <a href="{% url 'profile_edit' %}" class="btn secondary" data-tour="profile-edit">✎ Редактировать профиль</a>
+</div>
+
+<div class="pill-row" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+    <span class="pill neutral"><span class="dot"></span>{{ target.telegram_username|default:"без ника" }}</span>
+</div>
+
+<div class="stat-grid" style="margin-top:1rem;">
+    <div class="stat-tile"><div class="value">{{ target.total_hours }}</div><div class="label">Часов всего</div></div>
+    <div class="stat-tile"><div class="value">{{ target.season_hours }}</div><div class="label">Часов за сезон</div></div>
+    <div class="stat-tile"><div class="value">{{ target.total_event_count }}</div><div class="label">Мероприятий всего</div></div>
+    <div class="stat-tile"><div class="value">{{ target.season_event_count }}</div><div class="label">Мероприятий за сезон</div></div>
+    <div class="stat-tile"><div class="value">{{ target.external_experiences.count }}</div><div class="label">Внешние мероприятия</div></div>
+</div>
+
+{% comment %}Активные заявки — заявки на ещё не прошедшие мероприятия и их статусы.
+Если заявок нет — приглашение на страницу мероприятий.{% endcomment %}
+{% if show_active_applications %}
+<div class="card">
+    <h3>📨 Активные заявки</h3>
+    {% if active_applications %}
+    <table class="responsive-table" data-sortable>
+        <thead>
+            <tr>
+                <th data-sort-key="event">Мероприятие</th>
+                <th data-sort-key="status">Статус заявки</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for a in active_applications %}
+            <tr {% if a.event_id %}data-href="{% url 'event_detail' a.event_id %}"{% endif %}>
+                <td data-label="Мероприятие" data-sort-value="{{ a.event.title }}">
+                    <a href="{% url 'event_detail' a.event_id %}">{{ a.event.title }}</a>
+                </td>
+                <td data-label="Статус заявки" data-sort-value="{{ a.status }}">
+                    {% if a.status == 'approved' %}<span class="pill success"><span class="dot"></span>{{ a.get_status_display }}</span>
+                    {% elif a.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>Резерв</span>
+                    {% else %}<span class="pill warning"><span class="dot"></span>{{ a.get_status_display }}</span>{% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--text-secondary);">Активных заявок нет, но ты всегда можешь это исправить.</p>
+    <a href="{% url 'event_list' %}" class="btn">📅 К мероприятиям</a>
+    {% endif %}
+</div>
+{% endif %}
+
+<h2 style="margin-top:1.5rem;">Мой опыт</h2>
+{% include 'blog/partials/_experience_block.html' with can_edit=True %}
+
+{% if has_extended_access %}
+<div class="card">
+    <h3>Благодарственные письма</h3>
+    {% for e in letters_pool %}
+        <p>«{{ e.title }}» — <a href="{% url 'letter_view' target.id e.id %}">открыть письмо</a></p>
+    {% empty %}
+        <p>Писем пока нет: они появляются после явки на мероприятие, у которого задан шаблон письма.</p>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+    <h3>📄 Справка ВЦ для ПГАС</h3>
+    <p style="color:var(--text-secondary); font-size:13px; margin-top:-8px;">
+        Подтверждение от Волонтёрского центра о работе за текущий сезон. Учитываются часы
+        за сезон ({{ target.season_hours }} ч).
+    </p>
+    {% if pgas_eligible %}
+        <a href="{% url 'pgas_certificate_issue' target.id %}" class="btn">📄 Получить справку на ПГАС</a>
+    {% else %}
+        <p>Чтобы получить справку, не хватает: <b>{{ pgas_missing|join:", " }}</b>.</p>
+        {% if pgas_only_verification_missing %}
+            <form method="post" action="{% url 'pgas_request_verification' %}">
+                {% csrf_token %}
+                <button type="submit" class="btn secondary">Запросить верификацию</button>
+            </form>
+        {% else %}
+            <a href="{% url 'profile_edit' %}" class="btn secondary">Заполнить профиль</a>
+        {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

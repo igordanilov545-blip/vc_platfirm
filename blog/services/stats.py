@@ -5,7 +5,7 @@ from datetime import timedelta
 from django.db.models import Sum, Count
 from django.utils import timezone
 
-from blog.models import Participation, Const, Season, ChurnHistory
+from blog.models import Participation, Const, Season, ChurnHistory, ChurnLog
 from blog.logging_utils import get_web_logger
 
 logger = get_web_logger(__name__)
@@ -16,6 +16,19 @@ def _const(name: str, default: float) -> float:
         return Const.objects.get(name=name).value
     except Const.DoesNotExist:
         return default
+
+
+def log_churn_change(user, reason, delta, *, actor=None, event=None, note=None):
+    """Записать изменение churn_score в журнал (ChurnLog). Вызывается ВСЕМИ точками,
+    где меняется churn: неявка, списание за активность, сброс по сезону, блокировка/
+    разблокировка. new_value берём из user.churn_score (уже пересчитанного). delta≈0
+    (незначимое списание за активность) не логируем, чтобы не засорять историю."""
+    if abs(delta) < 1e-9:
+        return
+    ChurnLog.objects.create(
+        user=user, reason=reason, delta=delta,
+        new_value=user.churn_score or 0, actor=actor, event=event, note=note,
+    )
 
 
 def current_season():
@@ -59,15 +72,21 @@ def recalc_user_aggregates(user):
     ])
 
 
-def apply_churn_no_show(user):
+def apply_churn_no_show(user, *, event=None, actor=None):
     """+churn_no_show_penalty за неявку без предупреждения (правило 9)."""
     penalty = _const('churn_no_show_penalty', 1)
-    user.churn_score = (user.churn_score or 0) + penalty
-    _apply_blacklist_if_needed(user)
+    before = user.churn_score or 0
+    user.churn_score = before + penalty
+    hit_blacklist = _apply_blacklist_if_needed(user)
     user.save(update_fields=['churn_score', 'status'])
+    log_churn_change(
+        user, 'no_show', (user.churn_score or 0) - before,
+        actor=actor, event=event,
+        note='Достигнут порог — блокировка' if hit_blacklist else None,
+    )
 
 
-def apply_churn_activity_decay(user):
+def apply_churn_activity_decay(user, *, event=None):
     """Списание за активность: -churn_activity_base / e^(N меро за последний месяц + 1)."""
     base = _const('churn_activity_base', 3)
     month_ago = timezone.now() - timedelta(days=30)
@@ -75,11 +94,14 @@ def apply_churn_activity_decay(user):
         user=user, status='attended', created_at__gte=month_ago
     ).count()
     decay = base / math.exp(n + 1)
-    user.churn_score = max(0.0, (user.churn_score or 0) - decay)
+    before = user.churn_score or 0
+    user.churn_score = max(0.0, before - decay)
     user.save(update_fields=['churn_score'])
+    log_churn_change(user, 'activity_decay', (user.churn_score or 0) - before, event=event)
 
 
 def _apply_blacklist_if_needed(user):
+    """Возвращает True, если пользователь был отправлен в блэклист этим вызовом."""
     threshold = _const('churn_blacklist_threshold', 5)
     if (user.churn_score or 0) >= threshold and user.status != 'blacklisted':
         user.status = 'blacklisted'
@@ -87,6 +109,8 @@ def _apply_blacklist_if_needed(user):
             'Волонтёр отправлен в блэклист по churn: user=%s churn_score=%.2f threshold=%.2f',
             user.id, user.churn_score or 0, threshold,
         )
+        return True
+    return False
 
 
 def is_pgas_star(user) -> bool:
@@ -117,12 +141,17 @@ def close_season(season):
     min_seasons = _const('churn_carryover_min_seasons', 2)
     for user in User.objects.filter(churn_score__gt=0):
         ChurnHistory.objects.create(user=user, season=season, churn_score=user.churn_score)
+        before = user.churn_score
         past_seasons = ChurnHistory.objects.filter(user=user).count()
         if past_seasons >= min_seasons:
             user.churn_score = user.churn_score / 2
         else:
             user.churn_score = 0
         user.save(update_fields=['churn_score'])
+        log_churn_change(
+            user, 'season_reset', (user.churn_score or 0) - before,
+            note=f'Завершение сезона «{season}»',
+        )
 
     User.objects.update(season_hours=0, season_event_count=0)
 

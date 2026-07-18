@@ -874,8 +874,14 @@ def incident_resolve(request, incident_id):
 
 @login_required
 def event_list(request):
-    hide_passed = request.GET.get('hide_passed') == '1'
     manager_view = is_manager(request.user)
+    # Волонтёр по умолчанию видит только непрошедшие меро: галка «Скрыть прошедшие»
+    # предустановлена. Менеджеру — как раньше (показываем всё, галка снята). Явный
+    # GET-параметр (переход по ссылке с фильтром) перекрывает дефолт в обе стороны.
+    if 'hide_passed' in request.GET:
+        hide_passed = request.GET.get('hide_passed') == '1'
+    else:
+        hide_passed = not manager_view
     events = list(
         Event.objects.select_related('location', 'organization', 'dobro_ru_shared_link')
         .prefetch_related('shifts')

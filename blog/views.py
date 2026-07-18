@@ -647,6 +647,27 @@ def user_blacklist(request, user_id):
     )
 
 
+@manager_required
+@require_POST
+def user_unblacklist(request, user_id):
+    """Вернуть волонтёра из чёрного списка (менеджер). Симметрично блокировке, но без
+    капчи — это разблокирующее (безопасное) действие. Ставим статус 'active' и
+    ОБНУЛЯЕМ churn_score: иначе, если churn остался ≥ порога, ближайший пересчёт
+    (закрытие смены/сезона) снова автоматически отправит пользователя в блэклист —
+    ручной вывод из ЧС был бы бессмысленным."""
+    target = get_object_or_404(User, pk=user_id)
+    if target.status != 'blacklisted':
+        messages.info(request, f'«{target.full_name}» не в чёрном списке.')
+        return redirect('profile_detail', user_id=target.id)
+
+    target.status = 'active'
+    target.churn_score = 0
+    target.save(update_fields=['status', 'churn_score'])
+    logger.info('Волонтёр выведен из чёрного списка: user=%s by=%s', target.id, actor(request.user))
+    messages.success(request, f'«{target.full_name}» выведён(а) из чёрного списка (churn обнулён).')
+    return redirect('profile_detail', user_id=target.id)
+
+
 def tg_link_login(request, token):
     """Вход по одноразовой ссылке из бота (deep-link `?start=weblogin`): проверяем
     токен (не использован и не старше 5 минут), логиним и гасим токен."""
@@ -1982,13 +2003,26 @@ def application_cancel(request, application_id):
 
 @login_required
 def event_shifts_json(request, event_id):
-    """Список открытых смен мероприятия — для чип-виджета выбора смен в форме заявки
-    (JS дозапрашивает при смене выбранного мероприятия, аналог поиска справочников)."""
+    """Смены мероприятия для чип-виджета выбора смен в форме заявки (JS дозапрашивает
+    при смене выбранного мероприятия).
+
+    Возвращаем ВСЕ смены, которые ещё НЕ начались (start_time > now) — и открытые, и
+    закрытые по набору: на закрытую смену тоже можно подать заявку (она уйдёт сразу в
+    резерв), поэтому её показываем, но помечаем `closed=True` (виджет красит серым).
+    Прошедшие/уже начавшиеся смены не предлагаются. Это ровно тот же пул, что у
+    ApplicationForm.selected_shifts — раньше эндпоинт ошибочно фильтровал только
+    recruit_status='open', из-за чего меро с закрытым набором показывалось без смен и
+    подать заявку в резерв было невозможно."""
     event = get_object_or_404(Event, pk=event_id)
-    shifts = event.shifts.filter(recruit_status='open').order_by('day')
+    now = timezone.now()
+    shifts = event.shifts.filter(start_time__gt=now).order_by('day')
     return JsonResponse({
         'shifts': [
-            {'id': s.id, 'label': f'{s.day.strftime("%d.%m.%Y")} {s.start_time.strftime("%H:%M")}–{s.end_time.strftime("%H:%M")}'}
+            {
+                'id': s.id,
+                'label': f'{s.day.strftime("%d.%m.%Y")} {s.start_time.strftime("%H:%M")}–{s.end_time.strftime("%H:%M")}',
+                'closed': s.recruit_status != 'open',
+            }
             for s in shifts
         ],
     })

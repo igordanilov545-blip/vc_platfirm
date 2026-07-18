@@ -31,8 +31,15 @@
     {% if is_manager %}
         {% if target.status == 'blacklisted' %}<span class="pill danger"><span class="dot"></span>{{ target.get_status_display }}</span>
         {% elif target.status == 'inactive' %}<span class="pill warning"><span class="dot"></span>{{ target.get_status_display }}</span>{% endif %}
-        {% if not is_owner and target.status != 'blacklisted' %}
-        <a href="{% url 'user_blacklist' target.id %}" class="btn danger btn-sm" data-modal data-modal-title="Блокировка: {{ target.full_name }}" data-tour="profile-blacklist">🚫 В чёрный список</a>
+        {% if not is_owner %}
+            {% if target.status == 'blacklisted' %}
+            <form method="post" action="{% url 'user_unblacklist' target.id %}" class="inline" style="margin:0;" data-confirm="Вывести «{{ target.full_name }}» из чёрного списка? Churn будет обнулён.">
+                {% csrf_token %}
+                <button type="submit" class="btn secondary btn-sm">✅ Вывести из ЧС</button>
+            </form>
+            {% else %}
+            <a href="{% url 'user_blacklist' target.id %}" class="btn danger btn-sm" data-modal data-modal-title="Блокировка: {{ target.full_name }}" data-tour="profile-blacklist">🚫 В чёрный список</a>
+            {% endif %}
         {% endif %}
     {% endif %}
 </div>

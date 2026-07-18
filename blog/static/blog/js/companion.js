@@ -27,6 +27,8 @@
 
     var PAD = 8;         // отступ выреза вокруг подсвеченного элемента
     var GAP = 16;        // зазор между вырезом и карточкой
+    var MOBILE_MAX = 640;    // ≤ этой ширины карточка ставится над/под вырезом (совпадает с CSS)
+    var MOBILE_TABBAR = 64;  // высота нижнего таббара — карточка не залезает под него
 
     var state = null;    // активный тур: { steps, opts, index, els }
 
@@ -124,6 +126,8 @@
     function centerCard(els) {
         var c = els.card;
         c.style.top = ''; c.style.left = ''; c.style.right = ''; c.style.bottom = '';
+        c.style.maxHeight = '';
+        c.classList.remove('ctour-card-dock', 'ctour-dock-top', 'ctour-dock-bottom');
         c.classList.add('ctour-card-center');
     }
 
@@ -133,6 +137,50 @@
         c.classList.remove('ctour-card-center');
         c.style.top = ''; c.style.left = ''; c.style.right = ''; c.style.bottom = '';
         var cw = c.offsetWidth || 360, ch = c.offsetHeight || 200;
+
+        // Мобайл: карточка почти во всю ширину, поэтому «слева/справа» невозможно, а
+        // «сверху/снизу» рискует перекрыть подсвеченный блок. Док-режим: если цель в
+        // верхней половине экрана — карточку жёстко вниз, иначе — вверх. Никогда не
+        // накрываем spotlight. Позицию задаёт CSS-класс (учитывает таббар и safe-area).
+        if (vw <= MOBILE_MAX) {
+            // Блок выше «половины экрана» на мобайле нельзя ни обойти карточкой, ни
+            // осмысленно подсветить целиком (список/таблица во весь экран). Ужимаем
+            // вырез до верхней части блока — видно «вот этот раздел», а под ним
+            // остаётся место для карточки. Двигаем и сам spotlight-вырез.
+            var maxBoxH = Math.round(vh * 0.42);
+            if (box.height > maxBoxH) {
+                box.height = maxBoxH;
+                css(els.spot, { height: maxBoxH });
+            }
+            // Карточка почти во всю ширину → ставим её ВПЛОТНУЮ под вырез или над ним,
+            // никогда не накрывая подсвеченный блок. Нижняя граница экрана — над
+            // таббаром (TABBAR). Выбираем сторону, где карточка целиком помещается;
+            // если помещается и там, и там — берём с бо́льшим запасом.
+            var topLimit = GAP;
+            var botLimit = vh - MOBILE_TABBAR - GAP;
+            var roomBelow = botLimit - (box.top + box.height + GAP); // высота под вырезом
+            var roomAbove = (box.top - GAP) - topLimit;              // высота над вырезом
+            c.classList.add('ctour-card-dock');
+            c.classList.remove('ctour-dock-top', 'ctour-dock-bottom');
+            var top, cap;
+            if (ch <= roomBelow) {            // влезает целиком под блоком
+                top = box.top + box.height + GAP; cap = roomBelow;
+            } else if (ch <= roomAbove) {     // влезает целиком над блоком
+                top = box.top - GAP - ch; cap = roomAbove;
+            } else {                          // не влезает нигде (блок почти во весь экран)
+                // Садимся на сторону с бо́льшим местом и ужимаем высоту карточки под неё —
+                // текст скроллится внутри, но подсвеченный блок остаётся открытым.
+                if (roomBelow >= roomAbove) { top = box.top + box.height + GAP; cap = roomBelow; }
+                else { cap = roomAbove; top = topLimit; }
+            }
+            // Ограничиваем высоту доступным местом (не меньше 120px, чтобы карточка была
+            // читаемой), позицию — в пределах экрана над таббаром.
+            c.style.maxHeight = Math.max(120, cap) + 'px';
+            c.style.top = Math.max(topLimit, Math.min(top, botLimit - Math.min(ch, cap))) + 'px';
+            return;
+        }
+        c.classList.remove('ctour-card-dock', 'ctour-dock-top', 'ctour-dock-bottom');
+        c.style.maxHeight = '';
 
         var order = placement === 'auto'
             ? ['right', 'left', 'bottom', 'top']
@@ -228,7 +276,13 @@
         if (target) {
             var r = target.getBoundingClientRect();
             var fullyVisible = r.top >= 0 && r.bottom <= window.innerHeight;
-            if (!fullyVisible) target.scrollIntoView({ block: 'center', behavior: 'auto' });
+            if (!fullyVisible) {
+                // Мобайл: карточка докается вниз, поэтому цель тянем к ВЕРХУ экрана —
+                // так под ней остаётся место, а высокий блок (список/таблица) не
+                // расплывается на оба края. Десктоп — как раньше, по центру.
+                var toTop = window.innerWidth <= MOBILE_MAX;
+                target.scrollIntoView({ block: toTop ? 'start' : 'center', behavior: 'auto' });
+            }
         }
         requestAnimationFrame(function () { if (state) layout(); });
     }

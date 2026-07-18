@@ -24,6 +24,42 @@
     <div class="stat-tile"><div class="value">{{ target.external_experiences.count }}</div><div class="label">Внешние мероприятия</div></div>
 </div>
 
+{% comment %}Активные заявки — заявки на ещё не прошедшие мероприятия и их статусы.
+Видят и владелец, и менеджер/ТЛ. Как только меро прошло — заявка исчезает из блока
+(отфильтровано во вьюхе). Если заявок нет — приглашение на страницу мероприятий.{% endcomment %}
+{% if show_active_applications %}
+<div class="card">
+    <h3>📨 Активные заявки</h3>
+    {% if active_applications %}
+    <table class="responsive-table" data-sortable>
+        <thead>
+            <tr>
+                <th data-sort-key="event">Мероприятие</th>
+                <th data-sort-key="status">Статус заявки</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for a in active_applications %}
+            <tr {% if a.event_id %}data-href="{% url 'event_detail' a.event_id %}"{% endif %}>
+                <td data-label="Мероприятие" data-sort-value="{{ a.event.title }}">
+                    <a href="{% url 'event_detail' a.event_id %}">{{ a.event.title }}</a>
+                </td>
+                <td data-label="Статус заявки" data-sort-value="{{ a.status }}">
+                    {% if a.status == 'approved' %}<span class="pill success"><span class="dot"></span>{{ a.get_status_display }}</span>
+                    {% elif a.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>{{ a.get_status_display }}</span>
+                    {% else %}<span class="pill warning"><span class="dot"></span>{{ a.get_status_display }}</span>{% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--text-secondary);">Активных заявок нет, но ты всегда можешь это исправить.</p>
+    <a href="{% url 'event_list' %}" class="btn">📅 К мероприятиям</a>
+    {% endif %}
+</div>
+{% endif %}
+
 {% comment %}Для менеджера/ТЛ, смотрящего ЧУЖОЙ профиль, сразу вверху — данные, статус,
 верификация ПГАС и блокировка (оперативная информация), и только потом история
 мероприятий.{% endcomment %}
@@ -222,12 +258,11 @@
             {% csrf_token %}
             <div style="margin-bottom:10px;">
                 <label style="display:block; margin-bottom:4px;">Охват справки:</label>
-                <label class="inline"><input type="radio" name="scope" value="season" checked> За текущий сезон</label>
-                <label class="inline" style="margin-left:12px;"><input type="radio" name="scope" value="all"> За всё время</label>
+                <label class="inline" style="display:inline-flex; align-items:center; gap:6px;"><input type="radio" name="scope" value="season" checked> За текущий сезон</label>
+                <label class="inline" style="display:inline-flex; align-items:center; gap:6px; margin-left:12px;"><input type="radio" name="scope" value="all"> За всё время</label>
             </div>
             <button type="submit" class="btn">📄 Получить справку на ПГАС</button>
         </form>
-        {% include 'blog/partials/_pgas_placeholder_guide.html' %}
     {% else %}
         <p>Чтобы получить справку, не хватает: <b>{{ pgas_missing|join:", " }}</b>.</p>
         {% if pgas_only_verification_missing %}

@@ -2260,6 +2260,24 @@ def profile_detail(request, user_id):
         'experience_form': ExternalExperienceForm() if is_owner else None,
     }
 
+    # Блок «Активные заявки» — заявки на мероприятия, которые ещё НЕ прошли (статус
+    # меро не 'passed'/'finished'). Видят и владелец, и менеджер/ТЛ на чужом профиле.
+    # Как только мероприятие прошло — его заявка исчезает из блока (см. шаблон).
+    if is_owner or has_extended:
+        active_apps = (
+            target.applications.select_related('event')
+            .exclude(status='cancelled')
+            .prefetch_related('event__shifts')
+            .order_by('-created_at')
+        )
+        active_rows = []
+        for app in active_apps:
+            if app.event.compute_status() in ('passed', 'finished'):
+                continue
+            active_rows.append(app)
+        context['active_applications'] = active_rows
+        context['show_active_applications'] = True
+
     if is_owner:
         from blog.services.pgas_certificate import pgas_certificate_eligibility, only_verification_missing
         pgas = pgas_certificate_eligibility(target)

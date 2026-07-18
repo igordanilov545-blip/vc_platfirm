@@ -273,7 +273,7 @@
         els.photo.src = step.photo || '';
         els.title.textContent = step.title || '';
         els.desc.textContent = step.text || '';
-        els.progress.textContent = (state.index + 1) + ' / ' + state.steps.length;
+        els.progress.textContent = '';
         els.prev.style.visibility = state.index === 0 ? 'hidden' : 'visible';
         els.next.textContent = state.index === state.steps.length - 1 ? 'Готово' : 'Далее';
 

@@ -356,8 +356,8 @@ def profile_edit(request):
         # выдаём, менеджер должен подтвердить заново (см. pgas_certificate).
         from blog.services.pgas_certificate import revoke_verification_if_changed
         if revoke_verification_if_changed(request.user):
-            messages.info(request, 'Данные изменены — верификация для справки ПГАС снята, '
-                                   'потребуется повторное подтверждение менеджером.')
+            messages.warning(request, 'Данные изменены — верификация для справки ПГАС снята, '
+                                      'потребуется повторное подтверждение менеджером.')
         if account_is_complete(request.user):
             if not was_complete:
                 messages.success(request, 'Профиль заполнен — теперь можно подавать заявки.')

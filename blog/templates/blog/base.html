@@ -1581,6 +1581,16 @@
         widget._pickerRenderSelected = renderSelected;
         widget._pickerAddUser = function (u) { st.users.push(u); };
 
+        // Предвыбор с сервера: если форма перерисована после ошибки (напр. неверная
+        // капча), ранее выбранные пользователи приходят в data-preselect как
+        // [{id,label},…] — восстанавливаем их, чтобы ввод не сбрасывался.
+        try {
+            var pre = JSON.parse(widget.getAttribute('data-preselect') || '[]');
+            pre.forEach(function (u) {
+                if (u && u.id != null) selected.set(String(u.id), u.label || ('#' + u.id));
+            });
+        } catch (e) {}
+
         renderSelected();
 
         if (form) {

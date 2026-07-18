@@ -17,7 +17,7 @@
 
         <div class="field">
             <label>Поиск ({{ section.users_count }} доступно)</label>
-            <div class="category-chips" data-chip-select data-select-remote="users" data-field-name="{{ action }}-users" data-empty-text="{{ empty_text }}" data-filter="{{ picker_filter }}">
+            <div class="category-chips" data-chip-select data-select-remote="users" data-field-name="{{ action }}-users" data-empty-text="{{ empty_text }}" data-filter="{{ picker_filter }}"{% if section.preselect_json %} data-preselect="{{ section.preselect_json }}"{% endif %}>
                 <div class="cat-chips-search">
                     <input type="text" placeholder="Начните вводить имя или фамилию…" data-chips-search readonly>
                 </div>

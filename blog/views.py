@@ -3759,10 +3759,15 @@ def _settings_redirect(tab):
     return redirect(reverse('settings') + f'?tab={tab}')
 
 
-def _build_role_sections(request):
+def _build_role_sections(request, preselect=None):
     """Секции назначения/снятия ролей для панелей «тим-лидеры» и «менеджеры»: на каждую
     роль — форма-пикер, свежая капча и число доступных пользователей. Вынесено, чтобы
-    строить только когда реально рендерим панель ролей (а не на каждый заход в настройки)."""
+    строить только когда реально рендерим панель ролей (а не на каждый заход в настройки).
+
+    preselect: {action: [User, …]} — заранее выбранные пользователи, которые нужно
+    восстановить в пикере (напр. после ошибки капчи, чтобы ввод не сбрасывался).
+    Передаются в шаблон как JSON [{id,label},…] через section.preselect_json."""
+    import json
     role_sections = {}
     for action, (kind, verb) in ROLE_ACTIONS.items():
         session_key = f'captcha_{action}'
@@ -3770,12 +3775,22 @@ def _build_role_sections(request):
             roles_service.users_without_role(kind) if verb == 'assign'
             else roles_service.users_with_role(kind)
         )
+        pre_users = (preselect or {}).get(action) or []
+        # Восстановление выбора после ошибки капчи (одноразово, из сессии).
+        if not pre_users:
+            pre_ids = request.session.pop(f'role_preselect_{action}', None)
+            if pre_ids:
+                pre_users = list(queryset.filter(id__in=pre_ids))
         role_sections[action] = {
             # prefix обязателен: без него все 4 формы на странице рендерят <select id="id_users">
             # с одинаковым id, и JS chip-виджет находит только первый по document.getElementById.
             'form': RoleUsersForm(queryset=queryset, prefix=action),
             'captcha_question': _new_captcha(request, session_key),
             'users_count': queryset.count(),
+            'preselect_json': json.dumps(
+                [{'id': u.id, 'label': u.full_name} for u in pre_users],
+                ensure_ascii=False,
+            ) if pre_users else '',
         }
     return role_sections
 
@@ -3856,7 +3871,13 @@ def settings_view(request):
         captcha_ok = _check_captcha(request, session_key, request.POST.get('captcha_answer'))
 
         if not captcha_ok:
-            messages.error(request, 'Неверный ответ капчи. Действие отклонено.')
+            # Неверная капча: НЕ сбрасываем выбор — запоминаем выбранные id в сессии и
+            # редиректим на ту же вкладку. Панель при загрузке восстановит их в пикере
+            # (data-preselect), менеджер лишь исправит ответ капчи, а не наберёт заново.
+            messages.error(request, 'Неверный ответ капчи. Проверьте пример и попробуйте снова.')
+            ids = [str(v) for v in (role_form['users'].value() or [])]
+            request.session[f'role_preselect_{action}'] = ids
+            return _settings_redirect(role_tab)
         elif role_form.is_valid():
             users = list(role_form.cleaned_data['users'])
             if verb == 'assign':

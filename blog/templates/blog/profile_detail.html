@@ -46,7 +46,7 @@
                 </td>
                 <td data-label="Статус заявки" data-sort-value="{{ a.status }}">
                     {% if a.status == 'approved' %}<span class="pill success"><span class="dot"></span>{{ a.get_status_display }}</span>
-                    {% elif a.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>{{ a.get_status_display }}</span>
+                    {% elif a.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>{% if is_owner %}Резерв{% else %}{{ a.get_status_display }}{% endif %}</span>
                     {% else %}<span class="pill warning"><span class="dot"></span>{{ a.get_status_display }}</span>{% endif %}
                 </td>
             </tr>
@@ -257,9 +257,11 @@
         <form method="post" action="{% url 'pgas_certificate_download' %}">
             {% csrf_token %}
             <div style="margin-bottom:10px;">
-                <label style="display:block; margin-bottom:4px;">Охват справки:</label>
-                <label class="inline" style="display:inline-flex; align-items:center; gap:6px;"><input type="radio" name="scope" value="season" checked> За текущий сезон</label>
-                <label class="inline" style="display:inline-flex; align-items:center; gap:6px; margin-left:12px;"><input type="radio" name="scope" value="all"> За всё время</label>
+                <div style="margin-bottom:6px;">Охват справки:</div>
+                <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
+                    <label style="display:inline-flex; align-items:center; gap:8px; white-space:nowrap; margin:0;"><input type="radio" name="scope" value="season" checked style="width:auto; margin:0;"> За текущий сезон</label>
+                    <label style="display:inline-flex; align-items:center; gap:8px; white-space:nowrap; margin:0;"><input type="radio" name="scope" value="all" style="width:auto; margin:0;"> За всё время</label>
+                </div>
             </div>
             <button type="submit" class="btn">📄 Получить справку на ПГАС</button>
         </form>

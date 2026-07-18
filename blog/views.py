@@ -11,7 +11,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.core.validators import URLValidator
 from django.db.models import Avg, Count, Q
-from django.http import FileResponse, Http404, JsonResponse
+from django.http import FileResponse, Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -456,16 +456,31 @@ def pgas_certificate_download(request):
     return certificate_response(pdf_bytes, filename)
 
 
-@manager_required
+@login_required
 def pgas_certificate_issue(request, user_id):
-    """Менеджер выдаёт справку на выбранного волонтёра: диапазон дат + выбор
-    мероприятий (из тех, на которых волонтёр был). GET — форма (список мероприятий
-    за диапазон), POST — генерация PDF. Имя в справке — из выбранного пользователя
-    (менеджер может выдать на любого)."""
-    from blog.services.pgas_certificate import collect_events
+    """Выдача справки ВЦ для ПГАС с выбором периода и конкретных мероприятий (выбор
+    n из m — теми же чипами, что и у менеджера при назначении ТЛ). Доступ:
+      - менеджер — на любого волонтёра;
+      - сам волонтёр — на себя, но только если он вправе получить справку
+        (pgas_certificate_eligibility): та же проверка, что была у кнопки в ЛК.
+    GET — форма (список посещённых мероприятий за диапазон, все преотмечены),
+    POST(generate) — генерация PDF по выбранным. Мероприятия — только те, где была
+    явка (collect_events), и попадающие в выбранный период."""
+    from blog.services.pgas_certificate import collect_events, pgas_certificate_eligibility
     from blog.services.pgas_pdf import certificate_response
 
     target = get_object_or_404(User, pk=user_id)
+    is_owner = request.user.id == target.id
+    is_mgr = is_manager(request.user)
+    if not (is_mgr or is_owner):
+        return HttpResponseForbidden('Нет доступа к выдаче справки для этого профиля.')
+    # Волонтёр может выдать справку себе только при выполнении всех условий (как раньше
+    # у кнопки «Получить справку» в ЛК). Менеджер выдаёт без этого ограничения.
+    if is_owner and not is_mgr:
+        elig = pgas_certificate_eligibility(request.user)
+        if not elig['eligible']:
+            messages.error(request, f'Не хватает: {", ".join(elig["missing"])}.')
+            return redirect('profile_detail', user_id=request.user.id)
 
     def _parse_date(name):
         raw = (request.POST.get(name) or request.GET.get(name) or '').strip()
@@ -495,11 +510,12 @@ def pgas_certificate_issue(request, user_id):
         try:
             pdf_bytes, filename = _build_certificate_pdf(target, events, period_label)
         except Exception:
-            logger.exception('Ошибка генерации справки ПГАС менеджером: target=%s', target.id)
+            logger.exception('Ошибка генерации справки ПГАС: target=%s by=%s', target.id, actor(request.user))
             messages.error(request, 'Не удалось сгенерировать справку. Попробуйте позже.')
             return redirect('pgas_certificate_issue', user_id=target.id)
-        logger.info('Справка ПГАС выдана менеджером: target=%s by=%s events=%s',
-                    target.id, actor(request.user), len(events))
+        logger.info('Справка ПГАС выдана: target=%s by=%s events=%s%s',
+                    target.id, actor(request.user), len(events),
+                    ' (self)' if is_owner else '')
         return certificate_response(pdf_bytes, filename)
 
     # GET / выбор диапазона — показываем доступные мероприятия за диапазон.
@@ -509,6 +525,8 @@ def pgas_certificate_issue(request, user_id):
         'available_events': available,
         'date_from': date_from,
         'date_to': date_to,
+        'is_owner': is_owner,
+        'is_manager': is_mgr,
     })
 
 

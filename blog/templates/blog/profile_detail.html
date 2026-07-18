@@ -260,17 +260,9 @@
         за сезон ({{ target.season_hours }} ч).
     </p>
     {% if pgas_eligible %}
-        <form method="post" action="{% url 'pgas_certificate_download' %}">
-            {% csrf_token %}
-            <div style="margin-bottom:10px;">
-                <div style="margin-bottom:6px;">Охват справки:</div>
-                <div style="display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
-                    <label style="display:inline-flex; align-items:center; gap:8px; white-space:nowrap; margin:0;"><input type="radio" name="scope" value="season" checked style="width:auto; margin:0;"> За текущий сезон</label>
-                    <label style="display:inline-flex; align-items:center; gap:8px; white-space:nowrap; margin:0;"><input type="radio" name="scope" value="all" style="width:auto; margin:0;"> За всё время</label>
-                </div>
-            </div>
-            <button type="submit" class="btn">📄 Получить справку на ПГАС</button>
-        </form>
+        {% comment %}Выбор периода и конкретных мероприятий (n из m) — на отдельной
+        странице, той же, что у менеджера (pgas_certificate_issue на себя).{% endcomment %}
+        <a href="{% url 'pgas_certificate_issue' target.id %}" class="btn">📄 Получить справку на ПГАС</a>
     {% else %}
         <p>Чтобы получить справку, не хватает: <b>{{ pgas_missing|join:", " }}</b>.</p>
         {% if pgas_only_verification_missing %}

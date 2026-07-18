@@ -995,7 +995,12 @@ input:focus, select:focus, textarea:focus {
   white-space: normal;
   text-align: center;
   justify-content: center;
-  max-width: 100%;
+  /* Однородное выравнивание колонки названий: бейдж занимает всю ширину ячейки,
+     поэтому у всех строк левый/правый край названий совпадает (не «рваная»
+     колонка из бейджей разной ширины под длину заголовка). */
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
 }
 .event-status-badge--upcoming { background: var(--success-soft); color: var(--success); border-color: var(--success); }
 .event-status-badge--ongoing { background: var(--info-soft); color: var(--info); border-color: var(--info); }

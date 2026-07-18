@@ -89,13 +89,36 @@
         };
     }
 
+    // Виден ли элемент (в DOM, не display:none, есть размеры).
+    function isVisible(el) {
+        if (!el) return false;
+        var r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+    }
+
+    // Выбор реальной цели шага. На мобиле (vw ≤ MOBILE_MAX) десктопные якоря (сайдбар,
+    // nav-ссылки) скрыты — если у шага задан mobileTarget, используем его; иначе, если
+    // основная цель невидима, отдаём null → шаг показывается по центру, без «висящей над
+    // пустотой» подсветки. На десктопе — прежнее поведение.
+    function resolveTarget(step, vw) {
+        var primary = step.target ? document.querySelector(step.target) : null;
+        if (vw <= MOBILE_MAX) {
+            if (step.mobileTarget) {
+                var mt = document.querySelector(step.mobileTarget);
+                if (isVisible(mt)) return mt;
+            }
+            if (!isVisible(primary)) return null;
+        }
+        return primary;
+    }
+
     // Позиционируем единый spotlight-вырез и карточку под текущий целевой элемент.
     // Один элемент (spot) → синхронная плавная анимация всех сторон, без «рванья».
     function layout() {
         var els = state.els;
         var step = state.steps[state.index];
         var vw = window.innerWidth, vh = window.innerHeight;
-        var target = step.target ? document.querySelector(step.target) : null;
+        var target = resolveTarget(step, vw);
         var placement = step.placement || 'auto';
 
         if (!target || placement === 'center') {
@@ -272,7 +295,7 @@
     // выреза/карточки анимирует CSS-transition уже от прежнего к новому положению.
     function relayoutSoon() {
         var step = state.steps[state.index];
-        var target = step.target ? document.querySelector(step.target) : null;
+        var target = resolveTarget(step, window.innerWidth);
         if (target) {
             var r = target.getBoundingClientRect();
             var fullyVisible = r.top >= 0 && r.bottom <= window.innerHeight;

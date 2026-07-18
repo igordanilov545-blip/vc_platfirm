@@ -143,28 +143,28 @@
 
 {% if user.is_authenticated %}
 <nav class="bottom-tabbar">
-    <a href="{% url 'dashboard' %}" class="tab-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+    <a href="{% url 'dashboard' %}" data-mtab="dashboard" class="tab-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
         <span class="tab-icon">🏠</span>Главная
     </a>
-    <a href="{% url 'event_list' %}" class="tab-item {% if request.resolver_match.url_name == 'event_list' %}active{% endif %}">
+    <a href="{% url 'event_list' %}" data-mtab="events" class="tab-item {% if request.resolver_match.url_name == 'event_list' %}active{% endif %}">
         <span class="tab-icon">📅</span>Меропр.
     </a>
     {% comment %}Подача заявки живёт на странице «Мероприятия» (кнопка сверху справа) —
     FAB ведёт туда, отдельной страницы подачи больше нет.{% endcomment %}
-    <a href="{% url 'event_list' %}" class="fab-tab" title="Подать заявку">+</a>
+    <a href="{% url 'event_list' %}" data-mtab="apply" class="fab-tab" title="Подать заявку">+</a>
     {% if is_manager %}
-    <a href="{% url 'pending_applications' %}" class="tab-item {% if request.resolver_match.url_name == 'pending_applications' %}active{% endif %}">
+    <a href="{% url 'pending_applications' %}" data-mtab="applications" class="tab-item {% if request.resolver_match.url_name == 'pending_applications' %}active{% endif %}">
         <span class="tab-icon">🕓</span>Заявки
     </a>
     {% else %}
-    <a href="{% url 'profile_detail' user.id %}" class="tab-item {% if request.resolver_match.url_name == 'profile_detail' %}active{% endif %}">
+    <a href="{% url 'profile_detail' user.id %}" data-mtab="profile" class="tab-item {% if request.resolver_match.url_name == 'profile_detail' %}active{% endif %}">
         <span class="tab-icon">👤</span>Профиль
     </a>
     {% endif %}
     {% comment %}«Ещё» — доступ к остальным разделам, которые не влезают в 5 слотов таббара:
     у волонтёра — Настройки/тема/гид/выход; у менеджера ещё Пользователи/Отчёты/Добро.ру;
     у тех-админа — Аналитика. Без этого пункта на телефоне часть функций недостижима.{% endcomment %}
-    <button type="button" class="tab-item" id="more-tab-btn" aria-haspopup="true" aria-expanded="false" aria-controls="more-sheet">
+    <button type="button" class="tab-item" id="more-tab-btn" data-mtab="more" aria-haspopup="true" aria-expanded="false" aria-controls="more-sheet">
         <span class="tab-icon">☰</span>Ещё
     </button>
 </nav>
@@ -2597,8 +2597,10 @@
             s0.push(center({ title: 'Привет! Я гусь-гид 🦆',
                 text: 'Проведу за руку по всей платформе — сам буду открывать нужные страницы. Скучно не будет, погнали?' }));
             s0.push(s('.sidebar-account', { photo: GOOSE[1], placement: 'right', url: URLS.dashboard,
-                title: 'Твой аккаунт', text: 'Это ты: имя и роль. Клик — и ты в профиле, где часы, мероприятия и справки.' }));
+                mobileTarget: '[data-mtab="profile"], [data-mtab="more"]',
+                title: 'Твой аккаунт', text: 'Это ты: имя и роль. Профиль с часами и справками — на вкладке «Профиль» (или в «Ещё»).' }));
             s0.push(s('[data-track="nav:dashboard"]', { placement: 'right', url: URLS.dashboard,
+                mobileTarget: '[data-mtab="dashboard"]',
                 title: '🏠 Главная', text: 'Твоя стартовая: часы, мероприятия и быстрые действия одним экраном. Заблудился — жми сюда.' }));
             // Профиль
             s0.push(s('[data-tour="profile-edit"]', { photo: GOOSE[1], placement: 'bottom', url: URLS.profile,
@@ -2607,6 +2609,7 @@
                 title: 'Твои часы', text: 'Часы и мероприятия считаются сами, без бумажек. Пришёл, отработал — цифры капнули в тот же день.' }));
             // Мероприятия
             s0.push(s('[data-track="nav:event_list"]', { photo: GOOSE[2], placement: 'right', url: URLS.events,
+                mobileTarget: '[data-mtab="events"]',
                 title: '📅 Мероприятия', text: 'Тут вся движуха — открытые наборы центра. Заходишь, смотришь, выбираешь своё.' }));
             s0.push(s('#event-search', { placement: 'bottom', url: URLS.events,
                 title: 'Поиск и фильтр', text: 'Ищи по названию, локации или организации. «Скрыть прошедшие» рядом — чтобы старое не мешалось.' }));
@@ -2623,9 +2626,11 @@
                 title: 'Звёздочка ПГАС ⭐', text: 'Набрал часов за сезон — открывается справка для ПГАС. За ней не надо бегать по кабинетам.' }));
             // Мелочи
             s0.push(s('#theme-toggle', { photo: GOOSE[2], placement: 'right',
-                title: 'Тёмная тема', text: 'Глаза устали? Тут переключается тёмная тема. Мелочь, а приятно.' }));
+                mobileTarget: '[data-mtab="more"]',
+                title: 'Тёмная тема', text: 'Глаза устали? Тёмная тема — в меню «Ещё» (на телефоне) или сбоку. Мелочь, а приятно.' }));
             s0.push(s('#companion-guide-btn', { placement: 'right',
-                title: 'Перезапуск гида 🦆', text: 'Забыл, где что? Жми меня на любой странице — проведу заново. Я всегда рядом.' }));
+                mobileTarget: '[data-mtab="more"]',
+                title: 'Перезапуск гида 🦆', text: 'Забыл, где что? Запусти меня снова из меню «Ещё» — проведу заново. Я всегда рядом.' }));
 
             // === Надстройка тим-лидера ===
             if (ROLE.is_team_leader) {
@@ -2652,6 +2657,7 @@
                 s0.push(center({ photo: GOOSE[0], title: 'Ты — менеджер 🛡️',
                     text: 'Центр управления. Видишь и можешь всё: любое меро, любую заявку, все отчёты. Держишь всё вместе.' }));
                 s0.push(s('[data-tour="dash-incidents"], [data-track="nav:dashboard"]', { placement: 'top', url: URLS.dashboard,
+                    mobileTarget: '[data-tour="dash-incidents"]',
                     title: 'Что горит', text: '«Что нужно посмотреть»: коллизии Telegram, идущие меро, заявки на верификацию ПГАС. Приоритеты расставлены за тебя.' }));
                 // Меро: создание и жизненный цикл
                 s0.push(s('[data-tour="events-create"]', { photo: GOOSE[1], placement: 'left', url: URLS.events,
@@ -2668,6 +2674,7 @@
                 }
                 // Заявки в масштабе
                 s0.push(s('[data-track="nav:pending_applications"]', { photo: GOOSE[1], placement: 'right', url: URLS.applications,
+                    mobileTarget: '[data-mtab="applications"]',
                     title: '🕓 Заявки', text: 'Все необработанные заявки по всем меро — не только твоим. Где тим-лидер застрял, решаешь сам.' }));
                 s0.push(s('#apps-table', { placement: 'top', url: URLS.applications,
                     title: 'Принять / отклонить', text: 'По каждой строке — решение, не заходя в меро. Двойной клик по строке проваливает в карточку меро, если нужен контекст.' }));
@@ -2675,18 +2682,21 @@
                     title: '📥 Импорт Excel', text: 'Заявки пришли выгрузкой? Грузишь файл — сначала превью: что создастся, обновится, пропустится. Дубли игнорируются, повторная загрузка безопасна.' }));
                 // Пользователи и ПГАС
                 s0.push(s('[data-track="nav:user_list"]', { placement: 'right', url: URLS.users,
-                    title: '👥 Пользователи', text: 'Все волонтёры: карточки, история, внутренние комментарии (сам волонтёр их не видит). Отсюда — в любой профиль.' }));
+                    mobileTarget: '[data-mtab="more"]',
+                    title: '👥 Пользователи', text: 'Все волонтёры: карточки, история, внутренние комментарии. На телефоне — в меню «Ещё». Отсюда — в любой профиль.' }));
                 s0.push(s('[data-tour="profile-verify"], .stat-grid', { photo: GOOSE[3], placement: 'top', url: URLS.profile,
                     title: 'Верификация ПГАС', text: 'В чужом профиле: проверил, что волонтёр реален и часы честные — «Выдать верификацию». Это ключ к справке ПГАС.' }));
                 // Отчёты
                 s0.push(s('[data-track="nav:report_period"]', { photo: GOOSE[0], placement: 'right', url: URLS.reports,
-                    title: '📊 Отчёты', text: 'ERP-хаб отчётности. Сверху режим, ниже охват (период или конкретные меро). Всё грузится без перезагрузки.' }));
+                    mobileTarget: '[data-mtab="more"]',
+                    title: '📊 Отчёты', text: 'ERP-хаб отчётности. Сверху режим, ниже охват. На телефоне открывается из меню «Ещё». Грузится без перезагрузки.' }));
                 s0.push(s('#report-scope-card', { placement: 'top', url: URLS.reports,
                     title: 'Охват', text: 'Задаёшь период пресетами или календарём, лишние меро выключаешь чипами. Отчёт пересобирается сам.' }));
                 s0.push(s('.report-view-btn[data-view="tables"], #report-views', { placement: 'bottom', url: URLS.reports,
                     title: 'Таблицы и экспорт', text: 'Детальные списки: волонтёры, меро, набор, заявки. Экспорт в XLSX/PDF — то, что раньше сводили в Excel до ночи.' }));
                 // Настройки (детально — отдельный тур; тут просто заводим на страницу)
                 s0.push(s('.settings-tab, [data-track="nav:report_period"]', { photo: GOOSE[3], placement: 'bottom', url: URLS.settings,
+                    mobileTarget: '.settings-tab, [data-mtab="more"]',
                     title: '⚙️ Настройки', text: 'Тут всё «редко, но метко»: справочники, требования, роли, константы, шаблон ПГАС. На странице настроек гусь проведёт отдельно по каждой вкладке.' }));
             }
 

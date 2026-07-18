@@ -16,7 +16,6 @@ CSS-переменные, адаптивно, без сети). Данные —
 <div class="card"><p style="margin:0; color:var(--text-secondary);">В выбранном охвате нет мероприятий — измените период или верните убранные мероприятия.</p></div>
 {% else %}
 
-{# --- KPI-плитки --- #}
 <div class="stat-grid report-kpis">
     <div class="stat-tile"><div class="label">Часов волонтёрства</div><div class="value">{{ report.total_hours }}</div></div>
     <div class="stat-tile"><div class="label">Мероприятий</div><div class="value">{{ report.total_events }}</div></div>
@@ -32,7 +31,6 @@ CSS-переменные, адаптивно, без сети). Данные —
 
 <div class="report-charts">
 
-    {# --- Закрытие набора по мероприятиям (половина ширины, перенос длинных названий) --- #}
     <div class="card chart-card chart-card--half">
         <h3>Закрытие набора по мероприятиям</h3>
         {% if efficiency.events %}
@@ -51,7 +49,6 @@ CSS-переменные, адаптивно, без сети). Данные —
         {% endif %}
     </div>
 
-    {# --- Явка: бублик (donut) + легенда --- #}
     <div class="card chart-card chart-card--half">
         <h3>Явка</h3>
         {% with a=report.attendance %}
@@ -76,7 +73,6 @@ CSS-переменные, адаптивно, без сети). Данные —
         {% endwith %}
     </div>
 
-    {# --- Топ волонтёров по часам --- #}
     <div class="card chart-card chart-card--half">
         <h3>Топ волонтёров</h3>
         {% if report.top_volunteers %}
@@ -96,7 +92,6 @@ CSS-переменные, адаптивно, без сети). Данные —
         {% endif %}
     </div>
 
-    {# --- Оценки мероприятий: столбцы с числом оценок + подпись «всего оценок» --- #}
     <div class="card chart-card chart-card--half">
         <h3>Оценки мероприятий</h3>
         {% if report.ratings.count %}
@@ -115,7 +110,6 @@ CSS-переменные, адаптивно, без сети). Данные —
         {% endif %}
     </div>
 
-    {# --- Блок «требует внимания»: низко-оценённые меро --- #}
     {% if report.problem_zones.low_rated_events %}
     <div class="card chart-card chart-card--half">
         <h3>⚠️ Низко оценённые мероприятия</h3>

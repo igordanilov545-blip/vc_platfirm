@@ -111,12 +111,11 @@
 </div>
 
 {% if not user.is_authenticated %}
-{# Плашка-приглашение войти (нейтральная — без «вы смотрите как гость»). #}
 <div class="guest-banner">
     <span>Войдите, чтобы подавать заявки и вести свой профиль.</span>
     <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" class="btn">Войти</a>
 </div>
-<div class="guest-banner-spacer"></div>{# отступ, чтобы плашка не перекрывала контент #}
+<div class="guest-banner-spacer"></div>
 {% endif %}
 
 <div class="modal-backdrop" id="modal-backdrop" hidden>

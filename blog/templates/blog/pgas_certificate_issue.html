@@ -15,9 +15,6 @@
     </p>
     {% if is_manager %}{% include 'blog/partials/_pgas_placeholder_guide.html' %}{% endif %}
 
-    {# Шаг 1: диапазон дат — два инлайн-календаря во всю ширину, бок о бок (как на
-       странице отчётов), а не «жмыхнутые» в узкие колонки. Каждому — своя колонка не
-       меньше ширины календаря (260px), поэтому .cal не сдавливается. #}
     <form method="get" action="{% url 'pgas_certificate_issue' target.id %}"
           style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap;">
         <div style="min-width:260px; flex:1 1 260px;">
@@ -36,7 +33,6 @@
     </form>
 </div>
 
-{# Шаг 2: выбор мероприятий (чипы n из m) + генерация. #}
 <form method="post" action="{% url 'pgas_certificate_issue' target.id %}" class="card">
     {% csrf_token %}
     <input type="hidden" name="generate" value="1">

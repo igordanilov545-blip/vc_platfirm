@@ -2,15 +2,8 @@
 {% load static %}
 {% block title %}Настройки{% endblock %}
 {% block content %}
-{# Хаб настроек: хедер-кнопки (визуальный язык .report-type со страницы отчётов) —
-   каждая открывает свою панель в блоке контента ниже. Панели локаций/организаторов/
-   организаций/требований подгружаются AJAX'ом со своих же вьюх (отдают partial при
-   X-Requested-With), панели констант/сезонов/ролей — с этой же вьюхи (?tab=…&partial=1).
-   Активная вкладка хранится в URL (?tab=…) для копируемых ссылок и кнопки «назад». #}
 <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;">
     <h1>Настройки</h1>
-    {# Кнопка запуска гайда компаньона (гусь) — аккуратно сбоку, доступна всем, кто на
-       странице настроек. Перезапускает пошаговый тур в любой момент. #}
     <button type="button" class="companion-launch" id="companion-launch" style="max-width:320px;">
         <img src="{% static 'blog/companion/goose_0.jpg' %}" alt="Компаньон">
         <span class="companion-launch-text">

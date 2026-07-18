@@ -25,10 +25,6 @@ volunteer) открывает вложенную мини-форму профи�
 
     <div class="field">
         <label>Волонтёры</label>
-        {# Единый remote-виджет выбора (data-select-remote="users"): пул волонтёров —
-           тысячи, поэтому не рендерим их в HTML, а грузим общим AJAX-запросом с
-           ранжированием (недавние/по имени) и лимитом. Выбранные уходят скрытыми
-           <input name="users"> перед сабмитом (бэк — getlist('users')). #}
         <div class="category-chips" data-chip-select data-select-remote="users" data-field-name="users" data-empty-text="Волонтёры не выбраны">
             <div class="cat-chips-search">
                 <input type="text" placeholder="Начните вводить имя или фамилию…" data-chips-search readonly>

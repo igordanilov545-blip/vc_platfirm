@@ -602,6 +602,93 @@
         initDateRangePair(root);
         initTimepickers(root);
         initApplicationForm(root);
+        initOrgOrganizerLink(root);
+    }
+
+    // ======================================================================
+    // Зависимая фильтрация выбора «организация ↔ организатор» в форме меро.
+    // Выбрал организацию → в списке организаторов остаются только связанные с ней
+    // (OrganizerOrganizationLink), и наоборот. «＋» (создание новой записи) и уже
+    // выбранное значение не прячем никогда. Кнопка «показать всех» снимает фильтр.
+    // Источник связей — data-org-links (JSON [{organization, organizer}, …]).
+    // ======================================================================
+    function initOrgOrganizerLink(root) {
+        root.querySelectorAll('[data-org-links]').forEach(function (wrap) {
+            if (wrap.dataset.orgLinkInit) return;
+            wrap.dataset.orgLinkInit = '1';
+
+            var links;
+            try { links = JSON.parse(wrap.getAttribute('data-org-links') || '[]'); }
+            catch (e) { links = []; }
+            var orgSelect = document.getElementById(wrap.getAttribute('data-org-select'));
+            var organizerSelect = document.getElementById(wrap.getAttribute('data-organizer-select'));
+            if (!orgSelect || !organizerSelect) return;
+
+            // Индексы связей в обе стороны: организация → set(организаторов) и обратно.
+            var organizersByOrg = {}, orgsByOrganizer = {};
+            links.forEach(function (l) {
+                (organizersByOrg[l.organization] = organizersByOrg[l.organization] || {})[l.organizer] = 1;
+                (orgsByOrganizer[l.organizer] = orgsByOrganizer[l.organizer] || {})[l.organization] = 1;
+            });
+
+            // Подсказки/кнопки сброса живут в соседних полях (организация и организатор),
+            // поэтому ищем от общего контейнера, а не только внутри wrap.
+            var scope = wrap.parentNode || wrap;
+            var organizerHint = scope.querySelector('[data-org-filter-hint]');
+            var orgHint = scope.querySelector('[data-organizer-filter-hint]');
+            var suppress = { organizer: false, org: false }; // «показать всех» снял фильтр
+
+            // Прячем в select те option, чей id не входит в allowed (кроме пустого «—»
+            // и текущего выбранного). Возвращает, был ли реально применён фильтр.
+            function filterSelect(select, allowed) {
+                var applied = false;
+                Array.prototype.forEach.call(select.options, function (opt) {
+                    if (!opt.value) { opt.hidden = false; return; }        // «— не выбрано —»
+                    if (opt.selected) { opt.hidden = false; return; }      // текущее значение
+                    var ok = !allowed || allowed[opt.value];
+                    opt.hidden = !ok;
+                    if (!ok) applied = true;
+                });
+                return applied;
+            }
+
+            function apply() {
+                // Организация выбрана → фильтруем организаторов (если не «показать всех»).
+                var orgVal = orgSelect.value;
+                if (orgVal && !suppress.organizer) {
+                    var applied = filterSelect(organizerSelect, organizersByOrg[orgVal] || {});
+                    if (organizerHint) organizerHint.hidden = !applied;
+                } else {
+                    filterSelect(organizerSelect, null);
+                    if (organizerHint) organizerHint.hidden = true;
+                }
+                // Организатор выбран → фильтруем организации (если не «показать все»).
+                var organizerVal = organizerSelect.value;
+                if (organizerVal && !suppress.org) {
+                    var applied2 = filterSelect(orgSelect, orgsByOrganizer[organizerVal] || {});
+                    if (orgHint) orgHint.hidden = !applied2;
+                } else {
+                    filterSelect(orgSelect, null);
+                    if (orgHint) orgHint.hidden = true;
+                }
+            }
+
+            orgSelect.addEventListener('change', function () { suppress.organizer = false; apply(); });
+            organizerSelect.addEventListener('change', function () { suppress.org = false; apply(); });
+
+            var resetOrganizer = scope.querySelector('[data-org-filter-reset]');
+            if (resetOrganizer) resetOrganizer.addEventListener('click', function () {
+                suppress.organizer = true; filterSelect(organizerSelect, null);
+                if (organizerHint) organizerHint.hidden = true;
+            });
+            var resetOrg = scope.querySelector('[data-organizer-filter-reset]');
+            if (resetOrg) resetOrg.addEventListener('click', function () {
+                suppress.org = true; filterSelect(orgSelect, null);
+                if (orgHint) orgHint.hidden = true;
+            });
+
+            apply(); // применить сразу (напр. при редактировании с уже выбранной парой)
+        });
     }
 
     // ======================================================================

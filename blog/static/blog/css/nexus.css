@@ -990,6 +990,13 @@ input:focus, select:focus, textarea:focus {
    В отличие от базового .role-badge (nowrap — там короткие роли), здесь текст
    может быть длинным названием меро: переносим по словам внутри своей ячейки,
    а не вылезаем на соседнюю колонку (white-space:nowrap у .role-badge это делал). */
+/* Кнопка-«ссылка» (напр. «показать всех» в зависимой фильтрации выбора): выглядит
+   как текстовая ссылка, а не как кнопка. */
+.link-btn {
+  background: none; border: none; padding: 0; margin: 0;
+  color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline;
+}
+
 .event-status-badge {
   font-weight: 600;
   white-space: normal;

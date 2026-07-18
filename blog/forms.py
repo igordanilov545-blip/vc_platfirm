@@ -339,6 +339,21 @@ class EventForm(forms.ModelForm):
         if 'location' in self.fields:
             self.fields['location'].queryset = Location.objects.order_by('-id')
 
+        # Данные для зависимой фильтрации выбора организации/организатора на клиенте:
+        # какие организаторы связаны с какой организацией (и наоборот). Выбрал
+        # организацию → ниже показываются только связанные организаторы, и наоборот.
+        import json
+        from blog.models import OrganizerOrganizationLink
+        if 'organization' in self.fields and 'organizer' in self.fields:
+            links = list(
+                OrganizerOrganizationLink.objects.values_list('organization_id', 'organizer_id')
+            )
+            self.org_organizer_links_json = json.dumps(
+                [{'organization': o, 'organizer': z} for o, z in links]
+            )
+        else:
+            self.org_organizer_links_json = '[]'
+
         if not show_closing_fields:
             for name in self.CLOSING_FIELDS:
                 self.fields.pop(name, None)
@@ -419,6 +434,7 @@ class EventForm(forms.ModelForm):
             self._save_requirements(event)
             self._save_team_leads(event)
             self._save_manager(event)
+            self._link_org_and_organizer(event)
             if self.require_shift:
                 for shift_form in self.shift_forms:
                     shift = shift_form.save(commit=False)
@@ -459,6 +475,19 @@ class EventForm(forms.ModelForm):
             if created:
                 from blog.services.notifications import notify_assigned_to_event
                 notify_assigned_to_event(user, event)
+
+    def _link_org_and_organizer(self, event):
+        """Если менеджер указал и организацию, и организатора — закрепляем их связь
+        (OrganizerOrganizationLink), если её ещё нет. Так выбранная при создании меро
+        пара сразу становится «связанной» и в дальнейшем предлагается друг для друга
+        в зависимой фильтрации выбора."""
+        from blog.models import OrganizerOrganizationLink
+        organization = self.cleaned_data.get('organization')
+        organizer = self.cleaned_data.get('organizer')
+        if organization and organizer:
+            OrganizerOrganizationLink.objects.get_or_create(
+                organizer=organizer, organization=organization
+            )
 
     def _save_manager(self, event):
         """Ровно один ответственный менеджер. Без явного выбора при СОЗДАНИИ —

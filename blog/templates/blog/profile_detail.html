@@ -7,13 +7,35 @@
     <a href="{% url 'profile_edit' %}" class="btn secondary" data-tour="profile-edit">✎ Редактировать профиль</a>
     {% endif %}
 </div>
-<span class="pill neutral"><span class="dot"></span>{{ target.telegram_username|default:"без ника" }}</span>
-{% comment %}Статус показываем менеджеру только когда он «интересный» (блэклист/неактивен);
-обычный «активен» не подписываем — это дефолт и лишний шум (ToDo: убрать подпись «активен»).{% endcomment %}
-{% if is_manager %}
-    {% if target.status == 'blacklisted' %}<span class="pill danger"><span class="dot"></span>{{ target.get_status_display }}</span>
-    {% elif target.status == 'inactive' %}<span class="pill warning"><span class="dot"></span>{{ target.get_status_display }}</span>{% endif %}
-{% endif %}
+{% comment %}Ряд статус-пилюль СЛЕВА, сразу под именем. Обычному пользователю виден
+только его ник. Менеджеру дополнительно — «перечисление статусов»: верификация ПГАС
+(с компактными действиями выдать/отозвать), блокировка/неактивность и кнопка ЧС. Это
+не отдельные блоки-карточки, а статусы рядом с именем.{% endcomment %}
+<div class="pill-row" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+    <span class="pill neutral"><span class="dot"></span>{{ target.telegram_username|default:"без ника" }}</span>
+    {% if is_manager and not is_owner %}
+        {% if target.verified_by_manager_at %}
+            <span class="pill success"><span class="dot"></span>ПГАС-верификация {{ target.verified_by_manager_at|date:"d.m.Y" }}</span>
+            <form method="post" action="{% url 'pgas_unverify_user' target.id %}" class="inline" style="margin:0;" data-confirm="Отозвать верификацию профиля «{{ target.full_name }}» для ПГАС?">
+                {% csrf_token %}
+                <button type="submit" class="btn secondary btn-sm" data-tour="profile-verify">Отозвать верификацию</button>
+            </form>
+        {% else %}
+            <span class="pill neutral"><span class="dot"></span>Без ПГАС-верификации</span>
+            <form method="post" action="{% url 'pgas_verify_user' target.id %}" class="inline" style="margin:0;" data-confirm="Подтвердить верификацию профиля «{{ target.full_name }}» для ПГАС?">
+                {% csrf_token %}
+                <button type="submit" class="btn secondary btn-sm" data-tour="profile-verify">✅ Выдать верификацию</button>
+            </form>
+        {% endif %}
+    {% endif %}
+    {% if is_manager %}
+        {% if target.status == 'blacklisted' %}<span class="pill danger"><span class="dot"></span>{{ target.get_status_display }}</span>
+        {% elif target.status == 'inactive' %}<span class="pill warning"><span class="dot"></span>{{ target.get_status_display }}</span>{% endif %}
+        {% if not is_owner and target.status != 'blacklisted' %}
+        <a href="{% url 'user_blacklist' target.id %}" class="btn danger btn-sm" data-modal data-modal-title="Блокировка: {{ target.full_name }}" data-tour="profile-blacklist">🚫 В чёрный список</a>
+        {% endif %}
+    {% endif %}
+</div>
 
 {% comment %}Статистика (часы/мероприятия) — в самый верх, сразу под именем.{% endcomment %}
 <div class="stat-grid" style="margin-top:1rem;">
@@ -24,48 +46,13 @@
     <div class="stat-tile"><div class="value">{{ target.external_experiences.count }}</div><div class="label">Внешние мероприятия</div></div>
 </div>
 
-{% comment %}Менеджерский блок — В САМЫЙ ВЕРХ (сразу под статистикой): оперативная
-информация о профиле. Порядок внутри: верификация ПГАС и блокировка (действия) —
-СВЕРХУ, затем справочное (чарн, комментарий менеджера).{% endcomment %}
+{% comment %}Справочное (не «статус», а данные) — чарн и комментарий менеджера — остаётся
+отдельным компактным блоком.{% endcomment %}
 {% if is_manager %}
 <div class="card">
-    <h3>🔒 Внутреннее: верификация, статус и чарн</h3>
-
-    {% if not is_owner %}
-    <div>
-        {% if target.verified_by_manager_at %}
-            <p><span class="pill success"><span class="dot"></span>Верифицирован(а) для ПГАС {{ target.verified_by_manager_at|date:"d.m.Y" }}</span></p>
-            <form method="post" action="{% url 'pgas_unverify_user' target.id %}" class="inline" data-confirm="Отозвать верификацию профиля «{{ target.full_name }}» для ПГАС?">
-                {% csrf_token %}
-                <button type="submit" class="btn secondary btn-sm" data-tour="profile-verify">Отозвать верификацию</button>
-            </form>
-            {% comment %}Справка ПГАС выдаётся из блока «Справка ВЦ для ПГАС» (выбор
-            мероприятий/периода), а не отсюда — после верификации отдельной кнопки
-            «Выдать справку» здесь больше нет.{% endcomment %}
-        {% else %}
-            <p style="color:var(--text-secondary); font-size:13px;">Не верифицирован(а) для справки ПГАС.</p>
-            <form method="post" action="{% url 'pgas_verify_user' target.id %}" class="inline" data-confirm="Подтвердить верификацию профиля «{{ target.full_name }}» для ПГАС?">
-                {% csrf_token %}
-                <button type="submit" class="btn secondary btn-sm" data-tour="profile-verify">✅ Выдать верификацию</button>
-            </form>
-        {% endif %}
-    </div>
-
-    {% if target.status != 'blacklisted' %}
-    <div style="margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border-subtle);">
-        <a href="{% url 'user_blacklist' target.id %}" class="btn danger btn-sm" data-modal data-modal-title="Блокировка: {{ target.full_name }}" data-tour="profile-blacklist">🚫 Внести в чёрный список</a>
-    </div>
-    {% endif %}
-    {% endif %}
-
-    <div style="margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border-subtle);">
-        {% comment %}«Активен» не подписываем — это дефолт; показываем статус только когда он
-        ограничивающий (блэклист/неактивен).{% endcomment %}
-        {% if target.status == 'blacklisted' %}<p>Статус: <span class="pill danger"><span class="dot"></span>{{ target.get_status_display }}</span></p>
-        {% elif target.status == 'inactive' %}<p>Статус: <span class="pill warning"><span class="dot"></span>{{ target.get_status_display }}</span></p>{% endif %}
-        <p>Churn score: <span class="mono">{{ target.churn_score|floatformat:2 }}</span></p>
-        <p>Комментарий менеджера: {{ target.comment|default:"—" }}</p>
-    </div>
+    <h3>🔒 Внутреннее</h3>
+    <p>Churn score: <span class="mono">{{ target.churn_score|floatformat:2 }}</span></p>
+    <p>Комментарий менеджера: {{ target.comment|default:"—" }}</p>
 </div>
 {% endif %}
 
@@ -98,9 +85,12 @@
         {% endfor %}
         </tbody>
     </table>
-    {% else %}
+    {% elif is_owner %}
     <p style="color:var(--text-secondary);">Активных заявок нет, но ты всегда можешь это исправить.</p>
     <a href="{% url 'event_list' %}" class="btn">📅 К мероприятиям</a>
+    {% else %}
+    {% comment %}Менеджер/ТЛ смотрит чужой профиль — просто констатируем, без call-to-action.{% endcomment %}
+    <p style="color:var(--text-secondary);">Активных заявок нет.</p>
     {% endif %}
 </div>
 {% endif %}

@@ -1,0 +1,195 @@
+{% extends 'blog/base.html' %}
+{% block title %}Профиль волонтёра{% endblock %}
+{% block content %}
+{% comment %}Страница профиля ГЛАЗАМИ МЕНЕДЖЕРА/ТИМ-ЛИДЕРА (смотрит ЧУЖОЙ профиль).
+Владелец видит отдельный файл profile_self.html.{% endcomment %}
+<div class="page-header">
+    <h1>{{ target.full_name }}</h1>
+</div>
+
+{% comment %}Верх: ник + статус-пилюли (роль, блеклист) и действия по верификации/ЧС.{% endcomment %}
+<div class="pill-row" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+    {% comment %}Роль в центре как статус.{% endcomment %}
+    {% if mgr_role %}<span class="pill info"><span class="dot"></span>Менеджер</span>
+    {% elif tl_role %}<span class="pill info"><span class="dot"></span>Тим-лидер</span>
+    {% else %}<span class="pill neutral"><span class="dot"></span>Волонтёр</span>{% endif %}
+
+    {% if is_manager %}
+        {% if target.verified_by_manager_at %}
+            <span class="pill success"><span class="dot"></span>ПГАС-верификация {{ target.verified_by_manager_at|date:"d.m.Y" }}</span>
+            <form method="post" action="{% url 'pgas_unverify_user' target.id %}" class="inline" style="margin:0;" data-confirm="Отозвать верификацию профиля «{{ target.full_name }}» для ПГАС?">
+                {% csrf_token %}
+                <button type="submit" class="btn secondary btn-sm" data-tour="profile-verify">Отозвать верификацию</button>
+            </form>
+        {% else %}
+            <span class="pill neutral"><span class="dot"></span>Без ПГАС-верификации</span>
+            <form method="post" action="{% url 'pgas_verify_user' target.id %}" class="inline" style="margin:0;" data-confirm="Подтвердить верификацию профиля «{{ target.full_name }}» для ПГАС?">
+                {% csrf_token %}
+                <button type="submit" class="btn secondary btn-sm" data-tour="profile-verify">✅ Выдать верификацию</button>
+            </form>
+        {% endif %}
+
+        {% if target.status == 'blacklisted' %}
+            <span class="pill danger"><span class="dot"></span>{{ target.get_status_display }}</span>
+            <form method="post" action="{% url 'user_unblacklist' target.id %}" class="inline" style="margin:0;" data-confirm="Вывести «{{ target.full_name }}» из чёрного списка? Churn будет обнулён.">
+                {% csrf_token %}
+                <button type="submit" class="btn secondary btn-sm">✅ Вывести из ЧС</button>
+            </form>
+        {% elif target.status == 'inactive' %}
+            <span class="pill warning"><span class="dot"></span>{{ target.get_status_display }}</span>
+            <a href="{% url 'user_blacklist' target.id %}" class="btn danger btn-sm" data-modal data-modal-title="Блокировка: {{ target.full_name }}" data-tour="profile-blacklist">🚫 В чёрный список</a>
+        {% else %}
+            <a href="{% url 'user_blacklist' target.id %}" class="btn danger btn-sm" data-modal data-modal-title="Блокировка: {{ target.full_name }}" data-tour="profile-blacklist">🚫 В чёрный список</a>
+        {% endif %}
+    {% endif %}
+</div>
+
+{% comment %}Телега с копируемым @username (можно выделить и скопировать).{% endcomment %}
+<div class="pill-row" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px;">
+    {% if target.telegram_username %}
+        <span class="pill neutral"><span class="dot"></span><span class="mono" style="user-select:all;">@{{ target.telegram_username }}</span></span>
+    {% else %}
+        <span class="pill neutral"><span class="dot"></span>Telegram не указан</span>
+    {% endif %}
+</div>
+
+<div class="stat-grid" style="margin-top:1rem;">
+    <div class="stat-tile"><div class="value">{{ target.total_hours }}</div><div class="label">Часов всего</div></div>
+    <div class="stat-tile"><div class="value">{{ target.season_hours }}</div><div class="label">Часов за сезон</div></div>
+    <div class="stat-tile"><div class="value">{{ target.total_event_count }}</div><div class="label">Мероприятий всего</div></div>
+    <div class="stat-tile"><div class="value">{{ target.season_event_count }}</div><div class="label">Мероприятий за сезон</div></div>
+    <div class="stat-tile"><div class="value">{{ target.external_experiences.count }}</div><div class="label">Внешние мероприятия</div></div>
+</div>
+
+{% comment %}Блок «Инфо»: ФИО, контакты И чарн (объединены, отдельного блока «Внутреннее» нет).{% endcomment %}
+{% if has_extended_access %}
+<div class="card">
+    <h3>ℹ️ Инфо</h3>
+    <p>ФИО: {{ target.last_name }} {{ target.first_name }}{% if target.middle_name %} {{ target.middle_name }}{% endif %}</p>
+    <p>Телефон: {{ target.phone|default:"—" }}</p>
+    <p>Email: {{ target.email|default:"—" }}</p>
+    <p>VK: {{ target.VK_username|default:"—" }}</p>
+    <p>Дата рождения: {{ target.birthday|default:"—" }}</p>
+    <p>Пол: {{ target.get_gender_display|default:"—" }}</p>
+    <p>Факультет: {{ target.faculty|default:"—" }}</p>
+    <p>Образовательная программа: {{ target.education_program|default:"—" }}</p>
+    <p>Курс: {% if course_info.course %}{{ course_info.course }}{% else %}—{% endif %}
+       {% if course_info.graduation_year %}(выпуск: {{ course_info.graduation_year }}){% endif %}</p>
+    {% if is_manager %}
+    <p style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border-subtle);">
+        Churn score: <span class="mono">{{ target.churn_score|floatformat:2 }}</span>
+    </p>
+    {% if mgr_role %}<p>Менеджер с {{ mgr_role.assigned_at|date:"d.m.Y" }}</p>{% endif %}
+    {% if tl_role %}<p>Тим-лидер с {{ tl_role.assigned_at|date:"d.m.Y" }} · мероприятий как ТЛ: {{ tl_event_count }}</p>{% endif %}
+    {% endif %}
+</div>
+{% endif %}
+
+{% comment %}Комментарии к волонтёру — форма добавления спрятана в кнопку-модалку.{% endcomment %}
+{% if can_see_comments %}
+<div class="card">
+    <h3>🔒 Комментарии к волонтёру</h3>
+    <p style="opacity:0.7; font-size:0.85rem;">Сам волонтёр эти комментарии не видит.</p>
+    {% for c in comments %}
+        <p>{{ c.created_at }} — {{ c.author.full_name }}{% if c.event %} ({{ c.event.title }}){% endif %}: {{ c.text }}</p>
+    {% empty %}
+        <p>Комментариев нет.</p>
+    {% endfor %}
+    <a href="{% url 'profile_comment_add' target.id %}" class="btn secondary" data-modal data-modal-title="Комментарий: {{ target.full_name }}" data-tour="profile-comment" style="margin-top:1rem;">＋ Добавить комментарий</a>
+</div>
+{% endif %}
+
+{% comment %}Единая таблица «Опыт и заявки» — заявки (в т.ч. отклонённые/резерв/отменённые)
++ внешний опыт. Отдельного блока «Активные заявки» на управленческой странице НЕТ —
+менеджер видит все заявки здесь.{% endcomment %}
+<h2 style="margin-top:1.5rem;">Опыт и заявки</h2>
+<div class="card" style="padding:0; overflow:hidden;">
+    <table class="responsive-table" data-sortable data-collapse-rows="5">
+        <thead>
+            <tr>
+                <th data-sort-key="event">Мероприятие</th>
+                <th data-sort-key="date" data-sort-default="desc">Дата</th>
+                <th data-sort-key="kind">Тип</th>
+                <th data-sort-key="note">Что делал</th>
+                <th data-sort-key="app-status">Статус заявки</th>
+                <th data-sort-key="attendance">Присутствие</th>
+                <th data-sort-key="hours" class="num">Часы</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in profile_experience_rows %}
+            {% with a=row.application %}
+            <tr {% if row.event_id %}data-href="{% url 'event_detail' row.event_id %}"{% endif %}>
+                <td data-label="Мероприятие" data-sort-value="{{ row.title }}">
+                    {% if row.event_id %}<a href="{% url 'event_detail' row.event_id %}">{{ row.title }}</a>{% else %}{{ row.title }}{% endif %}
+                </td>
+                <td data-label="Дата" class="mono" data-sort-value="{{ row.sort_date|date:'Y-m-d' }}">{{ row.date_display }}</td>
+                <td data-label="Тип" data-sort-value="{{ row.kind }}">
+                    {% if row.kind == 'external' %}<span class="pill neutral"><span class="dot"></span>Внешнее</span>
+                    {% else %}<span class="pill success"><span class="dot"></span>Внутреннее</span>{% endif %}
+                </td>
+                {% if row.kind == 'external' %}
+                <td data-label="Что делал" data-sort-value="{{ row.note|default:'' }}">{{ row.note|default:"—" }}</td>
+                <td data-label="Статус заявки" data-sort-value="">—</td>
+                <td data-label="Присутствие" data-sort-value="">—</td>
+                <td data-label="Часы" class="num mono" data-sort-value="0">—</td>
+                {% else %}
+                <td data-label="Что делал" data-sort-value="{{ row.note|default:'' }}">{{ row.note|default:"—" }}</td>
+                <td data-label="Статус заявки" data-sort-value="{{ a.status }}">
+                    {% if a.status == 'approved' %}<span class="pill success"><span class="dot"></span>{{ a.get_status_display }}</span>
+                    {% elif a.status == 'rejected' %}<span class="pill neutral"><span class="dot"></span>{{ a.get_status_display }}</span>
+                    {% elif a.status == 'cancelled' %}<span class="pill danger"><span class="dot"></span>{{ a.get_status_display }}</span>
+                    {% else %}<span class="pill warning"><span class="dot"></span>{{ a.get_status_display }}</span>{% endif %}
+                </td>
+                <td data-label="Присутствие" data-sort-value="{{ row.attendance_display|default:'' }}">{{ row.attendance_display|default:"—" }}</td>
+                <td data-label="Часы" class="num mono" data-sort-value="{{ row.total_hours }}">{{ row.total_hours }}</td>
+                {% endif %}
+            </tr>
+            {% endwith %}
+        {% empty %}
+            <tr><td colspan="7">Опыта пока нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if has_extended_access %}
+<div class="card">
+    <h3>Благодарственные письма</h3>
+    {% for e in letters_pool %}
+        <p>«{{ e.title }}» — <a href="{% url 'letter_view' target.id e.id %}">открыть письмо</a></p>
+    {% empty %}
+        <p>Писем пока нет: они появляются после явки на мероприятие, у которого задан шаблон письма.</p>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% comment %}Полная история изменений чарна: неявки, списания за активность, сброс по
+сезону, блокировка/вывод из ЧС. Виден только менеджеру.{% endcomment %}
+{% if is_manager %}
+<div class="card" style="padding:0; overflow:hidden;">
+    <h3 style="padding:20px 20px 0;">🔒 История чарна</h3>
+    <table class="responsive-table" data-collapse-rows="8">
+        <thead><tr><th>Дата</th><th>Причина</th><th>Изменение</th><th>Стало</th><th>Кто/контекст</th></tr></thead>
+        <tbody>
+        {% for l in churn_log %}
+            <tr>
+                <td data-label="Дата" class="mono">{{ l.created_at|date:"d.m.Y H:i" }}</td>
+                <td data-label="Причина">{{ l.get_reason_display }}</td>
+                <td data-label="Изменение" class="mono">{% if l.delta > 0 %}+{% endif %}{{ l.delta|floatformat:2 }}</td>
+                <td data-label="Стало" class="mono">{{ l.new_value|floatformat:2 }}</td>
+                <td data-label="Кто/контекст">
+                    {% if l.event %}{{ l.event.title }}{% endif %}
+                    {% if l.actor %}{% if l.event %} · {% endif %}{{ l.actor.full_name }}{% endif %}
+                    {% if l.note %}{% if l.event or l.actor %} · {% endif %}{{ l.note }}{% endif %}
+                    {% if not l.event and not l.actor and not l.note %}—{% endif %}
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="5">Изменений чарна пока не было.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

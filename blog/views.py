@@ -631,6 +631,13 @@ def user_blacklist(request, user_id):
         target.status = 'blacklisted'
         target.comment = reason
         target.save(update_fields=['status', 'comment'])
+        # Фиксируем в истории чарна как событие (сам churn_score блокировка не меняет,
+        # поэтому delta=0, но событие должно быть видно в истории — просьба пользователя).
+        from blog.models import ChurnLog
+        ChurnLog.objects.create(
+            user=target, reason='blacklist', delta=0, new_value=target.churn_score or 0,
+            actor=request.user, note=reason,
+        )
         logger.info('Волонтёр внесён в чёрный список: user=%s by=%s reason=%r', target.id, actor(request.user), reason)
         messages.success(request, f'«{target.full_name}» внесён(а) в чёрный список.')
         return modal_form_response(request, None, None, success_redirect=reverse('profile_detail', args=[target.id]))
@@ -660,9 +667,15 @@ def user_unblacklist(request, user_id):
         messages.info(request, f'«{target.full_name}» не в чёрном списке.')
         return redirect('profile_detail', user_id=target.id)
 
+    before = target.churn_score or 0
     target.status = 'active'
     target.churn_score = 0
     target.save(update_fields=['status', 'churn_score'])
+    from blog.models import ChurnLog
+    ChurnLog.objects.create(
+        user=target, reason='unblacklist', delta=-before, new_value=0,
+        actor=request.user, note='Вывод из ЧС, churn обнулён',
+    )
     logger.info('Волонтёр выведен из чёрного списка: user=%s by=%s', target.id, actor(request.user))
     messages.success(request, f'«{target.full_name}» выведён(а) из чёрного списка (churn обнулён).')
     return redirect('profile_detail', user_id=target.id)
@@ -1672,10 +1685,10 @@ def participation_set_status(request, participation_id):
 
     if new_status == 'absent_unexcused' and old_status != 'absent_unexcused':
         from blog.services.stats import apply_churn_no_show
-        apply_churn_no_show(participation.user)
+        apply_churn_no_show(participation.user, event=event, actor=request.user)
     elif new_status == 'attended' and old_status != 'attended':
         from blog.services.stats import apply_churn_activity_decay
-        apply_churn_activity_decay(participation.user)
+        apply_churn_activity_decay(participation.user, event=event)
 
     logger.info(
         'Явка проставлена (веб): participation=%s event=%s %s→%s by=%s subject=%s',
@@ -1752,10 +1765,10 @@ def participation_edit(request, participation_id):
 
         if participation.status == 'absent_unexcused' and old_status != 'absent_unexcused':
             from blog.services.stats import apply_churn_no_show
-            apply_churn_no_show(participation.user)
+            apply_churn_no_show(participation.user, event=event, actor=request.user)
         elif participation.status == 'attended':
             from blog.services.stats import apply_churn_activity_decay
-            apply_churn_activity_decay(participation.user)
+            apply_churn_activity_decay(participation.user, event=event)
 
         messages.success(request, 'Явка обновлена, статистика пересчитана.')
         return modal_form_response(
@@ -2463,6 +2476,8 @@ def profile_detail(request, user_id):
 
     if is_mgr:
         context['churn_history'] = target.churn_history.select_related('season').order_by('-created_at')
+        # Полная история изменений чарна (неявки, списания, сброс по сезону, блокировки).
+        context['churn_log'] = target.churn_log.select_related('actor', 'event').order_by('-created_at')
 
     if can_see_comments:
         context['comments'] = target.received_comments.select_related('author', 'event').order_by('-created_at')
@@ -2474,7 +2489,10 @@ def profile_detail(request, user_id):
             ).exclude(event_status='finished')
         context['comment_form'] = UserCommentForm(event_queryset=event_queryset)
 
-    return render(request, 'blog/profile_detail.html', context)
+    # Владелец и менеджер/ТЛ на чужом профиле — ДВА разных шаблона (разные страницы),
+    # а не ветвления в одном файле.
+    template = 'blog/profile_self.html' if is_owner else 'blog/profile_manage.html'
+    return render(request, template, context)
 
 
 @login_required
@@ -2538,15 +2556,21 @@ def profile_comment_add(request, user_id):
             staff__user=request.user, staff__staff_role='team_lead'
         ).exclude(event_status='finished')
 
-    if request.method == 'POST':
-        form = UserCommentForm(request.POST, event_queryset=event_queryset)
-        if form.is_valid():
-            comment = form.save(commit=False)
-            comment.target_user = target
-            comment.author = request.user
-            comment.save()
-            messages.success(request, 'Комментарий добавлен.')
-    return redirect('profile_detail', user_id=target.id)
+    redirect_url = reverse('profile_detail', args=[target.id])
+    form = UserCommentForm(request.POST or None, event_queryset=event_queryset)
+    if request.method == 'POST' and form.is_valid():
+        comment = form.save(commit=False)
+        comment.target_user = target
+        comment.author = request.user
+        comment.save()
+        messages.success(request, 'Комментарий добавлен.')
+        return modal_form_response(request, None, None, success_redirect=redirect_url)
+    # GET (открытие модалки) или невалидный POST — отдаём форму (в модалку по AJAX).
+    return modal_form_response(
+        request, 'blog/profile_comment_form.html',
+        {'form': form, 'target': target, 'title': f'Комментарий: {target.full_name}',
+         'submit_label': 'Добавить комментарий'},
+    )
 
 
 # ---------------------------------------------------------------------------

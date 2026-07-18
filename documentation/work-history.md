@@ -1765,3 +1765,37 @@ left/right никогда не влезали, а fallback центрирова�
 
 **Файлы:** blog/forms.py, blog/templates/blog/base.html,
 blog/templates/blog/profile_detail.html, blog/templates/blog/pgas_certificate_issue.html.
+
+## 2026-07-18 · Opus 4.8 · ветка `agent/opus/profile-split-churn-log`
+
+**Промт:** разделить профиль на ДВА разных html-файла (свой vs чужой глазами
+менеджера/ТЛ); в управленческом виде: телега с копируемым @username; блок «Инфо»
+(ФИО+контакты+чарн вместо отдельного «Внутреннее»); форму добавления комментария
+спрятать в кнопку-модалку; полностью убрать блок «Активные заявки» (менеджер видит
+всё в «Опыт и заявки»); благодарственные письма как есть; добавить полную историю
+чарна (неявка, сброс по сезону, блокировка менеджером).
+
+**Итог:**
+- Профиль разделён на два шаблона: `profile_self.html` (владелец) и
+  `profile_manage.html` (менеджер/ТЛ на чужом). Вьюха `profile_detail` выбирает по
+  is_owner; старый `profile_detail.html` удалён.
+- profile_manage: роль/ПГАС/ЧС — статус-пилюли сверху; отдельная строка с копируемым
+  `@username` (user-select:all); блок «ℹ️ Инфо» объединяет ФИО+контакты+churn+роли
+  (блока «Внутреннее» больше нет); комментарии — кнопка «＋ Добавить комментарий»
+  открывает модалку (profile_comment_add стал modal-aware, +profile_comment_form.html);
+  блока «Активные заявки» на управленческой странице НЕТ.
+- Новая модель `ChurnLog` (+миграция 0029) — журнал КАЖДОГО изменения churn: reason
+  (no_show/activity_decay/season_reset/blacklist/unblacklist/manual), delta, new_value,
+  actor, event, note. Пишется в stats.apply_churn_no_show/apply_churn_activity_decay/
+  close_season и во вьюхах user_blacklist/user_unblacklist. Показывается в
+  profile_manage как «История чарна».
+
+**Файлы:** blog/models.py, blog/migrations/0029_churnlog.py, blog/services/stats.py,
+blog/views.py, blog/urls.py (не менялся), blog/templates/blog/profile_self.html (new),
+blog/templates/blog/profile_manage.html (new), blog/templates/blog/profile_comment_form.html (new),
+удалён profile_detail.html.
+
+**Проверено:** manage.py check чист; миграция применяется; обе страницы рендерятся 200;
+churn-лог пишется (no_show → +1, лог создан); модалка комментария отдаётся по AJAX;
+живой GET /profile/3/ менеджером — есть «История чарна» и «Инфо», нет «Активные заявки»,
+есть копируемый @username.

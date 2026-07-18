@@ -796,6 +796,45 @@ class ChurnHistory(models.Model):
         ]
 
 
+class ChurnLog(models.Model):
+    """Журнал КАЖДОГО изменения churn_score пользователя (в отличие от ChurnHistory —
+    снимка на конец сезона). Пишется во всех точках, где меняется churn: неявка без
+    предупреждения (штраф), списание за активность, сброс/carryover по сезону, ручная
+    блокировка/разблокировка менеджером. Показывается в профиле менеджеру как
+    «История чарна»."""
+    REASON_CHOICES = [
+        ('no_show', 'Неявка без предупреждения'),
+        ('activity_decay', 'Списание за активность'),
+        ('season_reset', 'Сброс по завершении сезона'),
+        ('blacklist', 'Блокировка менеджером'),
+        ('unblacklist', 'Вывод из чёрного списка'),
+        ('manual', 'Ручная корректировка'),
+    ]
+
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='churn_log')
+    reason = models.CharField(max_length=30, choices=REASON_CHOICES)
+    delta = models.FloatField(help_text='Изменение churn_score (может быть отрицательным)')
+    new_value = models.FloatField(help_text='Значение churn_score после изменения')
+    # Кто инициировал (для ручных действий менеджера); авто-события — без actor.
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='caused_churn_changes')
+    # Опциональный контекст (напр. мероприятие, из-за которого неявка).
+    event = models.ForeignKey(Event, on_delete=models.SET_NULL, null=True, blank=True, related_name='churn_log_entries')
+    note = models.CharField(max_length=255, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'churn_log'
+        verbose_name = 'Изменение чарна'
+        verbose_name_plural = 'История изменений чарна'
+        indexes = [
+            models.Index(fields=['user', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f'ChurnLog user={self.user_id} {self.reason} {self.delta:+.2f}→{self.new_value:.2f}'
+
+
 class EventComment(models.Model):
     """Внутренние комментарии к мероприятию от менеджеров/тим-лидеров (не путать
     с Event.internal_comment — то одно поле для заметок, а это лента реплик от

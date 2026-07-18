@@ -694,11 +694,15 @@ class ApplicationForm(forms.ModelForm):
         # Подать заявку можно на любое ОПУБЛИКОВАННОЕ меро (published_at задан), у
         # которого есть хотя бы одна смена, которая ещё не началась — даже если набор
         # на все смены уже закрыт (такая заявка просто сразу уходит в резерв, см.
-        # application_create), но НЕ на меро, которое уже закончилось целиком.
+        # application_create), но НЕ на меро, которое уже закончилось целиком или
+        # ЯВНО ЗАВЕРШЕНО менеджером (event_status='finished'): такое меро больше не
+        # принимает заявок, даже если у него формально остались будущие смены.
         now = timezone.now()
-        self.fields['event'].queryset = Event.objects.filter(
-            published_at__isnull=False, shifts__start_time__gt=now,
-        ).distinct().order_by('-created_at')
+        self.fields['event'].queryset = (
+            Event.objects.filter(published_at__isnull=False, shifts__start_time__gt=now)
+            .exclude(event_status='finished')
+            .distinct().order_by('-created_at')
+        )
 
         # Пул смен для чипов — только смены выбранного меро, которые ещё не начались
         # (открытые и закрытые по набору — закрытая смена всё ещё выбираема, просто

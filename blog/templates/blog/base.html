@@ -614,9 +614,10 @@
     // ======================================================================
     function initOrgOrganizerLink(root) {
         root.querySelectorAll('[data-org-links]').forEach(function (wrap) {
-            if (wrap.dataset.orgLinkInit) return;
-            wrap.dataset.orgLinkInit = '1';
-
+          if (wrap.dataset.orgLinkInit) return;
+          wrap.dataset.orgLinkInit = '1';
+          // Зависимая фильтрация — вспомогательная; её сбой не должен ломать форму меро.
+          try {
             var links;
             try { links = JSON.parse(wrap.getAttribute('data-org-links') || '[]'); }
             catch (e) { links = []; }
@@ -652,20 +653,27 @@
                 return applied;
             }
 
+            // Есть ли у ключа хотя бы одна связь (иначе фильтровать нельзя — иначе
+            // спрячем ВСЕ варианты и поле станет пустым/непригодным).
+            function hasAny(map) { for (var k in map) return true; return false; }
+
             function apply() {
-                // Организация выбрана → фильтруем организаторов (если не «показать всех»).
+                // Организация выбрана и у неё есть связанные организаторы → фильтруем
+                // (если менеджер не нажал «показать всех»). Нет связей — показываем всех.
                 var orgVal = orgSelect.value;
-                if (orgVal && !suppress.organizer) {
-                    var applied = filterSelect(organizerSelect, organizersByOrg[orgVal] || {});
+                var orgAllowed = orgVal ? (organizersByOrg[orgVal] || {}) : null;
+                if (orgVal && !suppress.organizer && hasAny(orgAllowed)) {
+                    var applied = filterSelect(organizerSelect, orgAllowed);
                     if (organizerHint) organizerHint.hidden = !applied;
                 } else {
                     filterSelect(organizerSelect, null);
                     if (organizerHint) organizerHint.hidden = true;
                 }
-                // Организатор выбран → фильтруем организации (если не «показать все»).
+                // Симметрично: организатор выбран и у него есть связанные организации.
                 var organizerVal = organizerSelect.value;
-                if (organizerVal && !suppress.org) {
-                    var applied2 = filterSelect(orgSelect, orgsByOrganizer[organizerVal] || {});
+                var organizerAllowed = organizerVal ? (orgsByOrganizer[organizerVal] || {}) : null;
+                if (organizerVal && !suppress.org && hasAny(organizerAllowed)) {
+                    var applied2 = filterSelect(orgSelect, organizerAllowed);
                     if (orgHint) orgHint.hidden = !applied2;
                 } else {
                     filterSelect(orgSelect, null);
@@ -688,6 +696,7 @@
             });
 
             apply(); // применить сразу (напр. при редактировании с уже выбранной парой)
+          } catch (e) { /* фильтрация опциональна — не мешаем сохранению меро */ }
         });
     }
 

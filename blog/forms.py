@@ -127,6 +127,14 @@ class QuickCategoryForm(forms.ModelForm):
         labels = {'name': 'Название категории'}
 
 
+class CategoryForm(forms.ModelForm):
+    """Создание/редактирование категории мероприятия на странице настроек."""
+    class Meta:
+        model = EventCategory
+        fields = ['name']
+        labels = {'name': 'Название категории'}
+
+
 class QuickRequirementForm(forms.ModelForm):
     """Мини-форма быстрого создания требования прямо из формы мероприятия. check_type
     не запрашивается — быстро создаются только обычные («вручную проверяемые») требования;

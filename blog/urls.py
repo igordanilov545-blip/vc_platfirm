@@ -118,6 +118,11 @@ urlpatterns = [
     path('requirements/<int:requirement_id>/exceptions/add/', views.requirement_exception_add, name='requirement_exception_add'),
     path('requirements/exceptions/<int:exception_id>/remove/', views.requirement_exception_remove, name='requirement_exception_remove'),
 
+    path('categories/', views.category_list, name='category_list'),
+    path('categories/new/', views.category_create, name='category_create'),
+    path('categories/<int:category_id>/edit/', views.category_edit, name='category_edit'),
+    path('categories/<int:category_id>/delete/', views.category_delete, name='category_delete'),
+
     path('quick-create/location/', views.quick_create_location, name='quick_create_location'),
     path('quick-create/organization/', views.quick_create_organization, name='quick_create_organization'),
     path('quick-create/organizer/', views.quick_create_organizer, name='quick_create_organizer'),

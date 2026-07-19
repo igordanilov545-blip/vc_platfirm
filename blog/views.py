@@ -20,7 +20,7 @@ from django.views.decorators.http import require_POST
 
 from blog.decorators import manager_required, tech_admin_required
 from blog.forms import (
-    ApplicationCancelForm, ApplicationForm, ConstForm, EventCommentForm, EventShiftForm, EventFeedbackForm, EventForm,
+    ApplicationCancelForm, ApplicationForm, CategoryForm, ConstForm, EventCommentForm, EventShiftForm, EventFeedbackForm, EventForm,
     ExcelImportForm, ExternalExperienceForm, LocationForm, LoginForm, OrganizationForm, OrganizerForm, ProfileCompletionForm,
     ProfileForm, ParticipationForm, QuickCategoryForm, QuickLocationForm, QuickOrganizationForm, QuickOrganizerForm,
     QuickRequirementForm, QuickVolunteerForm, RegisterForm, RequirementForm, RequirementEditForm, RequirementExceptionForm,
@@ -3729,6 +3729,7 @@ SETTINGS_TABS = [
     {'key': 'organizers', 'icon': '🤝', 'title': 'Организаторы', 'desc': 'Контактные лица организаций', 'url': 'organizer_list'},
     {'key': 'organizations', 'icon': '🏢', 'title': 'Организации', 'desc': 'Партнёры и заказчики мероприятий', 'url': 'organizations_list'},
     {'key': 'requirements', 'icon': '✅', 'title': 'Требования', 'desc': 'Условия допуска волонтёров', 'url': 'requirement_list'},
+    {'key': 'categories', 'icon': '🏷️', 'title': 'Категории', 'desc': 'Категории мероприятий', 'url': 'category_list'},
     {'key': 'constants', 'icon': '🔢', 'title': 'Константы', 'desc': 'Пороги и коэффициенты системы', 'url': 'settings'},
     {'key': 'seasons', 'icon': '🗓️', 'title': 'Сезоны', 'desc': 'Периоды учёта и закрытие сезона', 'url': 'settings'},
     {'key': 'team_leaders', 'icon': '⭐', 'title': 'Тим-лидеры', 'desc': 'Назначение и снятие роли ТЛ', 'url': 'settings'},
@@ -4048,6 +4049,57 @@ def requirement_delete(request, requirement_id):
         requirement.delete()
         messages.success(request, f'Требование «{requirement.title}» удалено.')
     return redirect('requirement_list')
+
+
+@manager_required
+def category_list(request):
+    # Панель хаба настроек (см. location_list): AJAX → partial, прямой заход → редирект.
+    categories = EventCategory.objects.order_by('name')
+    if is_ajax(request):
+        return render(request, 'blog/partials/_settings_categories.html', {'categories': categories})
+    return redirect(reverse('settings') + '?tab=categories')
+
+
+@manager_required
+def category_create(request):
+    form = CategoryForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Категория создана.')
+        return modal_form_response(
+            request, None, None,
+            success_redirect=reverse('settings') + '?tab=categories',
+        )
+    return modal_form_response(
+        request, 'blog/category_form.html',
+        {'form': form, 'title': 'Новая категория'},
+    )
+
+
+@manager_required
+def category_edit(request, category_id):
+    category = get_object_or_404(EventCategory, pk=category_id)
+    form = CategoryForm(request.POST or None, instance=category)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Категория обновлена.')
+        return modal_form_response(
+            request, None, None,
+            success_redirect=reverse('settings') + '?tab=categories',
+        )
+    return modal_form_response(
+        request, 'blog/category_form.html',
+        {'form': form, 'title': f'Редактировать: {category.name}', 'submit_label': 'Сохранить'},
+    )
+
+
+@manager_required
+def category_delete(request, category_id):
+    category = get_object_or_404(EventCategory, pk=category_id)
+    if request.method == 'POST':
+        category.delete()
+        messages.success(request, f'Категория «{category.name}» удалена.')
+    return redirect(reverse('settings') + '?tab=categories')
 
 
 @manager_required

@@ -1799,3 +1799,50 @@ blog/templates/blog/profile_manage.html (new), blog/templates/blog/profile_comme
 churn-лог пишется (no_show → +1, лог создан); модалка комментария отдаётся по AJAX;
 живой GET /profile/3/ менеджером — есть «История чарна» и «Инфо», нет «Активные заявки»,
 есть копируемый @username.
+
+---
+
+## 2026-07-19 · Sonnet 5 · ветка `agent/sonnet/settings-categories`
+
+**Промт:**
+> На странице настроек добавь блок категорий и возможность удалять или добавлять там
+> категории мероприятий.
+
+**Тудушник:**
+- [x] Найти модель `EventCategory` (уже существовала, `blog/models.py`) и убедиться, что
+      M2M-связь с `Event` через `EventCategoryMap` не требует новой миграции.
+- [x] Добавить `CategoryForm` в `blog/forms.py` (по образцу `LocationForm`/`RequirementForm`).
+- [x] Добавить вьюхи `category_list/create/edit/delete` в `blog/views.py` — по паттерну
+      `location_*`/`requirement_*` (AJAX-partial, `manager_required`, `modal_form_response`).
+- [x] Зарегистрировать вкладку `categories` в `SETTINGS_TABS`.
+- [x] Добавить маршруты в `blog/urls.py`.
+- [x] Создать шаблоны `category_form.html` и `partials/_settings_categories.html`
+      (переиспользованы `_table_search.html`, `data-sortable`, `data-hideable-columns`,
+      кнопка-модалка `data-modal`, форма удаления с `data-confirm` — как в требованиях).
+- [x] Прогнать `manage.py check`.
+- [x] Прогнать сценарий вручную (dev-сервер + Django test client через реального
+      менеджера): list/create/edit/delete по `/categories/*` — все статусы корректны,
+      тестовая категория создана/переименована/удалена без остатка.
+
+**Вопросы + ответы:**
+- Не задавал сразу — но после того как отчитался о готовности без ветки/work-history,
+  пользователь указал на нарушение agent-workflow.md; работа перенесена в отдельную
+  ветку `agent/sonnet/settings-categories` постфактум, эта запись дописана перед
+  коммитом (правило §2/§7 применено с опозданием, зафиксировано как заметка на будущее).
+
+**Итог:**
+Новая вкладка «Категории» в хабе настроек (`/settings/?tab=categories`) с
+созданием/редактированием/удалением категорий мероприятий (`EventCategory`). Удаление
+категории каскадно снимает её со всех мероприятий (`EventCategoryMap.on_delete=CASCADE`,
+уже было в модели). Новых миграций не потребовалось — модель и `QuickCategoryForm` уже
+существовали, не хватало только полноценного CRUD-раздела в настройках.
+
+**Файлы:** blog/forms.py (+`CategoryForm`), blog/views.py (+`category_list/create/edit/delete`,
++запись в `SETTINGS_TABS`, +импорт `CategoryForm`), blog/urls.py (+4 маршрута),
+blog/templates/blog/category_form.html (new),
+blog/templates/blog/partials/_settings_categories.html (new).
+
+**Проверено:** `manage.py check` — 0 ошибок; через `Client(force_login=manager)`:
+`GET /categories/` (AJAX) → 200; `POST /categories/new/` → 200 + `{"redirect": "/settings/?tab=categories"}`,
+категория создана; `POST /categories/<id>/edit/` → 200, имя обновлено;
+`POST /categories/<id>/delete/` → 302 на `/settings/?tab=categories`, запись удалена без остатка.

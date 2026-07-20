@@ -15,6 +15,8 @@ from blog.models import (
     Event, EventShift, Participation, Application, ApplicationShiftDecision, EventStaff, User,
     EventFeedback, Manager, TeamLeader, Season, DobroRuSharedLink,
     Location, Organization, Organizer, EventCategory, EventRequirement,
+    UserRequirementException, Incident, ChurnHistory, ApplicationChangeLog,
+    UserComment, OrganizerInteractionLog,
 )
 
 
@@ -97,6 +99,30 @@ def requirements_qs():
 
 def seasons_qs():
     return Season.objects.all()
+
+
+def user_requirement_exceptions_qs():
+    return UserRequirementException.objects.all()
+
+
+def incidents_qs():
+    return Incident.objects.all()
+
+
+def churn_history_qs():
+    return ChurnHistory.objects.all()
+
+
+def application_change_logs_qs():
+    return ApplicationChangeLog.objects.all()
+
+
+def user_comments_qs():
+    return UserComment.objects.all()
+
+
+def organizer_interactions_qs():
+    return OrganizerInteractionLog.objects.all()
 
 
 def get_current_season():

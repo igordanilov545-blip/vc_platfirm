@@ -6,29 +6,26 @@
 """
 from django.db.models import Avg, Count, Sum
 
-from blog.models import (
-    Application, ChurnHistory, Manager, Participation, TeamLeader,
-    User, UserComment, UserRequirementException,
-)
+from data_base import data_controller as dc
 from blog.services.stats import is_pgas_star
 
 
 def _participations_qs(user, date_from=None, date_to=None):
-    qs = Participation.objects.filter(user=user).select_related('event_day', 'event_day__event')
+    qs = dc.participations_qs().filter(user=user).select_related('event_day', 'event_day__event')
     if date_from and date_to:
         qs = qs.filter(event_day__day__gte=date_from, event_day__day__lte=date_to)
     return qs
 
 
 def _applications_qs(user, date_from=None, date_to=None):
-    qs = Application.objects.filter(user=user).select_related('event', 'assigned_by')
+    qs = dc.applications_qs().filter(user=user).select_related('event', 'assigned_by')
     if date_from and date_to:
         qs = qs.filter(created_at__date__gte=date_from, created_at__date__lte=date_to)
     return qs
 
 
 def person_report(user_id: int, date_from=None, date_to=None) -> dict:
-    user = User.objects.get(pk=user_id)
+    user = dc.get_user_by_id(user_id)
     scoped = bool(date_from and date_to)
 
     participations = _participations_qs(user, date_from, date_to)
@@ -67,7 +64,7 @@ def person_report(user_id: int, date_from=None, date_to=None) -> dict:
     approved_apps = applications.filter(status='approved').count()
     conversion = round(approved_apps / total_apps * 100, 1) if total_apps else 0
 
-    active_applications = Application.objects.filter(
+    active_applications = dc.applications_qs().filter(
         user=user, status__in=['new', 'approved'],
     ).select_related('event')
 
@@ -109,23 +106,23 @@ def person_report(user_id: int, date_from=None, date_to=None) -> dict:
         'internal': {
             'churn_score': user.churn_score,
             'churn_history': list(
-                ChurnHistory.objects.filter(user=user).select_related('season').order_by('season__start_season')
+                dc.churn_history_qs().filter(user=user).select_related('season').order_by('season__start_season')
             ),
             'comments': list(
-                UserComment.objects.filter(target_user=user).select_related('author', 'event').order_by('-created_at')
+                dc.user_comments_qs().filter(target_user=user).select_related('author', 'event').order_by('-created_at')
             ),
             'exceptions': list(
-                UserRequirementException.objects.filter(user=user).select_related('requirement')
+                dc.user_requirement_exceptions_qs().filter(user=user).select_related('requirement')
             ),
             'unexcused_count': participations.filter(status='absent_unexcused').count(),
         },
     }
 
-    team_leader_role = TeamLeader.objects.filter(user=user, revoked_at__isnull=True).first()
+    team_leader_role = dc.team_leaders_qs().filter(user=user, revoked_at__isnull=True).first()
     if team_leader_role:
         report['team_leader'] = _staff_role_block(user, team_leader_role, 'team_lead', date_from, date_to)
 
-    manager_role = Manager.objects.filter(user=user, revoked_at__isnull=True).first()
+    manager_role = dc.managers_qs().filter(user=user, revoked_at__isnull=True).first()
     if manager_role:
         report['manager'] = _staff_role_block(user, manager_role, 'manager', date_from, date_to)
 
@@ -133,13 +130,11 @@ def person_report(user_id: int, date_from=None, date_to=None) -> dict:
 
 
 def _staff_role_block(user, role_record, staff_role: str, date_from=None, date_to=None) -> dict:
-    from blog.models import EventStaff
-
-    events_qs = EventStaff.objects.filter(user=user, staff_role=staff_role).select_related('event')
+    events_qs = dc.event_staff_qs().filter(user=user, staff_role=staff_role).select_related('event')
     if date_from and date_to:
         events_qs = events_qs.filter(event__shifts__day__gte=date_from, event__shifts__day__lte=date_to).distinct()
 
-    apps_scope = Application.objects.filter(assigned_by=user)
+    apps_scope = dc.applications_qs().filter(assigned_by=user)
     if date_from and date_to:
         apps_scope = apps_scope.filter(created_at__date__gte=date_from, created_at__date__lte=date_to)
 

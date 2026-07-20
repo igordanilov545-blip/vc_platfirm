@@ -17,6 +17,7 @@ def create_user(
     telegram_username: Optional[str] = None,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
+    middle_name: Optional[str] = None,
     phone: Optional[str] = None,
     email: Optional[str] = None,
     vk_username: Optional[str] = None,
@@ -26,6 +27,9 @@ def create_user(
     comment: Optional[str] = None
 ) -> User:
     """Создает пользователя через кастомный менеджер."""
+    extra = {}
+    if middle_name is not None:
+        extra['middle_name'] = middle_name
     user = User.objects.create_user(
         telegram_id=telegram_id,
         telegram_username=telegram_username,
@@ -37,7 +41,8 @@ def create_user(
         birthday=birthday,
         about=about,
         status=status,
-        comment=comment
+        comment=comment,
+        **extra,
     )
     logger.info('INSERT users: user=%s telegram_id=%s', user.id, telegram_id)
     return user
@@ -283,6 +288,48 @@ def get_managers(user_id: Optional[int] = None, is_active_only: bool = True) -> 
     if is_active_only:
         qs = qs.filter(revoked_at__isnull=True)
     return list(qs)
+
+
+_ROLE_MODELS = {'team_lead': TeamLeader, 'manager': Manager}
+
+
+def reset_all_season_counters() -> int:
+    """Обнуляет сезонные счётчики (season_hours/season_event_count) у ВСЕХ пользователей
+    при закрытии сезона (bulk). Возвращает число затронутых строк."""
+    n = User.objects.update(season_hours=0, season_event_count=0)
+    logger.info('UPDATE users: season counters reset for all (%s rows)', n)
+    return n
+
+
+def role_qs(kind: str):
+    """Ленивый queryset ролевой записи по виду ('team_lead'/'manager') — для сервиса
+    roles (кто без роли / с ролью, назначение/снятие). Единая точка вместо
+    Manager.objects/TeamLeader.objects в сервисе."""
+    return _ROLE_MODELS[kind].objects.all()
+
+
+def create_role(kind: str, user: User, assigned_by: Optional[User] = None):
+    """Создаёт ролевую запись нужного вида. Бизнес-правило «менеджер ⇒ и тим-лидер»
+    остаётся в сервисе roles (assign_role), здесь — только запись + аудит."""
+    obj = _ROLE_MODELS[kind].objects.create(user=user, assigned_by=assigned_by)
+    logger.info('INSERT %s_role: user=%s by=%s', kind, user.id, actor(assigned_by))
+    return obj
+
+
+def revoke_roles(kind: str, users) -> list:
+    """Снимает активные роли `kind` у переданных пользователей (bulk). Возвращает список
+    user_id, у кого роль реально была активна (и снята)."""
+    from django.utils import timezone
+    qs = _ROLE_MODELS[kind].objects.filter(revoked_at__isnull=True, user__in=users)
+    updated_ids = list(qs.values_list('user_id', flat=True))
+    if updated_ids:
+        qs.update(revoked_at=timezone.now())
+        logger.info('UPDATE %s_role: revoked subjects=%s', kind, updated_ids)
+    return updated_ids
+
+
+def has_active_role(kind: str, user: User) -> bool:
+    return _ROLE_MODELS[kind].objects.filter(user=user, revoked_at__isnull=True).exists()
 
 
 def get_team_leaders(user_id: Optional[int] = None, is_active_only: bool = True) -> List[TeamLeader]:

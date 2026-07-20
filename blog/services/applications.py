@@ -4,7 +4,8 @@ import datetime
 from django.db import transaction
 from django.utils import timezone
 
-from blog.models import ApplicationShiftDecision, User, Application, Event, Participation
+from data_base import data_controller as dc
+from blog.models import User, Application, Event  # только для аннотаций типов
 from blog.logging_utils import get_web_logger, actor
 
 logger = get_web_logger(__name__)
@@ -23,9 +24,7 @@ def ensure_shift_decisions(application: Application):
     existing_shift_ids = set(application.shift_decisions.values_list('shift_id', flat=True))
     for shift in shifts:
         if shift.id not in existing_shift_ids:
-            ApplicationShiftDecision.objects.get_or_create(
-                application=application, shift=shift, defaults={'status': application.status},
-            )
+            dc.ensure_shift_decision(application, shift, default_status=application.status)
     return application.shift_decisions.select_related('shift').all()
 
 
@@ -48,20 +47,11 @@ def _recompute_application_status(application: Application):
 
 def find_matching_user(telegram_username=None, phone=None, first_name=None, last_name=None):
     """Матчинг заявки с профилем (db.md, бизнес-правило 5):
-    (1) telegram_username -> (2) phone -> (3) ФИО."""
-    if telegram_username:
-        user = User.objects.filter(telegram_username__iexact=telegram_username.lstrip('@')).first()
-        if user:
-            return user
-    if phone:
-        user = User.objects.filter(phone=phone).first()
-        if user:
-            return user
-    if first_name and last_name:
-        user = User.objects.filter(first_name__iexact=first_name, last_name__iexact=last_name).first()
-        if user:
-            return user
-    return None
+    (1) telegram_username -> (2) phone -> (3) ФИО. Доступ к данным — через контроллер."""
+    return dc.find_matching_user(
+        telegram_username=telegram_username, phone=phone,
+        first_name=first_name, last_name=last_name,
+    )
 
 
 @transaction.atomic
@@ -83,12 +73,11 @@ def process_application(application: Application, new_status: str, processed_by:
     if new_status == 'approved' and application.user:
         for shift in shifts:
             duration_hours = max(0, round((shift.end_time - shift.start_time).total_seconds() / 3600))
-            Participation.objects.get_or_create(
-                user=application.user,
-                event_day=shift,
-                # По умолчанию считаем, что волонтёр пришёл и отработал полную смену —
-                # часы сразу равны длительности смены, без ручного "перетыкивания" (см.
-                # events.md: тим-лидер меняет статус только если по факту было иначе).
+            # По умолчанию считаем, что волонтёр пришёл и отработал полную смену —
+            # часы сразу равны длительности смены, без ручного "перетыкивания" (см.
+            # events.md: тим-лидер меняет статус только если по факту было иначе).
+            dc.get_or_create_participation(
+                application.user, shift,
                 defaults={'status': 'attended', 'hours': duration_hours, 'full_shift': True},
             )
         # Approve создаёт participations сразу со status='attended' и часами — кэш
@@ -100,9 +89,7 @@ def process_application(application: Application, new_status: str, processed_by:
     elif new_status == 'rejected' and application.user:
         # Отклонение/резерв заявки целиком → убираем участия по её сменам, чтобы
         # отклонённый волонтёр исчез из таблицы явки (показываем только одобренных).
-        deleted, _ = Participation.objects.filter(
-            user=application.user, event_day__in=shifts
-        ).delete()
+        deleted = dc.delete_participations(application.user, shifts)
         if deleted:
             from blog.services.stats import recalc_user_aggregates
             recalc_user_aggregates(application.user)
@@ -112,10 +99,7 @@ def process_application(application: Application, new_status: str, processed_by:
     # per-shift решения должны прийти в тот же статус (иначе таблица набора по сменам
     # разойдётся с фактическим решением по заявке).
     for shift in shifts:
-        ApplicationShiftDecision.objects.update_or_create(
-            application=application, shift=shift,
-            defaults={'status': new_status, 'assigned_at': timezone.now(), 'assigned_by': processed_by},
-        )
+        dc.set_shift_decision(application, shift, new_status, assigned_by=processed_by)
 
     # Автоматика только ЗАКРЫВАЕТ набор на смену при достижении порога (правило 10) —
     # никогда не открывает его обратно. Открытие/закрытие вручную (кнопка «Набор закрыт»
@@ -139,11 +123,7 @@ def process_shift_decision(application: Application, shift, new_status: str, pro
     ApplicationShiftDecision; Application.status пересчитывается как производный
     агрегат для сводных списков (см. _recompute_application_status)."""
     ensure_shift_decisions(application)
-    decision, _ = ApplicationShiftDecision.objects.get_or_create(application=application, shift=shift)
-    decision.status = new_status
-    decision.assigned_at = timezone.now()
-    decision.assigned_by = processed_by
-    decision.save(update_fields=['status', 'assigned_at', 'assigned_by'])
+    decision, _ = dc.set_shift_decision(application, shift, new_status, assigned_by=processed_by)
     logger.info(
         'Заявка обработана по смене: application=%s shift=%s status=%s by=%s subject=%s',
         application.id, shift.id, new_status, actor(processed_by),
@@ -158,9 +138,8 @@ def process_shift_decision(application: Application, shift, new_status: str, pro
     if application.user:
         if new_status == 'approved':
             duration_hours = max(0, round((shift.end_time - shift.start_time).total_seconds() / 3600))
-            Participation.objects.get_or_create(
-                user=application.user,
-                event_day=shift,
+            dc.get_or_create_participation(
+                application.user, shift,
                 defaults={'status': 'attended', 'hours': duration_hours, 'full_shift': True},
             )
             from blog.services.stats import recalc_user_aggregates
@@ -169,9 +148,7 @@ def process_shift_decision(application: Application, shift, new_status: str, pro
             # Отклонённая (уведённая в резерв) заявка на смену → участие удаляем: волонтёр
             # не должен оставаться в таблице явки этой смены (показываем только одобренных).
             # Другие смены той же заявки не затрагиваются — участие привязано к смене.
-            deleted, _ = Participation.objects.filter(
-                user=application.user, event_day=shift
-            ).delete()
+            deleted = dc.delete_participations(application.user, shift)
             if deleted:
                 from blog.services.stats import recalc_user_aggregates
                 recalc_user_aggregates(application.user)
@@ -234,13 +211,10 @@ def cancel_application(application: Application, reason: str) -> Application:
         actor(application.user) if application.user_id else 'user=?',
     )
 
-    from blog.models import ApplicationChangeLog
     name = f'{application.first_name} {application.last_name or ""}'.strip()
-    ApplicationChangeLog.objects.create(
-        event=application.event,
-        application=application,
-        kind='withdrawn',
-        text=f'{name} отказался(-ась) от участия. Причина: {reason}',
+    dc.create_application_change_log(
+        application.event, application, 'withdrawn',
+        f'{name} отказался(-ась) от участия. Причина: {reason}',
     )
     return application
 
@@ -253,7 +227,7 @@ def create_manual_application(event: Event, user: User, created_by: User, shifts
 
     Дубли не плодим: если у волонтёра уже есть активная (new/approved) заявка на это
     меро — возвращаем её, не создавая вторую. Возвращает (application, created: bool)."""
-    existing = Application.objects.filter(
+    existing = dc.applications_qs().filter(
         event=event, user=user, status__in=['new', 'approved']
     ).first()
     if existing:
@@ -262,7 +236,7 @@ def create_manual_application(event: Event, user: User, created_by: User, shifts
     from blog.services.requirements import check_application_requirements
     req_check = check_application_requirements(event, user)
 
-    application = Application.objects.create(
+    application = dc.create_application(
         event=event,
         user=user,
         first_name=user.first_name or '',
@@ -275,7 +249,6 @@ def create_manual_application(event: Event, user: User, created_by: User, shifts
         auto_reject_reason='; '.join(req_check['reasons']) if req_check['auto_reject'] else None,
     )
     # Смены заявки: выбранные, либо все смены меро с открытым набором.
-    from blog.models import EventShift
     if shifts:
         application.selected_shifts.set(shifts)
         application.shifts = ', '.join(s.day.isoformat() for s in sorted(shifts, key=lambda s: s.day))
@@ -302,7 +275,7 @@ def create_volunteer_by_name(first_name: str, last_name: str = '', middle_name: 
     как у импортных заявок (db.md — у импортной заявки всегда есть User). Телефон/
     Telegram-username — опциональны, для последующего матчинга (find_matching_user)."""
     import uuid
-    return User.objects.create_user(
+    return dc.create_user(
         telegram_id=f"manual:{uuid.uuid4()}",
         first_name=(first_name or '').strip(),
         last_name=(last_name or '').strip(),

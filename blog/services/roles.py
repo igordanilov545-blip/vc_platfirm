@@ -1,9 +1,8 @@
 """Резолвинг ролей и контекстных прав тим-лидера (access-control.md)."""
 from django.db import transaction
-from django.db.models import Q
-from django.utils import timezone
 
-from blog.models import Application, EventStaff, Manager, Participation, TeamLeader, User
+from data_base import data_controller as dc
+from blog.models import User  # только для аннотаций типов (не доступ к БД)
 from blog.logging_utils import get_web_logger, actor
 
 logger = get_web_logger(__name__)
@@ -25,7 +24,7 @@ def is_team_leader_of_event(user: User, event_id: int) -> bool:
     """Является ли user активным тим-лидером конкретного мероприятия."""
     if not user or not user.is_authenticated:
         return False
-    return EventStaff.objects.filter(
+    return dc.event_staff_qs().filter(
         event_id=event_id, user=user, staff_role='team_lead'
     ).exists()
 
@@ -55,17 +54,17 @@ def has_extended_access_to_profile(viewer: User, target: User) -> bool:
     if not is_team_leader(viewer):
         return False
 
-    tl_event_ids = EventStaff.objects.filter(
+    tl_event_ids = dc.event_staff_qs().filter(
         user=viewer, staff_role='team_lead'
     ).exclude(event__event_status='finished').values_list('event_id', flat=True)
 
     if not tl_event_ids:
         return False
 
-    has_application = Application.objects.filter(
+    has_application = dc.applications_qs().filter(
         user=target, event_id__in=tl_event_ids
     ).exists()
-    has_participation = Participation.objects.filter(
+    has_participation = dc.participations_qs().filter(
         user=target, event_day__event_id__in=tl_event_ids
     ).exists()
 
@@ -129,22 +128,17 @@ def role_slug(user: User) -> str:
 # Назначение/снятие ролей (настройки, только менеджер — см. settings_view)
 # ---------------------------------------------------------------------------
 
-ROLE_MODELS = {'team_lead': TeamLeader, 'manager': Manager}
-
-
 def users_without_role(kind: str):
     """Волонтёры, у которых сейчас НЕТ активной роли `kind` ('team_lead'/'manager') —
     кандидаты для назначения, отсортированы по алфавиту (фамилия, имя)."""
-    model = ROLE_MODELS[kind]
-    active_user_ids = model.objects.filter(revoked_at__isnull=True).values('user_id')
-    return User.objects.exclude(id__in=active_user_ids).order_by('last_name', 'first_name')
+    active_user_ids = dc.role_qs(kind).filter(revoked_at__isnull=True).values('user_id')
+    return dc.users_qs().exclude(id__in=active_user_ids).order_by('last_name', 'first_name')
 
 
 def users_with_role(kind: str):
     """Пользователи с активной ролью `kind` — кандидаты для снятия роли."""
-    model = ROLE_MODELS[kind]
-    active_user_ids = model.objects.filter(revoked_at__isnull=True).values('user_id')
-    return User.objects.filter(id__in=active_user_ids).order_by('last_name', 'first_name')
+    active_user_ids = dc.role_qs(kind).filter(revoked_at__isnull=True).values('user_id')
+    return dc.users_qs().filter(id__in=active_user_ids).order_by('last_name', 'first_name')
 
 
 @transaction.atomic
@@ -155,18 +149,17 @@ def assign_role(kind: str, users, assigned_by: User):
     Менеджеру автоматически выдаётся и роль тим-лидера (если её ещё нет) — чтобы
     менеджера можно было назначать тим-лидером на мероприятия наравне с обычными
     тим-лидерами (правило: у менеджера всегда есть профиль ТЛ)."""
-    model = ROLE_MODELS[kind]
     already_active = set(
-        model.objects.filter(revoked_at__isnull=True, user__in=users).values_list('user_id', flat=True)
+        dc.role_qs(kind).filter(revoked_at__isnull=True, user__in=users).values_list('user_id', flat=True)
     )
     affected = []
     for user in users:
         if user.id in already_active:
             continue
-        model.objects.create(user=user, assigned_by=assigned_by)
+        dc.create_role(kind, user, assigned_by=assigned_by)
         affected.append(user)
-        if kind == 'manager' and not TeamLeader.objects.filter(user=user, revoked_at__isnull=True).exists():
-            TeamLeader.objects.create(user=user, assigned_by=assigned_by)
+        if kind == 'manager' and not dc.has_active_role('team_lead', user):
+            dc.create_role('team_lead', user, assigned_by=assigned_by)
         if kind == 'team_lead':
             from blog.services.notifications import notify_became_team_leader
             notify_became_team_leader(user)
@@ -182,12 +175,7 @@ def assign_role(kind: str, users, assigned_by: User):
 def revoke_role(kind: str, users, revoked_by: User = None):
     """Снимает активную роль `kind` у каждого из `users`. Возвращает список
     реально затронутых пользователей. `revoked_by` — кто снял (для аудита в логе)."""
-    model = ROLE_MODELS[kind]
-    now = timezone.now()
-    updated_ids = list(
-        model.objects.filter(revoked_at__isnull=True, user__in=users).values_list('user_id', flat=True)
-    )
-    model.objects.filter(revoked_at__isnull=True, user__in=users).update(revoked_at=now)
+    updated_ids = dc.revoke_roles(kind, users)
     affected = [u for u in users if u.id in updated_ids]
     if affected:
         logger.info(

@@ -12,7 +12,7 @@
 """
 import datetime
 
-from blog.models import EventRequirement, UserRequirementException
+from data_base import data_controller as dc
 
 
 def _age_on(birthday: datetime.date, today: datetime.date) -> int:
@@ -26,7 +26,7 @@ def check_application_requirements(event, user) -> dict:
     auto_reject_reason). `unknown_age` — True, если у меро есть требование «18+», а
     дата рождения волонтёра неизвестна (заявка НЕ уходит в резерв по одной лишь
     неизвестности возраста — это только пометка для тим-лидера)."""
-    requirements = list(EventRequirement.objects.filter(event_map__event=event))
+    requirements = list(dc.requirements_qs().filter(event_map__event=event))
     reasons = []
     unknown_age = False
 
@@ -34,7 +34,7 @@ def check_application_requirements(event, user) -> dict:
         return {'auto_reject': False, 'reasons': [], 'unknown_age': False}
 
     exception_ids = set(
-        UserRequirementException.objects.filter(
+        dc.user_requirement_exceptions_qs().filter(
             user=user, requirement__in=requirements
         ).values_list('requirement_id', flat=True)
     )

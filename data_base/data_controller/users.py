@@ -17,6 +17,7 @@ def create_user(
     telegram_username: Optional[str] = None,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
+    middle_name: Optional[str] = None,
     phone: Optional[str] = None,
     email: Optional[str] = None,
     vk_username: Optional[str] = None,
@@ -26,6 +27,9 @@ def create_user(
     comment: Optional[str] = None
 ) -> User:
     """Создает пользователя через кастомный менеджер."""
+    extra = {}
+    if middle_name is not None:
+        extra['middle_name'] = middle_name
     user = User.objects.create_user(
         telegram_id=telegram_id,
         telegram_username=telegram_username,
@@ -37,7 +41,8 @@ def create_user(
         birthday=birthday,
         about=about,
         status=status,
-        comment=comment
+        comment=comment,
+        **extra,
     )
     logger.info('INSERT users: user=%s telegram_id=%s', user.id, telegram_id)
     return user

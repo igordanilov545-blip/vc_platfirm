@@ -10,7 +10,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from blog.models import (
-    Application, ApplicationChangeLog, EventShift, Event, User, Participation,
+    Application, ApplicationChangeLog, ApplicationShiftDecision, EventShift, Event, User, Participation,
 )
 from ._base import logger, actor
 
@@ -185,7 +185,64 @@ def update_application_status(application: Application, status: str, assigned_by
     return application
 
 
+# --- SHIFT DECISIONS ---
+def ensure_shift_decision(application: Application, shift, default_status: str = 'new'):
+    """Гарантирует наличие ApplicationShiftDecision для (заявка, смена). Возвращает
+    (decision, created). Статус по умолчанию — общий статус заявки."""
+    return ApplicationShiftDecision.objects.get_or_create(
+        application=application, shift=shift, defaults={'status': default_status},
+    )
+
+
+def set_shift_decision(application: Application, shift, status: str, assigned_by: Optional[User] = None):
+    """Проставляет решение по (заявка, смена) — update_or_create со статусом и меткой
+    обработки. Возвращает (decision, created)."""
+    return ApplicationShiftDecision.objects.update_or_create(
+        application=application, shift=shift,
+        defaults={'status': status, 'assigned_at': timezone.now(), 'assigned_by': assigned_by},
+    )
+
+
+def find_matching_user(telegram_username=None, phone=None, first_name=None, last_name=None) -> Optional[User]:
+    """Матчинг заявки с профилем (db.md, правило 5): telegram_username → phone → ФИО.
+    Возвращает найденного пользователя или None. Приоритет по порядку аргументов."""
+    if telegram_username:
+        user = User.objects.filter(telegram_username__iexact=telegram_username.lstrip('@')).first()
+        if user:
+            return user
+    if phone:
+        user = User.objects.filter(phone=phone).first()
+        if user:
+            return user
+    if first_name and last_name:
+        user = User.objects.filter(first_name__iexact=first_name, last_name__iexact=last_name).first()
+        if user:
+            return user
+    return None
+
+
 # --- PARTICIPATIONS (явка) ---
+def get_or_create_participation(user: User, event_day: EventShift, defaults: Optional[dict] = None):
+    """get_or_create участия (user, смена). `defaults` — начальные поля при создании
+    (status/hours/full_shift). Возвращает (participation, created)."""
+    return Participation.objects.get_or_create(
+        user=user, event_day=event_day, defaults=defaults or {},
+    )
+
+
+def delete_participations(user: User, event_days) -> int:
+    """Удаляет участия пользователя по одной смене или списку смен. Возвращает число
+    удалённых. `event_days` — EventShift или итерируемое смен."""
+    from collections.abc import Iterable
+    qs = Participation.objects.filter(user=user)
+    if isinstance(event_days, Iterable) and not hasattr(event_days, 'pk'):
+        qs = qs.filter(event_day__in=list(event_days))
+    else:
+        qs = qs.filter(event_day=event_days)
+    deleted, _ = qs.delete()
+    return deleted
+
+
 def create_participation(
     user: User,
     event_day: EventShift,

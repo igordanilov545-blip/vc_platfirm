@@ -25,6 +25,7 @@ from ._base import get_full_table, create_record_generic, TABLE_MODEL_MAP  # noq
 from .users import (  # noqa: F401
     create_user, get_users,
     get_user_by_telegram_id, get_or_create_user_by_telegram_id, update_user_fields,
+    set_user_status, set_user_verification,
     sync_user_from_applications, find_candidate_user_by_telegram,
     create_manager, get_managers,
     create_team_leader, get_team_leaders,
@@ -60,7 +61,7 @@ from .requirements import (  # noqa: F401
     create_user_exception, get_user_exceptions,
 )
 from .reference import (  # noqa: F401
-    create_churn_history, get_churn_history,
+    create_churn_history, get_churn_history, create_churn_log, resolve_incidents,
     create_user_comment, get_user_comments,
     create_feedback, get_feedbacks, has_feedback,
     create_season, get_seasons,
@@ -70,12 +71,14 @@ from .querysets import (  # noqa: F401
     events_qs, event_shifts_qs, participations_qs, applications_qs,
     event_staff_qs, users_qs, users_ranked_qs, feedbacks_qs, managers_qs, team_leaders_qs,
     dobro_ru_shared_links_qs, get_current_season,
+    locations_qs, organizations_qs, organizers_qs, event_categories_qs, requirements_qs,
 )
 
 # Публичный контракт слоя — тот же, что был у монолитного data_controller.py.
 __all__ = [
     'create_user', 'get_users',
     'get_user_by_telegram_id', 'get_or_create_user_by_telegram_id', 'update_user_fields',
+    'set_user_status', 'set_user_verification',
     'sync_user_from_applications', 'find_candidate_user_by_telegram',
     'create_manager', 'get_managers',
     'create_team_leader', 'get_team_leaders',
@@ -97,7 +100,7 @@ __all__ = [
     'create_participation', 'get_participations', 'update_participation_status',
     'mark_dobro_ru_logged',
     'get_participations_pending_feedback', 'mark_feedback_requested',
-    'create_churn_history', 'get_churn_history',
+    'create_churn_history', 'get_churn_history', 'create_churn_log', 'resolve_incidents',
     'create_user_comment', 'get_user_comments',
     'create_feedback', 'get_feedbacks', 'has_feedback',
     'create_requirement', 'get_requirements',
@@ -109,5 +112,6 @@ __all__ = [
     'events_qs', 'event_shifts_qs', 'participations_qs', 'applications_qs',
     'event_staff_qs', 'users_qs', 'users_ranked_qs', 'feedbacks_qs', 'managers_qs', 'team_leaders_qs',
     'dobro_ru_shared_links_qs', 'get_current_season', 'get_event_by_id',
+    'locations_qs', 'organizations_qs', 'organizers_qs', 'event_categories_qs', 'requirements_qs',
     'get_full_table', 'create_record_generic',
 ]

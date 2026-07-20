@@ -66,13 +66,23 @@ import get_user...` — эти имена должны продолжать ра
 - [ ] `MEMORY`-пометка `.md` внутри пакета: что где лежит.
 - [ ] `python manage.py check` зелёный.
 
-## Фаза 2 — Перенос прямого ORM из `views.py` в контроллер  ⬜
+## Фаза 2 — Перенос прямого ORM из `views.py` в контроллер  🔄
 
-- [ ] Пройти 79 `.objects.` во вьюхах; каждое чтение/запись → функция контроллера
-  (существующая или новая тонкая). Убрать `from blog.models import ...` из вьюх, где
-  осталась только модель ради ORM (оставить там, где нужен тип/enum).
+- [x] Справочные list-вьюхи (locations/organizations/organizers/categories/
+  requirements) → новые `*_qs()`-аксессоры контроллера + сортировка во вьюхе.
+- [x] `settings_view` панели constants/seasons → `dc.get_all_consts()`/`dc.get_seasons()`.
+- [x] `organization_detail`/`organizer_detail` перекрёстные списки → `*_qs()`.
+- [ ] Крупные вьюхи: dashboard-область, event_list, event_detail, application_*,
+  profile_detail, user_list (annotate/OuterRef → `*_qs()` + композиция во вьюхе),
+  report-области, analytics.
+
+**Решение по `get_object_or_404(Model.objects…, pk=…)`** (≈5 мест): оставляем как
+есть — это стандартная веб-идиома «получить-или-404», а контроллер не должен знать
+про HTTP-404. Перенос «геттер по id в контроллере + 404 во вьюхе» раздул бы контроллер
+геттерами-однодневками без выгоды. Прагматика (выбор пользователя: «инфра сначала»).
+
 - [ ] Ручные `request.POST.getlist(...)` разборы (manual-волонтёры, PGAS event_ids) —
-  через формы/виджеты (см. audit-reuse #4/#5), а не сырьём во вьюхе.
+  через формы/виджеты (см. audit-reuse #4/#5), а не сырьём во вьюхе. → Фаза 6.
 
 ## Фаза 3 — Декомпозиция `views.py`  ⬜
 
@@ -128,3 +138,12 @@ Django-роутинг остаётся в `blog/urls.py` (импорты пра�
 ## Журнал выполнения
 
 _(дописывается по мере работы: фаза → дата → коммит → что реально сделано)_
+
+- **Фаза 1 ✅ — 2026-07-20** (`2aca437`, смёржено в main `f5abc5e`).
+  `data_controller.py` (953 стр, 84 фн) → пакет `data_base/data_controller/`
+  (`users/orgs/events/applications/requirements/reference/querysets/_base` + `__init__`
+  фасад + README). Публичный контракт сохранён (реэкспорт всего `__all__`), вызывающий
+  код не менялся. `manage.py check` зелёный; импорт всех потребителей без ошибок; ни
+  один экспорт не потерян. Проверено, что `mark_feedback_requested` в `tg_bot/services`
+  не разошёлся — это тонкая async-обёртка над `dc.mark_feedback_requested` (её ORM-строка
+  `Participation.objects` — на Фазу 5, «бот не пишет ORM»).

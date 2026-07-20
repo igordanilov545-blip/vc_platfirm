@@ -18,16 +18,21 @@ def _const(name: str, default: float) -> float:
         return default
 
 
-def log_churn_change(user, reason, delta, *, actor=None, event=None, note=None):
+def log_churn_change(user, reason, delta, *, actor=None, event=None, note=None, force=False):
     """Записать изменение churn_score в журнал (ChurnLog). Вызывается ВСЕМИ точками,
     где меняется churn: неявка, списание за активность, сброс по сезону, блокировка/
     разблокировка. new_value берём из user.churn_score (уже пересчитанного). delta≈0
-    (незначимое списание за активность) не логируем, чтобы не засорять историю."""
-    if abs(delta) < 1e-9:
+    (незначимое списание за активность) не логируем, чтобы не засорять историю — КРОМЕ
+    случая `force=True`: событийные записи (блокировка менеджером) должны попасть в
+    журнал даже при delta=0, важен сам факт события, а не изменение числа.
+
+    Запись идёт через data_controller (единый слой доступа + аудит), а не прямым ORM."""
+    if abs(delta) < 1e-9 and not force:
         return
-    ChurnLog.objects.create(
-        user=user, reason=reason, delta=delta,
-        new_value=user.churn_score or 0, actor=actor, event=event, note=note,
+    from data_base import data_controller as dc
+    dc.create_churn_log(
+        user=user, reason=reason, delta=delta, new_value=user.churn_score or 0,
+        actor_user=actor, event=event, note=note,
     )
 
 

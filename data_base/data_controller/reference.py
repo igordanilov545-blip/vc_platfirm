@@ -1,15 +1,47 @@
 """Доступ к данным: справочные и вспомогательные сущности —
-фидбек мероприятий, комментарии к пользователям, история чарна, сезоны, константы.
+фидбек мероприятий, комментарии к пользователям, история/журнал чарна, инциденты,
+сезоны, константы.
 """
 from typing import Optional, List
 
+from django.utils import timezone
+
 from blog.models import (
-    ChurnHistory, UserComment, EventFeedback, Season, Const, Event, User,
+    ChurnHistory, ChurnLog, UserComment, EventFeedback, Season, Const, Event, User,
+    Incident,
 )
+from ._base import logger, actor
 
 
 def create_churn_history(user: User, season: Season, churn_score: float) -> ChurnHistory:
     return ChurnHistory.objects.create(user=user, season=season, churn_score=churn_score)
+
+
+def create_churn_log(
+    user: User, reason: str, delta: float, new_value: float,
+    actor_user: Optional[User] = None, event: Optional[Event] = None, note: Optional[str] = None,
+) -> ChurnLog:
+    """Записывает событие изменения churn в журнал (ChurnLog). Тонкая обёртка — фильтр
+    «незначимую delta не логируем» остаётся в сервисе (stats.log_churn_change), т.к. это
+    бизнес-правило, а не доступ к данным."""
+    entry = ChurnLog.objects.create(
+        user=user, reason=reason, delta=delta, new_value=new_value,
+        actor=actor_user, event=event, note=note,
+    )
+    logger.info('INSERT churn_log: user=%s reason=%s delta=%s by=%s', user.id, reason, delta, actor(actor_user))
+    return entry
+
+
+def resolve_incidents(kind: str, related_user: User, resolved_by: Optional[User] = None) -> int:
+    """Помечает открытые инциденты данного вида по пользователю решёнными. Возвращает
+    число затронутых. Используется, напр., при подтверждении верификации ПГАС."""
+    updated = Incident.objects.filter(
+        kind=kind, related_user=related_user, resolved_at__isnull=True,
+    ).update(resolved_at=timezone.now(), resolved_by=resolved_by)
+    if updated:
+        logger.info('UPDATE incidents: kind=%s subject=user=%s resolved=%s by=%s',
+                    kind, related_user.id, updated, actor(resolved_by))
+    return updated
 
 
 def create_user_comment(target_user: User, author: Optional[User], text: str, event: Optional[Event] = None) -> UserComment:

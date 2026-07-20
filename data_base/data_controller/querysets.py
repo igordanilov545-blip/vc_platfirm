@@ -14,6 +14,7 @@ from django.utils import timezone
 from blog.models import (
     Event, EventShift, Participation, Application, EventStaff, User,
     EventFeedback, Manager, TeamLeader, Season, DobroRuSharedLink,
+    Location, Organization, Organizer, EventCategory, EventRequirement,
 )
 
 
@@ -66,6 +67,28 @@ def team_leaders_qs():
 
 def dobro_ru_shared_links_qs():
     return DobroRuSharedLink.objects.all()
+
+
+# --- Справочники (list-вьюхи хаба настроек берут ленивый qs и сами сортируют/
+#     навешивают select_related — тот же паттерн, что и для отчётов) ---
+def locations_qs():
+    return Location.objects.all()
+
+
+def organizations_qs():
+    return Organization.objects.all()
+
+
+def organizers_qs():
+    return Organizer.objects.all()
+
+
+def event_categories_qs():
+    return EventCategory.objects.all()
+
+
+def requirements_qs():
+    return EventRequirement.objects.all()
 
 
 def get_current_season():

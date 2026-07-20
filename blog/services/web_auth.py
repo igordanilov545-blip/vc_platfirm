@@ -10,7 +10,8 @@ import datetime
 
 from django.utils import timezone
 
-from blog.models import TelegramAuthToken, User
+from data_base import data_controller as dc
+from blog.models import TelegramAuthToken, User  # только для аннотаций типов
 from blog.logging_utils import get_web_logger
 
 logger = get_web_logger(__name__)
@@ -23,18 +24,14 @@ def issue_auth_token(user: User) -> TelegramAuthToken:
     """Создаёт одноразовый токен входа для пользователя (вызывается ботом при
     deep-link `?start=weblogin`). Старые неиспользованные токены того же
     пользователя гасим, чтобы жила только последняя ссылка."""
-    TelegramAuthToken.objects.filter(user=user, used_at__isnull=True).update(
-        used_at=timezone.now()
-    )
-    return TelegramAuthToken.objects.create(
-        user=user, expires_at=timezone.now() + AUTH_TOKEN_TTL
-    )
+    dc.invalidate_user_auth_tokens(user)
+    return dc.create_auth_token(user, expires_at=timezone.now() + AUTH_TOKEN_TTL)
 
 
 def consume_auth_token(token: str):
     """Возвращает пользователя по валидному одноразовому токену и помечает токен
     использованным, либо None, если токен неизвестен/просрочен/уже использован."""
-    obj = TelegramAuthToken.objects.filter(token=token).select_related('user').first()
+    obj = dc.get_auth_token(token)
     if obj is None or not obj.is_valid():
         logger.warning('Попытка входа по недействительной/просроченной ссылке из бота.')
         return None

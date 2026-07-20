@@ -21,7 +21,7 @@ import openpyxl
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
-from blog.models import Event
+from data_base import data_controller as dc
 from blog.services.applications import ensure_shift_decisions, find_matching_user
 
 COLUMN_MAP = {
@@ -121,7 +121,7 @@ def parse_excel(file, fixed_event=None) -> dict:
             if event_title and event_title.lower() != fixed_event.title.strip().lower():
                 mismatched_titles.add(event_title)
         else:
-            event = Event.objects.filter(title__iexact=event_title).first()
+            event = dc.events_qs().filter(title__iexact=event_title).first()
 
         event_start = _to_date(get('event_start_date')) or today
         event_end = _to_date(get('event_end_date')) or event_start
@@ -174,14 +174,14 @@ def refresh_missing_events(rows: list) -> list:
     for row in rows:
         if not row.get('event_missing'):
             continue
-        event = Event.objects.filter(title__iexact=row['event_title']).first()
+        event = dc.events_qs().filter(title__iexact=row['event_title']).first()
         if event:
             row['event_id'] = event.id
             row['event_missing'] = False
     return rows
 
 
-def _get_or_create_event(row: dict, events_cache: dict) -> Event:
+def _get_or_create_event(row: dict, events_cache: dict):
     """Возвращает мероприятие для строки импорта. Мероприятия из строк с
     `event_missing=True` больше НЕ создаются автоматически (bot-update.md-подобный
     флоу для веба) — менеджер обязан создать их явно через форму создания меро
@@ -189,13 +189,13 @@ def _get_or_create_event(row: dict, events_cache: dict) -> Event:
     меро всё ещё не существует — это ошибка вызывающего кода (сюда попадать не должно,
     import_commit проверяет это заранее)."""
     if row.get('event_id'):
-        return Event.objects.get(pk=row['event_id'])
+        return dc.get_event_by_id(row['event_id'])
 
     title = row['event_title']
     if title in events_cache:
         return events_cache[title]
 
-    event = Event.objects.filter(title__iexact=title).first()
+    event = dc.events_qs().filter(title__iexact=title).first()
     if event is None:
         raise ValueError(f'Мероприятие «{title}» не найдено — сначала создайте его.')
 
@@ -278,7 +278,6 @@ def commit_import(rows: list) -> dict:
 
     Возвращает {'created': N, 'updated': M, 'skipped': K} — K это заявки без изменений.
     """
-    from blog.models import Application, ApplicationChangeLog, User
 
     events_cache = {}
     new_users_cache = {}
@@ -296,7 +295,7 @@ def commit_import(rows: list) -> dict:
         if event.id not in existing_by_event:
             existing_by_event[event.id] = {
                 _application_person_key(a): a
-                for a in Application.objects.filter(event=event).exclude(status='cancelled')
+                for a in dc.applications_qs().filter(event=event).exclude(status='cancelled')
             }
 
         person_key = _row_person_key(row)
@@ -310,13 +309,13 @@ def commit_import(rows: list) -> dict:
             # блокировать завершение мероприятия (чеклист no_approved_without_user).
             user = None
             if row.get('matched_user_id'):
-                user = User.objects.filter(id=row['matched_user_id']).first()
+                user = dc.users_qs().filter(id=row['matched_user_id']).first()
             if user is None:
                 match_key = _user_match_key(row)
                 user = new_users_cache.get(match_key) if match_key else None
                 if user is None:
                     telegram_id = f"import:{uuid.uuid4()}"
-                    user = User.objects.create_user(
+                    user = dc.create_user(
                         telegram_id=telegram_id,
                         telegram_username=row.get('telegram_username'),
                         first_name=row.get('first_name'),
@@ -334,7 +333,7 @@ def commit_import(rows: list) -> dict:
             from blog.services.requirements import check_application_requirements
             req_check = check_application_requirements(event, user)
 
-            application = Application.objects.create(
+            application = dc.create_application(
                 event=event,
                 user=user,
                 first_name=row['first_name'],
@@ -360,9 +359,9 @@ def commit_import(rows: list) -> dict:
             # Массовый импорт намеренно не шлёт уведомление тим-лидеру на КАЖДУЮ новую
             # заявку (иначе сотни строк — сотни сообщений); auto_reject_reason всё равно
             # сохраняется на заявке и виден менеджеру на странице меро.
-            ApplicationChangeLog.objects.create(
-                event=event, application=application, kind='new',
-                text=f'{name} подал(а) новую заявку.'
+            dc.create_application_change_log(
+                event, application, 'new',
+                f'{name} подал(а) новую заявку.'
                 + (f' Автоматически в резерв: {application.auto_reject_reason}.' if application.auto_reject_reason else ''),
             )
             created += 1
@@ -387,9 +386,7 @@ def commit_import(rows: list) -> dict:
         existing.save(update_fields=update_fields)
         name = f'{existing.first_name} {existing.last_name or ""}'.strip()
         change_text = f'{name} изменил(а) заявку — ' + '; '.join(changes)
-        ApplicationChangeLog.objects.create(
-            event=event, application=existing, kind='changed', text=change_text,
-        )
+        dc.create_application_change_log(event, existing, 'changed', change_text)
         from blog.services.notifications import notify_application_changed
         notify_application_changed(existing, change_text)
         updated += 1

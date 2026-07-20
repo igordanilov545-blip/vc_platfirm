@@ -22,6 +22,15 @@
   - `_base`        — логгер, generic-функции (get_full_table / create_record_generic)
 """
 from ._base import get_full_table, create_record_generic, TABLE_MODEL_MAP  # noqa: F401
+from .auth_tokens import (  # noqa: F401
+    invalidate_user_auth_tokens, create_auth_token, get_auth_token,
+    invalidate_user_verify_tokens, create_verify_token, get_verify_token,
+    get_user_by_telegram_id_excluding, logout_user_web_sessions,
+)
+from .bot_queue import (  # noqa: F401
+    create_outbox, fetch_pending_outbox, mark_outbox_sent, get_outbox, save_outbox,
+    create_button_removal, fetch_due_button_removals, delete_button_removal,
+)
 from .users import (  # noqa: F401
     create_user, get_users,
     get_user_by_telegram_id, get_user_by_id, is_login_taken,
@@ -72,7 +81,7 @@ from .reference import (  # noqa: F401
     create_user_comment, get_user_comments,
     create_feedback, get_feedbacks, has_feedback,
     create_season, get_seasons,
-    get_const, get_all_consts,
+    get_const, get_all_consts, get_or_create_pgas_template,
 )
 from .querysets import (  # noqa: F401
     events_qs, event_shifts_qs, participations_qs, applications_qs, application_shift_decisions_qs,
@@ -81,6 +90,7 @@ from .querysets import (  # noqa: F401
     locations_qs, organizations_qs, organizers_qs, event_categories_qs, requirements_qs,
     seasons_qs, user_requirement_exceptions_qs, incidents_qs, churn_history_qs,
     application_change_logs_qs, user_comments_qs, organizer_interactions_qs,
+    web_sessions_qs, web_page_views_qs, button_click_events_qs, bot_session_pings_qs,
 )
 
 # Публичный контракт слоя — тот же, что был у монолитного data_controller.py.
@@ -123,7 +133,7 @@ __all__ = [
     'add_requirement_to_event', 'get_event_requirements_map',
     'create_user_exception', 'get_user_exceptions',
     'create_season', 'get_seasons',
-    'get_const', 'get_all_consts',
+    'get_const', 'get_all_consts', 'get_or_create_pgas_template',
     # Базовые queryset'ы для аналитики (отчёты) + скалярные срезы.
     'events_qs', 'event_shifts_qs', 'participations_qs', 'applications_qs', 'application_shift_decisions_qs',
     'event_staff_qs', 'users_qs', 'users_ranked_qs', 'feedbacks_qs', 'managers_qs', 'team_leaders_qs',
@@ -131,5 +141,11 @@ __all__ = [
     'locations_qs', 'organizations_qs', 'organizers_qs', 'event_categories_qs', 'requirements_qs',
     'seasons_qs', 'user_requirement_exceptions_qs', 'incidents_qs', 'churn_history_qs',
     'application_change_logs_qs', 'user_comments_qs', 'organizer_interactions_qs',
+    'web_sessions_qs', 'web_page_views_qs', 'button_click_events_qs', 'bot_session_pings_qs',
     'get_full_table', 'create_record_generic',
+    'invalidate_user_auth_tokens', 'create_auth_token', 'get_auth_token',
+    'invalidate_user_verify_tokens', 'create_verify_token', 'get_verify_token',
+    'get_user_by_telegram_id_excluding', 'logout_user_web_sessions',
+    'create_outbox', 'fetch_pending_outbox', 'mark_outbox_sent', 'get_outbox', 'save_outbox',
+    'create_button_removal', 'fetch_due_button_removals', 'delete_button_removal',
 ]

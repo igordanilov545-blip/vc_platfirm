@@ -10,7 +10,7 @@ import math
 import pandas as pd
 from django.utils import timezone
 
-from blog.models import BotSessionPing, ButtonClickEvent, WebPageView, WebSession
+from data_base import data_controller as dc
 
 ROLE_LABELS = {
     'volunteer': 'Волонтёр',
@@ -93,7 +93,7 @@ def online_series_web(minutes=60):
     """Уникальные веб-сессии с heartbeat в каждом минутном бакете за последние `minutes`."""
     since = timezone.now() - pd.Timedelta(minutes=minutes)
     rows = list(
-        WebSession.objects.filter(last_seen_at__gte=since).values('session_key', 'last_seen_at')
+        dc.web_sessions_qs().filter(last_seen_at__gte=since).values('session_key', 'last_seen_at')
     )
     return _bucket_online(rows, 'last_seen_at', 'session_key', minutes)
 
@@ -102,7 +102,7 @@ def online_series_bot(minutes=60):
     """Уникальные пользователи с пингом в каждом минутном бакете за последние `minutes`."""
     since = timezone.now() - pd.Timedelta(minutes=minutes)
     rows = list(
-        BotSessionPing.objects.filter(created_at__gte=since).values('created_at', 'user_id')
+        dc.bot_session_pings_qs().filter(created_at__gte=since).values('created_at', 'user_id')
     )
     return _bucket_online(rows, 'created_at', 'user_id', minutes)
 
@@ -143,7 +143,7 @@ def click_distribution(source=None, role=None, date_from=None, date_to=None, lim
     BOT_ACTION_REGISTRY) — даже с нулём кликов, плюс любые незарегистрированные
     action_key, реально встретившиеся в данных (напр. новые кнопки, ещё не
     добавленные в реестр)."""
-    qs = ButtonClickEvent.objects.all()
+    qs = dc.button_click_events_qs().all()
     if source:
         qs = qs.filter(source=source)
     if role:
@@ -175,7 +175,7 @@ def click_distribution(source=None, role=None, date_from=None, date_to=None, lim
 
 def page_load_stats(date_from=None, date_to=None, limit=20):
     """Boxplot-статистика (min/q1/median/q3/max) времени ответа сервера по view_name."""
-    qs = WebPageView.objects.exclude(load_ms__isnull=True)
+    qs = dc.web_page_views_qs().exclude(load_ms__isnull=True)
     if date_from:
         qs = qs.filter(entered_at__gte=date_from)
     if date_to:
@@ -215,7 +215,7 @@ def page_duration_histogram(date_from=None, date_to=None):
               '1-2мин', '2-5мин', '5-10мин', '10-30мин', '>30мин']
     counts = [0] * len(labels)
 
-    qs = WebPageView.objects.exclude(duration_ms__isnull=True).filter(duration_ms__gt=0)
+    qs = dc.web_page_views_qs().exclude(duration_ms__isnull=True).filter(duration_ms__gt=0)
     if date_from:
         qs = qs.filter(entered_at__gte=date_from)
     if date_to:
@@ -232,7 +232,7 @@ def page_duration_histogram(date_from=None, date_to=None):
 
 def top_pages(date_from=None, date_to=None, limit=15):
     """Топ страниц (веб) по числу просмотров за период — «что смотрят чаще всего»."""
-    qs = WebPageView.objects.all()
+    qs = dc.web_page_views_qs().all()
     if date_from:
         qs = qs.filter(entered_at__gte=date_from)
     if date_to:
@@ -250,7 +250,7 @@ def top_bot_commands(date_from=None, date_to=None, limit=15):
     """Топ команд/кнопок бота по числу кликов за период — только реально встретившиеся
     (не полный реестр с нулями, как click_distribution: здесь именно топ, для читаемости),
     отсортировано по убыванию, подписи обрезаны до разумной длины."""
-    qs = ButtonClickEvent.objects.filter(source='bot')
+    qs = dc.button_click_events_qs().filter(source='bot')
     if date_from:
         qs = qs.filter(created_at__gte=date_from)
     if date_to:

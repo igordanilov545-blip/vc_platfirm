@@ -7,10 +7,9 @@
 blog/services/pgas_pdf.py (системные зависимости — только там)."""
 from django.utils import timezone
 
+from data_base import data_controller as dc
 from blog.logging_utils import get_web_logger
-from blog.models import (
-    Application, EventStaff, Participation, PgasCertificateTemplate, User,
-)
+from blog.models import User  # только для аннотаций типов
 from blog.services.roles import account_is_complete, account_missing_fields
 
 logger = get_web_logger(__name__)
@@ -121,7 +120,6 @@ def revoke_verification_if_changed(user: User, actor: User = None) -> bool:
     # локальные — избегаем циклов (incidents/notifications тянут модели/сервисы).
     from blog.services.incidents import create_incident
     from blog.services.notifications import notify_user
-    from blog.models import Manager
 
     create_incident(
         'pgas_verification',
@@ -129,8 +127,8 @@ def revoke_verification_if_changed(user: User, actor: User = None) -> bool:
         f'верификация для справки ПГАС.',
         related_user=user,
     )
-    manager_users = User.objects.filter(
-        id__in=Manager.objects.filter(revoked_at__isnull=True).values('user_id')
+    manager_users = dc.users_qs().filter(
+        id__in=dc.managers_qs().filter(revoked_at__isnull=True).values('user_id')
     )
     for manager in manager_users:
         notify_user(
@@ -164,7 +162,7 @@ def collect_events(user: User, date_from=None, date_to=None, event_ids=None) -> 
     Порядок — по первой дате мероприятия (ранние сверху), как в справке-образце.
     """
     qs = (
-        Participation.objects.filter(user=user, status='attended')
+        dc.participations_qs().filter(user=user, status='attended')
         .select_related('event_day', 'event_day__event')
     )
     if date_from and date_to:
@@ -174,14 +172,14 @@ def collect_events(user: User, date_from=None, date_to=None, event_ids=None) -> 
 
     # Роль волонтёра на меро (ТЛ?) — для «формата участия». По умолчанию «волонтёр».
     tl_event_ids = set(
-        EventStaff.objects.filter(user=user, staff_role='team_lead')
+        dc.event_staff_qs().filter(user=user, staff_role='team_lead')
         .values_list('event_id', flat=True)
     )
     # «Описание деятельности» и уточнение формата берём из заявки на это меро
     # (Application.role_in_event — заполняется при подаче/импорте).
     role_by_event = {
         a.event_id: (a.role_in_event or '').strip()
-        for a in Application.objects.filter(user=user).only('event_id', 'role_in_event')
+        for a in dc.applications_qs().filter(user=user).only('event_id', 'role_in_event')
         if (a.role_in_event or '').strip()
     }
 
@@ -268,13 +266,11 @@ EVENT_PLACEHOLDERS_HELP = [
 ]
 
 
-def get_template() -> PgasCertificateTemplate:
+def get_template():
     """Синглтон-шаблон (pk=1). При первом обращении (или если файл ещё не загружен)
     лениво заполняется дефолтным .docx из репозитория — чтобы менеджер сразу видел
     рабочий шаблон и мог его скачать/заменить, без data-миграции."""
-    template = PgasCertificateTemplate.objects.first()
-    if template is None:
-        template = PgasCertificateTemplate.objects.create()
+    template = dc.get_or_create_pgas_template()
     if not template.docx_file:
         with open(DEFAULT_TEMPLATE_PATH, 'rb') as f:
             template.docx_file = f.read()

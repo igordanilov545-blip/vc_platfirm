@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from blog.models import (
     ChurnHistory, ChurnLog, UserComment, EventFeedback, Season, Const, Event, User,
-    Incident,
+    Incident, PgasCertificateTemplate,
 )
 from ._base import logger, actor
 
@@ -120,3 +120,13 @@ def get_const(name: str, default: Optional[float] = None) -> float:
 
 def get_all_consts() -> List[Const]:
     return list(Const.objects.all().order_by('name'))
+
+
+def get_or_create_pgas_template() -> PgasCertificateTemplate:
+    """Синглтон-шаблон справки ПГАС (первый/создать). Ленивое заполнение дефолтным
+    .docx — в сервисе pgas_certificate.get_template (это доступ к данным, здесь только
+    get-or-create строки)."""
+    template = PgasCertificateTemplate.objects.first()
+    if template is None:
+        template = PgasCertificateTemplate.objects.create()
+    return template

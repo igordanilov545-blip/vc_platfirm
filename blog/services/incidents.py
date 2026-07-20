@@ -37,8 +37,9 @@ def sync_ongoing_event_incidents():
     актуальны раньше, но уже не подходят под условие (смена прошла)."""
     from blog.models import Event
 
+    from data_base import data_controller as dc
     now = timezone.now()
-    horizon = now + timedelta(hours=24)
+    horizon = now + timedelta(hours=dc.get_const('event_ongoing_horizon_hours', default=24))
     today = now.date()
     horizon_date = horizon.date()
 

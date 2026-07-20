@@ -94,7 +94,8 @@ def apply_churn_no_show(user, *, event=None, actor=None):
 def apply_churn_activity_decay(user, *, event=None):
     """Списание за активность: -churn_activity_base / e^(N меро за последний месяц + 1)."""
     base = _const('churn_activity_base', 3)
-    month_ago = timezone.now() - timedelta(days=30)
+    window_days = _const('churn_activity_window_days', 30)
+    month_ago = timezone.now() - timedelta(days=window_days)
     n = Participation.objects.filter(
         user=user, status='attended', created_at__gte=month_ago
     ).count()

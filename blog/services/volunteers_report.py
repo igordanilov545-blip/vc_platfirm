@@ -4,7 +4,7 @@
 """
 from django.db.models import Sum
 
-from blog.models import Application, Participation, User
+from data_base import data_controller as dc
 from blog.services.person_report import person_report
 from blog.services.stats import is_pgas_star
 
@@ -13,26 +13,23 @@ def volunteers_in_scope(date_from=None, date_to=None):
     """Волонтёры, у которых есть хотя бы одна заявка за охват (даже отклонённая) —
     выборка по умолчанию (reports_template.md)."""
     if date_from and date_to:
-        user_ids = Application.objects.filter(
+        user_ids = dc.applications_qs().filter(
             created_at__date__gte=date_from, created_at__date__lte=date_to, user__isnull=False,
         ).values_list('user_id', flat=True).distinct()
     else:
-        user_ids = Application.objects.filter(user__isnull=False).values_list('user_id', flat=True).distinct()
-    return User.objects.filter(id__in=user_ids).order_by('last_name', 'first_name')
+        user_ids = dc.applications_qs().filter(user__isnull=False).values_list('user_id', flat=True).distinct()
+    return dc.users_qs().filter(id__in=user_ids).order_by('last_name', 'first_name')
 
 
 def volunteers_report(date_from=None, date_to=None, user_ids=None) -> dict:
     scoped = bool(date_from and date_to)
 
     if user_ids:
-        users = User.objects.filter(id__in=user_ids).order_by('last_name', 'first_name')
+        users = dc.users_qs().filter(id__in=user_ids).order_by('last_name', 'first_name')
     else:
         users = volunteers_in_scope(date_from, date_to)
 
-    threshold = None
-    from blog.models import Const
-    const_row = Const.objects.filter(name='churn_blacklist_threshold').first()
-    threshold = const_row.value if const_row else 5
+    threshold = dc.get_const('churn_blacklist_threshold', default=5)
 
     cards = [person_report(u.id, date_from, date_to) for u in users]
 
@@ -59,7 +56,7 @@ def volunteers_report(date_from=None, date_to=None, user_ids=None) -> dict:
             at_risk_count += 1
 
     if date_from and date_to:
-        new_count = User.objects.filter(
+        new_count = dc.users_qs().filter(
             id__in=[c['user'].id for c in cards],
             created_at__date__gte=date_from, created_at__date__lte=date_to,
         ).count()

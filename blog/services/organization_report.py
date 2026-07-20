@@ -4,16 +4,14 @@
 """
 from django.db.models import Avg, Count, Sum
 
-from blog.models import (
-    Event, EventCategory, Organization, OrganizerInteractionLog, Participation,
-)
+from data_base import data_controller as dc
 
 
 def organization_report(organization_id: int, date_from=None, date_to=None) -> dict:
-    org = Organization.objects.get(pk=organization_id)
+    org = dc.get_organization_by_id(organization_id)
     scoped = bool(date_from and date_to)
 
-    events_qs = Event.objects.filter(organization=org).prefetch_related(
+    events_qs = dc.events_qs().filter(organization=org).prefetch_related(
         'shifts', 'category_map__category', 'feedbacks',
     )
     if scoped:
@@ -32,7 +30,7 @@ def organization_report(organization_id: int, date_from=None, date_to=None) -> d
     for event in events_qs.order_by('-created_at'):
         shifts = list(event.shifts.all())
         days = [s.day for s in shifts]
-        attended = Participation.objects.filter(event_day__event=event, status='attended')
+        attended = dc.participations_qs().filter(event_day__event=event, status='attended')
         attended_ids = set(attended.values_list('user_id', flat=True))
         hours = attended.aggregate(s=Sum('hours'))['s'] or 0
         rating = event.feedbacks.aggregate(a=Avg('rating'))['a']
@@ -59,7 +57,7 @@ def organization_report(organization_id: int, date_from=None, date_to=None) -> d
 
     contacts = list(org.organizer_links.select_related('organizer').all())
     interactions = list(
-        OrganizerInteractionLog.objects.filter(
+        dc.organizer_interactions_qs().filter(
             organizer__organization_links__organization=org,
         ).select_related('organizer', 'author').order_by('-created_at').distinct()
     )
@@ -85,4 +83,4 @@ def organization_report(organization_id: int, date_from=None, date_to=None) -> d
 
 def organizations_list_brief():
     """Для выпадающего списка выбора организации в карточке отчёта."""
-    return Organization.objects.order_by('name').values('id', 'name')
+    return dc.organizations_qs().order_by('name').values('id', 'name')

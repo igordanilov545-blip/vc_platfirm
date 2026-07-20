@@ -59,6 +59,10 @@ def get_organizations(name_filter: Optional[str] = None) -> List[Organization]:
     return list(qs)
 
 
+def get_organization_by_id(organization_id: int) -> Optional[Organization]:
+    return Organization.objects.filter(pk=organization_id).first()
+
+
 def get_organizers(name_filter: Optional[str] = None) -> List[Organizer]:
     qs = Organizer.objects.all()
     if name_filter:

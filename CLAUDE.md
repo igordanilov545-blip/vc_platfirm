@@ -1,0 +1,72 @@
+# Платформа Волонтёрского центра — инструкции для ИИ-агентов
+
+> Этот файл автоматически загружается в контекст каждой сессии. Он **короткий и
+> ссылочный**: держит только самое важное и указывает, где читать подробности. Перед
+> нетривиальной работой открой доки, на которые он ссылается.
+
+## Стек (без иллюзий)
+
+Монолитное **Django 5.2**, серверный рендеринг шаблонов. **DRF/JWT/Celery/Redis — нет.**
+Аутентификация — сессии Django + кастомная модель `User`. Бот — **aiogram 3.x**
+(отдельный процесс `manage.py run_bot`). Очередь уведомлений — таблица `bot_outbox` +
+polling в `tg_bot/notifier.py`. БД — SQLite (локально) / PostgreSQL (прод). Статика —
+WhiteNoise (`ManifestStaticFilesStorage` — **после добавления статики нужен
+`collectstatic`**, иначе тесты/прод падают с «Missing staticfiles manifest entry»).
+
+## Железные правила (нарушать нельзя)
+
+1. **Слоистость.** Вьюха/хендлер — тонкие: разобрать вход → вызвать сервис →
+   отрендерить. Бизнес-логика и ACL — только в `blog/services/*` (веб) и
+   `tg_bot/services/*` (бот). Никаких пересчётов/ветвлений прав в шаблонах и вьюхах.
+2. **Доступ к данным — через `data_base/data_controller`** (пакет). Не пиши
+   `Model.objects...` в новом коде вьюх/сервисов/бота. Исключения (осознанные, см.
+   план): `get_object_or_404(...)`, веб-регистрация, техническая аналитика
+   (`WebSession`/`ButtonClickEvent`/`SystemDowntime`), инфра очередей бота
+   (`BotOutbox`/`PendingButtonRemoval`/Django-`Session`). Изменяющие функции
+   контроллера логируют в `vc.db`.
+3. **UI переиспользуется, не клонируется.** Таблицы, календари, модалки, выбор «n из m»
+   (chip-select / user-picker) — готовые компоненты. Новый инлайновый `<script>` с
+   поведением в шаблоне страницы — запрещён; поведение живёт в `static/blog/js/*` и
+   навешивается по `data-*`. Множественный выбор — только chip-select или user-picker.
+4. **Доменные инварианты** (легко ошибиться, тихие последствия): набор живёт на **смене**
+   (`EventShift`), не на меро; решение по заявке — **на каждую смену**
+   (`ApplicationShiftDecision`), `Application.status` — производный; `finished` у меро —
+   единственное ручное состояние; пороги/коэффициенты — в таблице `Const`, не хардкод.
+   Тронул источник агрегата (`total_hours`, `churn_score`…) — вызови пересчёт
+   (`stats.recalc_user_aggregates`) в той же операции.
+
+Подробности — [coding-principles.md](documentation/coding-principles.md) (конституция) и
+[agent-workflow.md](documentation/agent-workflow.md) (как работать/коммитить). При
+LLM-задачах (Claude/Anthropic API) — сверяйся со skill `claude-api`, не по памяти.
+
+## Где что лежит (карта — у каждого пакета свой README-путеводитель)
+
+| Работаешь с… | Смотри |
+|---|---|
+| **Доступом к данным** (CRUD, геттеры, аналитич. queryset'ы) | [`data_base/data_controller/`](data_base/data_controller/README.md) |
+| **Веб-вьюхами** (по доменам: events/applications/profiles/reports/settings…) | [`blog/views/`](blog/views/README.md) |
+| **Формами** | [`blog/forms/`](blog/forms/README.md) |
+| **Сервисами бота** | [`tg_bot/services/`](tg_bot/services/README.md) |
+| **Клиентским JS** (ui/modal/forms/calendar/selects/tables) | [`blog/static/blog/js/`](blog/static/blog/js/README.md) |
+| **Бизнес-логикой/ACL веба** | `blog/services/*` (roles, applications, stats, reports, notifications, moderation, formatting) |
+| **Моделями / схемой БД** | `blog/models.py`, [db.md](documentation/db.md) |
+| **Правами (ACL)** | `blog/services/roles.py`, [access-control.md](documentation/access-control.md) |
+| **Логированием** | [logging.md](documentation/logging.md) (каналы `vc.web`/`vc.bot`/`vc.db`) |
+| **Форматом дат** | `blog/services/formatting.py` (`fmt_date`/`fmt_dt`) — не заводи новую копию |
+
+> Каждый из пакетов выше — бывший монолит, распиленный по доменам, с **фасадом**
+> (`__init__.py` реэкспортит публичные имена) — импорты снаружи не менялись. Прежде чем
+> писать функцию, **загляни в README нужного пакета: скорее всего она уже есть**.
+> История/обоснование чистки — [refactor-plan.md](documentation/refactor-plan.md).
+
+## Рабочий цикл (кратко; полностью — agent-workflow.md)
+
+1. Ветка `agent/<модель>/<задача>` от свежего `main`.
+2. Пиши код по правилам выше; **переиспользуй**, не дублируй.
+3. **Тесты обязательны** для нетривиального: `python manage.py test blog.tests`
+   (сетка безопасности — контроллер, вьюхи, потоки, модерация, бот, форматтеры).
+   Меняешь поведение — сперва тест, фиксирующий текущее, потом правка.
+4. Добавил статику — `python manage.py collectstatic --noinput`.
+5. `python manage.py check`; где есть UI/поведение — прогони вживую (`/run`).
+6. Коммить **только свои файлы поимённо**, сообщение по-русски `<область>: <что>`.
+   Обнови доку, если менял правило/структуру.

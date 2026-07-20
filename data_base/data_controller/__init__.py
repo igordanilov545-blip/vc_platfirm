@@ -65,6 +65,7 @@ from .requirements import (  # noqa: F401
 )
 from .reference import (  # noqa: F401
     create_churn_history, get_churn_history, create_churn_log, resolve_incidents,
+    create_incident, resolve_incident_by_id,
     create_user_comment, get_user_comments,
     create_feedback, get_feedbacks, has_feedback,
     create_season, get_seasons,
@@ -75,7 +76,8 @@ from .querysets import (  # noqa: F401
     event_staff_qs, users_qs, users_ranked_qs, feedbacks_qs, managers_qs, team_leaders_qs,
     dobro_ru_shared_links_qs, get_current_season,
     locations_qs, organizations_qs, organizers_qs, event_categories_qs, requirements_qs,
-    seasons_qs,
+    seasons_qs, user_requirement_exceptions_qs, incidents_qs, churn_history_qs,
+    application_change_logs_qs, user_comments_qs, organizer_interactions_qs,
 )
 
 # Публичный контракт слоя — тот же, что был у монолитного data_controller.py.
@@ -108,6 +110,7 @@ __all__ = [
     'mark_dobro_ru_logged',
     'get_participations_pending_feedback', 'mark_feedback_requested',
     'create_churn_history', 'get_churn_history', 'create_churn_log', 'resolve_incidents',
+    'create_incident', 'resolve_incident_by_id',
     'create_user_comment', 'get_user_comments',
     'create_feedback', 'get_feedbacks', 'has_feedback',
     'create_requirement', 'get_requirements',
@@ -120,6 +123,7 @@ __all__ = [
     'event_staff_qs', 'users_qs', 'users_ranked_qs', 'feedbacks_qs', 'managers_qs', 'team_leaders_qs',
     'dobro_ru_shared_links_qs', 'get_current_season', 'get_event_by_id',
     'locations_qs', 'organizations_qs', 'organizers_qs', 'event_categories_qs', 'requirements_qs',
-    'seasons_qs',
+    'seasons_qs', 'user_requirement_exceptions_qs', 'incidents_qs', 'churn_history_qs',
+    'application_change_logs_qs', 'user_comments_qs', 'organizer_interactions_qs',
     'get_full_table', 'create_record_generic',
 ]

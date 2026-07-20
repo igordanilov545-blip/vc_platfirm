@@ -3,7 +3,7 @@
 Используется в отчёте по мероприятию и переиспользуется в комплексном отчёте
 (часть 2 — мероприятия периода подряд).
 """
-from blog.models import Application, Participation
+from data_base import data_controller as dc
 
 
 STATUS_COLOR = {
@@ -28,7 +28,7 @@ def event_timeline_data(event) -> dict:
         milestones.append((_stamp('Рассылка', event.broadcast_sent_at), _hours_since(zero, event.broadcast_sent_at), '#d4a017'))
 
     for shift in event.shifts.all().order_by('day'):
-        attended_count = Participation.objects.filter(event_day=shift, status='attended').count()
+        attended_count = dc.participations_qs().filter(event_day=shift, status='attended').count()
         needed = shift.volunteer_needed or 0
         label = f'День {shift.day.strftime("%d.%m.%Y")} {_time_range(shift)} (было {attended_count}/{needed})'
         milestones.append((label, _hours_since(zero, shift.start_time), '#2f9e6b'))
@@ -40,14 +40,14 @@ def event_timeline_data(event) -> dict:
             milestones.append((_stamp('Закрытие на платформе', last_shift.end_time), _hours_since(zero, last_shift.end_time), '#1d6b47'))
 
     dobro_logged_at = (
-        Participation.objects.filter(event_day__event=event, dobro_ru_logged=True, dobro_ru_logged_at__isnull=False)
+        dc.participations_qs().filter(event_day__event=event, dobro_ru_logged=True, dobro_ru_logged_at__isnull=False)
         .order_by('dobro_ru_logged_at').values_list('dobro_ru_logged_at', flat=True).first()
     )
     if dobro_logged_at:
         milestones.append((_stamp('Часы на Добро.ру', dobro_logged_at), _hours_since(zero, dobro_logged_at), '#8e5bd6'))
 
     applications_points = []
-    for app in Application.objects.filter(event=event):
+    for app in dc.applications_qs().filter(event=event):
         moment = app.submitted_at or app.created_at
         if not moment:
             continue

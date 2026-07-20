@@ -44,6 +44,26 @@ def resolve_incidents(kind: str, related_user: User, resolved_by: Optional[User]
     return updated
 
 
+def create_incident(kind: str, text: str, related_user: Optional[User] = None, related_event=None) -> Incident:
+    """Создаёт инцидент для раздела «Главное» менеджера (коллизия TG, меро идёт, запрос
+    верификации). Идемпотентность (один инцидент на объект) — в сервисе incidents.py."""
+    entry = Incident.objects.create(
+        kind=kind, text=text, related_user=related_user, related_event=related_event,
+    )
+    logger.info('INSERT incidents: incident=%s kind=%s', entry.id, kind)
+    return entry
+
+
+def resolve_incident_by_id(incident_id: int, resolved_by: Optional[User] = None) -> bool:
+    """Помечает инцидент решённым по id (если ещё открыт). Возвращает True, если обновил."""
+    updated = Incident.objects.filter(pk=incident_id, resolved_at__isnull=True).update(
+        resolved_at=timezone.now(), resolved_by=resolved_by,
+    )
+    if updated:
+        logger.info('UPDATE incidents: incident=%s resolved by=%s', incident_id, actor(resolved_by))
+    return bool(updated)
+
+
 def create_user_comment(target_user: User, author: Optional[User], text: str, event: Optional[Event] = None) -> UserComment:
     return UserComment.objects.create(target_user=target_user, author=author, event=event, text=text)
 

@@ -56,11 +56,11 @@ class ChurnActivityWindowConstTests(TestCase):
 
 class EventOngoingHorizonConstTests(TestCase):
     def test_horizon_from_const_controls_incident_creation(self):
-        # меро со сменой через ~40 часов
-        event = f.make_event(title='Через 40ч')
-        f.make_shift(event, days_from_now=1)  # ~24-48ч
+        # меро со сменой через 3 дня (стабильно вне узкого горизонта, но в широком)
+        event = f.make_event(title='Через 3 дня')
+        f.make_shift(event, days_from_now=3)
 
-        # узкий горизонт 1ч — меро НЕ попадает в инциденты
+        # узкий горизонт 1ч — меро НЕ попадает в инциденты (день смены далеко за горизонтом)
         f.make_const('event_ongoing_horizon_hours', 1)
         sync_ongoing_event_incidents()
         self.assertFalse(

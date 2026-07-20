@@ -25,8 +25,7 @@ def get_or_create_user(telegram_id: int, telegram_username: str = None,
 
 def get_user(user_id: int):
     close_old_connections()
-    from blog.models import User
-    return User.objects.get(pk=user_id)
+    return dc.get_user_by_id(user_id)
 
 def is_guest(user) -> bool:
     return user.registration_status != 'registered'
@@ -104,10 +103,8 @@ def confirm_recognized_account(guest_user_id: int, candidate_user_id: int, teleg
     кандидата; иначе (уже что-то успел сделать под этим id) — коллизию не разруливаем
     автоматически, только логируем для менеджера (bot-update.md §3 — без миграции)."""
     close_old_connections()
-    from blog.models import User
-
-    candidate = User.objects.filter(pk=candidate_user_id).first()
-    guest = User.objects.filter(pk=guest_user_id).first()
+    candidate = dc.get_user_by_id(candidate_user_id)
+    guest = dc.get_user_by_id(guest_user_id)
     if not candidate or not guest:
         return None, 'not_found'
     if candidate.id == guest.id:
@@ -156,11 +153,10 @@ LOGIN_RE = re.compile(r'^[a-zA-Z0-9_.-]{3,50}$')
 def validate_login(login: str, user_id: int):
     """None, если логин свободен и валиден; иначе — текст ошибки."""
     close_old_connections()
-    from blog.models import User
     login = login.strip()
     if not LOGIN_RE.match(login):
         return 'Логин: 3–50 символов, латиница, цифры, точки, дефисы и подчёркивания.'
-    if User.objects.filter(login__iexact=login).exclude(pk=user_id).exists():
+    if dc.is_login_taken(login, exclude_user_id=user_id):
         return 'Этот логин уже занят, попробуйте другой.'
     return None
 

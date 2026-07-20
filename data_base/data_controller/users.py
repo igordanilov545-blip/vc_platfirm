@@ -47,6 +47,19 @@ def get_user_by_telegram_id(telegram_id: str) -> Optional[User]:
     return User.objects.filter(telegram_id=str(telegram_id)).first()
 
 
+def get_user_by_id(user_id: int) -> Optional[User]:
+    """Пользователь по первичному ключу или None (мягкий вариант для сервисов бота)."""
+    return User.objects.filter(pk=user_id).first()
+
+
+def is_login_taken(login: str, exclude_user_id: Optional[int] = None) -> bool:
+    """Занят ли веб-логин (регистронезависимо) кем-то, кроме указанного пользователя."""
+    qs = User.objects.filter(login__iexact=login)
+    if exclude_user_id is not None:
+        qs = qs.exclude(pk=exclude_user_id)
+    return qs.exists()
+
+
 def get_or_create_user_by_telegram_id(
     telegram_id: str,
     telegram_username: Optional[str] = None,

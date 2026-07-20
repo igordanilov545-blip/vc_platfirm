@@ -24,7 +24,8 @@
 from ._base import get_full_table, create_record_generic, TABLE_MODEL_MAP  # noqa: F401
 from .users import (  # noqa: F401
     create_user, get_users,
-    get_user_by_telegram_id, get_or_create_user_by_telegram_id, update_user_fields,
+    get_user_by_telegram_id, get_user_by_id, is_login_taken,
+    get_or_create_user_by_telegram_id, update_user_fields,
     set_user_status, set_user_verification,
     sync_user_from_applications, find_candidate_user_by_telegram,
     create_manager, get_managers,
@@ -51,6 +52,8 @@ from .applications import (  # noqa: F401
     create_application, set_application_shifts, get_applications, get_user_active_applications,
     count_applications, count_events_with_open_recruitment,
     get_user_application_for_event, update_application_status,
+    get_application_by_id, get_own_application, get_shift_by_id, get_shifts_by_ids,
+    get_participation_by_id, create_application_change_log,
     create_participation, get_participations, update_participation_status,
     mark_dobro_ru_logged,
     get_participations_pending_feedback, mark_feedback_requested,
@@ -78,7 +81,8 @@ from .querysets import (  # noqa: F401
 # Публичный контракт слоя — тот же, что был у монолитного data_controller.py.
 __all__ = [
     'create_user', 'get_users',
-    'get_user_by_telegram_id', 'get_or_create_user_by_telegram_id', 'update_user_fields',
+    'get_user_by_telegram_id', 'get_user_by_id', 'is_login_taken',
+    'get_or_create_user_by_telegram_id', 'update_user_fields',
     'set_user_status', 'set_user_verification',
     'sync_user_from_applications', 'find_candidate_user_by_telegram',
     'create_manager', 'get_managers',
@@ -98,6 +102,8 @@ __all__ = [
     'create_application', 'set_application_shifts', 'get_applications', 'get_user_active_applications',
     'count_applications', 'count_events_with_open_recruitment',
     'get_user_application_for_event', 'update_application_status',
+    'get_application_by_id', 'get_own_application', 'get_shift_by_id', 'get_shifts_by_ids',
+    'get_participation_by_id', 'create_application_change_log',
     'create_participation', 'get_participations', 'update_participation_status',
     'mark_dobro_ru_logged',
     'get_participations_pending_feedback', 'mark_feedback_requested',

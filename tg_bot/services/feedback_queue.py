@@ -16,7 +16,6 @@ def pending_feedback_requests(delay_hours: float = 3.0) -> list:
 
 def mark_feedback_requested(participation_id: int):
     close_old_connections()
-    from blog.models import Participation
-    participation = Participation.objects.filter(pk=participation_id).first()
+    participation = dc.get_participation_by_id(participation_id)
     if participation:
         dc.mark_feedback_requested(participation)

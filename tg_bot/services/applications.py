@@ -7,6 +7,7 @@
 данным — через data_controller (dc). Общие импорты — из ._common.
 """
 from ._common import *  # noqa: F401,F403
+from .users import get_user, is_guest
 
 
 def apply_to_event(user_id: int, event_id: int, shift_ids: list = None):
@@ -98,10 +99,7 @@ def get_own_application(user_id: int, application_id: int):
     хендлерах редактирования/отмены (tg-bot.md §4.3.2–4.3.3), чтобы не дать подделать
     callback_data и подействовать на чужую заявку."""
     close_old_connections()
-    from blog.models import Application
-    return Application.objects.select_related('event').filter(
-        pk=application_id, user_id=user_id
-    ).first()
+    return dc.get_own_application(user_id, application_id)
 
 def application_cancel_eligibility(user_id: int, application_id: int):
     """(можно_отменить, причина_отказа|None, late_cancel_hours) — обёртка над общим
@@ -135,13 +133,11 @@ def edit_own_application(user_id: int, application_id: int, shift_ids: list):
     запись в `ApplicationChangeLog` (как при повторном Excel-импорте), чтобы ТЛ увидел
     изменение на странице меро. Возвращает (новая_заявка|None, код_ошибки|None)."""
     close_old_connections()
-    from blog.models import EventShift, ApplicationChangeLog
-
     old = get_own_application(user_id, application_id)
     if not old or old.status not in ('new', 'approved'):
         return None, 'not_found'
     user = get_user(user_id)
-    shifts = list(EventShift.objects.filter(pk__in=shift_ids, event=old.event)) if shift_ids else []
+    shifts = dc.get_shifts_by_ids(shift_ids, event=old.event) if shift_ids else []
 
     from blog.services.requirements import check_application_requirements
     req_check = check_application_requirements(old.event, user)
@@ -164,7 +160,7 @@ def edit_own_application(user_id: int, application_id: int, shift_ids: list):
     notify_application_submitted(new_application, unknown_age=req_check['unknown_age'])
 
     name = f'{old.first_name} {old.last_name or ""}'.strip()
-    ApplicationChangeLog.objects.create(
+    dc.create_application_change_log(
         event=old.event, application=new_application, kind='changed',
         text=f'{name} изменил(а) смены заявки через бота.',
     )
@@ -194,9 +190,8 @@ def event_pending_applications(user_id: int, event_id: int):
 def process_application_decision(user_id: int, application_id: int, approve: bool):
     """Одобрить/резерв заявки (tg-bot.md §5.2). Права: ТЛ — свои меро, менеджер — все."""
     close_old_connections()
-    from blog.models import Application
     user = get_user(user_id)
-    application = Application.objects.select_related('event').filter(pk=application_id).first()
+    application = dc.get_application_by_id(application_id, with_event=True)
     if not application:
         return None, 'not_found'
     if not roles_service.can_process_applications(user, application.event_id):
@@ -213,16 +208,15 @@ def process_application_shift_decision(user_id: int, application_id: int, shift_
     Participation, ApplicationShiftDecision, пересчёт статистики, уведомление волонтёру —
     уже всё реализовано там, здесь только права и вызов)."""
     close_old_connections()
-    from blog.models import Application, EventShift
     from blog.services.applications import process_shift_decision
 
     user = get_user(user_id)
-    application = Application.objects.select_related('event').filter(pk=application_id).first()
+    application = dc.get_application_by_id(application_id, with_event=True)
     if not application:
         return None, 'not_found'
     if not roles_service.can_process_applications(user, application.event_id):
         return None, 'forbidden'
-    shift = EventShift.objects.filter(pk=shift_id, event_id=application.event_id).first()
+    shift = dc.get_shift_by_id(shift_id, event_id=application.event_id)
     if not shift:
         return None, 'not_found'
 
@@ -234,10 +228,7 @@ def application_shifts_for_decision(application_id: int):
     """Смены конкретной заявки (выбранные чипами, либо все смены меро) — для отрисовки
     кнопок по сменам на карточке заявки у ТЛ (bot-update.md §2.3.C)."""
     close_old_connections()
-    from blog.models import Application
-    application = Application.objects.select_related('event').prefetch_related(
-        'selected_shifts', 'event__shifts'
-    ).filter(pk=application_id).first()
+    application = dc.get_application_by_id(application_id, prefetch_shifts=True)
     if not application:
         return []
     return list(application.selected_shifts.all()) or list(application.event.shifts.all())

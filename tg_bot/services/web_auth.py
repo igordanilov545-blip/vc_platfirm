@@ -7,6 +7,7 @@
 данным — через data_controller (dc). Общие импорты — из ._common.
 """
 from ._common import *  # noqa: F401,F403
+from .users import get_user
 
 
 def issue_web_login_link(user_id: int) -> str:

@@ -3,10 +3,11 @@
 Доменные файлы начинают с `from ._common import *`. Здесь — то, что нужно многим:
 data_controller (dc), утилиты Django/времени, общие сервисы, логгер.
 
-⚠️ Часть функций бота исторически делает локальный `from blog.models import …` +
-`.objects` — это НАРУШЕНИЕ правила «бот ходит в БД только через контроллер»
-(coding-principles §1). Перенос этого ORM в контроллер — отдельная будущая фаза
-(см. documentation/refactor-plan.md); при распиле поведение сохранено 1:1.
+Бизнес-модели (User/Application/EventShift/Participation/Event/ApplicationChangeLog)
+идут через `dc` (data_controller). Прямой ORM оставлен ТОЛЬКО для инфраструктуры,
+специфичной боту и не относящейся к бизнес-данным ВЦ: очереди `BotOutbox`/
+`PendingButtonRemoval` (в `outbox.py`) и инвалидация Django-`Session` (в `users.py`) —
+аналогично тому, как техническая аналитика не идёт через бизнес-контроллер.
 """
 import re
 from datetime import timedelta

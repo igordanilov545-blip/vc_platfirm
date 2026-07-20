@@ -174,10 +174,20 @@ Django-роутинг остаётся в `blog/urls.py` (импорты пра�
   контроллер» (при том что docstring файла это правило декларирует). При распиле ORM
   **не трогал** (поведение 1:1); перенос — отдельная будущая фаза (записан ниже).
 
-### Будущая под-фаза (техдолг, не в этом заходе)
-- [ ] Перенести ~25 ORM-обращений `tg_bot/services/*` на `data_controller` (бизнес-
-  модели); инфру очередей (`BotOutbox`/`PendingButtonRemoval`/`Session`) — по аналогии
-  с analytics, вероятно оставить. Требует тестов на сервисы бота (сейчас не покрыты).
+### Под-фаза «ORM бота → контроллер»  ✅ (2026-07-21)
+- [x] Все ~25 обращений к **бизнес-моделям** в `tg_bot/services/*` переведены на `dc`.
+  Новые тонкие геттеры контроллера: `get_user_by_id`, `is_login_taken`,
+  `get_application_by_id` (with_event/prefetch_shifts), `get_own_application`,
+  `get_shift_by_id`, `get_shifts_by_ids`, `get_participation_by_id`,
+  `create_application_change_log`.
+- Инфра бота оставлена осознанно: `BotOutbox`/`PendingButtonRemoval` (`outbox.py`),
+  Django-`Session` (`users.py`) — не бизнес-данные ВЦ (как analytics).
+- Сетка безопасности: **+11 тестов** `test_bot_services.py` (сервисы бота синхронны →
+  тестируются напрямую). Они же вскрыли и починили **cross-module баг Фазы 5**:
+  `comments/events/web_auth/applications` звали `get_user`/`is_guest` из `users`, но
+  после распила эти имена не были импортированы (упало бы в рантайме бота). Добавлены
+  явные `from .users import …`.
+- Проверено: тесты 55/55; вся цепочка бота импортируется; фасад полон.
 
 ## Фаза 6 — Дубли и переиспользование (из audit-reuse.md)  ⬜
 

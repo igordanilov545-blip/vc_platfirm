@@ -7,6 +7,7 @@
 данным — через data_controller (dc). Общие импорты — из ._common.
 """
 from ._common import *  # noqa: F401,F403
+from .users import get_user
 
 
 def open_events(limit: int = 7, user_id: int = None) -> list:
@@ -21,8 +22,7 @@ def open_events(limit: int = 7, user_id: int = None) -> list:
 
     my_apps = {}
     if user_id:
-        from blog.models import Application
-        for app in Application.objects.filter(
+        for app in dc.applications_qs().filter(
             user_id=user_id, status__in=['new', 'approved'],
             event__in=[e.id for e in events],
         ):

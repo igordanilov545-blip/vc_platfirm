@@ -30,7 +30,7 @@ from .users import (  # noqa: F401
     sync_user_from_applications, find_candidate_user_by_telegram,
     create_manager, get_managers,
     create_team_leader, get_team_leaders,
-    role_qs, create_role, revoke_roles, has_active_role,
+    role_qs, create_role, revoke_roles, has_active_role, reset_all_season_counters,
 )
 from .orgs import (  # noqa: F401
     create_organization, get_organizations, get_organization_by_id,
@@ -90,7 +90,7 @@ __all__ = [
     'sync_user_from_applications', 'find_candidate_user_by_telegram',
     'create_manager', 'get_managers',
     'create_team_leader', 'get_team_leaders',
-    'role_qs', 'create_role', 'revoke_roles', 'has_active_role',
+    'role_qs', 'create_role', 'revoke_roles', 'has_active_role', 'reset_all_season_counters',
     'create_organization', 'get_organizations', 'get_organization_by_id',
     'create_organizer', 'get_organizers',
     'link_organizer_to_organization', 'get_organizer_links',

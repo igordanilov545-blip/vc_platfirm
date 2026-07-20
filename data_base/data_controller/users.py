@@ -288,6 +288,14 @@ def get_managers(user_id: Optional[int] = None, is_active_only: bool = True) -> 
 _ROLE_MODELS = {'team_lead': TeamLeader, 'manager': Manager}
 
 
+def reset_all_season_counters() -> int:
+    """Обнуляет сезонные счётчики (season_hours/season_event_count) у ВСЕХ пользователей
+    при закрытии сезона (bulk). Возвращает число затронутых строк."""
+    n = User.objects.update(season_hours=0, season_event_count=0)
+    logger.info('UPDATE users: season counters reset for all (%s rows)', n)
+    return n
+
+
 def role_qs(kind: str):
     """Ленивый queryset ролевой записи по виду ('team_lead'/'manager') — для сервиса
     roles (кто без роли / с ролью, назначение/снятие). Единая точка вместо

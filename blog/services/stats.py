@@ -2,20 +2,17 @@
 import math
 from datetime import timedelta
 
-from django.db.models import Sum, Count
+from django.db.models import Sum, Count, Q
 from django.utils import timezone
 
-from blog.models import Participation, Const, Season, ChurnHistory, ChurnLog
+from data_base import data_controller as dc
 from blog.logging_utils import get_web_logger
 
 logger = get_web_logger(__name__)
 
 
 def _const(name: str, default: float) -> float:
-    try:
-        return Const.objects.get(name=name).value
-    except Const.DoesNotExist:
-        return default
+    return dc.get_const(name, default=default)
 
 
 def log_churn_change(user, reason, delta, *, actor=None, event=None, note=None, force=False):
@@ -29,7 +26,6 @@ def log_churn_change(user, reason, delta, *, actor=None, event=None, note=None, 
     Запись идёт через data_controller (единый слой доступа + аудит), а не прямым ORM."""
     if abs(delta) < 1e-9 and not force:
         return
-    from data_base import data_controller as dc
     dc.create_churn_log(
         user=user, reason=reason, delta=delta, new_value=user.churn_score or 0,
         actor_user=actor, event=event, note=note,
@@ -37,10 +33,9 @@ def log_churn_change(user, reason, delta, *, actor=None, event=None, note=None, 
 
 
 def current_season():
-    from django.db.models import Q
     today = timezone.now().date()
     return (
-        Season.objects.filter(start_season__lte=today)
+        dc.seasons_qs().filter(start_season__lte=today)
         .filter(Q(end_season__isnull=True) | Q(end_season__gte=today))
         .order_by('-start_season')
         .first()
@@ -49,7 +44,7 @@ def current_season():
 
 def recalc_user_aggregates(user):
     """Пересчитывает total_hours/season_hours/*_event_count по participations.status='attended'."""
-    attended = Participation.objects.filter(user=user, status='attended')
+    attended = dc.participations_qs().filter(user=user, status='attended')
 
     totals = attended.aggregate(hours=Sum('hours'), count=Count('id'))
     user.total_hours = totals['hours'] or 0
@@ -96,7 +91,7 @@ def apply_churn_activity_decay(user, *, event=None):
     base = _const('churn_activity_base', 3)
     window_days = _const('churn_activity_window_days', 30)
     month_ago = timezone.now() - timedelta(days=window_days)
-    n = Participation.objects.filter(
+    n = dc.participations_qs().filter(
         user=user, status='attended', created_at__gte=month_ago
     ).count()
     decay = base / math.exp(n + 1)
@@ -130,10 +125,9 @@ def recruit_status_for_shift(shift):
     Заявка сейчас подаётся на мероприятие целиком (выбор конкретных смен ещё не
     реализован — см. ApplicationForm), поэтому одобренные заявки считаются общими
     по всему мероприятию и сравниваются с потребностью именно этой смены."""
-    from blog.models import Application
     ratio = _const('recruit_close_ratio', 1.2)
     needed = shift.volunteer_needed or 0
-    approved = Application.objects.filter(event=shift.event, status='approved').count()
+    approved = dc.applications_qs().filter(event=shift.event, status='approved').count()
     if needed and approved >= ratio * needed:
         return 'closed'
     return 'open'
@@ -143,12 +137,11 @@ def close_season(season):
     """Закрытие сезона (правила 9/11): снимок ненулевого churn в churn_history,
     carryover, обнуление season_*; авто-создание бессрочного сезона, если
     следующий не задан. Возвращает созданный сезон или None."""
-    from blog.models import User
     min_seasons = _const('churn_carryover_min_seasons', 2)
-    for user in User.objects.filter(churn_score__gt=0):
-        ChurnHistory.objects.create(user=user, season=season, churn_score=user.churn_score)
+    for user in dc.users_qs().filter(churn_score__gt=0):
+        dc.create_churn_history(user=user, season=season, churn_score=user.churn_score)
         before = user.churn_score
-        past_seasons = ChurnHistory.objects.filter(user=user).count()
+        past_seasons = dc.churn_history_qs().filter(user=user).count()
         if past_seasons >= min_seasons:
             user.churn_score = user.churn_score / 2
         else:
@@ -159,7 +152,7 @@ def close_season(season):
             note=f'Завершение сезона «{season}»',
         )
 
-    User.objects.update(season_hours=0, season_event_count=0)
+    dc.reset_all_season_counters()
 
     today = timezone.now().date()
     if not season.end_season or season.end_season > today:
@@ -167,9 +160,9 @@ def close_season(season):
         season.save(update_fields=['end_season'])
 
     next_start = season.end_season + timedelta(days=1)
-    has_next = Season.objects.filter(start_season__gte=next_start).exists()
+    has_next = dc.seasons_qs().filter(start_season__gte=next_start).exists()
     logger.info('Сезон закрыт: season=%s end=%s создан_следующий=%s', season.id, season.end_season, not has_next)
     if not has_next:
         # Бессрочный сезон: end_season=NULL — плашка «нужно задать дату конца».
-        return Season.objects.create(start_season=next_start, end_season=None)
+        return dc.create_season(next_start, None)
     return None

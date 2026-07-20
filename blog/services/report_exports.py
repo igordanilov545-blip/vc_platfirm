@@ -14,13 +14,8 @@ from data_base import data_controller as dc
 from blog.services import reports as reports_service
 
 
-def _fmt_dt(value):
-    """openpyxl не умеет tz-aware datetime — отдаём строкой."""
-    if value is None:
-        return '—'
-    if hasattr(value, 'strftime'):
-        return value.strftime('%d.%m.%Y %H:%M') if hasattr(value, 'hour') else value.strftime('%d.%m.%Y')
-    return str(value)
+# openpyxl не умеет tz-aware datetime — отдаём строкой; логика — в едином форматтере.
+from blog.services.formatting import fmt_dt as _fmt_dt  # (audit-reuse §2)
 
 
 def _staff_names(event, role):

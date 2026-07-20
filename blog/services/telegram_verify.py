@@ -11,15 +11,14 @@
 4. «Нет» → `reject_verify_token`: токен гасится, а активные веб-сессии запросившего
    пользователя завершаются (разлогин) — на случай, если вход инициировал не владелец.
 
-Модуль работает через ORM напрямую (как и соседний `web_auth`): это веб/бот-инфра
-аутентификации, а не доменная логика над `data_controller`.
+Доступ к данным (токены, сессии, поиск по telegram_id) — через `data_controller`.
 """
 import datetime
 
-from django.contrib.sessions.models import Session
 from django.utils import timezone
 
-from blog.models import TelegramVerifyToken, User
+from data_base import data_controller as dc
+from blog.models import TelegramVerifyToken, User  # только для аннотаций типов
 from blog.logging_utils import get_web_logger
 
 logger = get_web_logger(__name__)
@@ -31,17 +30,13 @@ VERIFY_TOKEN_TTL = datetime.timedelta(minutes=5)
 def issue_verify_token(user: User) -> TelegramVerifyToken:
     """Создаёт одноразовый токен подтверждения для пользователя (вызывается из веб-ЛК).
     Прежние неиспользованные токены того же пользователя гасим — живёт только последний."""
-    TelegramVerifyToken.objects.filter(user=user, used_at__isnull=True).update(
-        used_at=timezone.now()
-    )
-    return TelegramVerifyToken.objects.create(
-        user=user, expires_at=timezone.now() + VERIFY_TOKEN_TTL
-    )
+    dc.invalidate_user_verify_tokens(user)
+    return dc.create_verify_token(user, expires_at=timezone.now() + VERIFY_TOKEN_TTL)
 
 
 def get_pending_token(token: str):
     """Возвращает валидный (не использованный, не просроченный) токен или None."""
-    obj = TelegramVerifyToken.objects.filter(token=token).select_related('user').first()
+    obj = dc.get_verify_token(token)
     if obj is None or not obj.is_valid():
         return None
     return obj
@@ -69,7 +64,7 @@ def confirm_verify_token(token: str, telegram_id, telegram_username: str = None)
     # Привязываем реальный telegram_id, если сейчас служебный (web:*) и он свободен.
     current_is_synthetic = (user.telegram_id or '').startswith('web:')
     if user.telegram_id != telegram_id:
-        conflict = User.objects.filter(telegram_id=telegram_id).exclude(pk=user.pk).first()
+        conflict = dc.get_user_by_telegram_id_excluding(telegram_id, exclude_user_id=user.pk)
         if conflict is not None:
             # Реальный id уже за другим аккаунтом — не перепривязываем, только помечаем
             # факт владения. Разведение дублей — вручную менеджером (db.md правило 3).
@@ -112,6 +107,4 @@ def reject_verify_token(token: str):
 
 def _logout_user_web_sessions(user: User):
     """Удаляет все активные веб-сессии пользователя (как при сбросе веб-кредов)."""
-    for session in Session.objects.filter(expire_date__gte=timezone.now()):
-        if session.get_decoded().get('_auth_user_id') == str(user.id):
-            session.delete()
+    dc.logout_user_web_sessions(user)

@@ -17,6 +17,7 @@ from blog.models import (
     Location, Organization, Organizer, EventCategory, EventRequirement,
     UserRequirementException, Incident, ChurnHistory, ApplicationChangeLog,
     UserComment, OrganizerInteractionLog,
+    WebSession, WebPageView, ButtonClickEvent, BotSessionPing,
 )
 
 
@@ -123,6 +124,23 @@ def user_comments_qs():
 
 def organizer_interactions_qs():
     return OrganizerInteractionLog.objects.all()
+
+
+# --- Техническая аналитика (техадмин-дашборд нагрузки) ---
+def web_sessions_qs():
+    return WebSession.objects.all()
+
+
+def web_page_views_qs():
+    return WebPageView.objects.all()
+
+
+def button_click_events_qs():
+    return ButtonClickEvent.objects.all()
+
+
+def bot_session_pings_qs():
+    return BotSessionPing.objects.all()
 
 
 def get_current_season():

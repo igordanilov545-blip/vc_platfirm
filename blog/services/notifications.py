@@ -6,7 +6,8 @@
 """
 from django.db.models import Exists, OuterRef
 
-from blog.models import BotOutbox, EventStaff, Manager, TeamLeader, User
+from data_base import data_controller as dc
+from blog.models import User  # только для аннотаций типов
 
 
 def _has_telegram_chat(user: User) -> bool:
@@ -14,8 +15,8 @@ def _has_telegram_chat(user: User) -> bool:
     return bool(user.telegram_id) and user.telegram_id.lstrip('-').isdigit()
 
 
-def enqueue(chat_id: str, text: str, apply_event=None) -> BotOutbox:
-    return BotOutbox.objects.create(chat_id=str(chat_id), text=text, apply_event=apply_event)
+def enqueue(chat_id: str, text: str, apply_event=None):
+    return dc.create_outbox(chat_id, text, apply_event=apply_event)
 
 
 def notify_user(user: User, text: str, apply_event=None):
@@ -37,7 +38,7 @@ def notify_event_staff(event, text: str):
     recipients = {}
 
     # Тим-лидеры именно этого меро (event_staff.staff_role='team_lead' на данном event).
-    staff_users = User.objects.filter(
+    staff_users = dc.users_qs().filter(
         staff_assignments__event=event, staff_assignments__staff_role='team_lead',
         notify_applications=True,
     ).distinct()
@@ -45,8 +46,8 @@ def notify_event_staff(event, text: str):
         recipients[user.id] = user
 
     # Активные менеджеры: есть строка managers с revoked_at IS NULL.
-    manager_users = User.objects.filter(notify_applications=True).filter(
-        Exists(Manager.objects.filter(user=OuterRef('pk'), revoked_at__isnull=True))
+    manager_users = dc.users_qs().filter(notify_applications=True).filter(
+        Exists(dc.managers_qs().filter(user=OuterRef('pk'), revoked_at__isnull=True))
     )
     for user in manager_users:
         recipients[user.id] = user
@@ -159,7 +160,7 @@ def notify_manager_processed(application, manager: User):
         f'ℹ️ Заявка на «{application.event.title}» обработана менеджером {name}. '
         f'Статус: {status_label}.'
     )
-    staff_users = User.objects.filter(
+    staff_users = dc.users_qs().filter(
         staff_assignments__event=application.event, staff_assignments__staff_role='team_lead',
         notify_applications=True,
     ).distinct()
@@ -175,8 +176,8 @@ def notify_all_attended_to_managers(event, team_lead: User):
         f'✅ Тим-лидер {name} отметил(а): на «{event.title}» были все. '
         'Можно забирать табличку для проставления часов.'
     )
-    manager_users = User.objects.filter(notify_applications=True).filter(
-        Exists(Manager.objects.filter(user=OuterRef('pk'), revoked_at__isnull=True))
+    manager_users = dc.users_qs().filter(notify_applications=True).filter(
+        Exists(dc.managers_qs().filter(user=OuterRef('pk'), revoked_at__isnull=True))
     )
     for user in manager_users:
         notify_user(user, text)
@@ -200,7 +201,7 @@ def broadcast_new_event(event):
     applied_user_ids = set(
         event.applications.filter(user__isnull=False).values_list('user_id', flat=True)
     )
-    subscribers = User.objects.filter(status='active', notify_new_events=True).exclude(
+    subscribers = dc.users_qs().filter(status='active', notify_new_events=True).exclude(
         id__in=applied_user_ids
     )
     sent = 0

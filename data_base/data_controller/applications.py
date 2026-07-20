@@ -9,7 +9,9 @@ from typing import Optional, List
 from django.db.models import Q
 from django.utils import timezone
 
-from blog.models import Application, EventShift, Event, User, Participation
+from blog.models import (
+    Application, ApplicationChangeLog, EventShift, Event, User, Participation,
+)
 from ._base import logger, actor
 
 
@@ -115,6 +117,58 @@ def get_user_application_for_event(user_id: int, event_id: int) -> Optional[Appl
     return Application.objects.select_related('event').filter(
         user_id=user_id, event_id=event_id, status__in=['new', 'approved']
     ).first()
+
+
+def get_application_by_id(application_id: int, *, with_event: bool = False,
+                          prefetch_shifts: bool = False) -> Optional[Application]:
+    """Заявка по id или None. `with_event=True` — с предзагрузкой event (обязательно,
+    если объект уходит в async-хендлер бота: обращение к application.event.* без
+    предзагрузки роняет SynchronousOnlyOperation). `prefetch_shifts=True` — подтянуть
+    выбранные смены заявки и смены меро (для отрисовки кнопок по сменам в боте)."""
+    qs = Application.objects.all()
+    if with_event or prefetch_shifts:
+        qs = qs.select_related('event')
+    if prefetch_shifts:
+        qs = qs.prefetch_related('selected_shifts', 'event__shifts')
+    return qs.filter(pk=application_id).first()
+
+
+def get_own_application(user_id: int, application_id: int) -> Optional[Application]:
+    """Заявка по id, только если принадлежит указанному пользователю (защита от подделки
+    callback_data в боте). select_related('event') — для async-хендлеров."""
+    return Application.objects.select_related('event').filter(
+        pk=application_id, user_id=user_id
+    ).first()
+
+
+def get_shift_by_id(shift_id: int, event_id: Optional[int] = None) -> Optional[EventShift]:
+    """Смена по id (опц. в рамках конкретного меро) или None."""
+    qs = EventShift.objects.filter(pk=shift_id)
+    if event_id is not None:
+        qs = qs.filter(event_id=event_id)
+    return qs.first()
+
+
+def get_shifts_by_ids(shift_ids, event: Optional[Event] = None) -> List[EventShift]:
+    """Список смен по набору id (опц. в рамках меро)."""
+    qs = EventShift.objects.filter(pk__in=shift_ids)
+    if event is not None:
+        qs = qs.filter(event=event)
+    return list(qs)
+
+
+def get_participation_by_id(participation_id: int) -> Optional[Participation]:
+    return Participation.objects.filter(pk=participation_id).first()
+
+
+def create_application_change_log(event: Event, application: Application, kind: str, text: str) -> ApplicationChangeLog:
+    """Запись в ленту изменений заявок меро (повторный импорт/правка через бота)."""
+    entry = ApplicationChangeLog.objects.create(
+        event=event, application=application, kind=kind, text=text,
+    )
+    logger.info('INSERT application_change_logs: event=%s application=%s kind=%s',
+                event.id, application.id if application else None, kind)
+    return entry
 
 
 def update_application_status(application: Application, status: str, assigned_by: Optional[User] = None) -> Application:

@@ -2224,8 +2224,9 @@ def import_preview(request):
     Если в файле встречаются другие названия мероприятия (расхождение с fixed_event)
     — показываем отдельный экран с перечнем уникальных названий и просим явно
     подтвердить «всё равно добавить», прежде чем показать обычное превью."""
+    from data_base import data_controller as dc
     fixed_event_id = request.GET.get('event') or request.POST.get('event')
-    fixed_event = Event.objects.filter(pk=fixed_event_id).first() if fixed_event_id else None
+    fixed_event = dc.get_event_by_id(fixed_event_id) if fixed_event_id else None
 
     form = ExcelImportForm(request.POST or None, request.FILES or None)
     if request.method == 'POST' and 'excel_file' in request.FILES and form.is_valid():
@@ -2308,6 +2309,7 @@ def import_commit(request):
 
 @login_required
 def profile_detail(request, user_id):
+    from data_base import data_controller as dc
     target = get_object_or_404(User, pk=user_id)
     is_owner = request.user.id == target.id
     is_mgr = is_manager(request.user)
@@ -2367,7 +2369,7 @@ def profile_detail(request, user_id):
     tl_role = target.team_leader_roles.filter(revoked_at__isnull=True).first()
     if tl_role:
         context['tl_role'] = tl_role
-        context['tl_event_count'] = EventStaff.objects.filter(
+        context['tl_event_count'] = dc.event_staff_qs().filter(
             user=target, staff_role='team_lead'
         ).count()
     mgr_role = target.manager_roles.filter(revoked_at__isnull=True).first()
@@ -2392,8 +2394,8 @@ def profile_detail(request, user_id):
             for app in applications
         }
         all_shift_ids = {sid for ids in shift_ids_by_app.values() for sid in ids}
-        shifts_by_id = {s.id: s for s in EventShift.objects.filter(id__in=all_shift_ids)}
-        participations = Participation.objects.filter(
+        shifts_by_id = {s.id: s for s in dc.event_shifts_qs().filter(id__in=all_shift_ids)}
+        participations = dc.participations_qs().filter(
             user=target, event_day_id__in=all_shift_ids,
         ).select_related('event_day')
         participation_by_shift = {p.event_day_id: p for p in participations}
@@ -2449,7 +2451,7 @@ def profile_detail(request, user_id):
     if has_extended:
         # Пул благодарственных писем: мероприятия с явкой и заданным шаблоном.
         context['letters_pool'] = (
-            Event.objects.filter(
+            dc.events_qs().filter(
                 shifts__participations__user=target,
                 shifts__participations__status='attended',
                 letter__isnull=False,
@@ -2467,9 +2469,9 @@ def profile_detail(request, user_id):
     if can_see_comments:
         context['comments'] = target.received_comments.select_related('author', 'event').order_by('-created_at')
         if is_mgr:
-            event_queryset = Event.objects.all()
+            event_queryset = dc.events_qs()
         else:
-            event_queryset = Event.objects.filter(
+            event_queryset = dc.events_qs().filter(
                 staff__user=request.user, staff__staff_role='team_lead'
             ).exclude(event_status='finished')
         context['comment_form'] = UserCommentForm(event_queryset=event_queryset)
@@ -2487,6 +2489,7 @@ def letter_view(request, user_id, event_id):
 
     Доступ: сам волонтёр, менеджер или ТЛ с расширенным доступом к профилю.
     """
+    from data_base import data_controller as dc
     target = get_object_or_404(User, pk=user_id)
     event = get_object_or_404(Event.objects.select_related('letter', 'organization'), pk=event_id)
 
@@ -2495,7 +2498,7 @@ def letter_view(request, user_id, event_id):
     if not event.letter:
         raise PermissionDenied('У мероприятия не задан шаблон благодарственного письма.')
 
-    attended = Participation.objects.filter(
+    attended = dc.participations_qs().filter(
         user=target, event_day__event=event, status='attended'
     ).select_related('event_day')
     if not attended.exists():
@@ -2515,7 +2518,8 @@ def letter_view(request, user_id, event_id):
 
 @manager_required
 def pending_applications(request):
-    applications = Application.objects.filter(status='new').select_related('event', 'user').order_by('created_at')
+    from data_base import data_controller as dc
+    applications = dc.applications_qs().filter(status='new').select_related('event', 'user').order_by('created_at')
     return render(request, 'blog/pending_applications.html', {
         'applications': applications,
         'pending_count': applications.count(),
@@ -2534,10 +2538,11 @@ def profile_comment_add(request, user_id):
     if not can_comment:
         raise PermissionDenied('Нет прав оставлять комментарии этому волонтёру.')
 
+    from data_base import data_controller as dc
     if is_mgr:
-        event_queryset = Event.objects.all()
+        event_queryset = dc.events_qs()
     else:
-        event_queryset = Event.objects.filter(
+        event_queryset = dc.events_qs().filter(
             staff__user=request.user, staff__staff_role='team_lead'
         ).exclude(event_status='finished')
 
@@ -2588,14 +2593,15 @@ def _report_period_range(request):
         return period, today - datetime.timedelta(days=7), today
     if period == 'month':
         return period, today - datetime.timedelta(days=30), today
+    from data_base import data_controller as dc
     if period == 'season':
-        current = Season.objects.filter(start_season__lte=today).order_by('-start_season').first()
+        current = dc.seasons_qs().filter(start_season__lte=today).order_by('-start_season').first()
         if current:
             return period, current.start_season, current.end_season or today
         return period, today - datetime.timedelta(days=120), today
     if period == 'last_season':
-        current = Season.objects.filter(start_season__lte=today).order_by('-start_season').first()
-        previous_qs = Season.objects.order_by('-start_season')
+        current = dc.seasons_qs().filter(start_season__lte=today).order_by('-start_season').first()
+        previous_qs = dc.seasons_qs().order_by('-start_season')
         if current:
             previous_qs = previous_qs.filter(start_season__lt=current.start_season)
         previous = previous_qs.first()
@@ -3529,8 +3535,8 @@ def users_picker_data(request):
       - `?all=1` — весь список (менеджер нажал «показать всех»)."""
     from data_base import data_controller as dc
 
-    tl_ids = set(TeamLeader.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
-    mgr_ids = set(Manager.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
+    tl_ids = set(dc.team_leaders_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
+    mgr_ids = set(dc.managers_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
 
     order = 'name' if request.GET.get('order') == 'name' else 'recent'
     qs = dc.users_ranked_qs(order)
@@ -3562,30 +3568,31 @@ def users_picker_data(request):
 @manager_required
 def user_list(request):
     from django.db.models import OuterRef, Subquery
+    from data_base import data_controller as dc
 
     # Дата последней заявки (любой статус) и дата последнего мероприятия, на котором
     # человек реально был и получил часы (Participation.status='attended', hours>0) —
     # считаем через Subquery по каждому пользователю страницы, а не в Python-цикле,
     # чтобы не плодить N+1 при infinite-scroll подгрузке новых порций.
     last_application_sq = (
-        Application.objects.filter(user=OuterRef('pk'))
+        dc.applications_qs().filter(user=OuterRef('pk'))
         .order_by('-submitted_at', '-created_at')
         .values('submitted_at')[:1]
     )
     last_event_sq = (
-        Participation.objects.filter(user=OuterRef('pk'), status='attended', hours__gt=0)
+        dc.participations_qs().filter(user=OuterRef('pk'), status='attended', hours__gt=0)
         .order_by('-event_day__day')
         .values('event_day__day')[:1]
     )
-    users = User.objects.order_by('-created_at').annotate(
+    users = dc.users_qs().order_by('-created_at').annotate(
         last_application_at=Subquery(last_application_sq),
         last_attended_day=Subquery(last_event_sq),
     )
     paginator = Paginator(users, 40)
     page = paginator.get_page(request.GET.get('page'))
 
-    manager_ids = set(Manager.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
-    team_leader_ids = set(TeamLeader.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
+    manager_ids = set(dc.managers_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
+    team_leader_ids = set(dc.team_leaders_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
 
     context = {
         'page_obj': page,

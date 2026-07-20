@@ -95,6 +95,10 @@ def requirements_qs():
     return EventRequirement.objects.all()
 
 
+def seasons_qs():
+    return Season.objects.all()
+
+
 def get_current_season():
     """Текущий сезон (последний начавшийся) или None — для сезонных срезов отчётов."""
     return Season.objects.filter(start_season__lte=timezone.now().date()).order_by('-start_season').first()

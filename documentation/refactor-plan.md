@@ -66,7 +66,23 @@ import get_user...` — эти имена должны продолжать ра
 - [ ] `MEMORY`-пометка `.md` внутри пакета: что где лежит.
 - [ ] `python manage.py check` зелёный.
 
-## Фаза 2 — Перенос прямого ORM из `views.py` в контроллер  🔄
+## Фаза 2 — Перенос прямого ORM из `views.py` в контроллер  ✅ (бизнес-домен)
+
+**Итог: 79 → 18 `.objects.`**, и все 18 оставшихся — осознанные исключения:
+- **9× `get_object_or_404(Model.objects…, pk=…)`** — веб-идиома «получить-или-404»,
+  контроллер не должен знать про HTTP-404.
+- **1× `User.objects.create_user`** в `register_view` — веб-регистрация со спецификой
+  (login/пароль/web_credentials), не покрывается бизнес-`dc.create_user`.
+- **8× технической аналитики** (`WebSession`/`WebPageView`/`ButtonClickEvent`/
+  `SystemDowntime`) — это **не бизнес-домен ВЦ**, а телеметрия техадмин-дашборда. Их
+  модели намеренно НЕ в `TABLE_MODEL_MAP`; тащить их в бизнес-контроллер (единая точка
+  данных ВЦ + аудит `vc.db`) исказило бы его. Отдельный слой/сервис аналитики — вне
+  Фазы 2.
+
+Новые аксессоры контроллера, добавленные по ходу: `locations_qs/organizations_qs/
+organizers_qs/event_categories_qs/requirements_qs/seasons_qs/application_shift_decisions_qs`;
+тонкие сеттеры `set_user_status/set_user_verification/create_churn_log/resolve_incidents`.
+Новый сервис `blog/services/moderation.py` (blacklist/verify через контроллер).
 
 - [x] Справочные list-вьюхи (locations/organizations/organizers/categories/
   requirements) → новые `*_qs()`-аксессоры контроллера + сортировка во вьюхе.

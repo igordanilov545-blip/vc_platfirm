@@ -72,6 +72,7 @@ from .querysets import (  # noqa: F401
     event_staff_qs, users_qs, users_ranked_qs, feedbacks_qs, managers_qs, team_leaders_qs,
     dobro_ru_shared_links_qs, get_current_season,
     locations_qs, organizations_qs, organizers_qs, event_categories_qs, requirements_qs,
+    seasons_qs,
 )
 
 # Публичный контракт слоя — тот же, что был у монолитного data_controller.py.
@@ -113,5 +114,6 @@ __all__ = [
     'event_staff_qs', 'users_qs', 'users_ranked_qs', 'feedbacks_qs', 'managers_qs', 'team_leaders_qs',
     'dobro_ru_shared_links_qs', 'get_current_season', 'get_event_by_id',
     'locations_qs', 'organizations_qs', 'organizers_qs', 'event_categories_qs', 'requirements_qs',
+    'seasons_qs',
     'get_full_table', 'create_record_generic',
 ]

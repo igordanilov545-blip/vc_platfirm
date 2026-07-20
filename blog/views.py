@@ -573,21 +573,13 @@ def pgas_request_verification(request):
 def pgas_verify_user(request, user_id):
     """Менеджер подтверждает верификацию волонтёра для справки ПГАС — с чужого
     профиля. Резолвит связанный инцидент `pgas_verification`, если он есть."""
-    from blog.models import Incident
-
     from blog.services.pgas_certificate import snapshot_verified_fields
+    from blog.services.moderation import verify_user_for_pgas
 
     target = get_object_or_404(User, pk=user_id)
-    target.verified_by_manager_at = timezone.now()
-    target.verified_by_manager_by = request.user
     # Снимок верифицированных значений — чтобы потом отследить именно их изменение
     # (перевод на другую ОП, смену ФИО и т.п.) и снять верификацию.
-    target.verified_snapshot = snapshot_verified_fields(target)
-    target.save(update_fields=['verified_by_manager_at', 'verified_by_manager_by', 'verified_snapshot'])
-
-    Incident.objects.filter(
-        kind='pgas_verification', related_user=target, resolved_at__isnull=True,
-    ).update(resolved_at=timezone.now(), resolved_by=request.user)
+    verify_user_for_pgas(target, actor=request.user, snapshot=snapshot_verified_fields(target))
 
     logger.info('Верификация для ПГАС подтверждена: user=%s by=%s', target.id, actor(request.user))
     messages.success(request, f'«{target.full_name}» верифицирован(а) для справки ПГАС.')
@@ -599,11 +591,9 @@ def pgas_verify_user(request, user_id):
 def pgas_unverify_user(request, user_id):
     """Отзыв верификации для справки ПГАС — симметрично выдаче (без капчи: это
     возврат в исходное состояние, а не запуск нового необратимого процесса)."""
+    from blog.services.moderation import unverify_user_for_pgas
     target = get_object_or_404(User, pk=user_id)
-    target.verified_by_manager_at = None
-    target.verified_by_manager_by = None
-    target.verified_snapshot = None
-    target.save(update_fields=['verified_by_manager_at', 'verified_by_manager_by', 'verified_snapshot'])
+    unverify_user_for_pgas(target, actor=request.user)
 
     logger.info('Верификация для ПГАС отозвана: user=%s by=%s', target.id, actor(request.user))
     messages.success(request, f'Верификация «{target.full_name}» для справки ПГАС отозвана.')
@@ -628,16 +618,8 @@ def user_blacklist(request, user_id):
             messages.error(request, 'Неверный ответ на пример — блокировка отменена. Попробуйте ещё раз.')
             return modal_form_response(request, None, None, success_redirect=reverse('profile_detail', args=[target.id]))
 
-        target.status = 'blacklisted'
-        target.comment = reason
-        target.save(update_fields=['status', 'comment'])
-        # Фиксируем в истории чарна как событие (сам churn_score блокировка не меняет,
-        # поэтому delta=0, но событие должно быть видно в истории — просьба пользователя).
-        from blog.models import ChurnLog
-        ChurnLog.objects.create(
-            user=target, reason='blacklist', delta=0, new_value=target.churn_score or 0,
-            actor=request.user, note=reason,
-        )
+        from blog.services.moderation import blacklist_user
+        blacklist_user(target, reason, actor=request.user)
         logger.info('Волонтёр внесён в чёрный список: user=%s by=%s reason=%r', target.id, actor(request.user), reason)
         messages.success(request, f'«{target.full_name}» внесён(а) в чёрный список.')
         return modal_form_response(request, None, None, success_redirect=reverse('profile_detail', args=[target.id]))
@@ -663,19 +645,12 @@ def user_unblacklist(request, user_id):
     (закрытие смены/сезона) снова автоматически отправит пользователя в блэклист —
     ручной вывод из ЧС был бы бессмысленным."""
     target = get_object_or_404(User, pk=user_id)
-    if target.status != 'blacklisted':
+    from blog.services.moderation import unblacklist_user
+    _, was_blacklisted = unblacklist_user(target, actor=request.user)
+    if not was_blacklisted:
         messages.info(request, f'«{target.full_name}» не в чёрном списке.')
         return redirect('profile_detail', user_id=target.id)
 
-    before = target.churn_score or 0
-    target.status = 'active'
-    target.churn_score = 0
-    target.save(update_fields=['status', 'churn_score'])
-    from blog.models import ChurnLog
-    ChurnLog.objects.create(
-        user=target, reason='unblacklist', delta=-before, new_value=0,
-        actor=request.user, note='Вывод из ЧС, churn обнулён',
-    )
     logger.info('Волонтёр выведен из чёрного списка: user=%s by=%s', target.id, actor(request.user))
     messages.success(request, f'«{target.full_name}» выведён(а) из чёрного списка (churn обнулён).')
     return redirect('profile_detail', user_id=target.id)
@@ -3421,7 +3396,8 @@ def location_list(request):
     # Панель хаба настроек: по AJAX (X-Requested-With) отдаём только partial панели для
     # подгрузки в блок настроек; прямой заход на /locations/ редиректит в хаб на нужную
     # вкладку (страница-справочник больше не живёт отдельно, agent-workflow.md §4).
-    locations = Location.objects.order_by('name')
+    from data_base import data_controller as dc
+    locations = dc.locations_qs().order_by('name')
     if is_ajax(request):
         return render(request, 'blog/partials/_settings_locations.html', {'locations': locations})
     return redirect(reverse('settings') + '?tab=locations')
@@ -3463,7 +3439,8 @@ def location_edit(request, location_id):
 @manager_required
 def organizations_list(request):
     # Панель хаба настроек (см. location_list): AJAX → partial, прямой заход → редирект.
-    organizations = Organization.objects.order_by('name')
+    from data_base import data_controller as dc
+    organizations = dc.organizations_qs().order_by('name')
     if is_ajax(request):
         return render(request, 'blog/partials/_settings_organizations.html', {'organizations': organizations})
     return redirect(reverse('settings') + '?tab=organizations')
@@ -3505,8 +3482,9 @@ def organization_edit(request, org_id):
 @manager_required
 def organization_detail(request, org_id):
     organization = get_object_or_404(Organization, pk=org_id)
+    from data_base import data_controller as dc
     events = organization.events.prefetch_related('shifts').order_by('-created_at')
-    organizers = Organizer.objects.filter(organization_links__organization=organization).distinct()
+    organizers = dc.organizers_qs().filter(organization_links__organization=organization).distinct()
     return render(request, 'blog/organization_detail.html', {
         'organization': organization, 'events': events, 'organizers': organizers,
     })
@@ -3612,7 +3590,8 @@ def user_list(request):
 @manager_required
 def organizer_list(request):
     # Панель хаба настроек (см. location_list): AJAX → partial, прямой заход → редирект.
-    organizers = Organizer.objects.order_by('last_name', 'first_name')
+    from data_base import data_controller as dc
+    organizers = dc.organizers_qs().order_by('last_name', 'first_name')
     if is_ajax(request):
         return render(request, 'blog/partials/_settings_organizers.html', {'organizers': organizers})
     return redirect(reverse('settings') + '?tab=organizers')
@@ -3654,7 +3633,8 @@ def organizer_edit(request, organizer_id):
 @manager_required
 def organizer_detail(request, organizer_id):
     organizer = get_object_or_404(Organizer, pk=organizer_id)
-    organizations = Organization.objects.filter(organizer_links__organizer=organizer)
+    from data_base import data_controller as dc
+    organizations = dc.organizations_qs().filter(organizer_links__organizer=organizer)
     events = organizer.managed_events.prefetch_related('shifts').order_by('-created_at')
     interactions = organizer.interaction_log.select_related('author').order_by('-created_at')
     return render(request, 'blog/organizer_detail.html', {
@@ -3868,8 +3848,9 @@ def settings_view(request):
             messages.success(request, 'Сезон добавлен.')
             return _settings_redirect('seasons')
         # Невалидная форма — покажем панель сезонов с ошибками (partial).
+        from data_base import data_controller as dc
         return render(request, 'blog/partials/_settings_seasons.html', {
-            'seasons': Season.objects.order_by('-start_season'),
+            'seasons': dc.get_seasons(),
             'season_form': season_form,
         })
 
@@ -3962,11 +3943,12 @@ def settings_view(request):
 
     if wants_partial and tab in SETTINGS_NATIVE_PANELS:
         template = SETTINGS_NATIVE_PANELS[tab]
+        from data_base import data_controller as dc
         context = {}
         if tab == 'constants':
-            context['consts'] = Const.objects.order_by('name')
+            context['consts'] = dc.get_all_consts()
         elif tab == 'seasons':
-            context['seasons'] = Season.objects.order_by('-start_season')
+            context['seasons'] = dc.get_seasons()
             context['season_form'] = SeasonForm()
         elif tab in ('team_leaders', 'managers'):
             context['role_sections'] = _build_role_sections(request)
@@ -3996,7 +3978,8 @@ def requirement_list(request):
     """Список требований: описание + компактный список тех, кто не соответствует
     (не грузим весь список волонтёров на экран — только тех, кто в исключениях, плюс
     маленькая форма добавления с поиском по select)."""
-    requirements = EventRequirement.objects.order_by('title')
+    from data_base import data_controller as dc
+    requirements = dc.requirements_qs().order_by('title')
     sections = []
     for req in requirements:
         exceptions = req.user_exceptions.select_related('user').order_by('-created_at')
@@ -4054,7 +4037,8 @@ def requirement_delete(request, requirement_id):
 @manager_required
 def category_list(request):
     # Панель хаба настроек (см. location_list): AJAX → partial, прямой заход → редирект.
-    categories = EventCategory.objects.order_by('name')
+    from data_base import data_controller as dc
+    categories = dc.event_categories_qs().order_by('name')
     if is_ajax(request):
         return render(request, 'blog/partials/_settings_categories.html', {'categories': categories})
     return redirect(reverse('settings') + '?tab=categories')

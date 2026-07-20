@@ -9,7 +9,7 @@ from typing import Optional, List
 from django.db.models import Q
 
 from blog.models import User, Manager, TeamLeader, Application
-from ._base import logger
+from ._base import logger, actor
 
 
 def create_user(
@@ -175,6 +175,38 @@ def update_user_fields(user: User, **fields) -> User:
         setattr(user, name, fields[name])
     if allowed:
         user.save(update_fields=list(allowed))
+    return user
+
+
+def set_user_status(user: User, status: str, *, comment: Optional[str] = None,
+                    churn_score: Optional[float] = None, actor_user: Optional[User] = None) -> User:
+    """Меняет статус допуска пользователя (active/inactive/blacklisted) и, опционально,
+    комментарий/churn_score в одной записи. Бизнес-правила (когда блокировать, что
+    обнулять) — в сервисе, здесь только запись + аудит."""
+    fields = ['status']
+    user.status = status
+    if comment is not None:
+        user.comment = comment
+        fields.append('comment')
+    if churn_score is not None:
+        user.churn_score = churn_score
+        fields.append('churn_score')
+    user.save(update_fields=fields)
+    logger.info('UPDATE users: user=%s status=%s by=%s', user.id, status, actor(actor_user))
+    return user
+
+
+def set_user_verification(user: User, *, verified_at, verified_by: Optional[User],
+                          snapshot=None) -> User:
+    """Проставляет/снимает менеджерскую верификацию для справки ПГАС. `verified_at=None`
+    снимает верификацию. Снимок верифицированных полей (`snapshot`) хранится, чтобы
+    отследить их последующее изменение."""
+    user.verified_by_manager_at = verified_at
+    user.verified_by_manager_by = verified_by
+    user.verified_snapshot = snapshot
+    user.save(update_fields=['verified_by_manager_at', 'verified_by_manager_by', 'verified_snapshot'])
+    logger.info('UPDATE users: user=%s pgas_verified=%s by=%s',
+                user.id, bool(verified_at), actor(verified_by))
     return user
 
 

@@ -12,7 +12,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from blog.models import (
-    Event, EventShift, Participation, Application, EventStaff, User,
+    Event, EventShift, Participation, Application, ApplicationShiftDecision, EventStaff, User,
     EventFeedback, Manager, TeamLeader, Season, DobroRuSharedLink,
     Location, Organization, Organizer, EventCategory, EventRequirement,
 )
@@ -32,6 +32,10 @@ def participations_qs():
 
 def applications_qs():
     return Application.objects.all()
+
+
+def application_shift_decisions_qs():
+    return ApplicationShiftDecision.objects.all()
 
 
 def event_staff_qs():

@@ -136,7 +136,22 @@ Django-роутинг остаётся в `blog/urls.py` (импорты пра�
 - `_common.py` — `is_ajax`, `modal_form_response`, captcha, `_safe_next`, quick_create_*
 - `__init__.py` — реэкспорт для `urls.py`.
 
-## Фаза 4 — Вынос JS из `base.html` в `static/blog/js/`  ⬜
+## Фаза 4 — Вынос JS из `base.html` в `static/blog/js/`  ✅
+
+`base.html`: **2876 → 455 строк** (−84%). Инлайновый `<script>` (~2430 строк) вынесен в
+`static/blog/js/`: `calendar-utils.js` (в `<head>`, нужен рано) + тематические
+`ui/modal/forms/calendar/selects/tables/misc.js` + README-путеводитель.
+
+- Резка программная (по границам top-level функций), синтаксис каждого модуля проверен
+  `node --check`.
+- Django-теги в JS невозможны → 7 `{% url %}` вынесены в инлайн-конфиг `window.VC_URLS`
+  (base.html), модули читают оттуда. Тема-до-рендера и ролевой companion-тур остаются
+  инлайн (нужны серверные данные).
+- Модули грузятся обычными `<script>` (глобальный scope сохранён, `window[fn]`
+  работает). Порядок подключения выверен: проверено, что все `initXxx(document)`-
+  самовызовы идут после определения функции.
+- Проверено `/run`: 0 console-ошибок на 6 страницах; AJAX-модалка создания заявки
+  открывается и работает (modal+forms+selects+ui вместе).
 
 - [ ] Разбить инлайновый JS на модули: `calendar.js` (CalendarUtils+datepickers),
   `modal.js` (модалки/bottom-sheet/тосты/навигация), `selects.js` (chip-select/

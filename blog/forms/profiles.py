@@ -1,0 +1,163 @@
+"""Формы домена «profiles». Часть пакета blog.forms (см. README.md).
+
+Формы профиля: редактирование профиля, внешний опыт, комментарии
+о пользователе, быстрое создание волонтёра.
+
+Общие импорты (django.forms, модели) — из ._common.
+"""
+from ._common import *  # noqa: F401,F403
+
+
+class QuickVolunteerForm(forms.Form):
+    """Мини-форма создания волонтёра менеджером (кнопка «Создать нового» в блоке
+    «Добавить волонтёра»): заполняется как профиль пришедшего «извне» человека (как при
+    Excel-импорте). Обязательны фамилия, имя и ХОТЯ БЫ ОДИН способ связи — Telegram ИЛИ
+    телефон. Новый пользователь сразу попадает в пул выбора волонтёров."""
+    first_name = forms.CharField(label='Имя', max_length=100)
+    last_name = forms.CharField(label='Фамилия', max_length=100)
+    phone = forms.CharField(label='Телефон', max_length=20, required=False)
+    telegram_username = forms.CharField(label='Telegram', max_length=100, required=False)
+
+    def clean(self):
+        cleaned = super().clean()
+        phone = (cleaned.get('phone') or '').strip()
+        tg = (cleaned.get('telegram_username') or '').strip()
+        if not phone and not tg:
+            raise forms.ValidationError('Укажите способ связи — Telegram или телефон (хотя бы одно).')
+        return cleaned
+
+class ProfileForm(forms.ModelForm):
+    """Личный кабинет: редактирование своих данных пользователем. Обязательны для
+    подачи заявки — ФИО (имя), Telegram и телефон (см. roles.account_is_complete);
+    остальное (юзернейм для системы, почта, дата рождения, о себе, ссылка на ВК) —
+    по желанию.
+
+    Telegram-username вводится вручную, как обычное поле: пользователь указывает свой
+    ник сам. (Раньше он подтягивался только при входе через бота; теперь ограничение
+    снято — при входе через бот username по-прежнему подставляется автоматически, но
+    веб-пользователь может ввести/поправить его руками.)
+
+    Дата рождения — как и везде в проекте, красивый календарь (data-datepicker), а не
+    нативный type=date."""
+    first_name = forms.CharField(label='Имя', max_length=100, required=True)
+    last_name = forms.CharField(label='Фамилия', max_length=100, required=False)
+    middle_name = forms.CharField(label='Отчество', max_length=100, required=False)
+
+    class Meta:
+        model = User
+        fields = [
+            'first_name', 'last_name', 'middle_name', 'system_username',
+            'telegram_username', 'phone', 'email', 'birthday', 'gender', 'about', 'VK_username',
+            'faculty', 'education_program', 'admission_year',
+        ]
+        widgets = {
+            'birthday': forms.DateInput(
+                # data-dp-default-years-ago="18" — если дата ещё не указана, календарь
+                # сразу открывается и предзаполняется «сегодня минус 18 лет» (средний
+                # возраст волонтёра), а не сегодняшним днём, откуда до нужного года
+                # пришлось бы листать вручную.
+                attrs={'type': 'text', 'data-datepicker': '', 'data-dp-default-years-ago': '18', 'autocomplete': 'off'},
+                format='%Y-%m-%d',
+            ),
+            'about': forms.Textarea(attrs={'rows': 3}),
+            'admission_year': forms.NumberInput(attrs={'min': 2000, 'max': 2100}),
+        }
+        labels = {
+            'system_username': 'Юзернейм для системы',
+            'telegram_username': 'Telegram',
+            'phone': 'Номер телефона',
+            'email': 'Почта',
+            'birthday': 'Дата рождения',
+            'gender': 'Пол',
+            'about': 'О себе',
+            'VK_username': 'Ссылка на ВК',
+            'faculty': 'Факультет',
+            'education_program': 'Образовательная программа (ОП)',
+            'admission_year': 'Год поступления',
+        }
+        help_texts = {
+            'telegram_username': 'Ваш ник в Telegram (можно с @ или без).',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Обязательные для подачи заявки поля помечаем required на форме — визуально
+        # (звёздочка) и на уровне валидации.
+        self.fields['phone'].required = True
+        self.fields['telegram_username'].required = True
+
+    def clean_telegram_username(self):
+        # Нормализуем: убираем ведущий @ и пробелы, чтобы в БД лежал чистый username.
+        value = (self.cleaned_data.get('telegram_username') or '').strip()
+        return value.lstrip('@').strip()
+
+    def clean_first_name(self):
+        value = (self.cleaned_data.get('first_name') or '').strip()
+        if not value:
+            raise forms.ValidationError('Укажите имя — оно обязательно для подачи заявки.')
+        return value
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        # Заполненная анкета → registration_status='registered' (после входа через
+        # Telegram он оставался 'guest').
+        if (user.first_name or '').strip():
+            user.registration_status = 'registered'
+        if commit:
+            user.save()
+        return user
+
+class ExternalExperienceForm(forms.ModelForm):
+    """Внешнее волонтёрское мероприятие (раздел «Мой опыт») — хранится как текст в
+    профиле и не влияет на статистику. Дата — диапазон (date/date_to): большинство
+    внешних мероприятий однодневные, date_to можно оставить пустым."""
+    class Meta:
+        model = ExternalExperience
+        fields = ['title', 'date', 'date_to', 'description']
+        widgets = {
+            'title': forms.TextInput(attrs={'placeholder': 'Например: Городской субботник'}),
+            # Красивый календарь проекта (data-datepicker) с листанием по годам
+            # (data-dp-year-toggle в base.html), как в смене мероприятия — вместо
+            # нативного type=date. Два независимых одиночных календаря (не
+            # initDateRangePair — тот заточен под конкретную разметку строки охвата
+            # отчётов), date_to может остаться пустым для однодневного мероприятия.
+            'date': forms.DateInput(
+                attrs={'type': 'text', 'data-datepicker': '', 'autocomplete': 'off'},
+                format='%Y-%m-%d',
+            ),
+            'date_to': forms.DateInput(
+                attrs={'type': 'text', 'data-datepicker': '', 'autocomplete': 'off'},
+                format='%Y-%m-%d',
+            ),
+            'description': forms.TextInput(attrs={'placeholder': 'Например: Помощь на регистрации'}),
+        }
+        labels = {'title': 'Название', 'date': 'Дата начала', 'date_to': 'Дата окончания (если несколько дней)', 'description': 'Что делал'}
+
+    def clean(self):
+        cleaned = super().clean()
+        date, date_to = cleaned.get('date'), cleaned.get('date_to')
+        if date and date_to and date_to < date:
+            self.add_error('date_to', 'Дата окончания не может быть раньше даты начала.')
+        return cleaned
+
+class UserCommentForm(forms.ModelForm):
+    class Meta:
+        model = UserComment
+        fields = ['text', 'event']
+        labels = {
+            'text': 'Комментарий',
+            'event': 'Мероприятие (необязательно)',
+        }
+        widgets = {
+            'text': forms.Textarea(attrs={'rows': 3}),
+        }
+
+    def __init__(self, *args, event_queryset=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['event'].required = False
+        if event_queryset is not None:
+            self.fields['event'].queryset = event_queryset
+
+
+# Обратная совместимость: часть кода/шаблонов ещё ссылается на старое имя.
+ProfileCompletionForm = ProfileForm

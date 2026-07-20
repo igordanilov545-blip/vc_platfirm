@@ -160,11 +160,24 @@ Django-роутинг остаётся в `blog/urls.py` (импорты пра�
 - [ ] `base.html` оставить как каркас разметки + подключения. Цель < ~600 строк.
 - [ ] Проверить CSP/порядок инициализации (`initPageContent`).
 
-## Фаза 5 — `forms.py` и `tg_bot/services.py`  ⬜
+## Фаза 5 — `forms.py` и `tg_bot/services.py`  ✅
 
-- [ ] `blog/forms.py` → пакет `blog/forms/` по доменам.
-- [ ] `tg_bot/services.py` → разбить по доменам, убедиться что всё идёт через
-  `data_controller` (правила §1: бот **не** пишет ORM).
+- [x] `blog/forms.py` (1089 стр, 34 класса) → пакет `blog/forms/`
+  (`auth/references/events/applications/profiles/roles` + `_common` + фасад + README).
+  Фасад реэкспортит все формы (+ alias `ProfileCompletionForm`); контракт `views/_common`
+  покрыт. Тесты 44/44.
+- [x] `tg_bot/services.py` (868 стр, 53 функции) → пакет `tg_bot/services/`
+  (`users/web_auth/events/applications/comments/feedback_queue/outbox` + `_common` +
+  фасад + README). Фасад реэкспортит все 56 имён; все 52 обращения `services.*` из
+  хендлеров/notifier/ui резолвятся; вся цепочка бота импортируется.
+- ⚠️ **Найдено:** ~25 прямых `.objects.` в services бота — нарушение «бот только через
+  контроллер» (при том что docstring файла это правило декларирует). При распиле ORM
+  **не трогал** (поведение 1:1); перенос — отдельная будущая фаза (записан ниже).
+
+### Будущая под-фаза (техдолг, не в этом заходе)
+- [ ] Перенести ~25 ORM-обращений `tg_bot/services/*` на `data_controller` (бизнес-
+  модели); инфру очередей (`BotOutbox`/`PendingButtonRemoval`/`Session`) — по аналогии
+  с analytics, вероятно оставить. Требует тестов на сервисы бота (сейчас не покрыты).
 
 ## Фаза 6 — Дубли и переиспользование (из audit-reuse.md)  ⬜
 

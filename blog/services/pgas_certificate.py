@@ -145,8 +145,7 @@ def revoke_verification_if_changed(user: User, actor: User = None) -> bool:
 # Сбор мероприятий волонтёра для тела справки
 # ---------------------------------------------------------------------------
 
-def _fmt_day(day) -> str:
-    return day.strftime('%d.%m.%Y')
+from blog.services.formatting import fmt_date as _fmt_day  # единый форматтер (audit-reuse §2)
 
 
 def collect_events(user: User, date_from=None, date_to=None, event_ids=None) -> list:

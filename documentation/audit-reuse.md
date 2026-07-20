@@ -46,6 +46,22 @@ _Дата: 2026-07-17. Метод: программный AST-обход (`ast`)
 
 ---
 
-## 4. План унификации (см. artifact)
+## 4. План унификации
 
 Фазы: (0) свести форматтеры, (1) `_application_manual_form_body` → user-picker, (2) PGAS-справка → chip-select, (3) обобщить toggle-клавиатуру бота, (4) закрепить partial `_multiselect_chips.html` и правило в CLAUDE.md.
+
+## 5. Статус (обновлено 2026-07-21, Фаза 6 рефакторинга)
+
+- **(0) Форматтеры — ✅** сведены в `blog/services/formatting.py` (`fmt_date`/`fmt_dt`),
+  локальные копии стали алиасами, покрыто тестами `test_formatting.py`.
+- **(1) manual-волонтёры (#4) — ✅ уже исправлено**: `_application_manual_form_body.html`
+  использует `data-chip-select data-select-remote="users"` (легитимный remote
+  user-picker), а не chip-select-велосипед со всеми `<option>`.
+- **(2) PGAS-справка (#5) — ✅ уже исправлено**: `pgas_certificate_issue.html` —
+  `<select name="event_ids" multiple hidden>` под chip-select, а не сырые checkbox.
+- **(3) toggle-клавиатура бота (#3) — оставлено как есть**: обобщать toggle-конструктор
+  ради единственного использования (выбор смен) — преждевременная абстракция (YAGNI);
+  аудит и сам помечал это как «кандидат», а не нарушение.
+- Сырых `<input type="checkbox" name=…>`-велосипедов множественного выбора в шаблонах
+  **не осталось** (проверено grep'ом). Инвариант «любой множественный выбор — через
+  chip-select или user-picker» соблюдён.

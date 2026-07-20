@@ -446,8 +446,7 @@ def recruitment_efficiency(date_from=None, date_to=None, event_ids=None):
     return {'shifts': result, 'events': events_rollup, 'avg_recruit_days': avg_recruit_time}
 
 
-def _fmt_date(d):
-    return d.strftime('%d.%m.%Y') if d else '—'
+from blog.services.formatting import fmt_date as _fmt_date  # единый форматтер (audit-reuse §2)
 
 
 def _days_ago(d):
@@ -767,10 +766,7 @@ def applications_table(date_from=None, date_to=None, event_ids=None):
     return rows
 
 
-def _fmt_dt_local(value):
-    if not value:
-        return '—'
-    return value.strftime('%d.%m.%Y %H:%M')
+from blog.services.formatting import fmt_dt as _fmt_dt_local  # единый форматтер (audit-reuse §2)
 
 
 def staff_load(date_from=None, date_to=None, event_ids=None):

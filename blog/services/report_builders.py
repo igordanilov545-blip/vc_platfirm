@@ -10,14 +10,7 @@ PDF-шаблоны из blog/services/*_report.py и report_exports.py) и во�
 from blog.services.docx_report import DocxBuilder
 
 
-def _fmt_dt(value, with_time=True):
-    if not value:
-        return '—'
-    fmt = '%d.%m.%Y %H:%M' if with_time else '%d.%m.%Y'
-    try:
-        return value.strftime(fmt)
-    except AttributeError:
-        return str(value)
+from blog.services.formatting import fmt_dt as _fmt_dt  # единый форматтер (audit-reuse §2)
 
 
 def _scope_label(scope):

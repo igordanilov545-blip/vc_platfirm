@@ -68,10 +68,11 @@ from .reference import (  # noqa: F401
     get_const, get_all_consts,
 )
 from .querysets import (  # noqa: F401
-    events_qs, event_shifts_qs, participations_qs, applications_qs,
+    events_qs, event_shifts_qs, participations_qs, applications_qs, application_shift_decisions_qs,
     event_staff_qs, users_qs, users_ranked_qs, feedbacks_qs, managers_qs, team_leaders_qs,
     dobro_ru_shared_links_qs, get_current_season,
     locations_qs, organizations_qs, organizers_qs, event_categories_qs, requirements_qs,
+    seasons_qs,
 )
 
 # Публичный контракт слоя — тот же, что был у монолитного data_controller.py.
@@ -109,9 +110,10 @@ __all__ = [
     'create_season', 'get_seasons',
     'get_const', 'get_all_consts',
     # Базовые queryset'ы для аналитики (отчёты) + скалярные срезы.
-    'events_qs', 'event_shifts_qs', 'participations_qs', 'applications_qs',
+    'events_qs', 'event_shifts_qs', 'participations_qs', 'applications_qs', 'application_shift_decisions_qs',
     'event_staff_qs', 'users_qs', 'users_ranked_qs', 'feedbacks_qs', 'managers_qs', 'team_leaders_qs',
     'dobro_ru_shared_links_qs', 'get_current_season', 'get_event_by_id',
     'locations_qs', 'organizations_qs', 'organizers_qs', 'event_categories_qs', 'requirements_qs',
+    'seasons_qs',
     'get_full_table', 'create_record_generic',
 ]

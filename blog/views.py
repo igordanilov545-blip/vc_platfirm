@@ -686,8 +686,9 @@ def logout_view(request):
 def _published_active_events():
     """Опубликованные и ещё не завершённые мероприятия (для гостевого списка и
     списка активных). Сортировка — ближайшие предстоящие/идущие сверху."""
+    from data_base import data_controller as dc
     events = list(
-        Event.objects.filter(published_at__isnull=False)
+        dc.events_qs().filter(published_at__isnull=False)
         .exclude(event_status='finished')
         .select_related('location')
         .prefetch_related('shifts')
@@ -909,8 +910,9 @@ def event_list(request):
         hide_passed = request.GET.get('hide_passed') == '1'
     else:
         hide_passed = not manager_view
+    from data_base import data_controller as dc
     events = list(
-        Event.objects.select_related('location', 'organization', 'dobro_ru_shared_link')
+        dc.events_qs().select_related('location', 'organization', 'dobro_ru_shared_link')
         .prefetch_related('shifts')
     )
 
@@ -924,15 +926,15 @@ def event_list(request):
     if manager_view:
         from collections import defaultdict
         tl_map = defaultdict(list)
-        for staff in EventStaff.objects.filter(staff_role='team_lead').select_related('user'):
+        for staff in dc.event_staff_qs().filter(staff_role='team_lead').select_related('user'):
             tl_map[staff.event_id].append(staff.user.full_name)
         tl_by_event = tl_map
 
-        for staff in EventStaff.objects.filter(staff_role='manager').select_related('user'):
+        for staff in dc.event_staff_qs().filter(staff_role='manager').select_related('user'):
             manager_by_event.setdefault(staff.event_id, staff.user.full_name)
 
         decisions = (
-            ApplicationShiftDecision.objects
+            dc.application_shift_decisions_qs()
             .exclude(application__status='cancelled')
             .values('shift_id', 'status')
             .annotate(n=Count('id'))
@@ -948,7 +950,7 @@ def event_list(request):
         # Сколько разных мероприятий использует каждую общую ссылку Добро.ру —
         # чтобы отличить «эта общая ссылка используется только тут» от «шарится».
         shared_usage = (
-            Event.objects.filter(dobro_ru_link_kind='shared', dobro_ru_shared_link__isnull=False)
+            dc.events_qs().filter(dobro_ru_link_kind='shared', dobro_ru_shared_link__isnull=False)
             .values('dobro_ru_shared_link_id').annotate(n=Count('id'))
         )
         dobro_shared_usage = {r['dobro_ru_shared_link_id']: r['n'] for r in shared_usage}
@@ -1027,6 +1029,7 @@ def event_list(request):
 
 @login_required
 def event_detail(request, event_id):
+    from data_base import data_controller as dc
     event = get_object_or_404(Event.objects.select_related('location', 'organization', 'organizer'), pk=event_id)
     event.close_recruit_if_passed()
     shifts = list(event.shifts.select_related('location').order_by('day'))
@@ -1040,8 +1043,8 @@ def event_detail(request, event_id):
     # (мини-дашборд наверху страницы; меняется только через редактирование меро,
     # EventForm.manager — единая точка назначения, как и у тим-лидеров).
     event_manager_staff = event.staff.filter(staff_role='manager').select_related('user').first()
-    categories = EventCategory.objects.filter(event_map__event=event).order_by('name')
-    requirements = EventRequirement.objects.filter(event_map__event=event).order_by('title')
+    categories = dc.event_categories_qs().filter(event_map__event=event).order_by('name')
+    requirements = dc.requirements_qs().filter(event_map__event=event).order_by('title')
     can_manage_applications = can_process_applications(request.user, event.id)
     # Мероприятие завершено — заявки/явку менять больше нельзя нигде (ни в вебе, ни
     # через клики по таблице); данные показываются только для просмотра.
@@ -1054,7 +1057,7 @@ def event_detail(request, event_id):
     has_open_recruitment = bool(event.published_at) and any(
         s.start_time > timezone.now() for s in shifts
     )
-    my_active_application = Application.objects.filter(
+    my_active_application = dc.applications_qs().filter(
         user=request.user, event=event, status__in=['new', 'approved'],
     ).first()
 
@@ -1111,7 +1114,7 @@ def event_detail(request, event_id):
         # Порядок сортировки задаём на сервере, а строки резерва помечаем data-reserve
         # в шаблоне — скрытие/показ полностью клиентское.
         parts_by_shift_user = {}
-        for p in Participation.objects.filter(event_day__in=shifts).select_related('user'):
+        for p in dc.participations_qs().filter(event_day__in=shifts).select_related('user'):
             parts_by_shift_user[(p.event_day_id, p.user_id)] = p
 
         def _row_sort_key(row):
@@ -1132,7 +1135,7 @@ def event_detail(request, event_id):
         approved_total = 0
         for shift in shifts:
             decisions = (
-                ApplicationShiftDecision.objects.filter(shift=shift)
+                dc.application_shift_decisions_qs().filter(shift=shift)
                 .exclude(application__status='cancelled')
                 .select_related('application', 'application__user')
             )
@@ -1180,11 +1183,11 @@ def event_detail(request, event_id):
     # 👥 Расширенная карточка — только для участников мероприятия
     # (reports.md раздел 4: подавших заявку или получивших участие).
     is_participant = (
-        Application.objects.filter(user=request.user, event=event).exists()
-        or Participation.objects.filter(user=request.user, event_day__event=event).exists()
+        dc.applications_qs().filter(user=request.user, event=event).exists()
+        or dc.participations_qs().filter(user=request.user, event_day__event=event).exists()
     )
     if is_participant:
-        volunteers_count = Participation.objects.filter(event_day__event=event).values('user').distinct().count()
+        volunteers_count = dc.participations_qs().filter(event_day__event=event).values('user').distinct().count()
         avg_rating = event.feedbacks.aggregate(avg=Avg('rating'))['avg']
         my_feedback = event.feedbacks.filter(author=request.user).first()
         context.update({
@@ -1236,15 +1239,16 @@ def event_change_log_mark_read(request, event_id):
 
 @login_required
 def event_feedback_add(request, event_id):
+    from data_base import data_controller as dc
     event = get_object_or_404(Event, pk=event_id)
     is_participant = (
-        Application.objects.filter(user=request.user, event=event).exists()
-        or Participation.objects.filter(user=request.user, event_day__event=event).exists()
+        dc.applications_qs().filter(user=request.user, event=event).exists()
+        or dc.participations_qs().filter(user=request.user, event_day__event=event).exists()
     )
     if not is_participant:
         raise PermissionDenied('Оставить оценку могут только участники мероприятия.')
 
-    if EventFeedback.objects.filter(event=event, author=request.user).exists():
+    if dc.has_feedback(request.user.id, event.id):
         messages.error(request, 'Вы уже оставили оценку этому мероприятию.')
         return redirect('event_detail', event_id=event.id)
 
@@ -1321,15 +1325,16 @@ def event_delete(request, event_id):
         if not _check_captcha(request, session_key, request.POST.get('captcha_answer')):
             messages.error(request, 'Неверный ответ на пример — удаление отменено. Попробуйте ещё раз.')
             return modal_form_response(request, None, None, success_redirect=reverse('event_detail', args=[event.id]))
+        from data_base import data_controller as dc
         affected_user_ids = list(
-            Participation.objects.filter(event_day__event=event)
+            dc.participations_qs().filter(event_day__event=event)
             .values_list('user_id', flat=True).distinct()
         )
         title = event.title
         event.delete()
         if affected_user_ids:
             from blog.services.stats import recalc_user_aggregates
-            for user in User.objects.filter(id__in=affected_user_ids):
+            for user in dc.users_qs().filter(id__in=affected_user_ids):
                 recalc_user_aggregates(user)
         logger.info('Мероприятие удалено: event=%s title=%r by=%s', event_id, title, actor(request.user))
         messages.success(request, f'Мероприятие «{title}» удалено.')
@@ -1728,7 +1733,8 @@ def participation_edit(request, participation_id):
 
     form = ParticipationForm(request.POST or None, instance=participation)
     if request.method == 'POST' and form.is_valid():
-        old = Participation.objects.get(pk=participation.pk)
+        from data_base import data_controller as dc
+        old = dc.participations_qs().get(pk=participation.pk)
         old_status = old.status
         participation = form.save(commit=False)
         # Ручная правка часов через форму фиксирует hours_overridden, чтобы автопересчёт
@@ -1814,11 +1820,12 @@ def application_create(request):
     if event_id:
         # Подать заявку можно только на опубликованное мероприятие (кнопка «Опубликовать»
         # открывает набор). До публикации меро не видно волонтёрам и заявки не принимаются.
-        target_event = Event.objects.filter(pk=event_id).first()
+        from data_base import data_controller as dc
+        target_event = dc.get_event_by_id(event_id)
         if target_event and not target_event.published_at:
             messages.error(request, 'Мероприятие ещё не опубликовано — подать заявку нельзя.')
             return redirect('dashboard')
-        existing = Application.objects.filter(
+        existing = dc.applications_qs().filter(
             user=request.user, event_id=event_id, status__in=['new', 'approved'],
         ).first()
         if existing:
@@ -1889,12 +1896,13 @@ def application_manual_create(request):
     Мероприятие: если пришло `?event=<id>` (кнопка на странице меро) — оно зафиксировано
     и не выбирается; иначе (страница заявок) — выбирается из списка."""
     from blog.services.applications import create_manual_application
+    from data_base import data_controller as dc
 
     fixed_event_id = request.GET.get('event') or request.POST.get('event')
-    fixed_event = Event.objects.filter(pk=fixed_event_id).first() if fixed_event_id else None
+    fixed_event = dc.get_event_by_id(fixed_event_id) if fixed_event_id else None
 
     if request.method == 'POST':
-        event = fixed_event or Event.objects.filter(pk=request.POST.get('event')).first()
+        event = fixed_event or dc.get_event_by_id(request.POST.get('event'))
         if not event:
             return JsonResponse({'errors': {'event': ['Выберите мероприятие.']}}, status=400)
 
@@ -1902,7 +1910,7 @@ def application_manual_create(request):
         if not user_ids:
             return JsonResponse({'errors': {'users': ['Выберите хотя бы одного волонтёра.']}}, status=400)
 
-        targets = list(User.objects.filter(id__in=user_ids))
+        targets = list(dc.users_qs().filter(id__in=user_ids))
 
         created = 0
         skipped = 0
@@ -1924,7 +1932,7 @@ def application_manual_create(request):
     # GET → форма в модалке. Список меро для выбора (если не зафиксировано). Пул
     # волонтёров НЕ рендерим в контекст — его грузит единый remote-виджет выбора
     # (data-select-remote="users") общим AJAX-запросом с ранжированием и лимитом.
-    events = None if fixed_event else Event.objects.order_by('-created_at')
+    events = None if fixed_event else dc.events_qs().order_by('-created_at')
     return modal_form_response(
         request, 'blog/application_manual_form.html',
         {
@@ -2089,8 +2097,9 @@ def shift_applications_approve_all(request, event_id, shift_id):
     for app in event.applications.exclude(status='cancelled').prefetch_related('selected_shifts', 'event__shifts'):
         ensure_shift_decisions(app)
 
+    from data_base import data_controller as dc
     pending_decisions = list(
-        ApplicationShiftDecision.objects.filter(shift=shift, status='new')
+        dc.application_shift_decisions_qs().filter(shift=shift, status='new')
         .exclude(application__status='cancelled')
         .select_related('application')
     )
@@ -2108,7 +2117,8 @@ def shift_applications_approve_all(request, event_id, shift_id):
 
 
 def _pending_applications_queryset(event_id=None):
-    qs = Application.objects.filter(status='new').select_related('event')
+    from data_base import data_controller as dc
+    qs = dc.applications_qs().filter(status='new').select_related('event')
     if event_id:
         qs = qs.filter(event_id=event_id)
     return qs
@@ -2214,8 +2224,9 @@ def import_preview(request):
     Если в файле встречаются другие названия мероприятия (расхождение с fixed_event)
     — показываем отдельный экран с перечнем уникальных названий и просим явно
     подтвердить «всё равно добавить», прежде чем показать обычное превью."""
+    from data_base import data_controller as dc
     fixed_event_id = request.GET.get('event') or request.POST.get('event')
-    fixed_event = Event.objects.filter(pk=fixed_event_id).first() if fixed_event_id else None
+    fixed_event = dc.get_event_by_id(fixed_event_id) if fixed_event_id else None
 
     form = ExcelImportForm(request.POST or None, request.FILES or None)
     if request.method == 'POST' and 'excel_file' in request.FILES and form.is_valid():
@@ -2298,6 +2309,7 @@ def import_commit(request):
 
 @login_required
 def profile_detail(request, user_id):
+    from data_base import data_controller as dc
     target = get_object_or_404(User, pk=user_id)
     is_owner = request.user.id == target.id
     is_mgr = is_manager(request.user)
@@ -2357,7 +2369,7 @@ def profile_detail(request, user_id):
     tl_role = target.team_leader_roles.filter(revoked_at__isnull=True).first()
     if tl_role:
         context['tl_role'] = tl_role
-        context['tl_event_count'] = EventStaff.objects.filter(
+        context['tl_event_count'] = dc.event_staff_qs().filter(
             user=target, staff_role='team_lead'
         ).count()
     mgr_role = target.manager_roles.filter(revoked_at__isnull=True).first()
@@ -2382,8 +2394,8 @@ def profile_detail(request, user_id):
             for app in applications
         }
         all_shift_ids = {sid for ids in shift_ids_by_app.values() for sid in ids}
-        shifts_by_id = {s.id: s for s in EventShift.objects.filter(id__in=all_shift_ids)}
-        participations = Participation.objects.filter(
+        shifts_by_id = {s.id: s for s in dc.event_shifts_qs().filter(id__in=all_shift_ids)}
+        participations = dc.participations_qs().filter(
             user=target, event_day_id__in=all_shift_ids,
         ).select_related('event_day')
         participation_by_shift = {p.event_day_id: p for p in participations}
@@ -2439,7 +2451,7 @@ def profile_detail(request, user_id):
     if has_extended:
         # Пул благодарственных писем: мероприятия с явкой и заданным шаблоном.
         context['letters_pool'] = (
-            Event.objects.filter(
+            dc.events_qs().filter(
                 shifts__participations__user=target,
                 shifts__participations__status='attended',
                 letter__isnull=False,
@@ -2457,9 +2469,9 @@ def profile_detail(request, user_id):
     if can_see_comments:
         context['comments'] = target.received_comments.select_related('author', 'event').order_by('-created_at')
         if is_mgr:
-            event_queryset = Event.objects.all()
+            event_queryset = dc.events_qs()
         else:
-            event_queryset = Event.objects.filter(
+            event_queryset = dc.events_qs().filter(
                 staff__user=request.user, staff__staff_role='team_lead'
             ).exclude(event_status='finished')
         context['comment_form'] = UserCommentForm(event_queryset=event_queryset)
@@ -2477,6 +2489,7 @@ def letter_view(request, user_id, event_id):
 
     Доступ: сам волонтёр, менеджер или ТЛ с расширенным доступом к профилю.
     """
+    from data_base import data_controller as dc
     target = get_object_or_404(User, pk=user_id)
     event = get_object_or_404(Event.objects.select_related('letter', 'organization'), pk=event_id)
 
@@ -2485,7 +2498,7 @@ def letter_view(request, user_id, event_id):
     if not event.letter:
         raise PermissionDenied('У мероприятия не задан шаблон благодарственного письма.')
 
-    attended = Participation.objects.filter(
+    attended = dc.participations_qs().filter(
         user=target, event_day__event=event, status='attended'
     ).select_related('event_day')
     if not attended.exists():
@@ -2505,7 +2518,8 @@ def letter_view(request, user_id, event_id):
 
 @manager_required
 def pending_applications(request):
-    applications = Application.objects.filter(status='new').select_related('event', 'user').order_by('created_at')
+    from data_base import data_controller as dc
+    applications = dc.applications_qs().filter(status='new').select_related('event', 'user').order_by('created_at')
     return render(request, 'blog/pending_applications.html', {
         'applications': applications,
         'pending_count': applications.count(),
@@ -2524,10 +2538,11 @@ def profile_comment_add(request, user_id):
     if not can_comment:
         raise PermissionDenied('Нет прав оставлять комментарии этому волонтёру.')
 
+    from data_base import data_controller as dc
     if is_mgr:
-        event_queryset = Event.objects.all()
+        event_queryset = dc.events_qs()
     else:
-        event_queryset = Event.objects.filter(
+        event_queryset = dc.events_qs().filter(
             staff__user=request.user, staff__staff_role='team_lead'
         ).exclude(event_status='finished')
 
@@ -2578,14 +2593,15 @@ def _report_period_range(request):
         return period, today - datetime.timedelta(days=7), today
     if period == 'month':
         return period, today - datetime.timedelta(days=30), today
+    from data_base import data_controller as dc
     if period == 'season':
-        current = Season.objects.filter(start_season__lte=today).order_by('-start_season').first()
+        current = dc.seasons_qs().filter(start_season__lte=today).order_by('-start_season').first()
         if current:
             return period, current.start_season, current.end_season or today
         return period, today - datetime.timedelta(days=120), today
     if period == 'last_season':
-        current = Season.objects.filter(start_season__lte=today).order_by('-start_season').first()
-        previous_qs = Season.objects.order_by('-start_season')
+        current = dc.seasons_qs().filter(start_season__lte=today).order_by('-start_season').first()
+        previous_qs = dc.seasons_qs().order_by('-start_season')
         if current:
             previous_qs = previous_qs.filter(start_season__lt=current.start_season)
         previous = previous_qs.first()
@@ -3519,8 +3535,8 @@ def users_picker_data(request):
       - `?all=1` — весь список (менеджер нажал «показать всех»)."""
     from data_base import data_controller as dc
 
-    tl_ids = set(TeamLeader.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
-    mgr_ids = set(Manager.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
+    tl_ids = set(dc.team_leaders_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
+    mgr_ids = set(dc.managers_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
 
     order = 'name' if request.GET.get('order') == 'name' else 'recent'
     qs = dc.users_ranked_qs(order)
@@ -3552,30 +3568,31 @@ def users_picker_data(request):
 @manager_required
 def user_list(request):
     from django.db.models import OuterRef, Subquery
+    from data_base import data_controller as dc
 
     # Дата последней заявки (любой статус) и дата последнего мероприятия, на котором
     # человек реально был и получил часы (Participation.status='attended', hours>0) —
     # считаем через Subquery по каждому пользователю страницы, а не в Python-цикле,
     # чтобы не плодить N+1 при infinite-scroll подгрузке новых порций.
     last_application_sq = (
-        Application.objects.filter(user=OuterRef('pk'))
+        dc.applications_qs().filter(user=OuterRef('pk'))
         .order_by('-submitted_at', '-created_at')
         .values('submitted_at')[:1]
     )
     last_event_sq = (
-        Participation.objects.filter(user=OuterRef('pk'), status='attended', hours__gt=0)
+        dc.participations_qs().filter(user=OuterRef('pk'), status='attended', hours__gt=0)
         .order_by('-event_day__day')
         .values('event_day__day')[:1]
     )
-    users = User.objects.order_by('-created_at').annotate(
+    users = dc.users_qs().order_by('-created_at').annotate(
         last_application_at=Subquery(last_application_sq),
         last_attended_day=Subquery(last_event_sq),
     )
     paginator = Paginator(users, 40)
     page = paginator.get_page(request.GET.get('page'))
 
-    manager_ids = set(Manager.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
-    team_leader_ids = set(TeamLeader.objects.filter(revoked_at__isnull=True).values_list('user_id', flat=True))
+    manager_ids = set(dc.managers_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
+    team_leader_ids = set(dc.team_leaders_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
 
     context = {
         'page_obj': page,

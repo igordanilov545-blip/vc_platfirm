@@ -60,6 +60,11 @@ def get_user_by_id(user_id: int) -> Optional[User]:
     return User.objects.filter(pk=user_id).first()
 
 
+def get_user_by_login(login: str) -> Optional[User]:
+    """Пользователь по веб-логину (точное совпадение) или None. Для веб-аутентификации."""
+    return User.objects.filter(login=login).first()
+
+
 def is_login_taken(login: str, exclude_user_id: Optional[int] = None) -> bool:
     """Занят ли веб-логин (регистронезависимо) кем-то, кроме указанного пользователя."""
     qs = User.objects.filter(login__iexact=login)

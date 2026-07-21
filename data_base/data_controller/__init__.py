@@ -32,12 +32,13 @@ from .bot_queue import (  # noqa: F401
     create_button_removal, fetch_due_button_removals, delete_button_removal,
 )
 from .analytics import (  # noqa: F401
-    touch_web_session, get_web_session, set_page_view_duration, create_button_click,
+    touch_web_session, get_web_session, get_or_create_web_session, create_web_page_view,
+    set_page_view_duration, set_page_view_load_ms, create_button_click,
     create_bot_session_ping, downtimes_since, create_downtime, delete_downtime,
 )
 from .users import (  # noqa: F401
     create_user, get_users,
-    get_user_by_telegram_id, get_user_by_id, is_login_taken,
+    get_user_by_telegram_id, get_user_by_id, get_user_by_login, is_login_taken,
     get_or_create_user_by_telegram_id, update_user_fields,
     set_user_status, set_user_verification,
     sync_user_from_applications, find_candidate_user_by_telegram,
@@ -100,7 +101,7 @@ from .querysets import (  # noqa: F401
 # Публичный контракт слоя — тот же, что был у монолитного data_controller.py.
 __all__ = [
     'create_user', 'get_users',
-    'get_user_by_telegram_id', 'get_user_by_id', 'is_login_taken',
+    'get_user_by_telegram_id', 'get_user_by_id', 'get_user_by_login', 'is_login_taken',
     'get_or_create_user_by_telegram_id', 'update_user_fields',
     'set_user_status', 'set_user_verification',
     'sync_user_from_applications', 'find_candidate_user_by_telegram',
@@ -152,6 +153,7 @@ __all__ = [
     'get_user_by_telegram_id_excluding', 'logout_user_web_sessions',
     'create_outbox', 'fetch_pending_outbox', 'mark_outbox_sent', 'get_outbox', 'save_outbox',
     'create_button_removal', 'fetch_due_button_removals', 'delete_button_removal',
-    'touch_web_session', 'get_web_session', 'set_page_view_duration', 'create_button_click',
+    'touch_web_session', 'get_web_session', 'get_or_create_web_session', 'create_web_page_view',
+    'set_page_view_duration', 'set_page_view_load_ms', 'create_button_click',
     'create_bot_session_ping', 'downtimes_since', 'create_downtime', 'delete_downtime',
 ]

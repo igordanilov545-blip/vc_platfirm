@@ -18,10 +18,38 @@ def get_web_session(session_key: str) -> Optional[WebSession]:
     return WebSession.objects.filter(session_key=session_key).first()
 
 
+def get_or_create_web_session(session_key: str, *, user, role_snapshot: str,
+                              user_agent: str, seen_at) -> WebSession:
+    """Веб-сессия для трекинга активности: get-or-create по ключу сессии, затем
+    обновление `last_seen_at`/`user` (пользователь мог войти в рамках той же куки-сессии).
+    Возвращает актуальную запись WebSession."""
+    web_session, _ = WebSession.objects.get_or_create(
+        session_key=session_key,
+        defaults={
+            'user': user,
+            'role_snapshot': role_snapshot,
+            'last_seen_at': seen_at,
+            'user_agent': user_agent[:255],
+        },
+    )
+    WebSession.objects.filter(pk=web_session.pk).update(last_seen_at=seen_at, user=user)
+    return web_session
+
+
+def create_web_page_view(web_session: WebSession, path: str, view_name: str) -> WebPageView:
+    return WebPageView.objects.create(
+        session=web_session, path=path[:255], view_name=(view_name or '')[:100],
+    )
+
+
 def set_page_view_duration(page_view_id, session_key: str, duration_ms: int) -> None:
     WebPageView.objects.filter(pk=page_view_id, session__session_key=session_key).update(
         duration_ms=duration_ms
     )
+
+
+def set_page_view_load_ms(page_view_id, load_ms: int) -> None:
+    WebPageView.objects.filter(pk=page_view_id).update(load_ms=load_ms)
 
 
 def create_button_click(*, source: str, user, role_snapshot: str,

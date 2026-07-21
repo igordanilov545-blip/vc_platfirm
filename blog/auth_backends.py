@@ -1,5 +1,6 @@
 from django.contrib.auth.backends import BaseBackend
-from blog.models import User
+
+from data_base import data_controller as dc
 
 
 class WebLoginBackend(BaseBackend):
@@ -8,19 +9,15 @@ class WebLoginBackend(BaseBackend):
     def authenticate(self, request, login=None, password=None, **kwargs):
         if not login or not password:
             return None
-        try:
-            user = User.objects.get(login=login)
-        except User.DoesNotExist:
+        user = dc.get_user_by_login(login)
+        if user is None:
             return None
         if user.has_usable_password() and user.check_password(password):
             return user
         return None
 
     def get_user(self, user_id):
-        try:
-            return User.objects.get(pk=user_id)
-        except User.DoesNotExist:
-            return None
+        return dc.get_user_by_id(user_id)
 
 
 class TelegramWebAppBackend(BaseBackend):
@@ -33,7 +30,4 @@ class TelegramWebAppBackend(BaseBackend):
         return None
 
     def get_user(self, user_id):
-        try:
-            return User.objects.get(pk=user_id)
-        except User.DoesNotExist:
-            return None
+        return dc.get_user_by_id(user_id)

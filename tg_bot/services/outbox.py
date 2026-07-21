@@ -18,48 +18,33 @@ def schedule_button_removal(chat_id, message_id: int):
     пользователь не мог нажать на кнопку многомесячной давности с уже неактуальным
     состоянием. Обходчик — `tg_bot/notifier.py::_process_button_removals`."""
     close_old_connections()
-    from blog.models import PendingButtonRemoval
-    PendingButtonRemoval.objects.create(
-        chat_id=str(chat_id),
-        message_id=message_id,
-        remove_at=timezone.now() + timedelta(seconds=BUTTON_TTL_SECONDS),
-    )
+    dc.create_button_removal(chat_id, message_id, timezone.now() + timedelta(seconds=BUTTON_TTL_SECONDS))
 
 def fetch_due_button_removals(batch: int = 50) -> list:
     close_old_connections()
-    from blog.models import PendingButtonRemoval
-    return list(
-        PendingButtonRemoval.objects.filter(remove_at__lte=timezone.now())
-        .order_by('remove_at')[:batch]
-    )
+    return dc.fetch_due_button_removals(batch)
 
 def delete_button_removal(removal_id: int):
     close_old_connections()
-    from blog.models import PendingButtonRemoval
-    PendingButtonRemoval.objects.filter(pk=removal_id).delete()
+    dc.delete_button_removal(removal_id)
 
 MAX_ATTEMPTS = 5
 
 def fetch_pending_outbox(batch: int = 20) -> list:
     close_old_connections()
-    return list(
-        BotOutbox.objects.filter(status='pending', attempts__lt=MAX_ATTEMPTS)
-        .order_by('created_at')[:batch]
-    )
+    return dc.fetch_pending_outbox(batch, MAX_ATTEMPTS)
 
 def mark_outbox_sent(outbox_id: int):
     close_old_connections()
-    BotOutbox.objects.filter(pk=outbox_id).update(
-        status='sent', sent_at=timezone.now()
-    )
+    dc.mark_outbox_sent(outbox_id)
 
 def mark_outbox_failed(outbox_id: int, error: str):
     close_old_connections()
-    item = BotOutbox.objects.filter(pk=outbox_id).first()
+    item = dc.get_outbox(outbox_id)
     if not item:
         return
     item.attempts += 1
     item.last_error = str(error)[:1000]
     if item.attempts >= MAX_ATTEMPTS:
         item.status = 'failed'
-    item.save(update_fields=['attempts', 'last_error', 'status'])
+    dc.save_outbox(item, ['attempts', 'last_error', 'status'])

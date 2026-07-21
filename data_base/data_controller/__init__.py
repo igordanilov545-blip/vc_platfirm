@@ -33,7 +33,7 @@ from .bot_queue import (  # noqa: F401
 )
 from .analytics import (  # noqa: F401
     touch_web_session, get_web_session, set_page_view_duration, create_button_click,
-    downtimes_since, create_downtime, delete_downtime,
+    create_bot_session_ping, downtimes_since, create_downtime, delete_downtime,
 )
 from .users import (  # noqa: F401
     create_user, get_users,
@@ -83,7 +83,7 @@ from .reference import (  # noqa: F401
     create_churn_history, get_churn_history, create_churn_log, resolve_incidents,
     create_incident, resolve_incident_by_id,
     create_user_comment, get_user_comments,
-    create_feedback, get_feedbacks, has_feedback,
+    create_feedback, get_feedbacks, has_feedback, update_feedback_comment,
     create_season, get_seasons,
     get_const, get_all_consts, get_or_create_pgas_template,
 )
@@ -132,7 +132,7 @@ __all__ = [
     'create_churn_history', 'get_churn_history', 'create_churn_log', 'resolve_incidents',
     'create_incident', 'resolve_incident_by_id',
     'create_user_comment', 'get_user_comments',
-    'create_feedback', 'get_feedbacks', 'has_feedback',
+    'create_feedback', 'get_feedbacks', 'has_feedback', 'update_feedback_comment',
     'create_requirement', 'get_requirements',
     'add_requirement_to_event', 'get_event_requirements_map',
     'create_user_exception', 'get_user_exceptions',
@@ -153,5 +153,5 @@ __all__ = [
     'create_outbox', 'fetch_pending_outbox', 'mark_outbox_sent', 'get_outbox', 'save_outbox',
     'create_button_removal', 'fetch_due_button_removals', 'delete_button_removal',
     'touch_web_session', 'get_web_session', 'set_page_view_duration', 'create_button_click',
-    'downtimes_since', 'create_downtime', 'delete_downtime',
+    'create_bot_session_ping', 'downtimes_since', 'create_downtime', 'delete_downtime',
 ]

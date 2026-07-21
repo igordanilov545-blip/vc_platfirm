@@ -6,7 +6,7 @@
 """
 from typing import Optional, List
 
-from blog.models import WebSession, WebPageView, ButtonClickEvent, SystemDowntime
+from blog.models import WebSession, WebPageView, ButtonClickEvent, SystemDowntime, BotSessionPing
 
 
 # --- Веб-сессии и просмотры (заполняет ActivityTrackingMiddleware + analytics.js) ---
@@ -24,12 +24,18 @@ def set_page_view_duration(page_view_id, session_key: str, duration_ms: int) -> 
     )
 
 
-def create_button_click(*, source: str, user, web_session, role_snapshot: str,
-                        action_key: str, label: str) -> ButtonClickEvent:
+def create_button_click(*, source: str, user, role_snapshot: str,
+                        action_key: str, label: str = '', web_session=None) -> ButtonClickEvent:
+    """Клик по кнопке (веб или бот). У бота нет веб-сессии — `web_session=None`."""
     return ButtonClickEvent.objects.create(
         source=source, user=user, web_session=web_session,
         role_snapshot=role_snapshot, action_key=action_key, label=label,
     )
+
+
+def create_bot_session_ping(user) -> BotSessionPing:
+    """Пинг активности пользователя в боте (телеметрия онлайна для дашборда)."""
+    return BotSessionPing.objects.create(user=user)
 
 
 # --- Периоды простоя системы (красные/жёлтые зоны на графиках онлайна) ---

@@ -169,9 +169,7 @@ def set_web_credentials(user_id: int, login: str, password: str):
     user.web_credentials_set_at = timezone.now()
     user.save(update_fields=['login', 'password', 'web_credentials_set_at'])
 
-    for session in Session.objects.filter(expire_date__gte=timezone.now()):
-        if session.get_decoded().get('_auth_user_id') == str(user.id):
-            session.delete()
+    dc.logout_user_web_sessions(user)
     logger.info('Установлены/сброшены веб-креды через бот: %s login=%s', actor(user), user.login)
     return user
 

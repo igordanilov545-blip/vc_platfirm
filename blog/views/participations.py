@@ -18,7 +18,7 @@ def participation_set_status(request, participation_id):
         return JsonResponse({'error': 'Метод не поддерживается.'}, status=405)
 
     participation = get_object_or_404(
-        Participation.objects.select_related('event_day__event', 'user'), pk=participation_id
+        dc.participations_qs().select_related('event_day__event', 'user'), pk=participation_id
     )
     event = participation.event_day.event
     if not can_process_applications(request.user, event.id):
@@ -75,7 +75,7 @@ def participation_set_hours(request, participation_id):
         return JsonResponse({'error': 'Метод не поддерживается.'}, status=405)
 
     participation = get_object_or_404(
-        Participation.objects.select_related('event_day__event', 'user'), pk=participation_id
+        dc.participations_qs().select_related('event_day__event', 'user'), pk=participation_id
     )
     event = participation.event_day.event
     if not can_process_applications(request.user, event.id):
@@ -106,7 +106,7 @@ def participation_set_hours(request, participation_id):
 @login_required
 def participation_edit(request, participation_id):
     participation = get_object_or_404(
-        Participation.objects.select_related('event_day__event', 'user'), pk=participation_id
+        dc.participations_qs().select_related('event_day__event', 'user'), pk=participation_id
     )
     event = participation.event_day.event
     if not can_process_applications(request.user, event.id):

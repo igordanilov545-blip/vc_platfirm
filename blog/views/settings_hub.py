@@ -395,7 +395,7 @@ def requirement_exception_add(request, requirement_id):
 
 @manager_required
 def requirement_exception_remove(request, exception_id):
-    exception = get_object_or_404(UserRequirementException.objects.select_related('user', 'requirement'), pk=exception_id)
+    exception = get_object_or_404(dc.user_requirement_exceptions_qs().select_related('user', 'requirement'), pk=exception_id)
     if request.method == 'POST':
         name = exception.user.full_name
         title = exception.requirement.title

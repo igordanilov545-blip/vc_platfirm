@@ -17,11 +17,9 @@ def analytics_ping(request):
     duration_ms = request.POST.get('duration_ms')
 
     now = timezone.now()
-    WebSession.objects.filter(session_key=session_key).update(last_seen_at=now)
+    dc.touch_web_session(session_key, now)
     if page_view_id and duration_ms and duration_ms.isdigit():
-        WebPageView.objects.filter(pk=page_view_id, session__session_key=session_key).update(
-            duration_ms=int(duration_ms)
-        )
+        dc.set_page_view_duration(page_view_id, session_key, int(duration_ms))
     return JsonResponse({'ok': True})
 
 @require_POST
@@ -31,9 +29,7 @@ def analytics_leave(request):
     page_view_id = request.POST.get('page_view_id')
     duration_ms = request.POST.get('duration_ms')
     if session_key and page_view_id and duration_ms and duration_ms.isdigit():
-        WebPageView.objects.filter(pk=page_view_id, session__session_key=session_key).update(
-            duration_ms=int(duration_ms)
-        )
+        dc.set_page_view_duration(page_view_id, session_key, int(duration_ms))
     return JsonResponse({'ok': True})
 
 @require_POST
@@ -46,8 +42,8 @@ def analytics_click(request):
         return JsonResponse({'ok': False}, status=400)
     label = (request.POST.get('label') or '').strip()[:200]
     user = request.user if request.user.is_authenticated else None
-    web_session = WebSession.objects.filter(session_key=request.session.session_key).first()
-    ButtonClickEvent.objects.create(
+    web_session = dc.get_web_session(request.session.session_key)
+    dc.create_button_click(
         source='web',
         user=user,
         web_session=web_session,
@@ -134,7 +130,7 @@ def analytics_downtimes_data(request):
     """Периоды простоя (для красных/жёлтых зон на графиках онлайна) за последние `hours`."""
     hours = min(int(request.GET.get('hours', 24)), 24 * 30)
     since = timezone.now() - datetime.timedelta(hours=hours)
-    downtimes = SystemDowntime.objects.filter(ended_at__gte=since).order_by('started_at')
+    downtimes = dc.downtimes_since(since)
     return JsonResponse({
         'downtimes': [
             {
@@ -166,8 +162,8 @@ def analytics_downtime_add(request):
     if ended <= started:
         return JsonResponse({'error': 'ended_at должен быть позже started_at'}, status=400)
 
-    downtime = SystemDowntime.objects.create(
-        kind=kind, started_at=started, ended_at=ended,
+    downtime = dc.create_downtime(
+        kind, started, ended,
         comment=(request.POST.get('comment') or '').strip()[:255],
     )
     return JsonResponse({'ok': True, 'id': downtime.id})
@@ -175,7 +171,7 @@ def analytics_downtime_add(request):
 @manager_required
 @require_POST
 def analytics_downtime_delete(request, downtime_id):
-    SystemDowntime.objects.filter(pk=downtime_id).delete()
+    dc.delete_downtime(downtime_id)
     return JsonResponse({'ok': True})
 
 LOG_CHANNELS = {'web': 'web.log', 'bot': 'bot.log', 'db': 'db.log'}

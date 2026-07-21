@@ -10,6 +10,7 @@ from tg_bot import services, keyboards as kb
 from tg_bot.states import Comment
 from tg_bot.ui import answer_with_expiring_keyboard
 from blog.services import roles as roles_service
+from data_base import data_controller as dc
 
 router = Router(name='team_leader')
 
@@ -124,16 +125,14 @@ async def cb_shift_approve(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith('app_profile:'))
 async def cb_profile(callback: CallbackQuery):
-    from blog.models import Application
     application_id = int(callback.data.split(':', 1)[1])
     user, _ = await sync_to_async(services.get_or_create_user)(
         callback.from_user.id, callback.from_user.username
     )
 
-    def _load():
-        return Application.objects.select_related('event', 'user').filter(pk=application_id).first()
-
-    application = await sync_to_async(_load)()
+    application = await sync_to_async(dc.get_application_by_id)(
+        application_id, with_event=True, with_user=True
+    )
     await callback.answer()
     if not application or not application.user:
         await callback.message.answer('⚠️ Профиль волонтёра недоступен.')

@@ -32,12 +32,13 @@ from .bot_queue import (  # noqa: F401
     create_button_removal, fetch_due_button_removals, delete_button_removal,
 )
 from .analytics import (  # noqa: F401
-    touch_web_session, get_web_session, set_page_view_duration, create_button_click,
-    downtimes_since, create_downtime, delete_downtime,
+    touch_web_session, get_web_session, get_or_create_web_session, create_web_page_view,
+    set_page_view_duration, set_page_view_load_ms, create_button_click,
+    create_bot_session_ping, downtimes_since, create_downtime, delete_downtime,
 )
 from .users import (  # noqa: F401
     create_user, get_users,
-    get_user_by_telegram_id, get_user_by_id, is_login_taken,
+    get_user_by_telegram_id, get_user_by_id, get_user_by_login, is_login_taken,
     get_or_create_user_by_telegram_id, update_user_fields,
     set_user_status, set_user_verification,
     sync_user_from_applications, find_candidate_user_by_telegram,
@@ -49,6 +50,8 @@ from .orgs import (  # noqa: F401
     create_organization, get_organizations, get_organization_by_id,
     create_organizer, get_organizers,
     link_organizer_to_organization, get_organizer_links,
+    organizers_for_organization, organizations_for_organizer,
+    sync_organization_organizers, sync_organizer_organizations,
     create_organizer_interaction, get_organizer_interactions,
     create_location, get_locations,
 )
@@ -61,6 +64,14 @@ from .events import (  # noqa: F401
     create_event_shift, get_event_shifts,
     assign_staff_to_event, get_event_staff,
     get_event_by_id,
+    active_team_leader_users_qs, active_manager_users_qs,
+    events_open_for_application_qs, events_with_open_shifts,
+    event_categories_for_event, event_requirements_for_event, event_staff_users,
+    organizer_organization_link_pairs,
+    sync_event_categories, sync_event_requirements,
+    prune_event_staff, add_event_staff, prune_event_manager,
+    has_active_team_leader_role, create_team_leader_role,
+    get_or_create_organizer_organization_link,
 )
 from .applications import (  # noqa: F401
     create_application, set_application_shifts, get_applications, get_user_active_applications,
@@ -77,13 +88,13 @@ from .applications import (  # noqa: F401
 from .requirements import (  # noqa: F401
     create_requirement, get_requirements,
     add_requirement_to_event, get_event_requirements_map,
-    create_user_exception, get_user_exceptions,
+    create_user_exception, get_user_exceptions, user_has_requirement_exception,
 )
 from .reference import (  # noqa: F401
     create_churn_history, get_churn_history, create_churn_log, resolve_incidents,
     create_incident, resolve_incident_by_id,
     create_user_comment, get_user_comments,
-    create_feedback, get_feedbacks, has_feedback,
+    create_feedback, get_feedbacks, has_feedback, update_feedback_comment,
     create_season, get_seasons,
     get_const, get_all_consts, get_or_create_pgas_template,
 )
@@ -100,7 +111,7 @@ from .querysets import (  # noqa: F401
 # Публичный контракт слоя — тот же, что был у монолитного data_controller.py.
 __all__ = [
     'create_user', 'get_users',
-    'get_user_by_telegram_id', 'get_user_by_id', 'is_login_taken',
+    'get_user_by_telegram_id', 'get_user_by_id', 'get_user_by_login', 'is_login_taken',
     'get_or_create_user_by_telegram_id', 'update_user_fields',
     'set_user_status', 'set_user_verification',
     'sync_user_from_applications', 'find_candidate_user_by_telegram',
@@ -110,6 +121,8 @@ __all__ = [
     'create_organization', 'get_organizations', 'get_organization_by_id',
     'create_organizer', 'get_organizers',
     'link_organizer_to_organization', 'get_organizer_links',
+    'organizers_for_organization', 'organizations_for_organizer',
+    'sync_organization_organizers', 'sync_organizer_organizations',
     'create_organizer_interaction', 'get_organizer_interactions',
     'create_location', 'get_locations',
     'create_event_category', 'get_event_categories',
@@ -119,6 +132,14 @@ __all__ = [
     'add_category_to_event', 'get_event_categories_map',
     'create_event_shift', 'get_event_shifts',
     'assign_staff_to_event', 'get_event_staff',
+    'active_team_leader_users_qs', 'active_manager_users_qs',
+    'events_open_for_application_qs', 'events_with_open_shifts',
+    'event_categories_for_event', 'event_requirements_for_event', 'event_staff_users',
+    'organizer_organization_link_pairs',
+    'sync_event_categories', 'sync_event_requirements',
+    'prune_event_staff', 'add_event_staff', 'prune_event_manager',
+    'has_active_team_leader_role', 'create_team_leader_role',
+    'get_or_create_organizer_organization_link',
     'create_application', 'set_application_shifts', 'get_applications', 'get_user_active_applications',
     'count_applications', 'count_events_with_open_recruitment',
     'get_user_application_for_event', 'update_application_status',
@@ -132,10 +153,10 @@ __all__ = [
     'create_churn_history', 'get_churn_history', 'create_churn_log', 'resolve_incidents',
     'create_incident', 'resolve_incident_by_id',
     'create_user_comment', 'get_user_comments',
-    'create_feedback', 'get_feedbacks', 'has_feedback',
+    'create_feedback', 'get_feedbacks', 'has_feedback', 'update_feedback_comment',
     'create_requirement', 'get_requirements',
     'add_requirement_to_event', 'get_event_requirements_map',
-    'create_user_exception', 'get_user_exceptions',
+    'create_user_exception', 'get_user_exceptions', 'user_has_requirement_exception',
     'create_season', 'get_seasons',
     'get_const', 'get_all_consts', 'get_or_create_pgas_template',
     # Базовые queryset'ы для аналитики (отчёты) + скалярные срезы.
@@ -152,6 +173,7 @@ __all__ = [
     'get_user_by_telegram_id_excluding', 'logout_user_web_sessions',
     'create_outbox', 'fetch_pending_outbox', 'mark_outbox_sent', 'get_outbox', 'save_outbox',
     'create_button_removal', 'fetch_due_button_removals', 'delete_button_removal',
-    'touch_web_session', 'get_web_session', 'set_page_view_duration', 'create_button_click',
-    'downtimes_since', 'create_downtime', 'delete_downtime',
+    'touch_web_session', 'get_web_session', 'get_or_create_web_session', 'create_web_page_view',
+    'set_page_view_duration', 'set_page_view_load_ms', 'create_button_click',
+    'create_bot_session_ping', 'downtimes_since', 'create_downtime', 'delete_downtime',
 ]

@@ -9,8 +9,9 @@ from typing import Optional, List
 from django.utils import timezone
 
 from blog.models import (
-    Location, Organization, Organizer, EventCategory, Event,
-    EventCategoryMap, EventShift, EventStaff, User, DobroRuSharedLink,
+    Location, Organization, Organizer, OrganizerOrganizationLink,
+    EventCategory, EventRequirement, EventRequirementMap, Event,
+    EventCategoryMap, EventShift, EventStaff, TeamLeader, Manager, User, DobroRuSharedLink,
 )
 from ._base import logger
 
@@ -187,3 +188,100 @@ def get_event_staff(event_id: Optional[int] = None, user_id: Optional[int] = Non
 
 def get_event_by_id(event_id: int) -> Optional[Event]:
     return Event.objects.filter(pk=event_id).first()
+
+
+# --- Ленивые queryset'ы для полей форм мероприятия (см. blog/forms/events.py) ---
+def active_team_leader_users_qs():
+    """Пользователи с активной ролью тим-лидера (team_leaders, revoked_at IS NULL),
+    по id из TeamLeader напрямую (LEFT JOIN дал бы ложные NULL-совпадения)."""
+    return User.objects.filter(
+        id__in=TeamLeader.objects.filter(revoked_at__isnull=True).values('user_id')
+    ).order_by('last_name', 'first_name')
+
+
+def active_manager_users_qs():
+    """Пользователи с активной ролью менеджера (managers, revoked_at IS NULL)."""
+    return User.objects.filter(
+        id__in=Manager.objects.filter(revoked_at__isnull=True).values('user_id')
+    ).order_by('last_name', 'first_name')
+
+
+def events_open_for_application_qs():
+    """Опубликованные меро с хотя бы одной будущей сменой, не завершённые вручную —
+    пул для поля выбора меро в форме подачи заявки (см. ApplicationForm)."""
+    now = timezone.now()
+    return (
+        Event.objects.filter(published_at__isnull=False, shifts__start_time__gt=now)
+        .exclude(event_status='finished')
+        .distinct().order_by('-created_at')
+    )
+
+
+def events_with_open_shifts():
+    """Меро, у которых есть хотя бы одна смена с открытым набором — для ленивого
+    закрытия набора по прошедшим меро в форме подачи заявки."""
+    return list(Event.objects.filter(shifts__recruit_status='open').distinct())
+
+
+def event_categories_for_event(event) -> List[EventCategory]:
+    """Категории, привязанные к меро (для initial чипов формы редактирования)."""
+    return list(EventCategory.objects.filter(event_map__event=event))
+
+
+def event_requirements_for_event(event) -> List[EventRequirement]:
+    return list(EventRequirement.objects.filter(event_map__event=event))
+
+
+def event_staff_users(event, staff_role: str) -> List[User]:
+    """Пользователи, назначенные на меро в данной роли staff (team_lead/manager)."""
+    return list(User.objects.filter(
+        staff_assignments__event=event, staff_assignments__staff_role=staff_role,
+    ))
+
+
+def organizer_organization_link_pairs() -> List[tuple]:
+    """Пары (organization_id, organizer_id) всех связей — для зависимой фильтрации
+    выбора организации/организатора на клиенте (форма меро)."""
+    return list(OrganizerOrganizationLink.objects.values_list('organization_id', 'organizer_id'))
+
+
+# --- Запись M2M-связей мероприятия из формы (event save) ---
+def sync_event_categories(event, selected) -> None:
+    """Приводит категории меро к выбранному набору (снять лишние, добавить новые)."""
+    EventCategoryMap.objects.filter(event=event).exclude(category__in=selected).delete()
+    for category in selected:
+        EventCategoryMap.objects.get_or_create(event=event, category=category)
+
+
+def sync_event_requirements(event, selected) -> None:
+    EventRequirementMap.objects.filter(event=event).exclude(requirement__in=selected).delete()
+    for requirement in selected:
+        EventRequirementMap.objects.get_or_create(event=event, requirement=requirement)
+
+
+def prune_event_staff(event, staff_role: str, keep_user_ids) -> None:
+    """Снимает назначения staff данной роли, кроме пользователей из keep_user_ids."""
+    event.staff.filter(staff_role=staff_role).exclude(user_id__in=keep_user_ids).delete()
+
+
+def add_event_staff(event, user, staff_role: str) -> bool:
+    """Назначает пользователя на меро в роли staff (идемпотентно). True, если создано."""
+    _, created = EventStaff.objects.get_or_create(event=event, user=user, staff_role=staff_role)
+    return created
+
+
+def prune_event_manager(event, selected_user) -> None:
+    """Снимает всех менеджеров меро, кроме выбранного (None → снять всех)."""
+    event.staff.filter(staff_role='manager').exclude(user=selected_user).delete()
+
+
+def has_active_team_leader_role(user) -> bool:
+    return TeamLeader.objects.filter(user=user, revoked_at__isnull=True).exists()
+
+
+def create_team_leader_role(user, assigned_by=None) -> TeamLeader:
+    return TeamLeader.objects.create(user=user, assigned_by=assigned_by)
+
+
+def get_or_create_organizer_organization_link(organizer, organization) -> None:
+    OrganizerOrganizationLink.objects.get_or_create(organizer=organizer, organization=organization)

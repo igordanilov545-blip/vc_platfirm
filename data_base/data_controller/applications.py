@@ -120,14 +120,21 @@ def get_user_application_for_event(user_id: int, event_id: int) -> Optional[Appl
 
 
 def get_application_by_id(application_id: int, *, with_event: bool = False,
+                          with_user: bool = False,
                           prefetch_shifts: bool = False) -> Optional[Application]:
     """Заявка по id или None. `with_event=True` — с предзагрузкой event (обязательно,
     если объект уходит в async-хендлер бота: обращение к application.event.* без
-    предзагрузки роняет SynchronousOnlyOperation). `prefetch_shifts=True` — подтянуть
-    выбранные смены заявки и смены меро (для отрисовки кнопок по сменам в боте)."""
+    предзагрузки роняет SynchronousOnlyOperation). `with_user=True` — то же для
+    application.user. `prefetch_shifts=True` — подтянуть выбранные смены заявки и
+    смены меро (для отрисовки кнопок по сменам в боте)."""
     qs = Application.objects.all()
+    related = []
     if with_event or prefetch_shifts:
-        qs = qs.select_related('event')
+        related.append('event')
+    if with_user:
+        related.append('user')
+    if related:
+        qs = qs.select_related(*related)
     if prefetch_shifts:
         qs = qs.prefetch_related('selected_shifts', 'event__shifts')
     return qs.filter(pk=application_id).first()

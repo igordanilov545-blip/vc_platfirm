@@ -44,7 +44,7 @@ class ApplicationForm(forms.ModelForm):
     одна смена — выбирать нечего, подаём сразу на неё.
     """
     selected_shifts = forms.ModelMultipleChoiceField(
-        queryset=EventShift.objects.none(),
+        queryset=dc.event_shifts_qs().none(),
         required=False,
         label='Смены',
         widget=ShiftMultipleSelect,
@@ -65,7 +65,7 @@ class ApplicationForm(forms.ModelForm):
         # Прошедшие мероприятия с ещё открытыми сменами закрываем лениво прямо тут —
         # это самое надёжное место: форма подачи заявки открывается чаще всего и должна
         # гарантированно не предлагать прошедшие меро (нет отдельного планировщика задач).
-        for event in Event.objects.filter(shifts__recruit_status='open').distinct():
+        for event in dc.events_with_open_shifts():
             event.close_recruit_if_passed()
         # Подать заявку можно на любое ОПУБЛИКОВАННОЕ меро (published_at задан), у
         # которого есть хотя бы одна смена, которая ещё не началась — даже если набор
@@ -74,11 +74,7 @@ class ApplicationForm(forms.ModelForm):
         # ЯВНО ЗАВЕРШЕНО менеджером (event_status='finished'): такое меро больше не
         # принимает заявок, даже если у него формально остались будущие смены.
         now = timezone.now()
-        self.fields['event'].queryset = (
-            Event.objects.filter(published_at__isnull=False, shifts__start_time__gt=now)
-            .exclude(event_status='finished')
-            .distinct().order_by('-created_at')
-        )
+        self.fields['event'].queryset = dc.events_open_for_application_qs()
 
         # Пул смен для чипов — только смены выбранного меро, которые ещё не начались
         # (открытые и закрытые по набору — закрытая смена всё ещё выбираема, просто
@@ -86,8 +82,8 @@ class ApplicationForm(forms.ModelForm):
         event = self.instance.event if self.instance and self.instance.pk else None
         if 'event' in self.data:
             try:
-                event = Event.objects.get(pk=self.data.get('event'))
-            except (Event.DoesNotExist, ValueError, TypeError):
+                event = dc.get_event_by_id(int(self.data.get('event')))
+            except (ValueError, TypeError):
                 event = None
         if event:
             self.fields['selected_shifts'].queryset = event.shifts.filter(

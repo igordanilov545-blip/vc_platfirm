@@ -109,12 +109,10 @@ class RequirementExceptionForm(forms.ModelForm):
 
     def clean_user(self):
         user_id = self.cleaned_data['user']
-        user = User.objects.filter(pk=user_id).first()
+        user = dc.get_user_by_id(user_id)
         if not user:
             raise forms.ValidationError('Выберите волонтёра из списка.')
-        if self.requirement is not None and UserRequirementException.objects.filter(
-            user=user, requirement=self.requirement
-        ).exists():
+        if self.requirement is not None and dc.user_has_requirement_exception(user, self.requirement):
             raise forms.ValidationError('Этот волонтёр уже отмечен как несоответствующий требованию.')
         return user
 
@@ -151,7 +149,7 @@ class SeasonForm(forms.ModelForm):
 
 class OrganizationForm(forms.ModelForm):
     organizers = forms.ModelMultipleChoiceField(
-        queryset=Organizer.objects.order_by('last_name', 'first_name'),
+        queryset=dc.organizers_qs().order_by('last_name', 'first_name'),
         required=False,
         label='Организаторы',
         widget=forms.SelectMultiple,
@@ -175,9 +173,7 @@ class OrganizationForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance.pk:
-            self.fields['organizers'].initial = Organizer.objects.filter(
-                organization_links__organization=self.instance
-            )
+            self.fields['organizers'].initial = dc.organizers_for_organization(self.instance)
 
     def save(self, commit=True):
         organization = super().save(commit=commit)
@@ -189,17 +185,12 @@ class OrganizationForm(forms.ModelForm):
         self._save_organizers(organization)
 
     def _save_organizers(self, organization):
-        from blog.models import OrganizerOrganizationLink
-        selected = self.cleaned_data.get('organizers', Organizer.objects.none())
-        OrganizerOrganizationLink.objects.filter(organization=organization).exclude(
-            organizer__in=selected
-        ).delete()
-        for organizer in selected:
-            OrganizerOrganizationLink.objects.get_or_create(organization=organization, organizer=organizer)
+        selected = list(self.cleaned_data.get('organizers') or [])
+        dc.sync_organization_organizers(organization, selected)
 
 class OrganizerForm(forms.ModelForm):
     organizations = forms.ModelMultipleChoiceField(
-        queryset=Organization.objects.order_by('name'),
+        queryset=dc.organizations_qs().order_by('name'),
         required=False,
         label='Организации',
         widget=forms.SelectMultiple,
@@ -228,9 +219,7 @@ class OrganizerForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance.pk:
-            self.fields['organizations'].initial = Organization.objects.filter(
-                organizer_links__organizer=self.instance
-            )
+            self.fields['organizations'].initial = dc.organizations_for_organizer(self.instance)
 
     def save(self, commit=True):
         organizer = super().save(commit=commit)
@@ -242,10 +231,5 @@ class OrganizerForm(forms.ModelForm):
         self._save_organizations(organizer)
 
     def _save_organizations(self, organizer):
-        from blog.models import OrganizerOrganizationLink
-        selected = self.cleaned_data.get('organizations', Organization.objects.none())
-        OrganizerOrganizationLink.objects.filter(organizer=organizer).exclude(
-            organization__in=selected
-        ).delete()
-        for organization in selected:
-            OrganizerOrganizationLink.objects.get_or_create(organizer=organizer, organization=organization)
+        selected = list(self.cleaned_data.get('organizations') or [])
+        dc.sync_organizer_organizations(organizer, selected)

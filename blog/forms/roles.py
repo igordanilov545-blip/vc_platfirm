@@ -49,7 +49,7 @@ class RoleUsersForm(forms.Form):
 
     def __init__(self, *args, queryset=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.allowed_queryset = queryset if queryset is not None else User.objects.none()
+        self.allowed_queryset = queryset if queryset is not None else dc.users_qs().none()
 
     def clean_users(self):
         ids = self.cleaned_data['users']

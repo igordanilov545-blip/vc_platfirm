@@ -79,34 +79,27 @@ class ActivityTrackingMiddleware:
         if not session.session_key:
             session.save()  # форсируем создание session_key для гостей без куки-сессии
 
-        from blog.models import WebPageView, WebSession
+        from data_base import data_controller as dc
         from blog.services.roles import role_slug
 
         user = request.user if getattr(request, 'user', None) and request.user.is_authenticated else None
         now = timezone.now()
 
-        web_session, _ = WebSession.objects.get_or_create(
-            session_key=session.session_key,
-            defaults={
-                'user': user,
-                'role_snapshot': role_slug(user) if user else 'guest',
-                'last_seen_at': now,
-                'user_agent': request.META.get('HTTP_USER_AGENT', '')[:255],
-            },
+        web_session = dc.get_or_create_web_session(
+            session.session_key,
+            user=user,
+            role_snapshot=role_slug(user) if user else 'guest',
+            user_agent=request.META.get('HTTP_USER_AGENT', ''),
+            seen_at=now,
         )
-        WebSession.objects.filter(pk=web_session.pk).update(last_seen_at=now, user=user)
 
         view_name = request.resolver_match.url_name if request.resolver_match else ''
-        page_view = WebPageView.objects.create(
-            session=web_session,
-            path=request.path[:255],
-            view_name=(view_name or '')[:100],
-        )
+        page_view = dc.create_web_page_view(web_session, request.path, view_name)
         request.analytics_page_view_id = page_view.id
 
     def _finalize(self, request, elapsed_seconds):
         page_view_id = getattr(request, 'analytics_page_view_id', None)
         if page_view_id is None:
             return
-        from blog.models import WebPageView
-        WebPageView.objects.filter(pk=page_view_id).update(load_ms=int(elapsed_seconds * 1000))
+        from data_base import data_controller as dc
+        dc.set_page_view_load_ms(page_view_id, int(elapsed_seconds * 1000))

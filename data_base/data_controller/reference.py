@@ -72,6 +72,12 @@ def create_feedback(author: User, event: Event, rating: int, comment: Optional[s
     return EventFeedback.objects.create(author=author, event=event, rating=rating, comment=comment)
 
 
+def update_feedback_comment(feedback_id: int, comment: str) -> int:
+    """Дополняет ранее созданный фидбек текстовым комментарием (бот: сначала оценка,
+    затем опционально комментарий отдельным сообщением). Возвращает число обновлённых."""
+    return EventFeedback.objects.filter(pk=feedback_id).update(comment=comment)
+
+
 def create_season(start_date: str, end_date: str) -> Season:
     return Season.objects.create(start_season=start_date, end_season=end_date)
 

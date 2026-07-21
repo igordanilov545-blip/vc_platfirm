@@ -43,7 +43,7 @@ class RegisterForm(forms.Form):
 
     def clean_login(self):
         value = (self.cleaned_data.get('login') or '').strip()
-        if User.objects.filter(login=value).exists():
+        if dc.is_login_taken(value):
             raise forms.ValidationError('Этот логин уже занят — выберите другой.')
         return value
 

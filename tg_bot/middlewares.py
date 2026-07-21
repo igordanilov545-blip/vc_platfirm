@@ -7,23 +7,25 @@ from asgiref.sync import sync_to_async
 from django.db import close_old_connections
 
 from blog.logging_utils import get_bot_logger
+from data_base import data_controller as dc
 
 logger = get_bot_logger(__name__)
 
 
 def _record_activity(telegram_id, action_key):
     close_old_connections()
-    from blog.models import BotSessionPing, ButtonClickEvent, User
     from blog.services import roles as roles_service
 
-    user = User.objects.filter(telegram_id=str(telegram_id)).first()
-    BotSessionPing.objects.create(user=user)
+    user = dc.get_user_by_telegram_id(telegram_id)
+    dc.create_bot_session_ping(user)
     if action_key:
-        ButtonClickEvent.objects.create(
+        dc.create_button_click(
             source='bot',
             user=user,
+            web_session=None,
             role_snapshot=roles_service.role_slug(user) if user else 'volunteer',
             action_key=action_key[:150],
+            label='',
         )
 
 

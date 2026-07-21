@@ -9,13 +9,13 @@ from aiogram.types import Message, CallbackQuery
 from tg_bot import services, keyboards as kb
 from tg_bot.states import ApplicationCancel, PendingApplication, Feedback, ShiftSelection
 from tg_bot.ui import answer_with_expiring_keyboard
+from data_base import data_controller as dc
 
 router = Router(name='volunteer')
 
 
 def get_event_title(event_id: int):
-    from blog.models import Event
-    event = Event.objects.filter(pk=event_id).first()
+    event = dc.get_event_by_id(event_id)
     return event.title if event else None
 
 
@@ -441,12 +441,11 @@ async def cb_feedback_comment(callback: CallbackQuery, state: FSMContext):
 
 @router.message(Feedback.waiting_comment)
 async def feedback_comment_text(message: Message, state: FSMContext):
-    from blog.models import EventFeedback
     data = await state.get_data()
     feedback_id = data.get('feedback_id')
     if feedback_id:
         await sync_to_async(
-            lambda: EventFeedback.objects.filter(pk=feedback_id).update(comment=message.text)
+            lambda: dc.update_feedback_comment(feedback_id, message.text)
         )()
     await state.set_state(None)
     await message.answer('✅ Спасибо за отзыв!')

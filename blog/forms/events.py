@@ -29,36 +29,28 @@ class EventForm(forms.ModelForm):
     уже существующего меро (`show_closing_fields`), чтобы не засорять форму создания.
     """
     categories = forms.ModelMultipleChoiceField(
-        queryset=EventCategory.objects.order_by('name'),
+        queryset=dc.event_categories_qs().order_by('name'),
         required=False,
         label='Категории',
         widget=forms.SelectMultiple,
     )
     requirements = forms.ModelMultipleChoiceField(
-        queryset=EventRequirement.objects.order_by('title'),
+        queryset=dc.requirements_qs().order_by('title'),
         required=False,
         label='Требования к волонтёрам',
         widget=forms.SelectMultiple,
     )
     team_leads = TeamLeadChoiceField(
-        # Только пользователи с активной ролью тим-лидера (таблица team_leaders, revoked_at IS NULL).
-        # ВАЖНО: filter(team_leader_roles__revoked_at__isnull=True) через LEFT JOIN даёт
-        # ложные совпадения — у пользователей БЕЗ единой записи в team_leaders revoked_at
-        # тоже NULL из-за LEFT JOIN, и "IS NULL" совпадает. Поэтому фильтруем по id из
-        # TeamLeader напрямую.
-        queryset=User.objects.filter(
-            id__in=TeamLeader.objects.filter(revoked_at__isnull=True).values('user_id')
-        ).order_by('last_name', 'first_name'),
+        # Только пользователи с активной ролью тим-лидера (см. dc.active_team_leader_users_qs:
+        # фильтр по id из TeamLeader, а не LEFT JOIN — иначе ложные NULL-совпадения).
+        queryset=dc.active_team_leader_users_qs(),
         required=False,
         label='Тим-лидеры',
         widget=forms.SelectMultiple,
     )
     manager = ManagerChoiceField(
-        # Только активные менеджеры (managers, revoked_at IS NULL) — тот же паттерн
-        # фильтрации, что у team_leads (filter по id из Manager, не LEFT JOIN).
-        queryset=User.objects.filter(
-            id__in=Manager.objects.filter(revoked_at__isnull=True).values('user_id')
-        ).order_by('last_name', 'first_name'),
+        # Только активные менеджеры (managers, revoked_at IS NULL) — тот же паттерн, что у team_leads.
+        queryset=dc.active_manager_users_qs(),
         required=False,
         label='Ответственный менеджер',
         widget=forms.Select,
@@ -121,21 +113,18 @@ class EventForm(forms.ModelForm):
         # Ранжирование справочников по дате добавления (новые сверху) — чтобы только что
         # созданная через "＋" запись была вверху списка.
         if 'organization' in self.fields:
-            self.fields['organization'].queryset = Organization.objects.order_by('-created_at')
+            self.fields['organization'].queryset = dc.organizations_qs().order_by('-created_at')
         if 'organizer' in self.fields:
-            self.fields['organizer'].queryset = Organizer.objects.order_by('-id')
+            self.fields['organizer'].queryset = dc.organizers_qs().order_by('-id')
         if 'location' in self.fields:
-            self.fields['location'].queryset = Location.objects.order_by('-id')
+            self.fields['location'].queryset = dc.locations_qs().order_by('-id')
 
         # Данные для зависимой фильтрации выбора организации/организатора на клиенте:
         # какие организаторы связаны с какой организацией (и наоборот). Выбрал
         # организацию → ниже показываются только связанные организаторы, и наоборот.
         import json
-        from blog.models import OrganizerOrganizationLink
         if 'organization' in self.fields and 'organizer' in self.fields:
-            links = list(
-                OrganizerOrganizationLink.objects.values_list('organization_id', 'organizer_id')
-            )
+            links = dc.organizer_organization_link_pairs()
             self.org_organizer_links_json = json.dumps(
                 [{'organization': o, 'organizer': z} for o, z in links]
             )
@@ -147,20 +136,11 @@ class EventForm(forms.ModelForm):
                 self.fields.pop(name, None)
 
         if self.instance.pk:
-            self.fields['categories'].initial = EventCategory.objects.filter(
-                event_map__event=self.instance
-            )
-            self.fields['requirements'].initial = EventRequirement.objects.filter(
-                event_map__event=self.instance
-            )
-            self.fields['team_leads'].initial = User.objects.filter(
-                staff_assignments__event=self.instance,
-                staff_assignments__staff_role='team_lead',
-            )
-            self.fields['manager'].initial = User.objects.filter(
-                staff_assignments__event=self.instance,
-                staff_assignments__staff_role='manager',
-            ).first()
+            self.fields['categories'].initial = dc.event_categories_for_event(self.instance)
+            self.fields['requirements'].initial = dc.event_requirements_for_event(self.instance)
+            self.fields['team_leads'].initial = dc.event_staff_users(self.instance, 'team_lead')
+            managers = dc.event_staff_users(self.instance, 'manager')
+            self.fields['manager'].initial = managers[0] if managers else None
         elif self.assigned_by:
             # Создание нового меро — создатель визуально предвыбран ответственным
             # менеджером в пикере (можно сменить прямо здесь же, до сохранения).
@@ -231,16 +211,12 @@ class EventForm(forms.ModelForm):
         return event
 
     def _save_categories(self, event):
-        selected = self.cleaned_data.get('categories', EventCategory.objects.none())
-        EventCategoryMap.objects.filter(event=event).exclude(category__in=selected).delete()
-        for category in selected:
-            EventCategoryMap.objects.get_or_create(event=event, category=category)
+        selected = list(self.cleaned_data.get('categories') or [])
+        dc.sync_event_categories(event, selected)
 
     def _save_requirements(self, event):
-        selected = self.cleaned_data.get('requirements', EventRequirement.objects.none())
-        EventRequirementMap.objects.filter(event=event).exclude(requirement__in=selected).delete()
-        for requirement in selected:
-            EventRequirementMap.objects.get_or_create(event=event, requirement=requirement)
+        selected = list(self.cleaned_data.get('requirements') or [])
+        dc.sync_event_requirements(event, selected)
 
     def _save_team_leads(self, event):
         """Приводит назначения тим-лидеров к ровно выбранному набору пользователей.
@@ -249,15 +225,15 @@ class EventForm(forms.ModelForm):
         умолчанию самого создающего менеджера (правило "нет меро без ТЛ") — только
         при создании; при редактировании пустой выбор просто снимает всех ТЛ, как раньше.
         """
-        selected = list(self.cleaned_data.get('team_leads', User.objects.none()))
+        selected = list(self.cleaned_data.get('team_leads') or [])
         if not selected and self.require_shift and self.assigned_by:
             selected = [self.assigned_by]
         selected_ids = {u.id for u in selected}
-        event.staff.filter(staff_role='team_lead').exclude(user_id__in=selected_ids).delete()
+        dc.prune_event_staff(event, 'team_lead', selected_ids)
         for user in selected:
-            _, created = EventStaff.objects.get_or_create(event=event, user=user, staff_role='team_lead')
-            if not TeamLeader.objects.filter(user=user, revoked_at__isnull=True).exists():
-                TeamLeader.objects.create(user=user, assigned_by=self.assigned_by)
+            created = dc.add_event_staff(event, user, 'team_lead')
+            if not dc.has_active_team_leader_role(user):
+                dc.create_team_leader_role(user, assigned_by=self.assigned_by)
                 from blog.services.notifications import notify_became_team_leader
                 notify_became_team_leader(user)
             if created:
@@ -269,13 +245,10 @@ class EventForm(forms.ModelForm):
         (OrganizerOrganizationLink), если её ещё нет. Так выбранная при создании меро
         пара сразу становится «связанной» и в дальнейшем предлагается друг для друга
         в зависимой фильтрации выбора."""
-        from blog.models import OrganizerOrganizationLink
         organization = self.cleaned_data.get('organization')
         organizer = self.cleaned_data.get('organizer')
         if organization and organizer:
-            OrganizerOrganizationLink.objects.get_or_create(
-                organizer=organizer, organization=organization
-            )
+            dc.get_or_create_organizer_organization_link(organizer, organization)
 
     def _save_manager(self, event):
         """Ровно один ответственный менеджер. Без явного выбора при СОЗДАНИИ —
@@ -285,9 +258,9 @@ class EventForm(forms.ModelForm):
         selected = self.cleaned_data.get('manager')
         if not selected and self.require_shift and self.assigned_by:
             selected = self.assigned_by
-        event.staff.filter(staff_role='manager').exclude(user=selected).delete()
+        dc.prune_event_manager(event, selected)
         if selected:
-            EventStaff.objects.get_or_create(event=event, user=selected, staff_role='manager')
+            dc.add_event_staff(event, selected, 'manager')
 
 class EventShiftForm(forms.ModelForm):
     """Смена мероприятия: одна дата + время начала и окончания (без дат внутри времени).
@@ -335,7 +308,7 @@ class EventShiftForm(forms.ModelForm):
         # (При создании меро несколько смен проверяются в EventForm.is_valid.)
         self.overlap_event = event
         super().__init__(*args, **kwargs)
-        self.fields['location'].queryset = Location.objects.order_by('-id')
+        self.fields['location'].queryset = dc.locations_qs().order_by('-id')
         if self.instance and self.instance.pk:
             # При редактировании существующего дня разложить datetime обратно на дату и время.
             if self.instance.start_time:
@@ -405,7 +378,6 @@ class EventShiftForm(forms.ModelForm):
 
     @staticmethod
     def _recalc_participation_hours(shift):
-        from blog.models import Participation
         from blog.services.stats import recalc_user_aggregates
 
         duration_hours = max(0, round((shift.end_time - shift.start_time).total_seconds() / 3600))

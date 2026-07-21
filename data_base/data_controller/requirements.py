@@ -36,6 +36,11 @@ def get_event_requirements_map(event_id: Optional[int] = None) -> List[EventRequ
     return list(qs)
 
 
+def user_has_requirement_exception(user: User, requirement: EventRequirement) -> bool:
+    """Отмечен ли пользователь как несоответствующий требованию (валидация формы)."""
+    return UserRequirementException.objects.filter(user=user, requirement=requirement).exists()
+
+
 def get_user_exceptions(user_id: Optional[int] = None) -> List[UserRequirementException]:
     qs = UserRequirementException.objects.all()
     if user_id:

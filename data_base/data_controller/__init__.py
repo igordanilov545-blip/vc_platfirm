@@ -50,6 +50,8 @@ from .orgs import (  # noqa: F401
     create_organization, get_organizations, get_organization_by_id,
     create_organizer, get_organizers,
     link_organizer_to_organization, get_organizer_links,
+    organizers_for_organization, organizations_for_organizer,
+    sync_organization_organizers, sync_organizer_organizations,
     create_organizer_interaction, get_organizer_interactions,
     create_location, get_locations,
 )
@@ -62,6 +64,14 @@ from .events import (  # noqa: F401
     create_event_shift, get_event_shifts,
     assign_staff_to_event, get_event_staff,
     get_event_by_id,
+    active_team_leader_users_qs, active_manager_users_qs,
+    events_open_for_application_qs, events_with_open_shifts,
+    event_categories_for_event, event_requirements_for_event, event_staff_users,
+    organizer_organization_link_pairs,
+    sync_event_categories, sync_event_requirements,
+    prune_event_staff, add_event_staff, prune_event_manager,
+    has_active_team_leader_role, create_team_leader_role,
+    get_or_create_organizer_organization_link,
 )
 from .applications import (  # noqa: F401
     create_application, set_application_shifts, get_applications, get_user_active_applications,
@@ -78,7 +88,7 @@ from .applications import (  # noqa: F401
 from .requirements import (  # noqa: F401
     create_requirement, get_requirements,
     add_requirement_to_event, get_event_requirements_map,
-    create_user_exception, get_user_exceptions,
+    create_user_exception, get_user_exceptions, user_has_requirement_exception,
 )
 from .reference import (  # noqa: F401
     create_churn_history, get_churn_history, create_churn_log, resolve_incidents,
@@ -111,6 +121,8 @@ __all__ = [
     'create_organization', 'get_organizations', 'get_organization_by_id',
     'create_organizer', 'get_organizers',
     'link_organizer_to_organization', 'get_organizer_links',
+    'organizers_for_organization', 'organizations_for_organizer',
+    'sync_organization_organizers', 'sync_organizer_organizations',
     'create_organizer_interaction', 'get_organizer_interactions',
     'create_location', 'get_locations',
     'create_event_category', 'get_event_categories',
@@ -120,6 +132,14 @@ __all__ = [
     'add_category_to_event', 'get_event_categories_map',
     'create_event_shift', 'get_event_shifts',
     'assign_staff_to_event', 'get_event_staff',
+    'active_team_leader_users_qs', 'active_manager_users_qs',
+    'events_open_for_application_qs', 'events_with_open_shifts',
+    'event_categories_for_event', 'event_requirements_for_event', 'event_staff_users',
+    'organizer_organization_link_pairs',
+    'sync_event_categories', 'sync_event_requirements',
+    'prune_event_staff', 'add_event_staff', 'prune_event_manager',
+    'has_active_team_leader_role', 'create_team_leader_role',
+    'get_or_create_organizer_organization_link',
     'create_application', 'set_application_shifts', 'get_applications', 'get_user_active_applications',
     'count_applications', 'count_events_with_open_recruitment',
     'get_user_application_for_event', 'update_application_status',
@@ -136,7 +156,7 @@ __all__ = [
     'create_feedback', 'get_feedbacks', 'has_feedback', 'update_feedback_comment',
     'create_requirement', 'get_requirements',
     'add_requirement_to_event', 'get_event_requirements_map',
-    'create_user_exception', 'get_user_exceptions',
+    'create_user_exception', 'get_user_exceptions', 'user_has_requirement_exception',
     'create_season', 'get_seasons',
     'get_const', 'get_all_consts', 'get_or_create_pgas_template',
     # Базовые queryset'ы для аналитики (отчёты) + скалярные срезы.

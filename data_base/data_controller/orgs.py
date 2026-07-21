@@ -37,6 +37,33 @@ def link_organizer_to_organization(organizer: Organizer, organization: Organizat
     return OrganizerOrganizationLink.objects.create(organizer=organizer, organization=organization)
 
 
+def organizers_for_organization(organization: Organization) -> List[Organizer]:
+    """Организаторы, связанные с организацией (для initial чипов формы организации)."""
+    return list(Organizer.objects.filter(organization_links__organization=organization))
+
+
+def organizations_for_organizer(organizer: Organizer) -> List[Organization]:
+    return list(Organization.objects.filter(organizer_links__organizer=organizer))
+
+
+def sync_organization_organizers(organization: Organization, selected) -> None:
+    """Приводит связи организации к выбранному набору организаторов (форма организации)."""
+    OrganizerOrganizationLink.objects.filter(organization=organization).exclude(
+        organizer__in=selected
+    ).delete()
+    for organizer in selected:
+        OrganizerOrganizationLink.objects.get_or_create(organization=organization, organizer=organizer)
+
+
+def sync_organizer_organizations(organizer: Organizer, selected) -> None:
+    """Приводит связи организатора к выбранному набору организаций (форма организатора)."""
+    OrganizerOrganizationLink.objects.filter(organizer=organizer).exclude(
+        organization__in=selected
+    ).delete()
+    for organization in selected:
+        OrganizerOrganizationLink.objects.get_or_create(organizer=organizer, organization=organization)
+
+
 def create_organizer_interaction(
     organizer: Organizer,
     author: Optional[User],

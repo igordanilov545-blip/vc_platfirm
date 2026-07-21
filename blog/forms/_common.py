@@ -9,17 +9,19 @@ from datetime import datetime, time
 from django import forms
 from django.utils import timezone
 
+from data_base import data_controller as dc
 from blog.models import (
     Event, EventComment, EventShift, Participation, Application, UserComment, EventFeedback,
-    Const, Manager, Season, Organization, Organizer, User, EventStaff, Location,
-    EventCategory, EventCategoryMap, TeamLeader, ExternalExperience,
-    EventRequirement, EventRequirementMap, UserRequirementException,
+    Const, Season, Organization, Organizer, User, Location,
+    EventCategory, ExternalExperience, EventRequirement, UserRequirementException,
 )
 
+# Модели остаются в импорте только для `ModelForm.Meta.model`, аннотаций и схемы полей
+# форм (типы виджетов/полей). Любой доступ к данным (queryset'ы полей, запись M2M-связей,
+# валидационные проверки) — через `dc` (data_controller), см. coding-principles §1–2.
 __all__ = [
-    'datetime', 'time', 'forms', 'timezone',
+    'datetime', 'time', 'forms', 'timezone', 'dc',
     'Event', 'EventComment', 'EventShift', 'Participation', 'Application', 'UserComment',
-    'EventFeedback', 'Const', 'Manager', 'Season', 'Organization', 'Organizer', 'User',
-    'EventStaff', 'Location', 'EventCategory', 'EventCategoryMap', 'TeamLeader',
-    'ExternalExperience', 'EventRequirement', 'EventRequirementMap', 'UserRequirementException',
+    'EventFeedback', 'Const', 'Season', 'Organization', 'Organizer', 'User',
+    'Location', 'EventCategory', 'ExternalExperience', 'EventRequirement', 'UserRequirementException',
 ]

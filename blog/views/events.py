@@ -39,7 +39,7 @@ def public_event_detail(request, token):
     """Публичная витрина мероприятия по ссылке «Поделиться» — read-only, без входа.
     Доступна только для опубликованного меро."""
     event = get_object_or_404(
-        Event.objects.select_related('location', 'organization'),
+        dc.events_qs().select_related('location', 'organization'),
         public_token=token, published_at__isnull=False,
     )
     shifts = list(event.shifts.select_related('location').order_by('day'))
@@ -180,7 +180,7 @@ def event_list(request):
 @login_required
 def event_detail(request, event_id):
     from data_base import data_controller as dc
-    event = get_object_or_404(Event.objects.select_related('location', 'organization', 'organizer'), pk=event_id)
+    event = get_object_or_404(dc.events_qs().select_related('location', 'organization', 'organizer'), pk=event_id)
     event.close_recruit_if_passed()
     shifts = list(event.shifts.select_related('location').order_by('day'))
     # Пока мероприятие не началось — смены идут по возрастанию даты (ближайшая сверху).

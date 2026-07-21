@@ -289,7 +289,7 @@ def letter_view(request, user_id, event_id):
     """
     from data_base import data_controller as dc
     target = get_object_or_404(User, pk=user_id)
-    event = get_object_or_404(Event.objects.select_related('letter', 'organization'), pk=event_id)
+    event = get_object_or_404(dc.events_qs().select_related('letter', 'organization'), pk=event_id)
 
     if not has_extended_access_to_profile(request.user, target):
         raise PermissionDenied('Нет доступа к письмам этого волонтёра.')

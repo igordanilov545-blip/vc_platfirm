@@ -31,6 +31,10 @@ from .bot_queue import (  # noqa: F401
     create_outbox, fetch_pending_outbox, mark_outbox_sent, get_outbox, save_outbox,
     create_button_removal, fetch_due_button_removals, delete_button_removal,
 )
+from .analytics import (  # noqa: F401
+    touch_web_session, get_web_session, set_page_view_duration, create_button_click,
+    downtimes_since, create_downtime, delete_downtime,
+)
 from .users import (  # noqa: F401
     create_user, get_users,
     get_user_by_telegram_id, get_user_by_id, is_login_taken,
@@ -148,4 +152,6 @@ __all__ = [
     'get_user_by_telegram_id_excluding', 'logout_user_web_sessions',
     'create_outbox', 'fetch_pending_outbox', 'mark_outbox_sent', 'get_outbox', 'save_outbox',
     'create_button_removal', 'fetch_due_button_removals', 'delete_button_removal',
+    'touch_web_session', 'get_web_session', 'set_page_view_duration', 'create_button_click',
+    'downtimes_since', 'create_downtime', 'delete_downtime',
 ]

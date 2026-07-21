@@ -24,12 +24,15 @@ def create_user(
     birthday: Optional[str] = None,
     about: Optional[str] = None,
     status: str = 'active',
-    comment: Optional[str] = None
+    comment: Optional[str] = None,
+    login: Optional[str] = None,
 ) -> User:
     """Создает пользователя через кастомный менеджер."""
     extra = {}
     if middle_name is not None:
         extra['middle_name'] = middle_name
+    if login is not None:
+        extra['login'] = login
     user = User.objects.create_user(
         telegram_id=telegram_id,
         telegram_username=telegram_username,

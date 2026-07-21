@@ -65,7 +65,7 @@ def register_view(request):
             telegram_username=data['telegram_username'], phone=data['phone'],
             first_name=data['first_name'], last_name=data['last_name'],
         )
-        user = User.objects.create_user(
+        user = dc.create_user(
             telegram_id=f'web_register:{uuid_lib.uuid4()}',
             first_name=data['first_name'], last_name=data['last_name'], middle_name=data['middle_name'],
             telegram_username=data['telegram_username'], phone=data['phone'], birthday=data['birthday'],

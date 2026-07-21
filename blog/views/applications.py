@@ -259,7 +259,7 @@ def event_shifts_json(request, event_id):
 
 @login_required
 def application_process(request, application_id):
-    application = get_object_or_404(Application.objects.select_related('event'), pk=application_id)
+    application = get_object_or_404(dc.applications_qs().select_related('event'), pk=application_id)
     if not can_process_applications(request.user, application.event_id):
         raise PermissionDenied('Нет прав на обработку заявок этого мероприятия.')
     if application.event.event_status == 'finished':
@@ -287,7 +287,7 @@ def application_shift_process(request, application_id, shift_id):
     """Принять/отклонить заявку ТОЛЬКО на одну смену (таблица набора на event_detail,
     где заявка на несколько смен показывается в таблице каждой смены отдельно) —
     остальные смены той же заявки не затрагиваются (ApplicationShiftDecision)."""
-    application = get_object_or_404(Application.objects.select_related('event'), pk=application_id)
+    application = get_object_or_404(dc.applications_qs().select_related('event'), pk=application_id)
     shift = get_object_or_404(EventShift, pk=shift_id, event=application.event)
     if not can_process_applications(request.user, application.event_id):
         raise PermissionDenied('Нет прав на обработку заявок этого мероприятия.')

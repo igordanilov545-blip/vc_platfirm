@@ -164,7 +164,9 @@
     {% for e in letters_pool %}
         <p>
             «{{ e.title }}» —
-            <a href="{% url 'letter_view' target.id e.id %}" target="_blank">открыть письмо</a>
+            <a href="{% url 'letter_view' target.id e.id %}" target="_blank"
+               data-letter-modal="{% url 'letter_view' target.id e.id %}"
+               data-letter-title="Письмо: {{ e.title }}">открыть письмо</a>
             {% if e.letter.has_background %}
             · <a href="{% url 'letter_view' target.id e.id %}?download=1">скачать</a>
             {% endif %}

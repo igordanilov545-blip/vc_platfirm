@@ -124,6 +124,25 @@
     </div>
 </div>
 
+{% comment %}Модалка просмотра благодарственного письма (PDF в iframe, ~80% экрана).
+Открывается по ссылке с data-letter-modal (letter_modal.js). На узких экранах
+(телефон) вместо iframe письмо открывается напрямую нативным PDF-вьюером —
+там это удобнее, чем зажатый iframe. Клик по фону/✕/Esc — закрыть.{% endcomment %}
+<div class="letter-modal-backdrop" id="letter-modal-backdrop" hidden>
+    <div class="letter-modal-dialog">
+        <div class="modal-header">
+            <h3 id="letter-modal-title">Благодарственное письмо</h3>
+            <div class="letter-modal-actions">
+                <a href="#" id="letter-modal-download" class="btn secondary btn-sm" download>⬇ Скачать</a>
+                <button type="button" class="modal-close" id="letter-modal-close" aria-label="Закрыть">✕</button>
+            </div>
+        </div>
+        <div class="letter-modal-body">
+            <iframe id="letter-modal-frame" title="Благодарственное письмо" src="about:blank"></iframe>
+        </div>
+    </div>
+</div>
+
 {% if user.is_authenticated %}
 <nav class="bottom-tabbar">
     <a href="{% url 'dashboard' %}" data-mtab="dashboard" class="tab-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
@@ -226,6 +245,7 @@
 <script src="{% static 'blog/js/tables.js' %}"></script>
 <script src="{% static 'blog/js/misc.js' %}"></script>
 <script src="{% static 'blog/js/letter_editor.js' %}"></script>
+<script src="{% static 'blog/js/letter_modal.js' %}"></script>
 <script src="{% static 'blog/js/analytics.js' %}"></script>
 
 <script src="{% static 'blog/js/companion.js' %}"></script>

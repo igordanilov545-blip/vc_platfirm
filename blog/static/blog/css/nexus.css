@@ -1584,3 +1584,40 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
   cursor: nwse-resize; touch-action: none;
 }
 .le-prop-type { font-weight: 600; color: var(--accent); }
+
+/* ====================================================================
+   Модалка просмотра благодарственного письма (letter_modal.js): PDF в iframe
+   поверх страницы, ~80% экрана. Клик по фону/✕/Esc — закрыть.
+   ==================================================================== */
+.letter-modal-backdrop {
+  position: fixed; inset: 0;
+  background: var(--overlay);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 210; padding: 24px;
+}
+.letter-modal-backdrop[hidden] { display: none; }
+
+.letter-modal-dialog {
+  width: 80vw; height: 80vh;
+  max-width: 1100px;
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.letter-modal-actions { display: flex; align-items: center; gap: 10px; }
+.letter-modal-body { flex: 1 1 auto; min-height: 0; background: #525659; }
+.letter-modal-body iframe {
+  width: 100%; height: 100%; border: 0; display: block;
+}
+
+/* Телефон: письмо открывается напрямую нативным вьюером (JS), но если модалка всё
+   же показана (планшет/поворот) — растягиваем на весь экран для читаемости. */
+@media (max-width: 640px) {
+  .letter-modal-backdrop { padding: 0; }
+  .letter-modal-dialog {
+    width: 100vw; height: 100vh; max-width: 100%; border-radius: 0;
+  }
+}

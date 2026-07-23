@@ -1,0 +1,117 @@
+{% extends 'blog/base.html' %}
+{% block title %}Редактор письма: {{ template.title }}{% endblock %}
+{% block content %}
+{% comment %}
+Редактор благодарственного письма (letter-templates.md): подложка = PNG первой страницы
+PDF-фона, поверх — перетаскиваемые/ресайзимые прямоугольники-поля. Поведение — в
+static/blog/js/letter_editor.js (навешивается по data-letter-editor), НЕ инлайном
+(agent-workflow §4). Конфигурация уходит на сервер JSON'ом (fields/).
+{% endcomment %}
+
+<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+    <h1 style="margin:0;">Редактор письма: {{ template.title }}</h1>
+    <a href="{% url 'settings' %}?tab=letters" class="btn secondary">← К шаблонам</a>
+</div>
+
+{% if not template.has_background %}
+<div class="card" style="max-width:640px;">
+    <h3>Шаг 1. Загрузите PDF-фон</h3>
+    <p class="field-hint">Оформленный макет письма (как из Figma, экспорт в PDF, одна страница). Поверх него разместите поля.</p>
+    <form method="post" action="{% url 'letter_template_upload_bg' template.id %}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="field">{{ upload_form.background_pdf_file.label_tag }}{{ upload_form.background_pdf_file }}</div>
+        <button type="submit" class="btn">Загрузить фон</button>
+    </form>
+</div>
+{% else %}
+
+<div class="letter-editor"
+     data-letter-editor
+     data-bg-url="{% url 'letter_template_background' template.id %}"
+     data-save-url="{% url 'letter_template_save_fields' template.id %}"
+     data-preview-url="{% url 'letter_template_preview' template.id %}"
+     data-font-upload-url="{% url 'letter_font_upload' %}"
+     data-fonts="{{ fonts_json }}"
+     data-field-keys="{{ field_keys_json }}"
+     data-fields="{{ fields_json }}">
+
+    <div class="le-toolbar">
+        <span class="le-toolbar-label">Добавить поле:</span>
+        {% for key, label in field_keys.items %}
+        <button type="button" class="btn secondary btn-sm" data-le-add="{{ key }}">＋ {{ label }}</button>
+        {% endfor %}
+        <span class="le-toolbar-spacer"></span>
+        <button type="button" class="btn" data-le-save>💾 Сохранить</button>
+        <a href="{% url 'letter_template_preview' template.id %}" target="_blank" class="btn secondary" data-le-preview>👁 Превью PDF</a>
+        <span class="le-save-status" data-le-status hidden></span>
+    </div>
+
+    <div class="le-workspace">
+        <div class="le-stage-wrap">
+            {# Сцена: фон-картинка + слой полей поверх. Соотношение сторон держит сам JS #}
+            <div class="le-stage" data-le-stage>
+                <img class="le-bg" data-le-bg alt="Фон письма">
+                <div class="le-fields-layer" data-le-fields></div>
+            </div>
+        </div>
+
+        <aside class="le-props card" data-le-props hidden>
+            <h3 style="margin-top:0;">Свойства поля</h3>
+            <div class="field">
+                <label>Тип поля</label>
+                <div data-le-prop-type class="le-prop-type"></div>
+            </div>
+            <div class="field" data-le-custom-wrap hidden>
+                <label>Текст</label>
+                <input type="text" data-le-prop-text placeholder="Произвольный текст">
+            </div>
+            <div class="field">
+                <label>Шрифт</label>
+                <select data-le-prop-font></select>
+                <button type="button" class="link-btn" data-le-upload-font style="margin-top:4px;">＋ Загрузить свой шрифт</button>
+            </div>
+            <div class="field-row" style="display:flex; gap:12px;">
+                <div class="field" style="flex:1;">
+                    <label>Размер, pt</label>
+                    <input type="number" min="6" max="200" step="1" data-le-prop-size>
+                </div>
+                <div class="field" style="flex:1;">
+                    <label>Цвет</label>
+                    <input type="color" data-le-prop-color>
+                </div>
+            </div>
+            <div class="field">
+                <label>Выравнивание</label>
+                <select data-le-prop-align>
+                    <option value="left">По левому краю</option>
+                    <option value="center">По центру</option>
+                    <option value="right">По правому краю</option>
+                </select>
+            </div>
+            <button type="button" class="btn danger btn-sm" data-le-delete-field>Удалить поле</button>
+        </aside>
+    </div>
+
+    <p class="field-hint" style="margin-top:12px;">
+        Перетаскивайте поле мышью, тяните за угол — меняйте размер рамки (в её границах
+        переносится текст). Кликните по полю, чтобы задать шрифт/размер/цвет справа.
+        Не забудьте «Сохранить».
+    </p>
+
+    <div class="card" style="max-width:640px; margin-top:16px;">
+        <h3>Заменить PDF-фон</h3>
+        <form method="post" action="{% url 'letter_template_upload_bg' template.id %}" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="field">{{ upload_form.background_pdf_file }}</div>
+            <button type="submit" class="btn secondary btn-sm">Загрузить новый фон</button>
+        </form>
+    </div>
+</div>
+
+{# Скрытая форма загрузки шрифта — сабмитится по AJAX из панели свойств. #}
+<form data-le-font-form hidden enctype="multipart/form-data">
+    {% csrf_token %}
+</form>
+{% endif %}
+
+{% endblock %}

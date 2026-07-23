@@ -19,7 +19,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.core.validators import URLValidator
 from django.db.models import Avg, Count, Q
-from django.http import FileResponse, Http404, HttpResponseForbidden, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -37,6 +37,7 @@ from blog.models import (
     EventRequirement, UserRequirementException,
     Location, Manager, Organization, Organizer, Participation, Season, TeamLeader, User,
     ButtonClickEvent, SystemDowntime, WebPageView, WebSession,
+    ThankYouLetterTemplate, LetterFont,
 )
 
 # --- Формы ---
@@ -49,7 +50,7 @@ from blog.forms import (
     QuickOrganizationForm, QuickOrganizerForm, QuickPerkForm,
     QuickRequirementForm, QuickVolunteerForm, RegisterForm, RequirementForm,
     RequirementEditForm, RequirementExceptionForm,
-    RoleUsersForm, SeasonForm, UserCommentForm,
+    RoleUsersForm, SeasonForm, UserCommentForm, LetterTemplateForm, LetterFontForm,
 )
 
 # --- Сервисы ---
@@ -218,6 +219,7 @@ __all__ = [
     'EventRequirement', 'UserRequirementException', 'Location', 'Manager',
     'Organization', 'Organizer', 'Participation', 'Season', 'TeamLeader', 'User',
     'ButtonClickEvent', 'SystemDowntime', 'WebPageView', 'WebSession',
+    'ThankYouLetterTemplate', 'LetterFont', 'HttpResponse',
     # формы
     'ApplicationCancelForm', 'ApplicationForm', 'CategoryForm', 'ConstForm',
     'EventCommentForm', 'EventShiftForm', 'EventFeedbackForm', 'EventForm',
@@ -226,7 +228,7 @@ __all__ = [
     'ParticipationForm', 'QuickCategoryForm', 'QuickLocationForm', 'QuickOrganizationForm',
     'QuickOrganizerForm', 'QuickPerkForm', 'QuickRequirementForm', 'QuickVolunteerForm', 'RegisterForm',
     'RequirementForm', 'RequirementEditForm', 'RequirementExceptionForm', 'RoleUsersForm',
-    'SeasonForm', 'UserCommentForm',
+    'SeasonForm', 'UserCommentForm', 'LetterTemplateForm', 'LetterFontForm',
     # сервисы
     'import_service', 'notifications_service', 'reports_service', 'report_exports',
     'can_cancel_application', 'cancel_application', 'event_closing_checklist',

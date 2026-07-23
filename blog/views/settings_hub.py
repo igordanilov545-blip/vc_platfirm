@@ -21,6 +21,7 @@ SETTINGS_TABS = [
     {'key': 'organizations', 'icon': '🏢', 'title': 'Организации', 'desc': 'Партнёры и заказчики мероприятий', 'url': 'organizations_list'},
     {'key': 'requirements', 'icon': '✅', 'title': 'Требования', 'desc': 'Условия допуска волонтёров', 'url': 'requirement_list'},
     {'key': 'categories', 'icon': '🏷️', 'title': 'Категории', 'desc': 'Категории мероприятий', 'url': 'category_list'},
+    {'key': 'letters', 'icon': '✉️', 'title': 'Шаблоны писем', 'desc': 'Конструктор благодарственных писем', 'url': 'letter_template_list'},
     {'key': 'perks', 'icon': '🎁', 'title': 'Плюшки', 'desc': 'Бонусы волонтёрам за участие', 'url': 'perk_list'},
     {'key': 'constants', 'icon': '🔢', 'title': 'Константы', 'desc': 'Пороги и коэффициенты системы', 'url': 'settings'},
     {'key': 'seasons', 'icon': '🗓️', 'title': 'Сезоны', 'desc': 'Периоды учёта и закрытие сезона', 'url': 'settings'},

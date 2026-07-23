@@ -1,0 +1,33 @@
+{% comment %}
+Панель «Плюшки» внутри страницы настроек (agent-workflow.md §4) — справочник плюшек
+мероприятий (EventPerk, бонусы волонтёрам за участие) с созданием/редактированием/
+удалением. Полный аналог _settings_categories.html.
+{% endcomment %}
+<div class="settings-panel-head">
+    <h2>Плюшки</h2>
+    <a href="{% url 'perk_create' %}" class="btn" data-modal data-modal-title="Новая плюшка">+ Новая плюшка</a>
+</div>
+
+{% include 'blog/partials/_table_search.html' with search_target="#perks-table" search_placeholder="Поиск по названию…" %}
+
+<div class="card" style="padding:0; overflow:hidden;">
+    <table class="responsive-table" data-sortable data-hideable-columns id="perks-table">
+        <thead><tr><th data-sort-key="name">Название</th><th></th></tr></thead>
+        <tbody>
+        {% for perk in perks %}
+            <tr data-search="{{ perk.name }}">
+                <td data-label="Название" data-sort-value="{{ perk.name }}">{{ perk.name }}</td>
+                <td data-label="">
+                    <a href="{% url 'perk_edit' perk.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Редактировать: {{ perk.name }}">Изменить</a>
+                    <form method="post" action="{% url 'perk_delete' perk.id %}" class="inline" data-confirm="Удалить плюшку «{{ perk.name }}»? Она будет снята со всех мероприятий.">
+                        {% csrf_token %}
+                        <button type="submit" class="btn danger btn-sm">Удалить</button>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="2">Плюшек пока нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>

@@ -48,6 +48,16 @@ def quick_create_category(request):
     return JsonResponse({'errors': form.errors}, status=400)
 
 @manager_required
+def quick_create_perk(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Метод не поддерживается.'}, status=405)
+    form = QuickPerkForm(request.POST)
+    if form.is_valid():
+        perk = form.save()
+        return JsonResponse({'id': perk.id, 'label': perk.name})
+    return JsonResponse({'errors': form.errors}, status=400)
+
+@manager_required
 def quick_create_volunteer(request):
     """Быстрое создание волонтёра прямо из виджета выбора (data-add-ref-picker) — новый
     пользователь сразу попадает в пул выбранных в текущей форме (напр. «Добавить

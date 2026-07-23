@@ -169,6 +169,14 @@
             <span style="color:var(--text-secondary); font-size:13px;">не указаны</span>
         {% endfor %}
     </div>
+    {% if perks %}
+    <div class="cat-chips-row" style="margin-top:6px;">
+        <span style="color:var(--text-secondary); font-size:13px;">Плюшки:</span>
+        {% for perk in perks %}
+            <span class="cat-chip {{ perk.id|chip_color }}"><span class="cat-chip-label">{{ perk.name }}</span></span>
+        {% endfor %}
+    </div>
+    {% endif %}
     {% if requirements %}
     <div class="cat-chips-row" style="margin-top:6px;">
         <span style="color:var(--text-secondary); font-size:13px;">Требования:</span>

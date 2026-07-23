@@ -1,0 +1,41 @@
+{% comment %}
+Тело формы организации (модалка/страница). Отличается от generic _modal_form.html тем,
+что поле «Организаторы» (M2M) рендерится единым chip-виджетом выбора «n из m»
+(data-chip-select, agent-workflow.md §4) — как категории у мероприятия, а не сырым
+<select multiple>. Так связать организацию с организаторами удобно прямо здесь.
+{% endcomment %}
+<form method="post" data-modal-form>
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+
+    <div class="field">{{ form.name.label_tag }}{{ form.name }}
+        {% if form.name.errors %}<div class="field-error">{{ form.name.errors|striptags }}</div>{% endif %}</div>
+
+    <div class="field">{{ form.description.label_tag }}{{ form.description }}
+        {% if form.description.errors %}<div class="field-error">{{ form.description.errors|striptags }}</div>{% endif %}</div>
+
+    <div class="field">
+        <label>{{ form.organizers.label }}</label>
+        <div class="category-chips" data-chip-select="{{ form.organizers.id_for_label }}" data-chip-empty="Организаторы не выбраны">
+            <div class="cat-chips-row" data-chips-selected></div>
+            <div class="cat-chips-available-wrap">
+                <div class="cat-chips-available-label">Доступные организаторы — нажмите, чтобы добавить:</div>
+                <div class="cat-chips-row" data-chips-available></div>
+                <button type="button" class="btn secondary btn-sm add-ref-btn" data-add-ref="organizer" data-target="{{ form.organizers.id_for_label }}" style="margin-top:8px;">＋ Новый организатор</button>
+            </div>
+        </div>
+        {{ form.organizers }}
+        {% if form.organizers.errors %}<div class="field-error">{{ form.organizers.errors|striptags }}</div>{% endif %}
+    </div>
+
+    <div class="field">{{ form.internal_rating.label_tag }}{{ form.internal_rating }}
+        {% if form.internal_rating.errors %}<div class="field-error">{{ form.internal_rating.errors|striptags }}</div>{% endif %}</div>
+
+    <div class="field">{{ form.comment.label_tag }}{{ form.comment }}
+        {% if form.comment.errors %}<div class="field-error">{{ form.comment.errors|striptags }}</div>{% endif %}</div>
+
+    <div class="modal-footer-actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
+        <button type="submit" class="btn">{{ submit_label|default:'Сохранить' }}</button>
+    </div>
+</form>

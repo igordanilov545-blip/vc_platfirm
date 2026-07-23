@@ -11,13 +11,18 @@ from django.utils import timezone
 from blog.models import (
     Location, Organization, Organizer, OrganizerOrganizationLink,
     EventCategory, EventRequirement, EventRequirementMap, Event,
-    EventCategoryMap, EventShift, EventStaff, TeamLeader, Manager, User, DobroRuSharedLink,
+    EventCategoryMap, EventPerk, EventPerkMap, EventShift, EventStaff,
+    TeamLeader, Manager, User, DobroRuSharedLink,
 )
 from ._base import logger
 
 
 def create_event_category(name: str) -> EventCategory:
     return EventCategory.objects.create(name=name)
+
+
+def create_event_perk(name: str) -> EventPerk:
+    return EventPerk.objects.create(name=name)
 
 
 def create_event(
@@ -66,6 +71,10 @@ def add_category_to_event(event: Event, category: EventCategory) -> EventCategor
     return EventCategoryMap.objects.create(event=event, category=category)
 
 
+def add_perk_to_event(event: Event, perk: EventPerk) -> EventPerkMap:
+    return EventPerkMap.objects.create(event=event, perk=perk)
+
+
 def create_event_shift(
     event: Event,
     day: str,
@@ -90,6 +99,13 @@ def assign_staff_to_event(event: Event, user: User, role: str) -> EventStaff:
 
 def get_event_categories(name_filter: Optional[str] = None) -> List[EventCategory]:
     qs = EventCategory.objects.all()
+    if name_filter:
+        qs = qs.filter(name__icontains=name_filter)
+    return list(qs)
+
+
+def get_event_perks(name_filter: Optional[str] = None) -> List[EventPerk]:
+    qs = EventPerk.objects.all()
     if name_filter:
         qs = qs.filter(name__icontains=name_filter)
     return list(qs)
@@ -170,6 +186,13 @@ def get_event_categories_map(event_id: Optional[int] = None) -> List[EventCatego
     return list(qs)
 
 
+def get_event_perks_map(event_id: Optional[int] = None) -> List[EventPerkMap]:
+    qs = EventPerkMap.objects.all()
+    if event_id:
+        qs = qs.filter(event_id=event_id)
+    return list(qs)
+
+
 def get_event_shifts(event_id: Optional[int] = None) -> List[EventShift]:
     qs = EventShift.objects.all()
     if event_id:
@@ -228,6 +251,11 @@ def event_categories_for_event(event) -> List[EventCategory]:
     return list(EventCategory.objects.filter(event_map__event=event))
 
 
+def event_perks_for_event(event) -> List[EventPerk]:
+    """Плюшки, привязанные к меро (для initial чипов формы редактирования)."""
+    return list(EventPerk.objects.filter(event_map__event=event))
+
+
 def event_requirements_for_event(event) -> List[EventRequirement]:
     return list(EventRequirement.objects.filter(event_map__event=event))
 
@@ -251,6 +279,13 @@ def sync_event_categories(event, selected) -> None:
     EventCategoryMap.objects.filter(event=event).exclude(category__in=selected).delete()
     for category in selected:
         EventCategoryMap.objects.get_or_create(event=event, category=category)
+
+
+def sync_event_perks(event, selected) -> None:
+    """Приводит плюшки меро к выбранному набору (снять лишние, добавить новые)."""
+    EventPerkMap.objects.filter(event=event).exclude(perk__in=selected).delete()
+    for perk in selected:
+        EventPerkMap.objects.get_or_create(event=event, perk=perk)
 
 
 def sync_event_requirements(event, selected) -> None:

@@ -70,6 +70,7 @@ def organization_create(request):
     return modal_form_response(
         request, 'blog/organization_form.html',
         {'form': form, 'title': 'Новая организация'},
+        partial_template='blog/partials/_organization_form_body.html',
     )
 
 @manager_required
@@ -86,6 +87,7 @@ def organization_edit(request, org_id):
     return modal_form_response(
         request, 'blog/organization_form.html',
         {'form': form, 'title': f'Редактировать: {organization.name}', 'submit_label': 'Сохранить'},
+        partial_template='blog/partials/_organization_form_body.html',
     )
 
 @manager_required
@@ -120,6 +122,7 @@ def organizer_create(request):
     return modal_form_response(
         request, 'blog/organizer_form.html',
         {'form': form, 'title': 'Новый организатор'},
+        partial_template='blog/partials/_organizer_form_body.html',
     )
 
 @manager_required
@@ -136,6 +139,7 @@ def organizer_edit(request, organizer_id):
     return modal_form_response(
         request, 'blog/organizer_form.html',
         {'form': form, 'title': f'Редактировать: {organizer.first_name} {organizer.last_name}', 'submit_label': 'Сохранить'},
+        partial_template='blog/partials/_organizer_form_body.html',
     )
 
 @manager_required

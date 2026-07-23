@@ -80,8 +80,42 @@ def notify_application_submitted(application, unknown_age: bool = False):
     notify_event_staff(application.event, text)
 
 
+def _approval_links_suffix(event, *, include_chat: bool, include_dobro: bool) -> str:
+    """Хвост отбивки об одобрении со ссылками меро: чат и Добро.ру. Управляется
+    флагами include_*, чтобы уметь как отправить обе ссылки при одобрении, так и
+    досылать позже только недостающие (send_pending_approval_links). Возвращает пустую
+    строку, если слать нечего."""
+    lines = []
+    if include_chat and event.chat_link:
+        lines.append(f'💬 Чат мероприятия: {event.chat_link}')
+    if include_dobro and event.dobro_ru_link:
+        lines.append(
+            f'📋 Регистрация на Добро.ру (обязательно для учёта часов): {event.dobro_ru_link}'
+        )
+    return ('\n\n' + '\n'.join(lines)) if lines else ''
+
+
+def _stamp_links_sent(application, *, chat: bool, dobro: bool):
+    """Проставляет отметки об отправке ссылок волонтёру, чтобы не слать их повторно."""
+    from django.utils import timezone
+
+    fields = []
+    now = timezone.now()
+    if chat and application.event.chat_link and application.chat_link_sent_at is None:
+        application.chat_link_sent_at = now
+        fields.append('chat_link_sent_at')
+    if dobro and application.event.dobro_ru_link and application.dobro_link_sent_at is None:
+        application.dobro_link_sent_at = now
+        fields.append('dobro_link_sent_at')
+    if fields:
+        application.save(update_fields=fields)
+
+
 def notify_application_status(application):
-    """Смена статуса заявки → волонтёру."""
+    """Смена статуса заявки → волонтёру. При одобрении в отбивку добавляются ссылки
+    меро (чат + Добро.ру), если они уже заданы; недостающие досылаются позже при
+    сохранении меро (send_pending_approval_links). Отправленные ссылки помечаются,
+    чтобы не продублировать их при досылке."""
     if not application.user:
         return
     if application.status == 'approved':
@@ -89,6 +123,10 @@ def notify_application_status(application):
             f'✅ Ваша заявка на «{application.event.title}» <b>одобрена</b>!\n'
             'Детали и дни смен — в боте: /myapps'
         )
+        text += _approval_links_suffix(application.event, include_chat=True, include_dobro=True)
+        notify_user(application.user, text)
+        _stamp_links_sent(application, chat=True, dobro=True)
+        return
     elif application.status == 'rejected':
         text = (
             f'ℹ️ Ваша заявка на «{application.event.title}» переведена в <b>резерв</b>.\n'
@@ -110,6 +148,10 @@ def notify_shift_decision_status(application, shift, new_status):
             f'✅ Ваша заявка на «{application.event.title}» (смена {day_label}) <b>одобрена</b>!\n'
             'Детали — в боте: /myapps'
         )
+        text += _approval_links_suffix(application.event, include_chat=True, include_dobro=True)
+        notify_user(application.user, text)
+        _stamp_links_sent(application, chat=True, dobro=True)
+        return
     elif new_status == 'rejected':
         text = (
             f'ℹ️ Ваша заявка на «{application.event.title}» (смена {day_label}) переведена в <b>резерв</b>.\n'
@@ -208,5 +250,37 @@ def broadcast_new_event(event):
     for user in subscribers:
         # apply_event → к сообщению прикрепится inline-кнопка «Подать заявку» на это меро.
         notify_user(user, text, apply_event=event)
+        sent += 1
+    return sent
+
+
+def send_pending_approval_links(event):
+    """Досылает одобренным волонтёрам ссылки меро (чат / Добро.ру), которых у них ещё
+    не было на момент одобрения — вызывается при сохранении меро (event_edit), когда
+    менеджер только что вписал недостающую ссылку. Каждая ссылка уходит один раз:
+    отправляем лишь ту, что теперь задана и ещё не была помечена как отправленная
+    (chat_link_sent_at / dobro_link_sent_at). Возвращает число уведомлений.
+
+    Одобрённость определяем по Application.status='approved' (производный агрегат по
+    решениям смен — этого достаточно: ссылки едины на всё меро, не на конкретную смену).
+    """
+    if not event.chat_link and not event.dobro_ru_link:
+        return 0
+
+    approved = event.applications.filter(status='approved', user__isnull=False)
+    sent = 0
+    for application in approved:
+        need_chat = bool(event.chat_link) and application.chat_link_sent_at is None
+        need_dobro = bool(event.dobro_ru_link) and application.dobro_link_sent_at is None
+        if not (need_chat or need_dobro):
+            continue
+        suffix = _approval_links_suffix(event, include_chat=need_chat, include_dobro=need_dobro)
+        if not suffix:
+            continue
+        text = (
+            f'📎 По одобренной заявке на «{event.title}» появились новые ссылки:{suffix}'
+        )
+        notify_user(application.user, text)
+        _stamp_links_sent(application, chat=need_chat, dobro=need_dobro)
         sent += 1
     return sent

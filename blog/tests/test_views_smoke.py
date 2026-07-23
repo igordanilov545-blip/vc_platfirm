@@ -60,7 +60,7 @@ class ManagerPagesSmokeTests(TestCase):
         # редиректит в /settings, а контент отдаётся только по AJAX (X-Requested-With).
         ajax = {'HTTP_X_REQUESTED_WITH': 'XMLHttpRequest'}
         for name in ['location_list', 'organizations_list', 'organizer_list',
-                     'requirement_list', 'category_list']:
+                     'requirement_list', 'category_list', 'perk_list']:
             direct = self.client.get(reverse(name))
             self.assertEqual(direct.status_code, 302, f'{name} прямой заход должен быть 302')
             self.assertIn('/settings', direct['Location'], f'{name} должен вести в хаб настроек')

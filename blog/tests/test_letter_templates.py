@@ -170,7 +170,7 @@ class LetterViewIntegrationTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r['Content-Type'], 'text/html; charset=utf-8')
 
-    def test_letter_view_pdf_with_background(self):
+    def _attach_pdf_letter(self):
         letter = ThankYouLetterTemplate.objects.create(title='PDF шаблон')
         pdf = _blank_pdf()
         w, h = letter_render.read_pdf_page_size(pdf)
@@ -183,6 +183,36 @@ class LetterViewIntegrationTests(TestCase):
         ])
         self.event.letter = letter
         self.event.save(update_fields=['letter'])
+        return letter
+
+    def test_letter_view_pdf_with_background(self):
+        self._attach_pdf_letter()
         r = self.client.get(reverse('letter_view', args=[self.volunteer.id, self.event.id]))
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r['Content-Type'], 'application/pdf')
+        self.assertIn('inline', r['Content-Disposition'])
+
+    def test_letter_view_download_is_attachment(self):
+        self._attach_pdf_letter()
+        r = self.client.get(reverse('letter_view', args=[self.volunteer.id, self.event.id]) + '?download=1')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('attachment', r['Content-Disposition'])
+
+    def test_download_all_zip(self):
+        self._attach_pdf_letter()
+        r = self.client.get(reverse('letters_download_all', args=[self.volunteer.id]))
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r['Content-Type'], 'application/zip')
+        # архив читается и содержит хотя бы один PDF
+        import io, zipfile
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        names = zf.namelist()
+        self.assertTrue(names and names[0].endswith('.pdf'))
+
+    def test_download_all_404_when_no_pdf_letters(self):
+        # HTML-шаблон без фона → нечего класть в архив → 404
+        letter = ThankYouLetterTemplate.objects.create(title='HTML')
+        self.event.letter = letter
+        self.event.save(update_fields=['letter'])
+        r = self.client.get(reverse('letters_download_all', args=[self.volunteer.id]))
+        self.assertEqual(r.status_code, 404)

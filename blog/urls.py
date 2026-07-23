@@ -66,6 +66,7 @@ urlpatterns = [
     path('profile/<int:user_id>/', views.profile_detail, name='profile_detail'),
     path('profile/<int:user_id>/comment/', views.profile_comment_add, name='profile_comment_add'),
     path('profile/<int:user_id>/letters/<int:event_id>/', views.letter_view, name='letter_view'),
+    path('profile/<int:user_id>/letters/download-all/', views.letters_download_all, name='letters_download_all'),
     path('profile/experience/add/', views.external_experience_add, name='external_experience_add'),
     path('profile/experience/<int:exp_id>/edit/', views.external_experience_edit, name='external_experience_edit'),
     path('profile/experience/<int:exp_id>/delete/', views.external_experience_delete, name='external_experience_delete'),

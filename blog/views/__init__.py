@@ -15,7 +15,7 @@ from .auth import (  # noqa: F401
 )
 from .profiles import (  # noqa: F401
     profile_edit, complete_profile, profile_detail, profile_comment_add,
-    letter_view, external_experience_add, external_experience_edit, external_experience_delete,
+    letter_view, letters_download_all, external_experience_add, external_experience_edit, external_experience_delete,
     public_experience,
 )
 from .volunteers import (  # noqa: F401

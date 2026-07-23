@@ -35,6 +35,19 @@
     </div>
 
     <div class="field">
+        <label>Плюшки</label>
+        <div class="category-chips" data-chip-select="{{ form.perks.id_for_label }}" data-chip-empty="Плюшки не выбраны">
+            <div class="cat-chips-row" data-chips-selected></div>
+            <div class="cat-chips-available-wrap">
+                <div class="cat-chips-available-label">Доступные плюшки — нажмите, чтобы добавить:</div>
+                <div class="cat-chips-row" data-chips-available></div>
+                <button type="button" class="btn secondary btn-sm add-ref-btn" data-add-ref="perk" data-target="{{ form.perks.id_for_label }}" style="margin-top:8px;">＋ Новая плюшка</button>
+            </div>
+        </div>
+        {{ form.perks }}
+    </div>
+
+    <div class="field">
         <label>Требования к волонтёрам</label>
         <div class="category-chips" data-chip-select="{{ form.requirements.id_for_label }}" data-chip-empty="Требований нет">
             <div class="cat-chips-row" data-chips-selected></div>

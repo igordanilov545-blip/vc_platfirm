@@ -18,7 +18,10 @@
 </div>
 
 <div class="card">
-    <h3>Организации</h3>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <h3 style="margin:0;">Организации</h3>
+        <a href="{% url 'organizer_edit' organizer.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Редактировать: {{ organizer.first_name }} {{ organizer.last_name }}">＋ Привязать организацию</a>
+    </div>
     {% for org in organizations %}
         <p><a href="{% url 'organization_detail' org.id %}">{{ org.name }}</a></p>
     {% empty %}

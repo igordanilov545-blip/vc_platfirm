@@ -123,10 +123,16 @@ urlpatterns = [
     path('categories/<int:category_id>/edit/', views.category_edit, name='category_edit'),
     path('categories/<int:category_id>/delete/', views.category_delete, name='category_delete'),
 
+    path('perks/', views.perk_list, name='perk_list'),
+    path('perks/new/', views.perk_create, name='perk_create'),
+    path('perks/<int:perk_id>/edit/', views.perk_edit, name='perk_edit'),
+    path('perks/<int:perk_id>/delete/', views.perk_delete, name='perk_delete'),
+
     path('quick-create/location/', views.quick_create_location, name='quick_create_location'),
     path('quick-create/organization/', views.quick_create_organization, name='quick_create_organization'),
     path('quick-create/organizer/', views.quick_create_organizer, name='quick_create_organizer'),
     path('quick-create/category/', views.quick_create_category, name='quick_create_category'),
+    path('quick-create/perk/', views.quick_create_perk, name='quick_create_perk'),
     path('quick-create/requirement/', views.quick_create_requirement, name='quick_create_requirement'),
     path('quick-create/volunteer/', views.quick_create_volunteer, name='quick_create_volunteer'),
 

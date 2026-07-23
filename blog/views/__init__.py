@@ -7,7 +7,7 @@ urls.py и прочий код не меняются. Карта «домен �
 from ._common import healthz  # noqa: F401
 from .quick_create import (  # noqa: F401
     quick_create_location, quick_create_organization, quick_create_organizer, quick_create_category,
-    quick_create_volunteer, quick_create_requirement,
+    quick_create_perk, quick_create_volunteer, quick_create_requirement,
 )
 from .auth import (  # noqa: F401
     login_view, register_view, telegram_login_callback, tg_link_login,
@@ -58,7 +58,9 @@ from .organizations import (  # noqa: F401
 from .settings_hub import (  # noqa: F401
     const_edit, settings_view, requirement_list, requirement_create,
     requirement_edit, requirement_delete, category_list, category_create,
-    category_edit, category_delete, requirement_exception_add, requirement_exception_remove,
+    category_edit, category_delete,
+    perk_list, perk_create, perk_edit, perk_delete,
+    requirement_exception_add, requirement_exception_remove,
 )
 from .analytics import (  # noqa: F401
     analytics_ping, analytics_leave, analytics_click, analytics_dashboard,

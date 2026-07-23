@@ -21,6 +21,7 @@ SETTINGS_TABS = [
     {'key': 'organizations', 'icon': '🏢', 'title': 'Организации', 'desc': 'Партнёры и заказчики мероприятий', 'url': 'organizations_list'},
     {'key': 'requirements', 'icon': '✅', 'title': 'Требования', 'desc': 'Условия допуска волонтёров', 'url': 'requirement_list'},
     {'key': 'categories', 'icon': '🏷️', 'title': 'Категории', 'desc': 'Категории мероприятий', 'url': 'category_list'},
+    {'key': 'perks', 'icon': '🎁', 'title': 'Плюшки', 'desc': 'Бонусы волонтёрам за участие', 'url': 'perk_list'},
     {'key': 'constants', 'icon': '🔢', 'title': 'Константы', 'desc': 'Пороги и коэффициенты системы', 'url': 'settings'},
     {'key': 'seasons', 'icon': '🗓️', 'title': 'Сезоны', 'desc': 'Периоды учёта и закрытие сезона', 'url': 'settings'},
     {'key': 'team_leaders', 'icon': '⭐', 'title': 'Тим-лидеры', 'desc': 'Назначение и снятие роли ТЛ', 'url': 'settings'},
@@ -377,6 +378,54 @@ def category_delete(request, category_id):
         category.delete()
         messages.success(request, f'Категория «{category.name}» удалена.')
     return redirect(reverse('settings') + '?tab=categories')
+
+@manager_required
+def perk_list(request):
+    # Панель хаба настроек (см. category_list): AJAX → partial, прямой заход → редирект.
+    from data_base import data_controller as dc
+    perks = dc.event_perks_qs().order_by('name')
+    if is_ajax(request):
+        return render(request, 'blog/partials/_settings_perks.html', {'perks': perks})
+    return redirect(reverse('settings') + '?tab=perks')
+
+@manager_required
+def perk_create(request):
+    form = PerkForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Плюшка создана.')
+        return modal_form_response(
+            request, None, None,
+            success_redirect=reverse('settings') + '?tab=perks',
+        )
+    return modal_form_response(
+        request, 'blog/perk_form.html',
+        {'form': form, 'title': 'Новая плюшка'},
+    )
+
+@manager_required
+def perk_edit(request, perk_id):
+    perk = get_object_or_404(EventPerk, pk=perk_id)
+    form = PerkForm(request.POST or None, instance=perk)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Плюшка обновлена.')
+        return modal_form_response(
+            request, None, None,
+            success_redirect=reverse('settings') + '?tab=perks',
+        )
+    return modal_form_response(
+        request, 'blog/perk_form.html',
+        {'form': form, 'title': f'Редактировать: {perk.name}', 'submit_label': 'Сохранить'},
+    )
+
+@manager_required
+def perk_delete(request, perk_id):
+    perk = get_object_or_404(EventPerk, pk=perk_id)
+    if request.method == 'POST':
+        perk.delete()
+        messages.success(request, f'Плюшка «{perk.name}» удалена.')
+    return redirect(reverse('settings') + '?tab=perks')
 
 @manager_required
 def requirement_exception_add(request, requirement_id):

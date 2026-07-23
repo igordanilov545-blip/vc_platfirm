@@ -305,6 +305,22 @@ class EventCategory(models.Model):
         return self.name
 
 
+class EventPerk(models.Model):
+    """Справочник «плюшек» мероприятий — бонусов, которые получает волонтёр за участие
+    (напр. «Мерч», «Питание», «Сертификат»). Полный аналог EventCategory: справочник в
+    настройках + M2M-привязка к меро через EventPerkMap."""
+    id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=100, unique=True)
+
+    class Meta:
+        db_table = 'event_perks'
+        verbose_name = 'Плюшка мероприятия'
+        verbose_name_plural = 'Плюшки мероприятий'
+
+    def __str__(self):
+        return self.name
+
+
 class DobroRuSharedLink(models.Model):
     """Общая ссылка на Добро.ру для нескольких мелких мероприятий сразу
     (db.md §dobro_ru_shared_links) — чтобы не заводить отдельную ссылку на каждое."""
@@ -545,6 +561,19 @@ class EventCategoryMap(models.Model):
         verbose_name_plural = 'Категории мероприятий (связи)'
 
 
+class EventPerkMap(models.Model):
+    """Связь мероприятий с плюшками (Many-to-Many). Полный аналог EventCategoryMap."""
+    id = models.AutoField(primary_key=True)
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='perk_map')
+    perk = models.ForeignKey(EventPerk, on_delete=models.CASCADE, related_name='event_map')
+
+    class Meta:
+        db_table = 'event_perk_map'
+        unique_together = ('event', 'perk')
+        verbose_name = 'Плюшка мероприятия (связь)'
+        verbose_name_plural = 'Плюшки мероприятий (связи)'
+
+
 class EventShift(models.Model):
     """Смена мероприятия: конкретная дата и временной слот со своим набором заявок.
 
@@ -671,6 +700,15 @@ class Application(models.Model):
     # свободный текст, который менеджер вписывает постфактум; НЕ то же самое, что
     # `functions` (роль/функция, указанная волонтёром при подаче заявки).
     profile_note = models.CharField(max_length=255, blank=True, null=True, verbose_name='Что делал')
+
+    # Когда одобренному волонтёру уже отправлены ссылка на чат меро и ссылка на Добро.ру
+    # (в отбивке об одобрении). Отслеживаем раздельно, потому что менеджер часто
+    # заполняет их не сразу: при одобрении шлём те ссылки, что уже заданы, и ставим
+    # соответствующую отметку; недостающие досылаются позже — при сохранении меро, как
+    # только менеджер их впишет (blog.services.notifications.send_pending_approval_links).
+    # Так волонтёр не получает одну и ту же ссылку дважды.
+    chat_link_sent_at = models.DateTimeField(blank=True, null=True)
+    dobro_link_sent_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         db_table = 'applications'

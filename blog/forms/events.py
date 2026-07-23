@@ -34,6 +34,12 @@ class EventForm(forms.ModelForm):
         label='Категории',
         widget=forms.SelectMultiple,
     )
+    perks = forms.ModelMultipleChoiceField(
+        queryset=dc.event_perks_qs().order_by('name'),
+        required=False,
+        label='Плюшки',
+        widget=forms.SelectMultiple,
+    )
     requirements = forms.ModelMultipleChoiceField(
         queryset=dc.requirements_qs().order_by('title'),
         required=False,
@@ -137,6 +143,7 @@ class EventForm(forms.ModelForm):
 
         if self.instance.pk:
             self.fields['categories'].initial = dc.event_categories_for_event(self.instance)
+            self.fields['perks'].initial = dc.event_perks_for_event(self.instance)
             self.fields['requirements'].initial = dc.event_requirements_for_event(self.instance)
             self.fields['team_leads'].initial = dc.event_staff_users(self.instance, 'team_lead')
             managers = dc.event_staff_users(self.instance, 'manager')
@@ -199,6 +206,7 @@ class EventForm(forms.ModelForm):
         if commit:
             event.save()
             self._save_categories(event)
+            self._save_perks(event)
             self._save_requirements(event)
             self._save_team_leads(event)
             self._save_manager(event)
@@ -213,6 +221,10 @@ class EventForm(forms.ModelForm):
     def _save_categories(self, event):
         selected = list(self.cleaned_data.get('categories') or [])
         dc.sync_event_categories(event, selected)
+
+    def _save_perks(self, event):
+        selected = list(self.cleaned_data.get('perks') or [])
+        dc.sync_event_perks(event, selected)
 
     def _save_requirements(self, event):
         selected = list(self.cleaned_data.get('requirements') or [])

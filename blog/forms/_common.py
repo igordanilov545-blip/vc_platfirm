@@ -13,7 +13,7 @@ from data_base import data_controller as dc
 from blog.models import (
     Event, EventComment, EventShift, Participation, Application, UserComment, EventFeedback,
     Const, Season, Organization, Organizer, User, Location,
-    EventCategory, ExternalExperience, EventRequirement, UserRequirementException,
+    EventCategory, EventPerk, ExternalExperience, EventRequirement, UserRequirementException,
 )
 
 # Модели остаются в импорте только для `ModelForm.Meta.model`, аннотаций и схемы полей
@@ -23,5 +23,5 @@ __all__ = [
     'datetime', 'time', 'forms', 'timezone', 'dc',
     'Event', 'EventComment', 'EventShift', 'Participation', 'Application', 'UserComment',
     'EventFeedback', 'Const', 'Season', 'Organization', 'Organizer', 'User',
-    'Location', 'EventCategory', 'ExternalExperience', 'EventRequirement', 'UserRequirementException',
+    'Location', 'EventCategory', 'EventPerk', 'ExternalExperience', 'EventRequirement', 'UserRequirementException',
 ]

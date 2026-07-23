@@ -194,6 +194,7 @@ def event_detail(request, event_id):
     # EventForm.manager — единая точка назначения, как и у тим-лидеров).
     event_manager_staff = event.staff.filter(staff_role='manager').select_related('user').first()
     categories = dc.event_categories_qs().filter(event_map__event=event).order_by('name')
+    perks = dc.event_perks_qs().filter(event_map__event=event).order_by('name')
     requirements = dc.requirements_qs().filter(event_map__event=event).order_by('title')
     can_manage_applications = can_process_applications(request.user, event.id)
     # Мероприятие завершено — заявки/явку менять больше нельзя нигде (ни в вебе, ни
@@ -216,6 +217,7 @@ def event_detail(request, event_id):
         'shifts': shifts,
         'team_leads': team_leads,
         'categories': categories,
+        'perks': perks,
         'requirements': requirements,
         'share_url': request.build_absolute_uri(
             reverse('public_event_detail', args=[event.public_token])
@@ -443,6 +445,10 @@ def event_edit(request, event_id):
     form = EventForm(request.POST or None, instance=event, show_closing_fields=True, assigned_by=request.user)
     if request.method == 'POST' and form.is_valid():
         form.save()
+        # Менеджер мог только что вписать ссылку на чат / Добро.ру — досылаем её тем
+        # одобренным волонтёрам, кому на момент одобрения ссылки ещё не было (task-3).
+        from blog.services.notifications import send_pending_approval_links
+        send_pending_approval_links(event)
         messages.success(request, 'Мероприятие обновлено.')
         return modal_form_response(
             request, None, None,

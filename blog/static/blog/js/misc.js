@@ -91,6 +91,13 @@
                 { name: 'name', label: 'Название категории', type: 'text', required: true },
             ],
         },
+        perk: {
+            title: 'Новая плюшка',
+            createUrl: window.VC_URLS.quickCreate.perk,
+            fields: [
+                { name: 'name', label: 'Название плюшки', type: 'text', required: true },
+            ],
+        },
         requirement: {
             title: 'Новое требование',
             createUrl: window.VC_URLS.quickCreate.requirement,

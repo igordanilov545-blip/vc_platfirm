@@ -33,7 +33,7 @@ from data_base import data_controller as dc
 # --- Модели (доменные вьюхи берут нужные им из общего набора) ---
 from blog.models import (
     Application, ApplicationShiftDecision, Const, DobroRuSharedLink, Event, EventCategory,
-    EventComment, EventShift, EventFeedback, EventStaff,
+    EventPerk, EventComment, EventShift, EventFeedback, EventStaff,
     EventRequirement, UserRequirementException,
     Location, Manager, Organization, Organizer, Participation, Season, TeamLeader, User,
     ButtonClickEvent, SystemDowntime, WebPageView, WebSession,
@@ -45,8 +45,8 @@ from blog.forms import (
     EventShiftForm, EventFeedbackForm, EventForm,
     ExcelImportForm, ExternalExperienceForm, LocationForm, LoginForm, OrganizationForm,
     OrganizerForm, ProfileCompletionForm,
-    ProfileForm, ParticipationForm, QuickCategoryForm, QuickLocationForm,
-    QuickOrganizationForm, QuickOrganizerForm,
+    PerkForm, ProfileForm, ParticipationForm, QuickCategoryForm, QuickLocationForm,
+    QuickOrganizationForm, QuickOrganizerForm, QuickPerkForm,
     QuickRequirementForm, QuickVolunteerForm, RegisterForm, RequirementForm,
     RequirementEditForm, RequirementExceptionForm,
     RoleUsersForm, SeasonForm, UserCommentForm,
@@ -214,7 +214,7 @@ __all__ = [
     'timezone', 'csrf_exempt', 'require_POST',
     # модели
     'Application', 'ApplicationShiftDecision', 'Const', 'DobroRuSharedLink', 'Event',
-    'EventCategory', 'EventComment', 'EventShift', 'EventFeedback', 'EventStaff',
+    'EventCategory', 'EventPerk', 'EventComment', 'EventShift', 'EventFeedback', 'EventStaff',
     'EventRequirement', 'UserRequirementException', 'Location', 'Manager',
     'Organization', 'Organizer', 'Participation', 'Season', 'TeamLeader', 'User',
     'ButtonClickEvent', 'SystemDowntime', 'WebPageView', 'WebSession',
@@ -222,9 +222,9 @@ __all__ = [
     'ApplicationCancelForm', 'ApplicationForm', 'CategoryForm', 'ConstForm',
     'EventCommentForm', 'EventShiftForm', 'EventFeedbackForm', 'EventForm',
     'ExcelImportForm', 'ExternalExperienceForm', 'LocationForm', 'LoginForm',
-    'OrganizationForm', 'OrganizerForm', 'ProfileCompletionForm', 'ProfileForm',
+    'OrganizationForm', 'OrganizerForm', 'PerkForm', 'ProfileCompletionForm', 'ProfileForm',
     'ParticipationForm', 'QuickCategoryForm', 'QuickLocationForm', 'QuickOrganizationForm',
-    'QuickOrganizerForm', 'QuickRequirementForm', 'QuickVolunteerForm', 'RegisterForm',
+    'QuickOrganizerForm', 'QuickPerkForm', 'QuickRequirementForm', 'QuickVolunteerForm', 'RegisterForm',
     'RequirementForm', 'RequirementEditForm', 'RequirementExceptionForm', 'RoleUsersForm',
     'SeasonForm', 'UserCommentForm',
     # сервисы

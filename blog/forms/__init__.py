@@ -8,6 +8,7 @@ from .auth import LoginForm, RegisterForm  # noqa: F401
 from .references import (  # noqa: F401
     QuickLocationForm, LocationForm, QuickOrganizationForm, OrganizationForm,
     QuickOrganizerForm, OrganizerForm, QuickCategoryForm, CategoryForm,
+    QuickPerkForm, PerkForm,
     QuickRequirementForm, RequirementForm, RequirementEditForm, RequirementExceptionForm,
     ConstForm, SeasonForm,
 )

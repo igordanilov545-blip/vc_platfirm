@@ -58,6 +58,20 @@ class CategoryForm(forms.ModelForm):
         fields = ['name']
         labels = {'name': 'Название категории'}
 
+class QuickPerkForm(forms.ModelForm):
+    """Мини-форма быстрого создания плюшки мероприятия прямо из формы мероприятия."""
+    class Meta:
+        model = EventPerk
+        fields = ['name']
+        labels = {'name': 'Название плюшки'}
+
+class PerkForm(forms.ModelForm):
+    """Создание/редактирование плюшки мероприятия на странице настроек."""
+    class Meta:
+        model = EventPerk
+        fields = ['name']
+        labels = {'name': 'Название плюшки'}
+
 class QuickRequirementForm(forms.ModelForm):
     """Мини-форма быстрого создания требования прямо из формы мероприятия. check_type
     не запрашивается — быстро создаются только обычные («вручную проверяемые») требования;

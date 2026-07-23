@@ -276,9 +276,16 @@ def profile_detail(request, user_id):
     return render(request, template, context)
 
 @login_required
+@xframe_options_sameorigin
 def letter_view(request, user_id, event_id):
     """Благодарственное письмо — генерируется на лету, PDF не хранится
     (implementation-plan Этап 6.4). Страница свёрстана под печать/сохранение в PDF.
+
+    @xframe_options_sameorigin: письмо показывается в модалке через <iframe> (см.
+    letter_modal.js). Глобальный XFrameOptionsMiddleware ставит X-Frame-Options: DENY
+    → браузер отказывался рендерить PDF в iframe («не удаётся установить соединение»).
+    Декоратор разрешает встраивание ТОЛЬКО с нашего же origin (SAMEORIGIN) — внешние
+    сайты письмо по-прежнему не зафреймят.
 
     Доступ: сам волонтёр, менеджер или ТЛ с расширенным доступом к профилю.
     """

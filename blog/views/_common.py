@@ -24,6 +24,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_POST
 
 from blog.decorators import manager_required, tech_admin_required
@@ -212,7 +213,7 @@ __all__ = [
     'PermissionDenied', 'ValidationError', 'Paginator', 'URLValidator',
     'Avg', 'Count', 'Q', 'FileResponse', 'Http404', 'HttpResponseForbidden',
     'JsonResponse', 'get_object_or_404', 'redirect', 'render', 'reverse',
-    'timezone', 'csrf_exempt', 'require_POST',
+    'timezone', 'csrf_exempt', 'xframe_options_sameorigin', 'require_POST',
     # модели
     'Application', 'ApplicationShiftDecision', 'Const', 'DobroRuSharedLink', 'Event',
     'EventCategory', 'EventPerk', 'EventComment', 'EventShift', 'EventFeedback', 'EventStaff',

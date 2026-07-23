@@ -198,6 +198,14 @@ class LetterViewIntegrationTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn('attachment', r['Content-Disposition'])
 
+    def test_letter_view_allows_sameorigin_iframe(self):
+        # Письмо показывается в модалке через <iframe>: глобальный DENY заменён на
+        # SAMEORIGIN, иначе браузер не рендерит PDF в iframe (регрессия «не удаётся
+        # установить соединение»).
+        self._attach_pdf_letter()
+        r = self.client.get(reverse('letter_view', args=[self.volunteer.id, self.event.id]))
+        self.assertEqual(r.get('X-Frame-Options'), 'SAMEORIGIN')
+
     def test_download_all_zip(self):
         self._attach_pdf_letter()
         r = self.client.get(reverse('letters_download_all', args=[self.volunteer.id]))

@@ -306,10 +306,27 @@ def letter_view(request, user_id, event_id):
     # legacy HTML-шаблон letter.html (обратная совместимость со старыми шаблонами).
     if event.letter.has_background:
         from blog.services import letter_render
-        ctx = letter_render.letter_context(
-            target, event, hours=hours, first_day=first_day, last_day=last_day
-        )
-        pdf = letter_render.render_letter_pdf(event.letter, ctx)
+        try:
+            ctx = letter_render.letter_context(
+                target, event, hours=hours, first_day=first_day, last_day=last_day
+            )
+            pdf = letter_render.render_letter_pdf(event.letter, ctx)
+        except Exception:
+            # Прод-диагностика: полный трейс в лог vc.web (иначе при DEBUG=False видна
+            # только пустая страница 500). Сузит причину сбоя рендера на сервере.
+            logger.exception(
+                'Ошибка рендера письма: user=%s event=%s letter=%s',
+                target.id, event.id, event.letter_id,
+            )
+            # ?debug=1 (только менеджеру) — вернуть текст трейса прямо в ответ, чтобы
+            # диагностировать прод без доступа к логам сервера. Временная мера.
+            if request.GET.get('debug') == '1' and is_manager(request.user):
+                import traceback
+                return HttpResponse(
+                    'LETTER RENDER ERROR\n\n' + traceback.format_exc(),
+                    content_type='text/plain; charset=utf-8', status=500,
+                )
+            raise
         resp = HttpResponse(pdf, content_type='application/pdf')
         # ?download=1 → скачать вложением; иначе открыть во вкладке (inline).
         disposition = 'attachment' if request.GET.get('download') == '1' else 'inline'

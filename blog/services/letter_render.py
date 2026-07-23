@@ -44,13 +44,9 @@ _RU_MONTHS = [
 
 # --- Встроенные шрифты (лениво досоздаются в БД) -----------------------------
 
-def _matplotlib_font_dir():
-    import matplotlib
-    return os.path.join(os.path.dirname(matplotlib.__file__), 'mpl-data', 'fonts', 'ttf')
-
-
-# name → имя файла в mpl-data. DejaVu покрывает кириллицу; matplotlib — обязательная
-# зависимость, так что файлы гарантированно есть и на проде.
+# name → имя файла шрифта. DejaVu покрывает кириллицу. Файлы ВЕНДОРИМ в репозиторий
+# (blog/static/blog/fonts/) — рендер не должен зависеть от того, установлен ли на проде
+# matplotlib (иначе любой сбой его импорта = 500 на каждом письме).
 BUILTIN_FONTS = {
     'DejaVu Sans': 'DejaVuSans.ttf',
     'DejaVu Sans Bold': 'DejaVuSans-Bold.ttf',
@@ -60,19 +56,35 @@ BUILTIN_FONTS = {
 }
 
 
+def _builtin_font_dirs():
+    """Каталоги, где ищем файлы встроенных шрифтов, в порядке приоритета:
+    1) вендоренная копия в репозитории (надёжно на любом окружении);
+    2) matplotlib mpl-data (fallback, если по какой-то причине вендор отсутствует)."""
+    from django.conf import settings
+    dirs = [os.path.join(settings.BASE_DIR, 'blog', 'static', 'blog', 'fonts')]
+    try:
+        import matplotlib
+        dirs.append(os.path.join(os.path.dirname(matplotlib.__file__), 'mpl-data', 'fonts', 'ttf'))
+    except Exception:
+        pass
+    return dirs
+
+
 def ensure_builtin_fonts():
     """Досоздаёт встроенные шрифты в таблице letter_fonts, если их ещё нет (ленивая
-    инициализация вместо data-миграции, coding-principles §9). Идемпотентна."""
-    font_dir = _matplotlib_font_dir()
+    инициализация вместо data-миграции, coding-principles §9). Идемпотентна.
+    Не бросает исключение, если файл шрифта не найден — просто пропускает его."""
+    dirs = _builtin_font_dirs()
     for name, filename in BUILTIN_FONTS.items():
         if dc.get_letter_font_by_name(name):
             continue
-        path = os.path.join(font_dir, filename)
-        if not os.path.exists(path):
-            continue
-        with open(path, 'rb') as f:
-            data = f.read()
-        dc.create_letter_font(name=name, data=data, filename=filename, is_builtin=True)
+        for d in dirs:
+            path = os.path.join(d, filename)
+            if os.path.exists(path):
+                with open(path, 'rb') as f:
+                    data = f.read()
+                dc.create_letter_font(name=name, data=data, filename=filename, is_builtin=True)
+                break
 
 
 # --- Формат даты письма ------------------------------------------------------

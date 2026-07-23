@@ -253,13 +253,18 @@
             body: JSON.stringify(this.fields)
         }).then(function (r) { return r.json().catch(function () { return { ok: r.ok }; }); })
           .then(function (d) {
-              if (d && d.ok) self.setStatus('Сохранено ✓', false);
-              else self.setStatus('Ошибка сохранения', true);
+              if (d && d.ok) self.setStatus('Шаблон сохранён', false);
+              else self.setStatus('Не удалось сохранить шаблон', true);
           })
-          .catch(function () { self.setStatus('Ошибка сети', true); });
+          .catch(function () { self.setStatus('Ошибка сети при сохранении', true); });
     };
 
+    // Показывает результат и во всплывающем оповещении вверху экрана (единый showToast,
+    // как все уведомления платформы), и в инлайновой подписи у кнопки.
     LetterEditor.prototype.setStatus = function (text, isError) {
+        if (typeof window.showToast === 'function') {
+            window.showToast(text, isError ? 'error' : 'success');
+        }
         if (!this.status) return;
         this.status.hidden = false;
         this.status.textContent = text;

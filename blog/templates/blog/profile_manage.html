@@ -155,9 +155,20 @@
 
 {% if has_extended_access %}
 <div class="card">
-    <h3>Благодарственные письма</h3>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <h3 style="margin:0;">Благодарственные письма</h3>
+        {% if has_downloadable_letters %}
+        <a href="{% url 'letters_download_all' target.id %}" class="btn secondary btn-sm">⬇ Скачать все письма</a>
+        {% endif %}
+    </div>
     {% for e in letters_pool %}
-        <p>«{{ e.title }}» — <a href="{% url 'letter_view' target.id e.id %}">открыть письмо</a></p>
+        <p>
+            «{{ e.title }}» —
+            <a href="{% url 'letter_view' target.id e.id %}" target="_blank">открыть письмо</a>
+            {% if e.letter.has_background %}
+            · <a href="{% url 'letter_view' target.id e.id %}?download=1">скачать</a>
+            {% endif %}
+        </p>
     {% empty %}
         <p>Писем пока нет: они появляются после явки на мероприятие, у которого задан шаблон письма.</p>
     {% endfor %}

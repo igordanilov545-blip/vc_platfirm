@@ -249,16 +249,11 @@ def profile_detail(request, user_id):
 
     if has_extended:
         # Пул благодарственных писем: мероприятия с явкой и заданным шаблоном.
-        context['letters_pool'] = (
-            dc.events_qs().filter(
-                shifts__participations__user=target,
-                shifts__participations__status='attended',
-                letter__isnull=False,
-            )
-            .distinct()
-            .select_related('letter')
-            .order_by('-created_at')
-        )
+        letters_pool = list(_letter_events_for(target))
+        context['letters_pool'] = letters_pool
+        # «Скачать все» доступно, только если есть хотя бы одно письмо с PDF-фоном
+        # (у legacy-HTML-шаблонов нет готового файла — их печатают по одному).
+        context['has_downloadable_letters'] = any(e.letter.has_background for e in letters_pool)
 
     if is_mgr:
         context['churn_history'] = target.churn_history.select_related('season').order_by('-created_at')
@@ -316,7 +311,9 @@ def letter_view(request, user_id, event_id):
         )
         pdf = letter_render.render_letter_pdf(event.letter, ctx)
         resp = HttpResponse(pdf, content_type='application/pdf')
-        resp['Content-Disposition'] = f'inline; filename="letter_{event.id}_{target.id}.pdf"'
+        # ?download=1 → скачать вложением; иначе открыть во вкладке (inline).
+        disposition = 'attachment' if request.GET.get('download') == '1' else 'inline'
+        resp['Content-Disposition'] = _content_disposition(disposition, _letter_filename(target, event))
         return resp
 
     return render(request, 'blog/letter.html', {
@@ -326,6 +323,87 @@ def letter_view(request, user_id, event_id):
         'hours': hours,
         'last_day': last_day,
     })
+
+
+def _content_disposition(disposition: str, filename: str) -> str:
+    """Заголовок Content-Disposition с кириллическим именем файла. Тип (attachment/
+    inline) и ASCII-fallback остаются как есть, а UTF-8 имя кодируется по RFC 5987
+    (`filename*=UTF-8''…`). Иначе Django MIME-кодирует ВЕСЬ заголовок в `=?utf-8?b?…?=`,
+    и часть браузеров не распознаёт тип/имя (см. тест — attachment «пропадал»)."""
+    from urllib.parse import quote
+    ascii_name = filename.encode('ascii', 'ignore').decode('ascii') or 'letter.pdf'
+    return f"{disposition}; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename)}"
+
+
+def _letter_filename(target, event) -> str:
+    """Человекочитаемое имя файла письма: «Письмо_<ФИО>_<Меро>.pdf», без опасных
+    символов файловой системы."""
+    import re
+    raw = f'Письмо_{target.full_name}_{event.title}'
+    safe = re.sub(r'[\\/:*?"<>|]+', '_', raw).strip('_')[:120]
+    return f'{safe}.pdf'
+
+
+def _letter_events_for(target):
+    """Мероприятия, по которым волонтёру положено благодарственное письмо: явка
+    (attended) + у меро задан шаблон. Общий источник для пула на странице и для
+    «скачать все» (не дублируем запрос)."""
+    return (
+        dc.events_qs().filter(
+            shifts__participations__user=target,
+            shifts__participations__status='attended',
+            letter__isnull=False,
+        )
+        .distinct()
+        .select_related('letter', 'organization')
+        .order_by('-created_at')
+    )
+
+
+@login_required
+def letters_download_all(request, user_id):
+    """ZIP со всеми благодарственными письмами волонтёра (по одному PDF на меро).
+    Только письма с PDF-фоном (у legacy-HTML-шаблонов нет готового файла — их
+    открывают/печатают по одному). Доступ — как у letter_view."""
+    import io
+    import zipfile
+
+    target = get_object_or_404(User, pk=user_id)
+    if not has_extended_access_to_profile(request.user, target):
+        raise PermissionDenied('Нет доступа к письмам этого волонтёра.')
+
+    from blog.services import letter_render
+    events = _letter_events_for(target)
+
+    buf = io.BytesIO()
+    count = 0
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for event in events:
+            if not event.letter.has_background:
+                continue  # legacy-HTML шаблон — готового PDF нет
+            attended = dc.participations_qs().filter(
+                user=target, event_day__event=event, status='attended'
+            ).select_related('event_day')
+            hours = sum(p.hours for p in attended)
+            days = [p.event_day.day for p in attended]
+            if not days:
+                continue
+            ctx = letter_render.letter_context(
+                target, event, hours=hours, first_day=min(days), last_day=max(days)
+            )
+            pdf = letter_render.render_letter_pdf(event.letter, ctx)
+            zf.writestr(_letter_filename(target, event), pdf)
+            count += 1
+
+    if count == 0:
+        raise Http404('Нет писем для скачивания (нужен PDF-шаблон и явка).')
+
+    buf.seek(0)
+    import re
+    safe_name = re.sub(r'[\\/:*?"<>|]+', '_', target.full_name).strip('_')[:80]
+    resp = HttpResponse(buf.getvalue(), content_type='application/zip')
+    resp['Content-Disposition'] = _content_disposition('attachment', f'Письма_{safe_name}.zip')
+    return resp
 
 @login_required
 def profile_comment_add(request, user_id):

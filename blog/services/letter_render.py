@@ -178,18 +178,18 @@ def render_letter_pdf(template, ctx) -> bytes:
     """Штампует значения `ctx` в поля `template.fields_json` поверх PDF-фона.
 
     Координаты полей — в долях [0..1] от размера страницы; переводим в пункты по
-    фактическому размеру страницы фона. Шрифт каждого поля берём из БД по font_id
-    (fontfile), поэтому кириллица и внешний вид одинаковы на любой ОС. Возвращает
+    фактическому размеру страницы фона. Шрифт каждого поля грузим из БД байтами
+    (`fitz.Font(fontbuffer=...)`) и рисуем через `TextWriter` — БЕЗ временных файлов и
+    путей на диске: важно для прод-хостинга с ограниченным/недоступным /tmp (иначе
+    рендер падал 500). Кириллица и внешний вид одинаковы на любой ОС. Возвращает
     PDF-байты (одна страница)."""
     doc = fitz.open(stream=bytes(template.background_pdf), filetype='pdf')
     page = doc[0]
     pw, ph = page.rect.width, page.rect.height
 
-    # Кэш зарегистрированных в документе шрифтов: имя fitz → уже вставленный fontfile.
-    font_cache = {}
-    tmp_files = []
+    font_cache = {}  # font_id → fitz.Font (грузим из БД один раз)
     try:
-        for idx, field in enumerate(template.fields_json or []):
+        for field in (template.fields_json or []):
             text = _resolve_text(field, ctx)
             if not text:
                 continue
@@ -197,81 +197,75 @@ def render_letter_pdf(template, ctx) -> bytes:
             y = float(field.get('y', 0)) * ph
             w = float(field.get('w', 0)) * pw
             h = float(field.get('h', 0)) * ph
+            if w <= 1 or h <= 1:
+                continue  # вырожденная рамка — нечего рисовать
             rect = fitz.Rect(x, y, x + w, y + h)
-            size = float(field.get('size', 18))
+            size = float(field.get('size', 18) or 18)
             color = _hex_to_rgb(field.get('color', '#000000'))
             align = _ALIGN.get(field.get('align', 'left'), fitz.TEXT_ALIGN_LEFT)
+            font = _font_for(field.get('font_id'), font_cache)
 
-            font_id = field.get('font_id')
-            fontname, fontfile = _font_for(font_id, font_cache, tmp_files)
-
-            # Подбираем кегль ДО реальной вставки на страницу (dry-run на отдельной
-            # временной странице), затем рисуем ОДИН раз. Иначе несколько неудачных
-            # insert_textbox наложили бы полупрозрачные слои текста разного размера.
-            s = _fit_font_size(text, rect, fontname, fontfile, size, align)
-            page.insert_textbox(
-                rect, text, fontname=fontname, fontfile=fontfile,
-                fontsize=s, color=color, align=align,
-            )
+            _draw_textbox(page, rect, text, font, size, color, align)
         return doc.tobytes()
     finally:
-        for p in tmp_files:
-            try:
-                os.remove(p)
-            except OSError:
-                pass
         doc.close()
 
 
-def _fit_font_size(text, rect, fontname, fontfile, size, align, min_size=6):
-    """Наибольший кегль ≤ `size`, при котором текст влезает в рамку `rect`. Проверяем
-    dry-run'ом на отдельной временной странице того же размера (insert_textbox
-    возвращает ≥0, когда всё поместилось), НИЧЕГО не рисуя на реальной странице.
-    Если не влезает даже на min_size — возвращаем min_size (текст обрежется рамкой)."""
-    probe = fitz.open()
-    ppage = probe.new_page(width=rect.width + 2, height=rect.height + 2)
-    prect = fitz.Rect(1, 1, 1 + rect.width, 1 + rect.height)
+def _draw_textbox(page, rect, text, font, size, color, align, min_size=6):
+    """Рисует `text` в рамке `rect` шрифтом `font` (fitz.Font из байтов), подбирая
+    наибольший кегль ≤ size, при котором текст влезает. Использует TextWriter (без
+    временных файлов). `fill_textbox` возвращает остаток невлезшего текста — если он
+    пуст, всё поместилось."""
+    s = float(size)
+    while s >= min_size:
+        tw = fitz.TextWriter(page.rect, color=color)
+        try:
+            leftover = tw.fill_textbox(rect, text, font=font, fontsize=s, align=align)
+        except Exception:
+            leftover = None
+        # fill_textbox возвращает список невместившихся слов (пустой = всё влезло).
+        if not leftover:
+            tw.write_text(page)
+            return
+        s -= 1
+    # Не влезло даже на min_size — рисуем как есть (обрежется рамкой), лишь бы не пусто.
+    tw = fitz.TextWriter(page.rect, color=color)
     try:
-        s = float(size)
-        while s >= min_size:
-            rc = ppage.insert_textbox(
-                prect, text, fontname=fontname, fontfile=fontfile,
-                fontsize=s, align=align,
-            )
-            if rc >= 0:
-                return s
-            # На каждой пробе страница копится — берём чистую, чтобы прошлые вставки
-            # не влияли (insert возвращает остаток высоты относительно уже занятого).
-            probe.delete_page(0)
-            ppage = probe.new_page(width=rect.width + 2, height=rect.height + 2)
-            s -= 1
-        return float(min_size)
-    finally:
-        probe.close()
+        tw.fill_textbox(rect, text, font=font, fontsize=min_size, align=align)
+        tw.write_text(page)
+    except Exception:
+        pass
 
 
-def _font_for(font_id, cache, tmp_files):
-    """Возвращает (fontname, fontfile) для fitz. Файл шрифта из БД пишем во временный
-    файл (fitz.insert_textbox принимает путь). Имя шрифта в документе уникально на
-    font_id, чтобы PyMuPDF не переопределял один и тот же ресурс."""
+def _font_for(font_id, cache):
+    """fitz.Font из байтов шрифта в БД (без временного файла). Дефолт — встроенный
+    DejaVu Sans (кириллица), досоздаётся лениво. Результат кэшируется на рендер."""
     key = font_id or 'default'
     if key in cache:
         return cache[key]
 
-    font = dc.get_letter_font_by_id(font_id) if font_id else None
-    if font is None:
-        # дефолт — первый встроенный (DejaVu Sans); гарантирован ensure_builtin_fonts.
+    font_row = dc.get_letter_font_by_id(font_id) if font_id else None
+    if font_row is None:
         ensure_builtin_fonts()
-        font = dc.get_letter_font_by_name('DejaVu Sans')
+        font_row = dc.get_letter_font_by_name('DejaVu Sans')
+    if font_row is None:
+        # крайний случай — встроенного шрифта нет в БД: берём файл напрямую из вендора.
+        cache[key] = fitz.Font(fontbuffer=_default_font_bytes())
+        return cache[key]
 
-    import tempfile
-    fd, path = tempfile.mkstemp(suffix='.ttf')
-    with os.fdopen(fd, 'wb') as f:
-        f.write(bytes(font.font_file))
-    tmp_files.append(path)
-    fontname = f'F{key}'
-    cache[key] = (fontname, path)
+    cache[key] = fitz.Font(fontbuffer=bytes(font_row.font_file))
     return cache[key]
+
+
+def _default_font_bytes() -> bytes:
+    """Байты дефолтного встроенного шрифта из вендоренного файла (последний рубеж,
+    если в БД шрифтов нет вообще)."""
+    for d in _builtin_font_dirs():
+        path = os.path.join(d, 'DejaVuSans.ttf')
+        if os.path.exists(path):
+            with open(path, 'rb') as f:
+                return f.read()
+    raise RuntimeError('Не найден дефолтный шрифт DejaVuSans.ttf')
 
 
 def _hex_to_rgb(value):

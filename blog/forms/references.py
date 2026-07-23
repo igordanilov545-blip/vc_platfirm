@@ -138,6 +138,79 @@ class RequirementExceptionForm(forms.ModelForm):
             instance.save()
         return instance
 
+class LetterTemplateForm(forms.ModelForm):
+    """Создание/переименование шаблона письма + (опц.) загрузка PDF-фона. Сам PDF
+    хранится байтами в БД (не FileField — нет MEDIA-тома), поэтому поле файла —
+    обычный FileField, а сохранение делает вьюха через data_controller."""
+    background_pdf_file = forms.FileField(
+        required=False, label='PDF-фон (оформленный макет)',
+        widget=forms.ClearableFileInput(attrs={'accept': 'application/pdf,.pdf'}),
+    )
+
+    class Meta:
+        model = ThankYouLetterTemplate
+        fields = ['title']
+        labels = {'title': 'Название шаблона'}
+
+    def clean_background_pdf_file(self):
+        upload = self.cleaned_data.get('background_pdf_file')
+        if not upload:
+            return None
+        if not upload.name.lower().endswith('.pdf'):
+            raise forms.ValidationError('Загрузите файл в формате PDF.')
+        data = upload.read()
+        # Проверяем, что это читаемый PDF хотя бы с одной страницей (PyMuPDF —
+        # тот же движок, что и рендер, кросс-платформенный).
+        try:
+            import fitz
+            doc = fitz.open(stream=data, filetype='pdf')
+            if doc.page_count < 1:
+                raise ValueError('empty')
+            doc.close()
+        except Exception:
+            raise forms.ValidationError('Не удалось прочитать PDF — файл повреждён или не PDF.')
+        # Кладём распакованные байты в cleaned_data для вьюхи.
+        self.cleaned_data['background_pdf_bytes'] = data
+        self.cleaned_data['background_pdf_name'] = upload.name
+        return upload
+
+
+class LetterFontForm(forms.ModelForm):
+    """Загрузка своего шрифта (.ttf/.otf) для писем. Байты валидируются PyMuPDF и
+    хранятся в БД — чтобы штамповаться в PDF на любой ОС без установки в систему."""
+    font_upload = forms.FileField(
+        label='Файл шрифта (.ttf / .otf)',
+        widget=forms.ClearableFileInput(attrs={'accept': '.ttf,.otf,font/ttf,font/otf'}),
+    )
+
+    class Meta:
+        model = LetterFont
+        fields = ['name']
+        labels = {'name': 'Название шрифта'}
+
+    def clean_font_upload(self):
+        upload = self.cleaned_data.get('font_upload')
+        if not upload:
+            raise forms.ValidationError('Выберите файл шрифта.')
+        if not upload.name.lower().endswith(('.ttf', '.otf')):
+            raise forms.ValidationError('Поддерживаются форматы .ttf и .otf.')
+        data = upload.read()
+        try:
+            import fitz
+            fitz.Font(fontbuffer=data)  # бросит, если это не валидный шрифт
+        except Exception:
+            raise forms.ValidationError('Не удалось прочитать шрифт — файл повреждён или неподдерживаемый формат.')
+        self.cleaned_data['font_bytes'] = data
+        self.cleaned_data['font_filename'] = upload.name
+        return upload
+
+    def clean_name(self):
+        name = self.cleaned_data['name'].strip()
+        if dc.get_letter_font_by_name(name):
+            raise forms.ValidationError('Шрифт с таким названием уже есть — выберите другое имя.')
+        return name
+
+
 class ConstForm(forms.ModelForm):
     class Meta:
         model = Const

@@ -128,6 +128,18 @@ urlpatterns = [
     path('perks/<int:perk_id>/edit/', views.perk_edit, name='perk_edit'),
     path('perks/<int:perk_id>/delete/', views.perk_delete, name='perk_delete'),
 
+    # Конструктор благодарственных писем (letter-templates.md).
+    path('letters/templates/', views.letter_template_list, name='letter_template_list'),
+    path('letters/templates/new/', views.letter_template_create, name='letter_template_create'),
+    path('letters/templates/<int:template_id>/editor/', views.letter_template_editor, name='letter_template_editor'),
+    path('letters/templates/<int:template_id>/background.png', views.letter_template_background, name='letter_template_background'),
+    path('letters/templates/<int:template_id>/upload-bg/', views.letter_template_upload_bg, name='letter_template_upload_bg'),
+    path('letters/templates/<int:template_id>/fields/', views.letter_template_save_fields, name='letter_template_save_fields'),
+    path('letters/templates/<int:template_id>/preview.pdf', views.letter_template_preview, name='letter_template_preview'),
+    path('letters/templates/<int:template_id>/delete/', views.letter_template_delete, name='letter_template_delete'),
+    path('letters/fonts/upload/', views.letter_font_upload, name='letter_font_upload'),
+    path('letters/fonts/<int:font_id>/delete/', views.letter_font_delete, name='letter_font_delete'),
+
     path('quick-create/location/', views.quick_create_location, name='quick_create_location'),
     path('quick-create/organization/', views.quick_create_organization, name='quick_create_organization'),
     path('quick-create/organizer/', views.quick_create_organizer, name='quick_create_organizer'),

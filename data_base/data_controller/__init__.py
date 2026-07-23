@@ -100,6 +100,13 @@ from .reference import (  # noqa: F401
     create_season, get_seasons,
     get_const, get_all_consts, get_or_create_pgas_template,
 )
+from .letters import (  # noqa: F401
+    letter_templates_qs, get_letter_template_by_id, create_letter_template,
+    set_letter_background, set_letter_fields, update_letter_template_title,
+    delete_letter_template,
+    letter_fonts_qs, get_letter_fonts, get_letter_font_by_id, get_letter_font_by_name,
+    create_letter_font, delete_letter_font,
+)
 from .querysets import (  # noqa: F401
     events_qs, event_shifts_qs, participations_qs, applications_qs, application_shift_decisions_qs,
     event_staff_qs, users_qs, users_ranked_qs, feedbacks_qs, managers_qs, team_leaders_qs,
@@ -163,6 +170,11 @@ __all__ = [
     'create_user_exception', 'get_user_exceptions', 'user_has_requirement_exception',
     'create_season', 'get_seasons',
     'get_const', 'get_all_consts', 'get_or_create_pgas_template',
+    'letter_templates_qs', 'get_letter_template_by_id', 'create_letter_template',
+    'set_letter_background', 'set_letter_fields', 'update_letter_template_title',
+    'delete_letter_template',
+    'letter_fonts_qs', 'get_letter_fonts', 'get_letter_font_by_id', 'get_letter_font_by_name',
+    'create_letter_font', 'delete_letter_font',
     # Базовые queryset'ы для аналитики (отчёты) + скалярные срезы.
     'events_qs', 'event_shifts_qs', 'participations_qs', 'applications_qs', 'application_shift_decisions_qs',
     'event_staff_qs', 'users_qs', 'users_ranked_qs', 'feedbacks_qs', 'managers_qs', 'team_leaders_qs',

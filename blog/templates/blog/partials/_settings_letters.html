@@ -1,0 +1,40 @@
+{% comment %}
+Панель «Шаблоны писем» в хабе настроек (agent-workflow.md §4) — конструктор
+благодарственных писем (letter-templates.md). Список шаблонов: у каждого фон (есть/нет)
+и кнопки «Редактор» (расстановка полей поверх PDF) / удалить. Создать — модалкой.
+{% endcomment %}
+<div class="settings-panel-head">
+    <h2>Шаблоны писем</h2>
+    <a href="{% url 'letter_template_create' %}" class="btn" data-modal data-modal-title="Новый шаблон письма">+ Новый шаблон</a>
+</div>
+
+<p class="field-hint" style="margin:-4px 0 12px;">
+    Загрузите оформленный PDF-макет и разместите поверх него поля (ФИО, мероприятие,
+    часы, подпись). При выдаче письма поля заполняются автоматически.
+</p>
+
+<div class="card" style="padding:0; overflow:hidden;">
+    <table class="responsive-table" id="letters-table">
+        <thead><tr><th>Название</th><th>Фон</th><th></th></tr></thead>
+        <tbody>
+        {% for tpl in templates %}
+            <tr>
+                <td data-label="Название">{{ tpl.title }}</td>
+                <td data-label="Фон">
+                    {% if tpl.has_background %}<span class="pill success">PDF загружен</span>
+                    {% else %}<span class="pill warning">нет фона</span>{% endif %}
+                </td>
+                <td data-label="">
+                    <a href="{% url 'letter_template_editor' tpl.id %}" class="btn secondary btn-sm">Редактор</a>
+                    <form method="post" action="{% url 'letter_template_delete' tpl.id %}" class="inline" data-confirm="Удалить шаблон «{{ tpl.title }}»? Он будет снят со всех мероприятий.">
+                        {% csrf_token %}
+                        <button type="submit" class="btn danger btn-sm">Удалить</button>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="3">Шаблонов писем пока нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>

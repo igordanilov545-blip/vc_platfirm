@@ -14,6 +14,7 @@ from blog.models import (
     Event, EventComment, EventShift, Participation, Application, UserComment, EventFeedback,
     Const, Season, Organization, Organizer, User, Location,
     EventCategory, EventPerk, ExternalExperience, EventRequirement, UserRequirementException,
+    ThankYouLetterTemplate, LetterFont,
 )
 
 # Модели остаются в импорте только для `ModelForm.Meta.model`, аннотаций и схемы полей
@@ -24,4 +25,5 @@ __all__ = [
     'Event', 'EventComment', 'EventShift', 'Participation', 'Application', 'UserComment',
     'EventFeedback', 'Const', 'Season', 'Organization', 'Organizer', 'User',
     'Location', 'EventCategory', 'EventPerk', 'ExternalExperience', 'EventRequirement', 'UserRequirementException',
+    'ThankYouLetterTemplate', 'LetterFont',
 ]

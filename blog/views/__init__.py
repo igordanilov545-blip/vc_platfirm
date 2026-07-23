@@ -62,6 +62,12 @@ from .settings_hub import (  # noqa: F401
     perk_list, perk_create, perk_edit, perk_delete,
     requirement_exception_add, requirement_exception_remove,
 )
+from .letters import (  # noqa: F401
+    letter_template_list, letter_template_create, letter_template_editor,
+    letter_template_background, letter_template_upload_bg, letter_template_save_fields,
+    letter_template_preview, letter_template_delete,
+    letter_font_upload, letter_font_delete,
+)
 from .analytics import (  # noqa: F401
     analytics_ping, analytics_leave, analytics_click, analytics_dashboard,
     analytics_online_data, analytics_clicks_data, analytics_load_data, analytics_duration_data,

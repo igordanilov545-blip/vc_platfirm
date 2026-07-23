@@ -347,12 +347,64 @@ class DobroRuSharedLink(models.Model):
         return self.title
 
 
+class LetterFont(models.Model):
+    """Шрифт для конструктора благодарственных писем (letter-templates.md).
+
+    Байты .ttf/.otf храним прямо в БД (BinaryField), как у PgasCertificateTemplate:
+    в проекте нет MEDIA-хранилища/тома, а строка в Postgres переживает пересборку
+    контейнера. Ключевой момент кросс-платформенности: PDF штампуется PyMuPDF с ЭТИМ
+    файлом шрифта (fontfile из БД), а НЕ системным шрифтом ОС — поэтому вывод одинаков
+    на Windows (локально) и Linux (прод), без установки шрифтов в систему.
+
+    `is_builtin` — предустановленные шрифты (досоздаются лениво из static, см.
+    blog.services.letter_render.ensure_builtin_fonts); их нельзя удалить из UI."""
+    id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=100, unique=True)
+    font_file = models.BinaryField()
+    filename = models.CharField(max_length=255, blank=True, default='')
+    is_builtin = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'letter_fonts'
+        verbose_name = 'Шрифт письма'
+        verbose_name_plural = 'Шрифты писем'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
 class ThankYouLetterTemplate(models.Model):
-    """Шаблоны благодарственных писем."""
+    """Шаблон благодарственного письма.
+
+    Два режима (letter-templates.md):
+    1. Конструктор поверх PDF (основной): менеджер загружает оформленный PDF-фон
+       (`background_pdf`) и в браузере расставляет поверх него поля-заглушки (ФИО,
+       мероприятие+дата, часы, организатор, свободный текст) — их конфигурация (позиция
+       в % от страницы, размер рамки, шрифт, кегль, цвет, выравнивание) хранится в
+       `fields_json`. При выдаче письма PyMuPDF штампует реальные значения в эти
+       координаты поверх фона (blog.services.letter_render).
+    2. Legacy-HTML (fallback): если фон не загружен — рендерится старый шаблон
+       letter.html по title/description (обратная совместимость со старыми шаблонами).
+
+    PDF-байты фона храним в БД (BinaryField) по той же причине, что и шрифты/справку
+    ПГАС — нет MEDIA-тома, строка в Postgres переживает пересборку контейнера."""
     id = models.AutoField(primary_key=True)
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     pattern_link = models.TextField(blank=True, null=True)
+
+    # Конструктор поверх PDF.
+    background_pdf = models.BinaryField(null=True, blank=True)
+    background_filename = models.CharField(max_length=255, blank=True, default='')
+    # Размеры страницы фона в PDF-пунктах (1/72") — эталон для пересчёта относительных
+    # координат полей (проценты) в абсолютные при штамповке.
+    page_width_pt = models.FloatField(null=True, blank=True)
+    page_height_pt = models.FloatField(null=True, blank=True)
+    # Список полей: [{key, x, y, w, h, font_id, size, color, align}], координаты x/y/w/h —
+    # в ДОЛЯХ [0..1] от ширины/высоты страницы (устойчивы к масштабу редактора).
+    fields_json = models.JSONField(default=list, blank=True)
 
     class Meta:
         db_table = 'thank_you_letter_templates'
@@ -361,6 +413,10 @@ class ThankYouLetterTemplate(models.Model):
 
     def __str__(self):
         return self.title
+
+    @property
+    def has_background(self) -> bool:
+        return bool(self.background_pdf)
 
 
 class Const(models.Model):

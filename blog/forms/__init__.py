@@ -10,7 +10,7 @@ from .references import (  # noqa: F401
     QuickOrganizerForm, OrganizerForm, QuickCategoryForm, CategoryForm,
     QuickPerkForm, PerkForm,
     QuickRequirementForm, RequirementForm, RequirementEditForm, RequirementExceptionForm,
-    ConstForm, SeasonForm,
+    ConstForm, SeasonForm, LetterTemplateForm, LetterFontForm,
 )
 from .events import (  # noqa: F401
     TeamLeadChoiceField, ManagerChoiceField, EventForm, EventShiftForm,

@@ -303,7 +303,21 @@ def letter_view(request, user_id, event_id):
         raise PermissionDenied('Волонтёр не участвовал в этом мероприятии.')
 
     hours = sum(p.hours for p in attended)
-    last_day = max(p.event_day.day for p in attended)
+    days = [p.event_day.day for p in attended]
+    first_day, last_day = min(days), max(days)
+
+    # Основной путь — конструктор поверх PDF: если у шаблона загружен фон, штампуем
+    # реальные значения PyMuPDF и отдаём готовый PDF (letter-templates.md). Иначе —
+    # legacy HTML-шаблон letter.html (обратная совместимость со старыми шаблонами).
+    if event.letter.has_background:
+        from blog.services import letter_render
+        ctx = letter_render.letter_context(
+            target, event, hours=hours, first_day=first_day, last_day=last_day
+        )
+        pdf = letter_render.render_letter_pdf(event.letter, ctx)
+        resp = HttpResponse(pdf, content_type='application/pdf')
+        resp['Content-Disposition'] = f'inline; filename="letter_{event.id}_{target.id}.pdf"'
+        return resp
 
     return render(request, 'blog/letter.html', {
         'target': target,

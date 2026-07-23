@@ -39,6 +39,28 @@ class ManagerPagesSmokeTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, 'Смоук-меро')
 
+    def test_event_create_post_with_shifts(self):
+        """Создание меро с несколькими сменами (AJAX) — путь, где EventForm.is_valid
+        вызывает _shifts_overlap. Регрессия: при распиле forms.py на пакет хелперы
+        _shifts_overlap/_intervals_overlap были потеряны, и любой POST создания меро
+        падал 500 (NameError). Тест держит этот путь под контролем."""
+        import json
+        from datetime import timedelta
+        from django.utils import timezone
+
+        day = (timezone.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        shifts = json.dumps([
+            {'day': day, 'start_time': '10:00', 'end_time': '14:00', 'volunteer_needed': 2},
+            {'day': day, 'start_time': '14:00', 'end_time': '18:00', 'volunteer_needed': 2},
+        ])
+        r = self.client.post(
+            reverse('event_create'),
+            {'title': 'Меро со сменами', 'description': 'd', 'shifts_json': shifts},
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('redirect', r.json())
+
     def test_pending_applications(self):
         r = self.client.get(reverse('pending_applications'))
         self.assertEqual(r.status_code, 200)

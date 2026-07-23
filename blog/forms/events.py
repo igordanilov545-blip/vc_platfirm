@@ -8,6 +8,25 @@
 from ._common import *  # noqa: F401,F403
 
 
+def _intervals_overlap(start_a, end_a, start_b, end_b):
+    """Пересекаются ли два полуинтервала времени [start, end). Смежные (конец одной =
+    начало другой) пересечением НЕ считаются — можно ставить смены встык."""
+    return start_a < end_b and start_b < end_a
+
+
+def _shifts_overlap(shifts):
+    """shifts — список кортежей (day, start_time, end_time). True, если хотя бы две
+    смены в один и тот же день пересекаются по времени. Используется и при создании
+    меро (несколько смен разом), и при добавлении/редактировании отдельной смены."""
+    for i in range(len(shifts)):
+        day_i, start_i, end_i = shifts[i]
+        for j in range(i + 1, len(shifts)):
+            day_j, start_j, end_j = shifts[j]
+            if day_i == day_j and _intervals_overlap(start_i, end_i, start_j, end_j):
+                return True
+    return False
+
+
 class TeamLeadChoiceField(forms.ModelMultipleChoiceField):
     """Выбор тим-лидеров: показываем только «Фамилия Имя», без telegram."""
     def label_from_instance(self, obj):

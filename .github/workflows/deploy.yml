@@ -27,12 +27,29 @@ jobs:
             [ -z "$PROJECT_DIR" ] && PROJECT_DIR="$HOME/vc_platform"
             REPO="git@github.com:Willi-Wonkaa/vc_platform.git"
 
+            # Ретрай сетевых операций: DNS на VPS периодически моргает
+            # («Temporary failure in name resolution»), из-за чего git clone/fetch
+            # падал и валил весь деплой. Повторяем до 5 раз с нарастающей паузой —
+            # разовый сбой резолва больше не роняет выкладку.
+            retry() {
+              local n=1 max=5 delay=6
+              until "$@"; do
+                if [ $n -ge $max ]; then
+                  echo "Команда не удалась после $max попыток: $*" >&2
+                  return 1
+                fi
+                echo "Попытка $n/$max не удалась ($*), повтор через ${delay}s…" >&2
+                sleep $delay
+                n=$((n+1)); delay=$((delay+6))
+              done
+            }
+
             # 1) Обновляем код (репозиторий на VPS клонируется через deploy-key).
             if [ ! -d "$PROJECT_DIR/.git" ]; then
-              git clone "$REPO" "$PROJECT_DIR"
+              retry git clone "$REPO" "$PROJECT_DIR"
             fi
             cd "$PROJECT_DIR"
-            git fetch --all
+            retry git fetch --all
             git reset --hard origin/main
 
             # 2) Пересобираем и поднимаем стек. Миграции/collectstatic — в entrypoint web.

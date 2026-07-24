@@ -124,22 +124,16 @@
     </div>
 </div>
 
-{% comment %}Модалка просмотра благодарственного письма (PDF в iframe, ~80% экрана).
-Открывается по ссылке с data-letter-modal (letter_modal.js). На узких экранах
-(телефон) вместо iframe письмо открывается напрямую нативным PDF-вьюером —
-там это удобнее, чем зажатый iframe. Клик по фону/✕/Esc — закрыть.{% endcomment %}
-<div class="letter-modal-backdrop" id="letter-modal-backdrop" hidden>
-    <div class="letter-modal-dialog">
-        <div class="modal-header">
-            <h3 id="letter-modal-title">Благодарственное письмо</h3>
-            <div class="letter-modal-actions">
-                <a href="#" id="letter-modal-download" class="btn secondary btn-sm" download>⬇ Скачать</a>
-                <button type="button" class="modal-close" id="letter-modal-close" aria-label="Закрыть">✕</button>
-            </div>
-        </div>
-        <div class="letter-modal-body">
-            <iframe id="letter-modal-frame" title="Благодарственное письмо" src="about:blank"></iframe>
-        </div>
+{% comment %}Лайтбокс просмотра благодарственного письма — как фото в ленте соцсети:
+письмо-картинка (PNG) по центру на затемнённом фоне, без панелей вьюера. Открывается
+по ссылке с data-letter-modal (letter_modal.js). Клик по фону/✕/Esc — закрыть; кнопка
+«скачать» отдаёт PDF.{% endcomment %}
+<div class="letter-lightbox" id="letter-modal-backdrop" hidden>
+    <button type="button" class="letter-lightbox-close" id="letter-modal-close" aria-label="Закрыть">✕</button>
+    <a href="#" id="letter-modal-download" class="letter-lightbox-download btn secondary btn-sm" download>⬇ Скачать</a>
+    <div class="letter-lightbox-stage">
+        <img id="letter-modal-img" class="letter-lightbox-img" alt="Благодарственное письмо">
+        <div class="letter-lightbox-spinner" id="letter-modal-spinner">Загрузка…</div>
     </div>
 </div>
 

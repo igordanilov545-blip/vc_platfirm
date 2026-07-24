@@ -313,11 +313,18 @@ def letter_view(request, user_id, event_id):
     # legacy HTML-шаблон letter.html (обратная совместимость со старыми шаблонами).
     if event.letter.has_background:
         from blog.services import letter_render
+        download = request.GET.get('download') == '1'
         try:
             ctx = letter_render.letter_context(
                 target, event, hours=hours, first_day=first_day, last_day=last_day
             )
-            pdf = letter_render.render_letter_pdf(event.letter, ctx)
+            # Скачивание — PDF (для печати/архива). Просмотр — PNG-«картинка»: письмо
+            # показывается в модалке как фото в ленте (просто изображение по центру),
+            # без браузерного PDF-вьюера с панелью печати.
+            if download:
+                body = letter_render.render_letter_pdf(event.letter, ctx)
+            else:
+                body = letter_render.render_letter_png(event.letter, ctx)
         except Exception:
             # Прод-диагностика: полный трейс в лог vc.web (иначе при DEBUG=False видна
             # только пустая страница 500). Сузит причину сбоя рендера на сервере.
@@ -334,10 +341,12 @@ def letter_view(request, user_id, event_id):
                     content_type='text/plain; charset=utf-8', status=500,
                 )
             raise
-        resp = HttpResponse(pdf, content_type='application/pdf')
-        # ?download=1 → скачать вложением; иначе открыть во вкладке (inline).
-        disposition = 'attachment' if request.GET.get('download') == '1' else 'inline'
-        resp['Content-Disposition'] = _content_disposition(disposition, _letter_filename(target, event))
+        if download:
+            resp = HttpResponse(body, content_type='application/pdf')
+            resp['Content-Disposition'] = _content_disposition('attachment', _letter_filename(target, event))
+        else:
+            resp = HttpResponse(body, content_type='image/png')
+            resp['Content-Disposition'] = 'inline'
         return resp
 
     return render(request, 'blog/letter.html', {

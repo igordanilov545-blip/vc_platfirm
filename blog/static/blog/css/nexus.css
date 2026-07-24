@@ -1586,38 +1586,50 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
 .le-prop-type { font-weight: 600; color: var(--accent); }
 
 /* ====================================================================
-   Модалка просмотра благодарственного письма (letter_modal.js): PDF в iframe
-   поверх страницы, ~80% экрана. Клик по фону/✕/Esc — закрыть.
+   Лайтбокс просмотра благодарственного письма (letter_modal.js): письмо-картинка
+   (PNG) по центру на затемнённом фоне — как фото в ленте. Без панелей PDF-вьюера.
+   Клик по фону/✕/Esc — закрыть. Одинаково удобно на десктопе и телефоне.
    ==================================================================== */
-.letter-modal-backdrop {
+.letter-lightbox {
   position: fixed; inset: 0;
-  background: var(--overlay);
-  backdrop-filter: blur(3px);
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
-  z-index: 210; padding: 24px;
+  z-index: 210; padding: 4vmin;
 }
-.letter-modal-backdrop[hidden] { display: none; }
+.letter-lightbox[hidden] { display: none; }
 
-.letter-modal-dialog {
-  width: 80vw; height: 80vh;
-  max-width: 1100px;
-  background: var(--bg-card);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
-  overflow: hidden;
-  display: flex; flex-direction: column;
+.letter-lightbox-stage {
+  display: flex; align-items: center; justify-content: center;
+  max-width: 100%; max-height: 100%;
 }
-.letter-modal-actions { display: flex; align-items: center; gap: 10px; }
-.letter-modal-body { flex: 1 1 auto; min-height: 0; background: #525659; }
-.letter-modal-body iframe {
-  width: 100%; height: 100%; border: 0; display: block;
+.letter-lightbox-img {
+  display: block;
+  max-width: min(1000px, 92vw); max-height: 90vh;
+  width: auto; height: auto;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  background: #fff;
+}
+.letter-lightbox-spinner { color: #fff; font-size: 15px; opacity: 0.9; }
+
+/* Кнопки поверх лайтбокса (как у фото-вьюеров): крестик справа сверху, «скачать»
+   рядом. Всегда белые/контрастные к тёмному фону, независимо от темы. */
+.letter-lightbox-close {
+  position: fixed; top: 16px; right: 18px;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14); color: #fff;
+  border: none; cursor: pointer; font-size: 22px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.letter-lightbox-close:hover { background: rgba(255, 255, 255, 0.28); }
+.letter-lightbox-download {
+  position: fixed; top: 20px; right: 74px;
 }
 
-/* Телефон: письмо открывается напрямую нативным вьюером (JS), но если модалка всё
-   же показана (планшет/поворот) — растягиваем на весь экран для читаемости. */
 @media (max-width: 640px) {
-  .letter-modal-backdrop { padding: 0; }
-  .letter-modal-dialog {
-    width: 100vw; height: 100vh; max-width: 100%; border-radius: 0;
-  }
+  .letter-lightbox { padding: 0; }
+  .letter-lightbox-img { max-width: 100vw; max-height: 88vh; border-radius: 0; }
+  .letter-lightbox-download { top: 16px; right: 70px; }
 }

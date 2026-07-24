@@ -174,39 +174,55 @@ def _resolve_text(field, ctx) -> str:
     return ctx.get(key, '') or ''
 
 
-def render_letter_pdf(template, ctx) -> bytes:
-    """Штампует значения `ctx` в поля `template.fields_json` поверх PDF-фона.
+def _stamped_doc(template, ctx):
+    """Открывает PDF-фон и штампует значения `ctx` в поля `template.fields_json`.
+    Возвращает fitz.Document (вызывающий обязан закрыть). Общее ядро для PDF и PNG.
 
     Координаты полей — в долях [0..1] от размера страницы; переводим в пункты по
     фактическому размеру страницы фона. Шрифт каждого поля грузим из БД байтами
     (`fitz.Font(fontbuffer=...)`) и рисуем через `TextWriter` — БЕЗ временных файлов и
-    путей на диске: важно для прод-хостинга с ограниченным/недоступным /tmp (иначе
-    рендер падал 500). Кириллица и внешний вид одинаковы на любой ОС. Возвращает
-    PDF-байты (одна страница)."""
+    путей на диске: важно для прод-хостинга с ограниченным/недоступным /tmp."""
     doc = fitz.open(stream=bytes(template.background_pdf), filetype='pdf')
     page = doc[0]
     pw, ph = page.rect.width, page.rect.height
 
     font_cache = {}  # font_id → fitz.Font (грузим из БД один раз)
-    try:
-        for field in (template.fields_json or []):
-            text = _resolve_text(field, ctx)
-            if not text:
-                continue
-            x = float(field.get('x', 0)) * pw
-            y = float(field.get('y', 0)) * ph
-            w = float(field.get('w', 0)) * pw
-            h = float(field.get('h', 0)) * ph
-            if w <= 1 or h <= 1:
-                continue  # вырожденная рамка — нечего рисовать
-            rect = fitz.Rect(x, y, x + w, y + h)
-            size = float(field.get('size', 18) or 18)
-            color = _hex_to_rgb(field.get('color', '#000000'))
-            align = _ALIGN.get(field.get('align', 'left'), fitz.TEXT_ALIGN_LEFT)
-            font = _font_for(field.get('font_id'), font_cache)
+    for field in (template.fields_json or []):
+        text = _resolve_text(field, ctx)
+        if not text:
+            continue
+        x = float(field.get('x', 0)) * pw
+        y = float(field.get('y', 0)) * ph
+        w = float(field.get('w', 0)) * pw
+        h = float(field.get('h', 0)) * ph
+        if w <= 1 or h <= 1:
+            continue  # вырожденная рамка — нечего рисовать
+        rect = fitz.Rect(x, y, x + w, y + h)
+        size = float(field.get('size', 18) or 18)
+        color = _hex_to_rgb(field.get('color', '#000000'))
+        align = _ALIGN.get(field.get('align', 'left'), fitz.TEXT_ALIGN_LEFT)
+        font = _font_for(field.get('font_id'), font_cache)
 
-            _draw_textbox(page, rect, text, font, size, color, align)
+        _draw_textbox(page, rect, text, font, size, color, align)
+    return doc
+
+
+def render_letter_pdf(template, ctx) -> bytes:
+    """Готовое письмо как PDF-байты (одна страница) — для скачивания/печати."""
+    doc = _stamped_doc(template, ctx)
+    try:
         return doc.tobytes()
+    finally:
+        doc.close()
+
+
+def render_letter_png(template, ctx, dpi=150) -> bytes:
+    """Готовое письмо как PNG — для просмотра «картинкой» в модалке (как фото в ленте),
+    без браузерного PDF-вьюера с панелью печати. Растрируем через PyMuPDF."""
+    doc = _stamped_doc(template, ctx)
+    try:
+        pix = doc[0].get_pixmap(dpi=dpi)
+        return pix.tobytes('png')
     finally:
         doc.close()
 

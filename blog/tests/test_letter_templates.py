@@ -68,6 +68,9 @@ class LetterRenderServiceTests(TestCase):
         text = doc[0].get_text()
         doc.close()
         self.assertIn('Спасибо', text)
+        # та же начинка отдаётся картинкой (PNG) для просмотра в лайтбоксе
+        png = letter_render.render_letter_png(tpl, letter_render.demo_context())
+        self.assertTrue(png.startswith(b'\x89PNG'))
 
     def test_background_png(self):
         tpl = ThankYouLetterTemplate.objects.create(title='t')
@@ -185,23 +188,25 @@ class LetterViewIntegrationTests(TestCase):
         self.event.save(update_fields=['letter'])
         return letter
 
-    def test_letter_view_pdf_with_background(self):
+    def test_letter_view_inline_is_png(self):
+        # Просмотр (без ?download) — PNG-картинка для лайтбокса (как фото в ленте),
+        # а не PDF с браузерным вьюером.
         self._attach_pdf_letter()
         r = self.client.get(reverse('letter_view', args=[self.volunteer.id, self.event.id]))
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r['Content-Type'], 'application/pdf')
-        self.assertIn('inline', r['Content-Disposition'])
+        self.assertEqual(r['Content-Type'], 'image/png')
+        self.assertTrue(r.content.startswith(b'\x89PNG'))
 
-    def test_letter_view_download_is_attachment(self):
+    def test_letter_view_download_is_pdf_attachment(self):
         self._attach_pdf_letter()
         r = self.client.get(reverse('letter_view', args=[self.volunteer.id, self.event.id]) + '?download=1')
         self.assertEqual(r.status_code, 200)
+        self.assertEqual(r['Content-Type'], 'application/pdf')
         self.assertIn('attachment', r['Content-Disposition'])
 
-    def test_letter_view_allows_sameorigin_iframe(self):
-        # Письмо показывается в модалке через <iframe>: глобальный DENY заменён на
-        # SAMEORIGIN, иначе браузер не рендерит PDF в iframe (регрессия «не удаётся
-        # установить соединение»).
+    def test_letter_view_allows_sameorigin_frame(self):
+        # Письмо-картинка грузится в лайтбокс с нашего origin — глобальный DENY заменён
+        # на SAMEORIGIN (регрессия «не удаётся установить соединение»).
         self._attach_pdf_letter()
         r = self.client.get(reverse('letter_view', args=[self.volunteer.id, self.event.id]))
         self.assertEqual(r.get('X-Frame-Options'), 'SAMEORIGIN')

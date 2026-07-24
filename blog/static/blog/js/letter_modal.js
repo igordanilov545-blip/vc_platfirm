@@ -1,34 +1,37 @@
 /*
- * letter_modal.js — просмотр благодарственного письма в модалке поверх страницы.
+ * letter_modal.js — просмотр благодарственного письма лайтбоксом (как фото в ленте).
  *
- * Ссылка «открыть письмо» (data-letter-modal, значение = URL письма) открывает PDF в
- * iframe внутри окна ~80% экрана. На узких экранах (телефон) iframe с PDF неудобен и
- * местами не рендерится — поэтому там письмо открывается напрямую нативным вьюером
- * браузера (новая вкладка), это лучший мобильный UX. Клик по фону, ✕ или Esc — закрыть.
+ * Ссылка «открыть письмо» (data-letter-modal = URL письма) показывает письмо-КАРТИНКУ
+ * (сервер отдаёт PNG на этот URL) по центру затемнённого фона, без панелей PDF-вьюера.
+ * Работает одинаково удобно на десктопе и телефоне (обычное изображение, вписанное в
+ * экран). Кнопка «скачать» отдаёт PDF (URL + ?download=1). Клик по фону, ✕ или Esc —
+ * закрыть.
  *
- * Навешивается делегированием на document (работает и для ссылок, подгруженных
- * soft-навигацией), поэтому отдельного init на каждый элемент не нужно.
+ * Навешивается делегированием на document (работает и для ссылок из soft-навигации).
  */
 (function () {
     'use strict';
 
-    var MOBILE_MAX = 640; // ширина, ниже которой открываем PDF напрямую, а не в iframe
-
     var backdrop = document.getElementById('letter-modal-backdrop');
-    var frame = document.getElementById('letter-modal-frame');
+    var img = document.getElementById('letter-modal-img');
+    var spinner = document.getElementById('letter-modal-spinner');
     var closeBtn = document.getElementById('letter-modal-close');
     var downloadLink = document.getElementById('letter-modal-download');
-    var titleEl = document.getElementById('letter-modal-title');
 
-    function isMobile() {
-        return window.matchMedia && window.matchMedia('(max-width: ' + MOBILE_MAX + 'px)').matches;
-    }
-
-    function openLetter(url, title) {
-        if (!backdrop || !frame) { window.open(url, '_blank'); return; }
-        if (titleEl && title) titleEl.textContent = title;
+    function openLetter(url) {
+        if (!backdrop || !img) { window.open(url, '_blank'); return; }
         if (downloadLink) downloadLink.setAttribute('href', addParam(url, 'download', '1'));
-        frame.src = url;
+        // Показать спиннер, спрятать старую картинку, начать загрузку новой.
+        img.style.display = 'none';
+        if (spinner) spinner.style.display = '';
+        img.onload = function () {
+            if (spinner) spinner.style.display = 'none';
+            img.style.display = '';
+        };
+        img.onerror = function () {
+            if (spinner) spinner.textContent = 'Не удалось загрузить письмо';
+        };
+        img.src = url;
         backdrop.hidden = false;
         document.body.style.overflow = 'hidden';
     }
@@ -36,8 +39,8 @@
     function closeLetter() {
         if (!backdrop) return;
         backdrop.hidden = true;
-        // Сбрасываем src, чтобы PDF выгрузился (не держим память/не печатал скрыто).
-        if (frame) frame.src = 'about:blank';
+        img.src = '';                 // освободить память
+        if (spinner) { spinner.style.display = ''; spinner.textContent = 'Загрузка…'; }
         document.body.style.overflow = '';
     }
 
@@ -51,18 +54,15 @@
         if (!link) return;
         event.preventDefault();
         var url = link.getAttribute('data-letter-modal') || link.getAttribute('href');
-        if (!url) return;
-        // Телефон — открываем PDF напрямую (нативный вьюер удобнее зажатого iframe).
-        if (isMobile()) {
-            window.open(url, '_blank');
-            return;
-        }
-        openLetter(url, link.getAttribute('data-letter-title'));
+        if (url) openLetter(url);
     });
 
     if (closeBtn) closeBtn.addEventListener('click', closeLetter);
+    // Клик по фону (не по самой картинке/кнопкам) — закрыть.
     if (backdrop) backdrop.addEventListener('click', function (event) {
-        if (event.target === backdrop) closeLetter();
+        if (event.target === backdrop || event.target.classList.contains('letter-lightbox-stage')) {
+            closeLetter();
+        }
     });
     document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape' && backdrop && !backdrop.hidden) closeLetter();

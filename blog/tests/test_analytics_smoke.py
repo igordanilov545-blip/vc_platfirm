@@ -6,6 +6,9 @@
 фиксируют, что обычный менеджер БЕЗ этого telegram_id доступа не имеет (частый повод
 для путаницы — «менеджер» тут не значит «пройдёт» ACL).
 """
+import tempfile
+from pathlib import Path
+
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
@@ -133,3 +136,42 @@ class AnalyticsTrackingEndpointsTests(TestCase):
     def test_ping_get_not_allowed(self):
         r = self.client.get(reverse('analytics_ping'))
         self.assertEqual(r.status_code, 405)
+
+
+@override_settings(ANALYTICS_ADMIN_TG_IDS=['888'])
+class AnalyticsLogEndpointsTests(TestCase):
+    """analytics_log_download/tail читают реальный файл из settings.LOG_DIR —
+    подменяем на временную директорию с известным содержимым."""
+
+    def setUp(self):
+        self.admin = f.make_manager(telegram_id='888')
+        self.client.force_login(self.admin)
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        log_path = Path(self._tmpdir.name) / 'web.log'
+        log_path.write_text('\n'.join(f'line {i}' for i in range(5)) + '\n', encoding='utf-8')
+        self._override = override_settings(LOG_DIR=self._tmpdir.name)
+        self._override.enable()
+        self.addCleanup(self._override.disable)
+
+    def test_download_existing_channel(self):
+        r = self.client.get(reverse('analytics_log_download', args=['web']))
+        self.assertEqual(r.status_code, 200)
+        r.close()  # FileResponse держит файл открытым — на Windows иначе временная
+        # директория не удаляется при cleanup (PermissionError), в проде это не
+        # актуально: WSGI-сервер сам закрывает response после отдачи.
+
+    def test_download_unknown_channel_404(self):
+        r = self.client.get(reverse('analytics_log_download', args=['unknown']))
+        self.assertEqual(r.status_code, 404)
+
+    def test_tail_returns_batch(self):
+        r = self.client.get(reverse('analytics_log_tail', args=['web']))
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertEqual(len(data['lines']), 5)
+        self.assertFalse(data['has_more'])
+
+    def test_tail_missing_file_404(self):
+        r = self.client.get(reverse('analytics_log_tail', args=['bot']))
+        self.assertEqual(r.status_code, 404)

@@ -62,13 +62,18 @@ def application_create(request):
         target_event = dc.get_event_by_id(event_id)
         if target_event and not target_event.published_at:
             messages.error(request, 'Мероприятие ещё не опубликовано — подать заявку нельзя.')
+            if is_ajax(request):
+                return JsonResponse({'redirect': reverse('dashboard')})
             return redirect('dashboard')
         existing = dc.applications_qs().filter(
             user=request.user, event_id=event_id, status__in=['new', 'approved'],
         ).first()
         if existing:
             messages.info(request, 'Заявка на это мероприятие уже подана — вы можете отредактировать её.')
-            return redirect('application_edit', application_id=existing.id)
+            edit_url = reverse('application_edit', args=[existing.id])
+            if is_ajax(request):
+                return JsonResponse({'redirect': edit_url})
+            return redirect(edit_url)
 
     initial = {'event': event_id} if event_id and request.method != 'POST' else None
     form = ApplicationForm(request.POST or None, initial=initial, user=request.user)

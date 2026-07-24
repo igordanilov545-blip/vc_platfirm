@@ -103,7 +103,6 @@ def participation_set_hours(request, participation_id):
     return JsonResponse({'hours': participation.hours})
 
 @login_required
-@login_required
 def participation_edit(request, participation_id):
     participation = get_object_or_404(
         dc.participations_qs().select_related('event_day__event', 'user'), pk=participation_id
@@ -116,7 +115,6 @@ def participation_edit(request, participation_id):
 
     form = ParticipationForm(request.POST or None, instance=participation)
     if request.method == 'POST' and form.is_valid():
-        from data_base import data_controller as dc
         old = dc.participations_qs().get(pk=participation.pk)
         old_status = old.status
         participation = form.save(commit=False)

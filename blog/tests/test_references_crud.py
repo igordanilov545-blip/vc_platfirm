@@ -111,6 +111,16 @@ class OrganizerCrudTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, 'Пётр')
 
+    def test_edit_organizer(self):
+        organizer = f.make_organizer(first_name='Старое')
+        r = _ajax(self.client, 'post', reverse('organizer_edit', args=[organizer.id]), {
+            'first_name': 'Новое', 'last_name': organizer.last_name, 'phone': '', 'email': '',
+            'telegram_username': '', 'VK_username': '', 'whatsapp': '', 'comments': '',
+        })
+        self.assertEqual(r.status_code, 200)
+        organizer.refresh_from_db()
+        self.assertEqual(organizer.first_name, 'Новое')
+
 
 class CategoryCrudTests(TestCase):
     def setUp(self):
@@ -263,3 +273,42 @@ class QuickCreateTests(TestCase):
         self.client.force_login(volunteer)
         r = self.client.post(reverse('quick_create_location'), {'name': 'x'})
         self.assertEqual(r.status_code, 403)
+
+
+class ReferenceListViewsTests(TestCase):
+    """Остальные list-вьюхи справочников (location_list уже покрыт своим классом
+    выше) — тот же паттерн: прямой заход редиректит в хаб настроек, AJAX отдаёт
+    partial, доступ только менеджеру."""
+
+    def setUp(self):
+        self.manager = f.make_manager()
+        self.client.force_login(self.manager)
+
+    def _assert_list_route(self, name):
+        direct = self.client.get(reverse(name))
+        self.assertEqual(direct.status_code, 302, f'{name}: прямой заход должен быть 302')
+        self.assertIn('/settings', direct['Location'], f'{name}: должен вести в хаб настроек')
+        partial = _ajax(self.client, 'get', reverse(name))
+        self.assertEqual(partial.status_code, 200, f'{name}: AJAX-partial должен быть 200')
+
+    def test_category_list(self):
+        self._assert_list_route('category_list')
+
+    def test_perk_list(self):
+        self._assert_list_route('perk_list')
+
+    def test_requirement_list(self):
+        self._assert_list_route('requirement_list')
+
+    def test_organizer_list(self):
+        self._assert_list_route('organizer_list')
+
+    def test_organizations_list(self):
+        self._assert_list_route('organizations_list')
+
+    def test_volunteer_forbidden(self):
+        volunteer = f.make_user()
+        self.client.force_login(volunteer)
+        for name in ('category_list', 'perk_list', 'requirement_list', 'organizer_list', 'organizations_list'):
+            r = _ajax(self.client, 'get', reverse(name))
+            self.assertEqual(r.status_code, 403, name)

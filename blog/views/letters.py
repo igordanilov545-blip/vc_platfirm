@@ -150,6 +150,16 @@ def letter_font_upload(request):
 
 
 @manager_required
+def letter_font_file(request, font_id):
+    """Байты шрифта (.ttf/.otf) — для @font-face в редакторе: чтобы блоки показывали
+    пробный текст ТЕМ шрифтом, что выбран. Кэшируем надолго (шрифт по id неизменен)."""
+    font = get_object_or_404(LetterFont, pk=font_id)
+    resp = HttpResponse(bytes(font.font_file), content_type='font/ttf')
+    resp['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return resp
+
+
+@manager_required
 def letter_font_delete(request, font_id):
     font = get_object_or_404(LetterFont, pk=font_id)
     if request.method == 'POST':

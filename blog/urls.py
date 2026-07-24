@@ -139,6 +139,7 @@ urlpatterns = [
     path('letters/templates/<int:template_id>/preview.pdf', views.letter_template_preview, name='letter_template_preview'),
     path('letters/templates/<int:template_id>/delete/', views.letter_template_delete, name='letter_template_delete'),
     path('letters/fonts/upload/', views.letter_font_upload, name='letter_font_upload'),
+    path('letters/fonts/<int:font_id>/file/', views.letter_font_file, name='letter_font_file'),
     path('letters/fonts/<int:font_id>/delete/', views.letter_font_delete, name='letter_font_delete'),
 
     path('quick-create/location/', views.quick_create_location, name='quick_create_location'),

@@ -66,7 +66,7 @@ from .letters import (  # noqa: F401
     letter_template_list, letter_template_create, letter_template_editor,
     letter_template_background, letter_template_upload_bg, letter_template_save_fields,
     letter_template_preview, letter_template_delete,
-    letter_font_upload, letter_font_delete,
+    letter_font_upload, letter_font_delete, letter_font_file,
 )
 from .analytics import (  # noqa: F401
     analytics_ping, analytics_leave, analytics_click, analytics_dashboard,

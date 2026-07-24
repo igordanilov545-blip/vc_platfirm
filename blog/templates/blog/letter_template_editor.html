@@ -31,6 +31,8 @@ static/blog/js/letter_editor.js (навешивается по data-letter-edito
      data-save-url="{% url 'letter_template_save_fields' template.id %}"
      data-preview-url="{% url 'letter_template_preview' template.id %}"
      data-font-upload-url="{% url 'letter_font_upload' %}"
+     data-font-file-url="{% url 'letter_font_file' 0 %}"
+     data-page-height="{{ template.page_height_pt|default:'595' }}"
      data-fonts="{{ fonts_json }}"
      data-field-keys="{{ field_keys_json }}"
      data-fields="{{ fields_json }}">
@@ -101,6 +103,11 @@ static/blog/js/letter_editor.js (навешивается по data-letter-edito
                     <option value="center">По центру</option>
                     <option value="right">По правому краю</option>
                 </select>
+            </div>
+            <div class="field">
+                <label>Пробный текст (для предпросмотра)</label>
+                <input type="text" data-le-prop-sample placeholder="Впишите текст — увидите его в блоке">
+                <div class="field-hint">Показывается в блоке выбранным шрифтом и кеглем. В реальном письме подставятся настоящие данные волонтёра.</div>
             </div>
             <button type="button" class="btn danger btn-sm" data-le-delete-field>Удалить поле</button>
         </aside>

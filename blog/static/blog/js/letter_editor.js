@@ -35,18 +35,47 @@
 
         this.saveUrl = host.getAttribute('data-save-url');
         this.fontUploadUrl = host.getAttribute('data-font-upload-url');
+        this.fontFileUrlTpl = host.getAttribute('data-font-file-url'); // .../fonts/0/file/
+        this.pageHeightPt = parseFloat(host.getAttribute('data-page-height')) || 595;
         this.fonts = safeJson(host.getAttribute('data-fonts'), []);
         this.fieldKeys = safeJson(host.getAttribute('data-field-keys'), {});
         this.fields = safeJson(host.getAttribute('data-fields'), []);
         this.selected = null;   // индекс выбранного поля
         this.els = [];          // DOM-узлы полей по индексу
+        this._faceInjected = {}; // font_id → @font-face уже добавлен
 
         this.bg.src = host.getAttribute('data-bg-url');
+        this.injectFontFaces();
         this.buildFontOptions();
         this.bindToolbar();
         this.bindProps();
         this.render();
+        // При масштабировании окна пересчитываем кегль предпросмотра (он в px от высоты сцены).
+        var self = this;
+        window.addEventListener('resize', function () { self.render(); });
     }
+
+    // CSS-имя семейства для шрифта в редакторе (уникально по id).
+    LetterEditor.prototype.fontFamily = function (fontId) {
+        return 'letter-font-' + (fontId || 'default');
+    };
+
+    // Регистрирует @font-face для каждого шрифта, чтобы блоки показывали пробный текст
+    // именно этим шрифтом (байты берём с сервера letter_font_file по id).
+    LetterEditor.prototype.injectFontFaces = function () {
+        var self = this;
+        this.fonts.forEach(function (f) { self.ensureFontFace(f.id); });
+    };
+
+    LetterEditor.prototype.ensureFontFace = function (fontId) {
+        if (!fontId || this._faceInjected[fontId] || !this.fontFileUrlTpl) return;
+        this._faceInjected[fontId] = true;
+        var url = this.fontFileUrlTpl.replace(/\/0\//, '/' + fontId + '/');
+        var style = document.createElement('style');
+        style.textContent = "@font-face { font-family: '" + this.fontFamily(fontId) +
+            "'; src: url('" + url + "'); font-display: swap; }";
+        document.head.appendChild(style);
+    };
 
     LetterEditor.prototype.buildFontOptions = function () {
         var sel = this.host.querySelector('[data-le-prop-font]');
@@ -153,8 +182,18 @@
             box.style.color = f.color || '#000';
 
             var label = document.createElement('span');
-            label.className = 'le-field-label';
-            label.textContent = self.fieldPreviewText(f);
+            var sample = (f.sample || '').trim();
+            if (sample) {
+                // Пробный текст пользователя — показываем ТЕМ шрифтом и кеглем, что выбраны.
+                label.className = 'le-field-text';
+                label.textContent = sample;
+                label.style.fontFamily = "'" + self.fontFamily(f.font_id) + "', sans-serif";
+                label.style.fontSize = self.previewFontPx(f.size) + 'px';
+            } else {
+                // Нет пробного текста — служебная подпись (название поля), как раньше.
+                label.className = 'le-field-label';
+                label.textContent = self.fieldPreviewText(f);
+            }
             box.appendChild(label);
 
             var handle = document.createElement('div');
@@ -181,6 +220,15 @@
     LetterEditor.prototype.fieldPreviewText = function (f) {
         if (f.key === 'custom') return f.text || 'Текст';
         return this.fieldKeys[f.key] || f.key;
+    };
+
+    // Кегль (pt на странице PDF) → пиксели на экране: масштаб = высота сцены в px /
+    // высота страницы в pt. Так пробный текст на экране примерно совпадает по размеру
+    // с тем, что будет в итоговом PDF (не пиксель-в-пиксель — точная копия в «Превью PDF»).
+    LetterEditor.prototype.previewFontPx = function (sizePt) {
+        var stageH = this.stage ? this.stage.getBoundingClientRect().height : 0;
+        if (!stageH || !this.pageHeightPt) return Math.max(8, sizePt || 12);
+        return Math.max(6, (sizePt || 12) * stageH / this.pageHeightPt);
     };
 
     // --- Перетаскивание -----------------------------------------------------
@@ -257,13 +305,19 @@
         var size = this.host.querySelector('[data-le-prop-size]');
         var color = this.host.querySelector('[data-le-prop-color]');
         var align = this.host.querySelector('[data-le-prop-align]');
+        var sample = this.host.querySelector('[data-le-prop-sample]');
         var del = this.host.querySelector('[data-le-delete-field]');
 
         function cur() { return self.selected == null ? null : self.fields[self.selected]; }
         function apply(k, v) { var f = cur(); if (f) { f[k] = v; self.render(); } }
 
         if (text) text.addEventListener('input', function () { apply('text', text.value); });
-        if (font) font.addEventListener('change', function () { apply('font_id', parseInt(font.value, 10)); });
+        if (sample) sample.addEventListener('input', function () { apply('sample', sample.value); });
+        if (font) font.addEventListener('change', function () {
+            var id = parseInt(font.value, 10);
+            self.ensureFontFace(id);
+            apply('font_id', id);
+        });
         if (size) size.addEventListener('input', function () { apply('size', parseFloat(size.value) || 12); });
         if (color) color.addEventListener('input', function () { apply('color', color.value); });
         if (align) align.addEventListener('change', function () { apply('align', align.value); });
@@ -290,6 +344,7 @@
         setVal(this.host, '[data-le-prop-size]', f.size);
         setVal(this.host, '[data-le-prop-color]', f.color || '#000000');
         setVal(this.host, '[data-le-prop-align]', f.align || 'left');
+        setVal(this.host, '[data-le-prop-sample]', f.sample || '');
     };
 
     // --- Сохранение ---------------------------------------------------------

@@ -139,6 +139,16 @@ class LetterViewTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, 'Шаблоны писем')
 
+    def test_font_file_served_for_editor_preview(self):
+        # Байты шрифта отдаются для @font-face в редакторе (предпросмотр текста тем
+        # шрифтом, что выбран).
+        letter_render.ensure_builtin_fonts()
+        font = dc.get_letter_font_by_name('NT Somic')
+        r = self.client.get(reverse('letter_font_file', args=[font.id]))
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('font', r['Content-Type'])
+        self.assertGreater(len(r.content), 1000)
+
     def test_font_upload_rejects_non_font(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
         r = self.client.post(

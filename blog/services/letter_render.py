@@ -44,10 +44,14 @@ _RU_MONTHS = [
 
 # --- Встроенные шрифты (лениво досоздаются в БД) -----------------------------
 
-# name → имя файла шрифта. DejaVu покрывает кириллицу. Файлы ВЕНДОРИМ в репозиторий
-# (blog/static/blog/fonts/) — рендер не должен зависеть от того, установлен ли на проде
-# matplotlib (иначе любой сбой его импорта = 500 на каждом письме).
+# name → имя файла шрифта. Файлы ВЕНДОРИМ в репозиторий (blog/static/blog/fonts/) —
+# рендер не должен зависеть от того, установлен ли на проде matplotlib (иначе любой
+# сбой его импорта = 500 на каждом письме). NT Somic — фирменный шрифт (кириллица),
+# идёт первым, чтобы быть шрифтом по умолчанию. DejaVu — запасные.
 BUILTIN_FONTS = {
+    'NT Somic': 'NTSomic-Regular.ttf',
+    'NT Somic Medium': 'NTSomic-Medium.ttf',
+    'NT Somic Bold': 'NTSomic-Bold.ttf',
     'DejaVu Sans': 'DejaVuSans.ttf',
     'DejaVu Sans Bold': 'DejaVuSans-Bold.ttf',
     'DejaVu Serif': 'DejaVuSerif.ttf',

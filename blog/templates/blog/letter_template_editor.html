@@ -68,7 +68,21 @@ static/blog/js/letter_editor.js (навешивается по data-letter-edito
             <div class="field">
                 <label>Шрифт</label>
                 <select data-le-prop-font></select>
-                <button type="button" class="link-btn" data-le-upload-font style="margin-top:4px;">＋ Загрузить свой шрифт</button>
+                <button type="button" class="link-btn" data-le-upload-font-toggle style="margin-top:4px;">＋ Загрузить свой шрифт</button>
+
+                {# Инлайновая мини-форма загрузки шрифта (раскрывается по кнопке выше). #}
+                <div class="le-font-upload" data-le-font-upload hidden>
+                    <label class="le-font-file-label">
+                        <span data-le-font-filename>Выберите файл .ttf или .otf</span>
+                        <input type="file" accept=".ttf,.otf" data-le-font-file hidden>
+                    </label>
+                    <input type="text" data-le-font-name placeholder="Название шрифта (для списка)" style="margin-top:6px;">
+                    <div style="display:flex; gap:8px; margin-top:6px;">
+                        <button type="button" class="btn btn-sm" data-le-font-submit>Загрузить</button>
+                        <button type="button" class="btn secondary btn-sm" data-le-font-cancel>Отмена</button>
+                    </div>
+                    <div class="field-error" data-le-font-error hidden style="margin-top:6px;"></div>
+                </div>
             </div>
             <div class="field-row" style="display:flex; gap:12px;">
                 <div class="field" style="flex:1;">

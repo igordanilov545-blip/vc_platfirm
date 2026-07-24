@@ -1585,6 +1585,21 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
 }
 .le-prop-type { font-weight: 600; color: var(--accent); }
 
+/* Инлайновая загрузка своего шрифта в панели свойств поля. */
+.le-font-upload {
+  margin-top: 8px; padding: 10px;
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+  background: var(--bg-card-hover);
+}
+.le-font-file-label {
+  display: block; padding: 8px 10px; text-align: center;
+  border: 1px dashed var(--border-subtle); border-radius: var(--radius-sm);
+  cursor: pointer; font-size: 13px; color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.le-font-file-label:hover { border-color: var(--accent); color: var(--text-primary); }
+.le-font-upload input[type="text"] { width: 100%; }
+
 /* ====================================================================
    Лайтбокс просмотра благодарственного письма (letter_modal.js): письмо-картинка
    (PNG) по центру на затемнённом фоне — как фото в ленте. Без панелей PDF-вьюера.

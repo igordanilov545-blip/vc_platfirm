@@ -71,8 +71,57 @@
         var saveBtn = this.host.querySelector('[data-le-save]');
         if (saveBtn) saveBtn.addEventListener('click', function () { self.save(); });
 
-        var uploadFontBtn = this.host.querySelector('[data-le-upload-font]');
-        if (uploadFontBtn) uploadFontBtn.addEventListener('click', function () { self.uploadFont(); });
+        this.bindFontUpload();
+    };
+
+    // Инлайновая мини-форма загрузки шрифта: раскрытие по «＋ Загрузить свой шрифт»,
+    // выбор файла (имя подставляется из имени файла), название, «Загрузить».
+    LetterEditor.prototype.bindFontUpload = function () {
+        var self = this;
+        var toggle = this.host.querySelector('[data-le-upload-font-toggle]');
+        var box = this.host.querySelector('[data-le-font-upload]');
+        var fileInput = this.host.querySelector('[data-le-font-file]');
+        var fileLabel = this.host.querySelector('[data-le-font-filename]');
+        var nameInput = this.host.querySelector('[data-le-font-name]');
+        var submit = this.host.querySelector('[data-le-font-submit]');
+        var cancel = this.host.querySelector('[data-le-font-cancel]');
+        var errBox = this.host.querySelector('[data-le-font-error]');
+        if (!toggle || !box) return;
+
+        function showErr(msg) { if (errBox) { errBox.textContent = msg; errBox.hidden = !msg; } }
+        function reset() {
+            box.hidden = true;
+            if (fileInput) fileInput.value = '';
+            if (nameInput) nameInput.value = '';
+            if (fileLabel) fileLabel.textContent = 'Выберите файл .ttf или .otf';
+            showErr('');
+        }
+
+        toggle.addEventListener('click', function () {
+            box.hidden = !box.hidden;
+            if (!box.hidden && nameInput) nameInput.focus();
+        });
+        if (cancel) cancel.addEventListener('click', reset);
+        if (fileInput) fileInput.addEventListener('change', function () {
+            if (!fileInput.files.length) return;
+            var fname = fileInput.files[0].name;
+            if (fileLabel) fileLabel.textContent = fname;
+            // Подставим имя шрифта из имени файла (без расширения), если поле пустое.
+            if (nameInput && !nameInput.value.trim()) {
+                nameInput.value = fname.replace(/\.(ttf|otf)$/i, '');
+            }
+        });
+        if (submit) submit.addEventListener('click', function () {
+            showErr('');
+            if (!fileInput || !fileInput.files.length) { showErr('Выберите файл шрифта.'); return; }
+            if (!nameInput || !nameInput.value.trim()) { showErr('Укажите название шрифта.'); return; }
+            submit.disabled = true;
+            self.doUploadFont(nameInput.value.trim(), fileInput.files[0], function (ok, msg) {
+                submit.disabled = false;
+                if (ok) reset();
+                else showErr(msg || 'Не удалось загрузить шрифт');
+            });
+        });
     };
 
     // Новое поле — по центру сцены, дефолтный размер/шрифт.
@@ -272,39 +321,36 @@
     };
 
     // --- Загрузка своего шрифта (AJAX) --------------------------------------
-    LetterEditor.prototype.uploadFont = function () {
+    // name — название для списка, file — File (.ttf/.otf), cb(ok, errMsg).
+    LetterEditor.prototype.doUploadFont = function (name, file, cb) {
         var self = this;
-        var name = window.prompt('Название шрифта (как будет в списке):');
-        if (!name) return;
-        var input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.ttf,.otf';
-        input.addEventListener('change', function () {
-            if (!input.files.length) return;
-            var fd = new FormData();
-            fd.append('csrfmiddlewaretoken', csrf());
-            fd.append('name', name);
-            fd.append('font_upload', input.files[0]);
-            fetch(self.fontUploadUrl, {
-                method: 'POST',
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                body: fd
-            }).then(function (r) { return r.json(); })
-              .then(function (d) {
-                  if (d.ok) {
-                      self.fonts.push({ id: d.id, name: d.name });
-                      self.buildFontOptions();
-                      var f = self.selected == null ? null : self.fields[self.selected];
-                      if (f) { f.font_id = d.id; self.fillProps(); self.render(); }
-                      self.setStatus('Шрифт «' + d.name + '» добавлен', false);
-                  } else {
-                      var msg = collectErrors(d.errors) || 'Не удалось загрузить шрифт';
-                      window.alert(msg);
+        var fd = new FormData();
+        fd.append('csrfmiddlewaretoken', csrf());
+        fd.append('name', name);
+        fd.append('font_upload', file);
+        fetch(this.fontUploadUrl, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: fd
+        }).then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
+          .then(function (d) {
+              if (d.ok) {
+                  self.fonts.push({ id: d.id, name: d.name });
+                  self.buildFontOptions();
+                  // Сразу применяем новый шрифт к выбранному полю (частый сценарий).
+                  var f = self.selected == null ? null : self.fields[self.selected];
+                  if (f) {
+                      f.font_id = d.id;
+                      setVal(self.host, '[data-le-prop-font]', String(d.id));
+                      self.render();
                   }
-              })
-              .catch(function () { window.alert('Ошибка сети при загрузке шрифта'); });
-        });
-        input.click();
+                  self.setStatus('Шрифт «' + d.name + '» добавлен', false);
+                  cb(true);
+              } else {
+                  cb(false, collectErrors(d.errors));
+              }
+          })
+          .catch(function () { cb(false, 'Ошибка сети при загрузке шрифта'); });
     };
 
     // --- helpers ------------------------------------------------------------

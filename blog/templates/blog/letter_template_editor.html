@@ -63,10 +63,6 @@ static/blog/js/letter_editor.js (навешивается по data-letter-edito
                 <label>Тип поля</label>
                 <div data-le-prop-type class="le-prop-type"></div>
             </div>
-            <div class="field" data-le-custom-wrap hidden>
-                <label>Текст</label>
-                <input type="text" data-le-prop-text placeholder="Произвольный текст">
-            </div>
             <div class="field">
                 <label>Шрифт</label>
                 <select data-le-prop-font></select>
@@ -105,9 +101,9 @@ static/blog/js/letter_editor.js (навешивается по data-letter-edito
                 </select>
             </div>
             <div class="field">
-                <label>Пробный текст (для предпросмотра)</label>
-                <input type="text" data-le-prop-sample placeholder="Впишите текст — увидите его в блоке">
-                <div class="field-hint">Показывается в блоке выбранным шрифтом и кеглем. В реальном письме подставятся настоящие данные волонтёра.</div>
+                <label data-le-sample-label>Текст блока</label>
+                <textarea rows="2" data-le-prop-sample placeholder="Впишите текст — увидите его в блоке"></textarea>
+                <div class="field-hint" data-le-sample-hint></div>
             </div>
             <button type="button" class="btn danger btn-sm" data-le-delete-field>Удалить поле</button>
         </aside>

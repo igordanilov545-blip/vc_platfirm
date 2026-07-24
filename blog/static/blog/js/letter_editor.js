@@ -153,15 +153,17 @@
         });
     };
 
-    // Новое поле — по центру сцены, дефолтный размер/шрифт.
+    // Новое поле — со сдвигом-каскадом, чтобы не ложилось точно поверх предыдущего
+    // (иначе несколько блоков стопкой в одной точке — их не видно по отдельности).
     LetterEditor.prototype.addField = function (key) {
+        var n = this.fields.length;
+        var offset = (n % 6) * 0.04; // лёгкая лесенка, зацикленная
         var f = {
             key: key,
-            x: 0.15, y: 0.4, w: 0.5, h: 0.08,
+            x: 0.12 + offset, y: 0.2 + offset, w: 0.5, h: 0.08,
             font_id: this.defaultFontId(),
             size: 20, color: '#000000', align: 'left'
         };
-        if (key === 'custom') f.text = 'Текст';
         this.fields.push(f);
         this.render();
         this.select(this.fields.length - 1);
@@ -181,19 +183,21 @@
             box.style.textAlign = f.align || 'left';
             box.style.color = f.color || '#000';
 
+            // Текст блока рисуется ВСЕГДА выбранным шрифтом/кеглем (как в Figma — на
+            // макете виден сам текст, а не служебная подпись). Пусто → бледный
+            // плейсхолдер с названием поля, чтобы блок было видно и понятно, что это.
             var label = document.createElement('span');
-            var sample = (f.sample || '').trim();
-            if (sample) {
-                // Пробный текст пользователя — показываем ТЕМ шрифтом и кеглем, что выбраны.
-                label.className = 'le-field-text';
-                label.textContent = sample;
-                label.style.fontFamily = "'" + self.fontFamily(f.font_id) + "', sans-serif";
-                label.style.fontSize = self.previewFontPx(f.size) + 'px';
+            label.className = 'le-field-text';
+            var content = self.contentValue(f).trim();
+            if (content) {
+                label.textContent = content;
+                label.classList.remove('is-placeholder');
             } else {
-                // Нет пробного текста — служебная подпись (название поля), как раньше.
-                label.className = 'le-field-label';
                 label.textContent = self.fieldPreviewText(f);
+                label.classList.add('is-placeholder');
             }
+            label.style.fontFamily = "'" + self.fontFamily(f.font_id) + "', sans-serif";
+            label.style.fontSize = self.previewFontPx(f.size) + 'px';
             box.appendChild(label);
 
             var handle = document.createElement('div');
@@ -209,6 +213,12 @@
                 e.stopPropagation();
                 self.select(i);
                 self.startResize(e, i, box);
+            });
+            // Двойной клик по блоку — фокус на поле текста (по-фигмовски «редактировать»).
+            box.addEventListener('dblclick', function (e) {
+                e.preventDefault();
+                self.select(i);
+                if (self._sampleInput) { self._sampleInput.focus(); self._sampleInput.select(); }
             });
 
             self.layer.appendChild(box);
@@ -297,10 +307,19 @@
         });
     };
 
+    // Ключ, в котором хранится текст блока. Для custom-блока это `text` — РЕАЛЬНОЕ
+    // содержимое письма (подпись/произвольный текст); для типизированных (ФИО/часы/…)
+    // это `sample` — пробный текст только для предпросмотра (в письме подставятся данные).
+    LetterEditor.prototype.contentKey = function (f) {
+        return f && f.key === 'custom' ? 'text' : 'sample';
+    };
+    LetterEditor.prototype.contentValue = function (f) {
+        return (f[this.contentKey(f)] || '');
+    };
+
     LetterEditor.prototype.bindProps = function () {
         var self = this;
         var typeBox = this.host.querySelector('[data-le-prop-type]');
-        var text = this.host.querySelector('[data-le-prop-text]');
         var font = this.host.querySelector('[data-le-prop-font]');
         var size = this.host.querySelector('[data-le-prop-size]');
         var color = this.host.querySelector('[data-le-prop-color]');
@@ -311,8 +330,10 @@
         function cur() { return self.selected == null ? null : self.fields[self.selected]; }
         function apply(k, v) { var f = cur(); if (f) { f[k] = v; self.render(); } }
 
-        if (text) text.addEventListener('input', function () { apply('text', text.value); });
-        if (sample) sample.addEventListener('input', function () { apply('sample', sample.value); });
+        // Единое поле текста пишет в нужный ключ (text для custom, sample для остальных).
+        if (sample) sample.addEventListener('input', function () {
+            var f = cur(); if (f) { f[self.contentKey(f)] = sample.value; self.render(); }
+        });
         if (font) font.addEventListener('change', function () {
             var id = parseInt(font.value, 10);
             self.ensureFontFace(id);
@@ -329,6 +350,7 @@
             self.render();
         });
         this._typeBox = typeBox;
+        this._sampleInput = sample;
     };
 
     LetterEditor.prototype.fillProps = function () {
@@ -337,14 +359,20 @@
         this.props.hidden = false;
         if (this._typeBox) this._typeBox.textContent = this.fieldKeys[f.key] || f.key;
 
-        var customWrap = this.host.querySelector('[data-le-custom-wrap]');
-        if (customWrap) customWrap.hidden = (f.key !== 'custom');
-        setVal(this.host, '[data-le-prop-text]', f.text || '');
+        // Подпись/подсказка поля текста зависят от типа блока.
+        var isCustom = f.key === 'custom';
+        var label = this.host.querySelector('[data-le-sample-label]');
+        var hint = this.host.querySelector('[data-le-sample-hint]');
+        if (label) label.textContent = isCustom ? 'Текст' : 'Пробный текст (для предпросмотра)';
+        if (hint) hint.textContent = isCustom
+            ? 'Этот текст попадёт в письмо как есть (подпись, произвольный текст).'
+            : 'Только для предпросмотра — в реальном письме подставятся данные волонтёра.';
+
         setVal(this.host, '[data-le-prop-font]', f.font_id != null ? String(f.font_id) : '');
         setVal(this.host, '[data-le-prop-size]', f.size);
         setVal(this.host, '[data-le-prop-color]', f.color || '#000000');
         setVal(this.host, '[data-le-prop-align]', f.align || 'left');
-        setVal(this.host, '[data-le-prop-sample]', f.sample || '');
+        setVal(this.host, '[data-le-prop-sample]', this.contentValue(f));
     };
 
     // --- Сохранение ---------------------------------------------------------

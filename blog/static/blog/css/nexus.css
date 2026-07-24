@@ -1566,27 +1566,35 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
 .le-bg { display: block; max-width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
 .le-fields-layer { position: absolute; inset: 0; }
 
+/* Блок на макете: как в Figma — по умолчанию БЕЗ рамки (виден только текст). Рамка,
+   подсветка и ручка ресайза появляются ТОЛЬКО у выделенного блока. При наведении —
+   лёгкий намёк на границу, чтобы понять, что элемент кликабелен. */
 .le-field {
   position: absolute; box-sizing: border-box;
-  border: 1.5px dashed var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1.5px solid transparent;
   cursor: move; overflow: hidden; line-height: 1.2;
   display: flex; align-items: center;
 }
-.le-field.is-selected { border-style: solid; box-shadow: 0 0 0 2px var(--accent); z-index: 2; }
-.le-field-label {
-  width: 100%; padding: 2px 4px; font-size: 12px; pointer-events: none;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  color: var(--accent); opacity: 0.75;
+.le-field:hover { border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.le-field.is-selected {
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  z-index: 2;
 }
-/* Пробный текст: показывается ТЕМ шрифтом/кеглем/выравниванием, что у поля. Заполняет
-   рамку (перенос по словам, как в итоговом PDF), inherit цвет/выравнивание от .le-field. */
+/* Текст блока: рисуется ТЕМ шрифтом/кеглем/выравниванием/цветом, что у поля. Заполняет
+   рамку (перенос по словам, как в итоговом PDF). */
 .le-field-text {
   width: 100%; pointer-events: none;
   font-family: inherit; color: inherit; text-align: inherit;
   line-height: 1.15; overflow: hidden; word-break: break-word;
 }
-.le-resize {
+/* Плейсхолдер (пусто) — бледная подпись названия поля, не мешает видеть макет. */
+.le-field-text.is-placeholder { color: var(--accent); opacity: 0.5; font-style: italic; }
+/* Ручка ресайза — только у выделенного блока. */
+.le-resize { display: none; }
+.le-field.is-selected .le-resize {
+  display: block;
   position: absolute; right: -6px; bottom: -6px; width: 14px; height: 14px;
   background: var(--accent); border: 2px solid #fff; border-radius: 50%;
   cursor: nwse-resize; touch-action: none;

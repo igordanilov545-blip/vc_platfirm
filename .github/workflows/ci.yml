@@ -36,6 +36,15 @@ jobs:
           DEBUG: 'True'
         run: python manage.py makemigrations --check --dry-run
 
+      # ManifestStaticFilesStorage (CLAUDE.md): без собранного манифеста рендер любого
+      # шаблона с {% static %} падает "Missing staticfiles manifest entry", даже если
+      # сама вьюха/тест не про статику.
+      - name: Collect static files
+        env:
+          SECRET_KEY: ci-test-secret-key
+          DEBUG: 'True'
+        run: python manage.py collectstatic --noinput
+
       - name: Run tests
         env:
           SECRET_KEY: ci-test-secret-key

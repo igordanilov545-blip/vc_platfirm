@@ -28,12 +28,16 @@ def login_view(request):
             login=form.cleaned_data['login'],
             password=form.cleaned_data['password'],
         )
-        if user is not None:
+        if user is not None and user.status == 'blacklisted':
+            logger.warning('Вход заблокированного пользователя отклонён: user=%s login=%s', user.id, user.login)
+            messages.error(request, 'Доступ ограничен — обратитесь к менеджеру центра.')
+        elif user is not None:
             auth_login(request, user)
             logger.info('Веб-вход по логину/паролю успешен: user=%s login=%s', user.id, user.login)
             return redirect(_safe_next(request))
-        logger.warning('Неудачная попытка веб-входа: login=%r', form.cleaned_data.get('login'))
-        messages.error(request, 'Неверный логин или пароль.')
+        else:
+            logger.warning('Неудачная попытка веб-входа: login=%r', form.cleaned_data.get('login'))
+            messages.error(request, 'Неверный логин или пароль.')
 
     return render(request, 'blog/login.html', {
         'form': form,

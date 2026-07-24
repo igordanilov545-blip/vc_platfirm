@@ -75,6 +75,7 @@ from blog.services import person_report as person_report_service
 from blog.services import volunteers_report as volunteers_report_service
 from blog.services import report_builders as report_builders_service
 from blog.services.docx_report import docx_response
+from blog.services import analytics as analytics_service
 
 logger = get_web_logger('blog.views')
 
@@ -238,4 +239,5 @@ __all__ = [
     'is_team_leader', 'role_label', 'recalc_user_aggregates', 'charts_service',
     'event_timeline_service', 'organization_report_service', 'person_report_service',
     'volunteers_report_service', 'report_builders_service', 'docx_response',
+    'analytics_service',
 ]

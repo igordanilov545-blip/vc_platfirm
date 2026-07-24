@@ -1,16 +1,25 @@
 name: Deploy to VPS (Docker)
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI (tests)"]
     branches: [main]
+    types: [completed]
   workflow_dispatch:
 
 # Прод переехал на собственный VPS (Docker: db/web/bot/nginx/certbot).
 # CI/CD: заходим по SSH → git pull → docker compose up -d --build.
 # Миграции применяет entrypoint контейнера web (RUN_MIGRATIONS=1), статику — он же.
+#
+# Раньше деплой запускался прямо на push в main без единой проверки (testing-audit.md,
+# приоритет 1: «CI не запускает тесты вообще»). Теперь деплой ждёт success ci.yml
+# на main — красный тест (или незакоммиченная миграция) блокирует выкладку. Ручной
+# запуск (workflow_dispatch) по-прежнему доступен в обход этой проверки, если нужно
+# задеплоить руками.
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0

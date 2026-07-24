@@ -1,0 +1,43 @@
+name: CI (tests)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Прогон тестов перед деплоем (testing-audit.md, приоритет 1): раньше
+# .github/workflows/deploy.yml деплоил на push в main без единой проверки —
+# красный тест не блокировал прод. Деплой отдельно зависит от success этого workflow
+# (см. deploy.yml: on.workflow_run).
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Django check
+        env:
+          SECRET_KEY: ci-test-secret-key
+          DEBUG: 'True'
+        run: python manage.py check
+
+      - name: Migrations up to date
+        env:
+          SECRET_KEY: ci-test-secret-key
+          DEBUG: 'True'
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Run tests
+        env:
+          SECRET_KEY: ci-test-secret-key
+          DEBUG: 'True'
+        run: python manage.py test blog.tests

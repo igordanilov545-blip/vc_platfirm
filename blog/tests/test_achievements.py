@@ -181,26 +181,31 @@ class DiversityTests(TestCase):
 
 
 class StatTests(TestCase):
+    # Примечание: миграция 0037 провижнит техаккаунт-витрину all_achivments, у которого
+    # есть ВСЕ достижения — он тоже держатель. Поэтому проверяем ПРИРОСТ держателей от
+    # наших действий, а не абсолютное число.
+    def _holders(self, code):
+        return dc.recompute_achievement_stat(
+            AchievementDefinition.objects.get(code=code)
+        ).holders_count
+
     def test_holders_count_recomputed(self):
+        base = self._holders('first_event')
         event = f.make_event()
-        users = [f.make_user() for _ in range(3)]
-        for u in users:
+        for _ in range(3):
+            u = f.make_user()
             _attend(u, event, hours=1)
             recalc_user_achievements(u)
-        definition = AchievementDefinition.objects.get(code='first_event')
-        stat = dc.recompute_achievement_stat(definition)
-        self.assertEqual(stat.holders_count, 3)
+        self.assertEqual(self._holders('first_event'), base + 3)
 
     def test_series_holder_counted_once(self):
-        """Держатель series с несколькими ступенями считается как один человек."""
+        """Держатель series с несколькими ступенями считается как один человек (+1)."""
+        base = self._holders('hours_total')
         user = f.make_user()
-        event = f.make_event()
-        _attend(user, event, hours=250)
+        _attend(user, f.make_event(), hours=250)
         from blog.services.stats import recalc_user_aggregates
         recalc_user_aggregates(user)  # обновляет total_hours → эвалуатор видит 250
-        definition = AchievementDefinition.objects.get(code='hours_total')
-        stat = dc.recompute_achievement_stat(definition)
-        self.assertEqual(stat.holders_count, 1)
+        self.assertEqual(self._holders('hours_total'), base + 1)
 
 
 class ProfileDisplayTests(TestCase):
@@ -615,12 +620,15 @@ class EngineBranchTests(TestCase):
         self.assertEqual(recalc_user_achievements(user), [])
 
     def test_stat_updated_after_grant(self):
-        """После выдачи движок пересчитывает holders_count затронутых достижений."""
+        """После выдачи движок пересчитывает holders_count затронутых достижений (+1
+        к базовому — техаккаунт-витрина из миграции 0037 тоже держатель)."""
+        d = AchievementDefinition.objects.get(code='first_event')
+        base = dc.recompute_achievement_stat(d).holders_count
         user = f.make_user()
         _attend(user, f.make_event(), hours=1)
         recalc_user_achievements(user)
-        d = AchievementDefinition.objects.get(code='first_event')
-        self.assertEqual(d.stat.holders_count, 1)
+        d.refresh_from_db()
+        self.assertEqual(d.stat.holders_count, base + 1)
 
 
 class HookIntegrationTests(TestCase):
@@ -698,6 +706,21 @@ class TierRegistryTests(TestCase):
 
 
 class AllAchievementsAccountTests(TestCase):
+    def test_account_provisioned_by_migration(self):
+        """Миграция 0037 создаёт аккаунт all_achivments с рабочим веб-входом в любой
+        среде (тест-БД прогоняет все миграции) — без ручного запуска команды."""
+        from django.contrib.auth import authenticate
+        from blog.models import User
+        from blog.services.achievements import ALL_ACHIEVEMENTS_LOGIN
+        u = User.objects.filter(login=ALL_ACHIEVEMENTS_LOGIN).first()
+        self.assertIsNotNone(u)
+        self.assertIsNotNone(
+            authenticate(None, login=ALL_ACHIEVEMENTS_LOGIN, password=ALL_ACHIEVEMENTS_LOGIN)
+        )
+        # Плоский волонтёр со всеми достижениями.
+        self.assertFalse(u.is_active_team_leader())
+        self.assertTrue(UserAchievement.objects.filter(user=u).exists())
+
     def test_command_creates_account_with_all_achievements(self):
         from django.core.management import call_command
         from blog.models import User

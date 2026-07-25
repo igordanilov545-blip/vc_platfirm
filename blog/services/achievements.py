@@ -384,7 +384,10 @@ def build_profile_achievements(user, *, viewer_is_owner=False):
 
     def _holders(d):
         holders = stats_map.get(d.id, 0)
-        percent = round(holders * 100 / denom) if (d.visibility == 'common' and denom) else None
+        # holders учитывает всех держателей (в т.ч. служебный техаккаунт-витрину, который
+        # не входит в denominator живых волонтёров), поэтому процент клампим сверху 100 —
+        # «у 100% волонтёров» вместо возможных 100+% на малых числах.
+        percent = min(100, round(holders * 100 / denom)) if (d.visibility == 'common' and denom) else None
         return holders, percent
 
     groups = {}

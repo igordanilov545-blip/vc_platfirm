@@ -429,18 +429,12 @@
     // «Скопировать опыт» с выбором топ-0..3 мероприятий и ролями.
     // Волонтёр отмечает до 3 мероприятий центра, которые хочет назвать явно; текст
     // собирается на клиенте и кладётся в data-copy-text кнопки копирования (её жмут
-    // обычным обработчиком выше). Роли (тим-лидер/волонтёр) выделяются отдельно —
-    // «был тим-лидером на …, волонтёром на …». Данные о меро+ролях приходят из
+    // обычным обработчиком выше). Каждое меро называется ОДИН раз; выбранные меро
+    // группируются по роли с подписью-заголовком («Тим-лидер: …. Волонтёр: ….») — так
+    // роль читается без повтора названий. Данные о меро+ролях приходят из
     // <script type="application/json" data-experience-events> (см. _experience_block.html).
     // ======================================================================
     var COPY_MAX = 3;
-
-    function joinRu(names) {
-        // «a», «a и b», «a, b и c» — человекочитаемое перечисление через запятую и «и».
-        if (names.length === 0) return '';
-        if (names.length === 1) return names[0];
-        return names.slice(0, -1).join(', ') + ' и ' + names[names.length - 1];
-    }
 
     function buildExperienceCopyText(cfg, selectedIds) {
         // cfg: {total, url, events:[{id,title,role}]}; selectedIds — массив id (в порядке отметки).
@@ -448,19 +442,14 @@
         var text = 'Я участвовал(а) в ' + cfg.total + ' ' + word;
         var byId = {};
         cfg.events.forEach(function (e) { byId[e.id] = e; });
-        var chosen = selectedIds.map(function (id) { return byId[id]; }).filter(Boolean);
-        if (chosen.length) {
-            text += ', включая ' + joinRu(chosen.map(function (e) { return e.title; }));
-        }
         text += '.';
-        // Роли — только по выбранным меро (иначе перечисление ролей по всем участиям
-        // раздуло бы текст; выделяем именно то, что волонтёр решил подсветить).
+        var chosen = selectedIds.map(function (id) { return byId[id]; }).filter(Boolean);
+        // Группировка по роли с подписью-заголовком: «Тим-лидер: k1, k2. Волонтёр: k3.»
+        // Каждое меро названо один раз; пустые группы не выводим.
         var leads = chosen.filter(function (e) { return e.role === 'team_lead'; }).map(function (e) { return e.title; });
         var vols = chosen.filter(function (e) { return e.role !== 'team_lead'; }).map(function (e) { return e.title; });
-        var parts = [];
-        if (leads.length) parts.push('тим-лидером на ' + joinRu(leads));
-        if (vols.length) parts.push('волонтёром на ' + joinRu(vols));
-        if (parts.length) text += ' Был(а) ' + parts.join(', ') + '.';
+        if (leads.length) text += ' Тим-лидер: ' + leads.join(', ') + '.';
+        if (vols.length) text += ' Волонтёр: ' + vols.join(', ') + '.';
         if (cfg.url) text += ' Подробнее о всех мероприятиях: ' + cfg.url;
         return text;
     }

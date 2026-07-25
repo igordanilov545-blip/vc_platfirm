@@ -1312,3 +1312,123 @@ class UserRequirementException(models.Model):
         unique_together = ('user', 'requirement')
         verbose_name = 'Исключение пользователя'
         verbose_name_plural = 'Исключения пользователей'
+
+
+# ======================================================================
+# Система достижений (achievements.md). Три параллельные таблицы вместо
+# полной матрицы пользователь×достижение (см. док §«Хранение в БД»):
+#   • AchievementDefinition — справочник шаблонов достижений;
+#   • UserAchievement       — факт получения (строка на выданное);
+#   • AchievementStat        — агрегат-кэш «сколько человек имеют».
+# ======================================================================
+class AchievementDefinition(models.Model):
+    """Шаблон достижения (не выданный экземпляр). Единый список всех достижений —
+    и «общих» series/single (считаются авто по агрегатам), и «скрытых» точечных,
+    и ручных курсов (source_type='manual_grant', заводятся менеджером с платформы)."""
+    KIND_CHOICES = [
+        ('series', 'Ряд (со ступенями)'),
+        ('single', 'Факт (есть/нет)'),
+    ]
+    VISIBILITY_CHOICES = [
+        ('common', 'Общее (всегда видно как цель)'),
+        ('hidden', 'Скрытое (появляется по факту)'),
+    ]
+    SOURCE_CHOICES = [
+        ('auto', 'Авто (по агрегатам)'),
+        ('manual_grant', 'Ручная выдача менеджером'),
+    ]
+
+    id = models.AutoField(primary_key=True)
+    # Машинный код: у auto-достижений по нему движок знает, как считать прогресс
+    # (см. blog.services.achievements.EVALUATORS); у ручных — просто уникальный ключ.
+    code = models.CharField(max_length=100, unique=True, db_index=True)
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES)
+    visibility = models.CharField(max_length=20, choices=VISIBILITY_CHOICES, default='common')
+    # Смысловая группа для UI-раскладки (часы, регулярность, категории, курсы…).
+    group = models.CharField(max_length=50, blank=True, default='')
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default='')
+    # Иконка — на этом этапе строка с эмодзи (⏱️🏅🌟…); позже можно заменить на файл.
+    icon = models.CharField(max_length=50, blank=True, default='🏅')
+    # Для series — список ступеней [{"value": n, "label": "..."}], по возрастанию value.
+    # Для single — null/пусто.
+    series_steps = models.JSONField(blank=True, null=True)
+    source_type = models.CharField(max_length=20, choices=SOURCE_CHOICES, default='auto')
+    is_active = models.BooleanField(default=True)
+    # Порядок вывода внутри группы (меньше — выше). Ровняем группы стабильно.
+    sort_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+
+    class Meta:
+        db_table = 'achievement_definitions'
+        verbose_name = 'Достижение (шаблон)'
+        verbose_name_plural = 'Достижения (шаблоны)'
+        ordering = ['group', 'sort_order', 'id']
+
+    def __str__(self):
+        return f'{self.title} ({self.code})'
+
+    def steps(self):
+        """Нормализованный список ступеней series: [(value:int, label:str), …] по
+        возрастанию. Для single — пустой список."""
+        raw = self.series_steps or []
+        out = []
+        for s in raw:
+            try:
+                out.append((int(s['value']), str(s.get('label') or s['value'])))
+            except (KeyError, TypeError, ValueError):
+                continue
+        out.sort(key=lambda t: t[0])
+        return out
+
+
+class UserAchievement(models.Model):
+    """Факт получения достижения пользователем. Для series по решению этапа реализации —
+    СТРОКА НА КАЖДУЮ взятую ступень (у каждой свой granted_at → точная лента «моментов»);
+    для single — одна строка. Точечные скрытые достижения несут context (event_id и т.п.)."""
+    id = models.AutoField(primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='achievements')
+    achievement = models.ForeignKey(
+        AchievementDefinition, on_delete=models.CASCADE, related_name='grants'
+    )
+    # Для series — значение ступени (n), на которой выдано. Для single — null.
+    series_value = models.IntegerField(blank=True, null=True)
+    # Контекст точечных скрытых достижений: {"event_id": 123} и т.п. Заменяет отдельную
+    # колонку/таблицу на каждый частный случай (achievements.md §user_achievements).
+    context = models.JSONField(blank=True, null=True)
+    granted_at = models.DateTimeField(auto_now_add=True)
+    granted_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+
+    class Meta:
+        db_table = 'user_achievements'
+        verbose_name = 'Полученное достижение'
+        verbose_name_plural = 'Полученные достижения'
+        # Идемпотентность выдачи: одна строка на (user, achievement, series_value).
+        # У single series_value=NULL — пара (user, achievement) уникальна де-факто
+        # (NULL в UNIQUE у SQLite/PG не конфликтует сам с собой, поэтому дополнительно
+        # проверяем существование в сервисе перед выдачей).
+        unique_together = ('user', 'achievement', 'series_value')
+        indexes = [
+            models.Index(fields=['user', 'achievement']),
+        ]
+
+
+class AchievementStat(models.Model):
+    """Агрегат-кэш «сколько человек имеют достижение» — чтобы не гонять COUNT(*) по
+    user_achievements на каждый рендер. Источник истины всегда user_achievements."""
+    achievement = models.OneToOneField(
+        AchievementDefinition, on_delete=models.CASCADE, primary_key=True, related_name='stat'
+    )
+    holders_count = models.IntegerField(default=0)
+    first_granted_at = models.DateTimeField(blank=True, null=True)
+    last_granted_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'achievement_stats'
+        verbose_name = 'Статистика достижения'
+        verbose_name_plural = 'Статистика достижений'

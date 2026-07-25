@@ -71,6 +71,12 @@ def recalc_user_aggregates(user):
         'total_hours', 'total_event_count', 'season_hours', 'season_event_count', 'last_event_at'
     ])
 
+    # Источник большинства достижений — участия/часы; пересчитаны — сразу доначисляем
+    # достижения в той же операции (инвариант «тронул источник агрегата — пересчитай»,
+    # coding-principles §6). Импорт локальный: избегаем цикла stats↔achievements.
+    from blog.services.achievements import recalc_user_achievements
+    recalc_user_achievements(user)
+
 
 def apply_churn_no_show(user, *, event=None, actor=None):
     """+churn_no_show_penalty за неявку без предупреждения (правило 9)."""

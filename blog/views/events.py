@@ -408,6 +408,9 @@ def event_feedback_add(request, event_id):
             feedback.event = event
             feedback.author = request.user
             feedback.save()
+            # Отзыв — источник достижений «Первый отзыв»/«Активный ревьюер».
+            from blog.services.achievements import recalc_user_achievements
+            recalc_user_achievements(request.user)
             messages.success(request, 'Спасибо за оценку!')
     return redirect('event_detail', event_id=event.id)
 

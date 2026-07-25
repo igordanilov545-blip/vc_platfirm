@@ -29,6 +29,9 @@ def profile_edit(request):
             messages.warning(request, 'Данные изменены — верификация для справки ПГАС снята, '
                                       'потребуется повторное подтверждение менеджером.')
         if account_is_complete(request.user):
+            # Заполненность профиля — источник достижения «Профиль заполнен на 100%».
+            from blog.services.achievements import recalc_user_achievements
+            recalc_user_achievements(request.user)
             if not was_complete:
                 messages.success(request, 'Профиль заполнен — теперь можно подавать заявки.')
             else:
@@ -121,6 +124,12 @@ def profile_detail(request, user_id):
     from blog.services.experience import build_experience
     experience = build_experience(target)
 
+    # Достижения (achievements.md): показываем в профиле владельцу и тем, у кого
+    # расширенный доступ (менеджер/ТЛ) — как публичный, мотивирующий слой. Общие
+    # незакрытые видны как цели, скрытые — только полученные (build_profile_achievements).
+    from blog.services.achievements import build_profile_achievements
+    achievement_groups = build_profile_achievements(target, viewer_is_owner=is_owner)
+
     context = {
         'target': target,
         'is_owner': is_owner,
@@ -128,6 +137,7 @@ def profile_detail(request, user_id):
         'has_extended_access': has_extended,
         'can_see_comments': can_see_comments,
         'experience': experience,
+        'achievement_groups': achievement_groups,
         # Ссылка «Скопировать опыт» — публичная страница опыта по токену (раздел 4).
         'experience_share_url': request.build_absolute_uri(
             reverse('public_experience', args=[target.experience_token])

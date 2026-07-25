@@ -1,0 +1,51 @@
+{% comment %}Блок достижений в профиле (achievements.md §Дополнительно).
+Ожидает: achievement_groups — список групп из build_profile_achievements:
+  [{'group': str, 'items': [card,…]}], card = {code,title,description,icon,kind,
+  earned,earned_at,current_step,next_step_value,next_step_label,max_step,
+  holders_count,holders_percent,visibility}.
+
+Карточка — прямоугольник: сверху иконка, ниже название. Незакрытые общие достижения
+приглушены (achievement--locked). Клик по карточке открывает попап «как получить»
+(поведение — initAchievementPopup в misc.js, данные — из data-* карточки).{% endcomment %}
+{% if achievement_groups %}
+<div class="card" id="achievements">
+    <h3 style="margin-top:0;">🏅 Достижения</h3>
+    {% for grp in achievement_groups %}
+    <div class="achievement-group">
+        <div class="achievement-group-title">{{ grp.group }}</div>
+        <div class="achievement-grid">
+            {% for a in grp.items %}
+            <button type="button"
+                    class="achievement {% if a.earned %}achievement--earned{% else %}achievement--locked{% endif %}"
+                    data-achievement
+                    data-ach-title="{{ a.title }}"
+                    data-ach-icon="{{ a.icon }}"
+                    data-ach-desc="{{ a.description }}"
+                    data-ach-earned="{{ a.earned|yesno:'1,0' }}"
+                    {% if a.earned_at %}data-ach-date="{{ a.earned_at|date:'d.m.Y' }}"{% endif %}
+                    {% if a.kind == 'series' %}data-ach-step="{{ a.current_step }}"{% if a.next_step_label %} data-ach-next="{{ a.next_step_label }}"{% endif %}{% endif %}
+                    {% if a.holders_percent is not None %}data-ach-percent="{{ a.holders_percent }}"{% else %}data-ach-holders="{{ a.holders_count }}"{% endif %}>
+                <span class="achievement-icon">{{ a.icon }}</span>
+                <span class="achievement-title">{{ a.title }}</span>
+                {% if a.kind == 'series' and a.earned and a.current_step %}
+                <span class="achievement-step">{{ a.current_step }}{% if a.max_step %}/{{ a.max_step }}{% endif %}</span>
+                {% endif %}
+            </button>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% comment %}Одиночный попап на страницу — наполняется из data-* нажатой карточки.{% endcomment %}
+<div class="achievement-popup-backdrop" data-achievement-popup hidden>
+    <div class="achievement-popup" role="dialog" aria-modal="true">
+        <button type="button" class="achievement-popup-close" aria-label="Закрыть" data-ach-close>×</button>
+        <div class="achievement-popup-icon" data-ach-popup-icon></div>
+        <div class="achievement-popup-title" data-ach-popup-title></div>
+        <div class="achievement-popup-desc" data-ach-popup-desc></div>
+        <div class="achievement-popup-meta" data-ach-popup-meta></div>
+        <div class="achievement-popup-date" data-ach-popup-date></div>
+    </div>
+</div>
+{% endif %}

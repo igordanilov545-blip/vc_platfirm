@@ -1681,3 +1681,76 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
   .letter-lightbox-img { max-width: 100vw; max-height: 88vh; border-radius: 0; }
   .letter-lightbox-download { top: 16px; right: 70px; }
 }
+
+/* ======================================================================
+   Достижения (achievements.md). Карточка-прямоугольник: сверху иконка, ниже
+   название. Общие незакрытые — приглушены (achievement--locked). Клик открывает
+   попап «как получить». Сетка адаптивная.
+   ====================================================================== */
+.achievement-group { margin-top: 14px; }
+.achievement-group:first-of-type { margin-top: 6px; }
+.achievement-group-title {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-tertiary); margin-bottom: 8px;
+}
+.achievement-grid {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+}
+.achievement {
+  position: relative; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 14px 8px 12px; text-align: center;
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  background: var(--bg-card); font-family: inherit;
+  transition: transform 0.08s ease, box-shadow 0.12s ease;
+}
+.achievement:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); }
+.achievement-icon { font-size: 30px; line-height: 1; }
+.achievement-title {
+  font-size: 12px; font-weight: 600; color: var(--text-primary);
+  line-height: 1.25;
+}
+.achievement--earned {
+  border-color: var(--accent, #7c5cff);
+  background: linear-gradient(180deg, var(--accent-soft, rgba(124,92,255,0.10)), var(--bg-card) 70%);
+}
+/* Незакрытое общее достижение — приглушённое/серое (виден как цель). */
+.achievement--locked { opacity: 0.55; filter: grayscale(0.7); }
+.achievement--locked:hover { opacity: 0.85; filter: grayscale(0.3); }
+.achievement-step {
+  position: absolute; top: 6px; right: 8px;
+  font-size: 10px; font-weight: 700; color: var(--accent, #7c5cff);
+  background: var(--accent-soft, rgba(124,92,255,0.12));
+  padding: 1px 5px; border-radius: var(--radius-pill);
+}
+
+.achievement-popup-backdrop {
+  position: fixed; inset: 0; z-index: 1200;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.achievement-popup-backdrop[hidden] { display: none; }
+.achievement-popup {
+  position: relative; width: 340px; max-width: 100%;
+  background: var(--bg-card); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card); padding: 26px 22px 20px; text-align: center;
+}
+.achievement-popup-close {
+  position: absolute; top: 8px; right: 10px;
+  border: none; background: none; cursor: pointer;
+  font-size: 22px; line-height: 1; color: var(--text-secondary);
+}
+.achievement-popup-close:hover { color: var(--text-primary); }
+.achievement-popup-icon { font-size: 46px; line-height: 1; margin-bottom: 8px; }
+.achievement-popup-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+.achievement-popup-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.45; }
+.achievement-popup-meta {
+  margin-top: 12px; font-size: 12.5px; color: var(--text-tertiary);
+}
+.achievement-popup-date {
+  margin-top: 10px; font-size: 11px; color: var(--text-tertiary);
+}
+@media (max-width: 720px) {
+  .achievement-grid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+}

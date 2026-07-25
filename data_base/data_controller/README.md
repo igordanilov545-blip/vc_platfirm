@@ -16,6 +16,7 @@
 | [`applications.py`](applications.py) | Заявки, привязка смен, участия (явка), запросы фидбека. |
 | [`requirements.py`](requirements.py) | Требования меро, их привязка, исключения по пользователям. |
 | [`reference.py`](reference.py) | Фидбек, комментарии, история чарна, сезоны, константы. |
+| [`achievements.py`](achievements.py) | Система достижений: справочник, выданные, агрегат-кэш держателей. |
 | [`querysets.py`](querysets.py) | Ленивые `*_qs()` для отчётов + скаляры (`get_current_season`). |
 | [`__init__.py`](__init__.py) | Фасад: реэкспорт всего публичного `__all__`. |
 

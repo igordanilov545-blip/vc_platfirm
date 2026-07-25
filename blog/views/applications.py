@@ -106,6 +106,10 @@ def application_create(request):
 
         application.save()
         _fill_application_shifts(application, form.cleaned_data.get('selected_shifts'))
+        # Заявка — источник достижений «Первая заявка», «Активный отклик», «Скорость
+        # отклика» (по post_published_at). Доначисляем в той же операции.
+        from blog.services.achievements import recalc_user_achievements
+        recalc_user_achievements(request.user)
         notifications_service.notify_application_submitted(application, unknown_age=req_check['unknown_age'])
         logger.info(
             'Заявка подана через веб: application=%s event=%s by=%s%s',

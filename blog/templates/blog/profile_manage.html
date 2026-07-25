@@ -61,6 +61,8 @@
     <div class="stat-tile"><div class="value">{{ target.external_experiences.count }}</div><div class="label">Внешние мероприятия</div></div>
 </div>
 
+{% include 'blog/partials/_achievements_block.html' %}
+
 {% comment %}Блок «Инфо»: ФИО, контакты И чарн (объединены, отдельного блока «Внутреннее» нет).{% endcomment %}
 {% if has_extended_access %}
 <div class="card">

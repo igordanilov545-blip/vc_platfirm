@@ -43,6 +43,9 @@ def verify_user_for_pgas(user, *, actor, snapshot):
     from django.utils import timezone
     dc.set_user_verification(user, verified_at=timezone.now(), verified_by=actor, snapshot=snapshot)
     dc.resolve_incidents('pgas_verification', user, resolved_by=actor)
+    # Верификация — источник достижения «Верифицированный аккаунт».
+    from blog.services.achievements import recalc_user_achievements
+    recalc_user_achievements(user)
     return user
 
 

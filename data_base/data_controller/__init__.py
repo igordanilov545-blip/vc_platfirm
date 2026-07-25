@@ -107,6 +107,12 @@ from .letters import (  # noqa: F401
     letter_fonts_qs, get_letter_fonts, get_letter_font_by_id, get_letter_font_by_name,
     create_letter_font, delete_letter_font,
 )
+from .achievements import (  # noqa: F401
+    achievement_definitions_qs, get_active_definitions, get_definition_by_code,
+    create_definition, user_achievements_qs, get_user_achievements,
+    has_user_achievement, grant_achievement, recompute_achievement_stat,
+    get_achievement_stats_map, count_stats_denominator,
+)
 from .querysets import (  # noqa: F401
     events_qs, event_shifts_qs, participations_qs, applications_qs, application_shift_decisions_qs,
     event_staff_qs, users_qs, users_ranked_qs, feedbacks_qs, managers_qs, team_leaders_qs,
@@ -183,6 +189,10 @@ __all__ = [
     'seasons_qs', 'user_requirement_exceptions_qs', 'incidents_qs', 'churn_history_qs',
     'application_change_logs_qs', 'user_comments_qs', 'organizer_interactions_qs',
     'web_sessions_qs', 'web_page_views_qs', 'button_click_events_qs', 'bot_session_pings_qs',
+    'achievement_definitions_qs', 'get_active_definitions', 'get_definition_by_code',
+    'create_definition', 'user_achievements_qs', 'get_user_achievements',
+    'has_user_achievement', 'grant_achievement', 'recompute_achievement_stat',
+    'get_achievement_stats_map', 'count_stats_denominator',
     'get_full_table', 'create_record_generic',
     'invalidate_user_auth_tokens', 'create_auth_token', 'get_auth_token',
     'invalidate_user_verify_tokens', 'create_verify_token', 'get_verify_token',

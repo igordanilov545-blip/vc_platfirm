@@ -163,6 +163,9 @@ def assign_role(kind: str, users, assigned_by: User):
         if kind == 'team_lead':
             from blog.services.notifications import notify_became_team_leader
             notify_became_team_leader(user)
+        # Роль — источник достижений «Первый шаг в тим-лидеры» и т.п.; доначисляем сразу.
+        from blog.services.achievements import recalc_user_achievements
+        recalc_user_achievements(user)
     if affected:
         logger.info(
             'Выдана роль %s: subjects=%s by=%s',

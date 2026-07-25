@@ -541,3 +541,65 @@
         });
     }
     initExperienceCopy(document);
+
+    // ======================================================================
+    // Попап достижения: клик по карточке [data-achievement] показывает окошко с
+    // условием получения (описание), для series — текущую ступень и «до следующей»,
+    // процент/число держателей и дату получения (незаметно, серым, в углу) —
+    // achievements.md §Дополнительно. Одно окно на страницу (data-achievement-popup),
+    // наполняется из data-* нажатой карточки. Открывается даже у уже полученного
+    // достижения (пользователь хочет перечитать условие).
+    // ======================================================================
+    function initAchievementPopup(root) {
+        var popup = root.querySelector('[data-achievement-popup]')
+            || document.querySelector('[data-achievement-popup]');
+        if (!popup) return;
+        if (popup.dataset.achPopupInit) return;
+        popup.dataset.achPopupInit = '1';
+
+        var iconEl = popup.querySelector('[data-ach-popup-icon]');
+        var titleEl = popup.querySelector('[data-ach-popup-title]');
+        var descEl = popup.querySelector('[data-ach-popup-desc]');
+        var metaEl = popup.querySelector('[data-ach-popup-meta]');
+        var dateEl = popup.querySelector('[data-ach-popup-date]');
+
+        function open(card) {
+            iconEl.textContent = card.getAttribute('data-ach-icon') || '🏅';
+            titleEl.textContent = card.getAttribute('data-ach-title') || '';
+            descEl.textContent = card.getAttribute('data-ach-desc') || '';
+
+            var meta = [];
+            var next = card.getAttribute('data-ach-next');
+            var earned = card.getAttribute('data-ach-earned') === '1';
+            if (next) meta.push((earned ? 'Следующая ступень: ' : 'Первая ступень: ') + next);
+            var percent = card.getAttribute('data-ach-percent');
+            var holders = card.getAttribute('data-ach-holders');
+            if (percent !== null && percent !== '') meta.push('Есть у ' + percent + '% волонтёров');
+            else if (holders !== null && holders !== '') meta.push('Получили: ' + holders);
+            metaEl.textContent = meta.join(' · ');
+            metaEl.style.display = meta.length ? '' : 'none';
+
+            var date = card.getAttribute('data-ach-date');
+            if (earned && date) { dateEl.textContent = 'Получено ' + date; dateEl.style.display = ''; }
+            else { dateEl.textContent = ''; dateEl.style.display = 'none'; }
+
+            popup.hidden = false;
+            document.body.style.overflow = 'hidden';
+        }
+        function close() {
+            popup.hidden = true;
+            document.body.style.overflow = '';
+        }
+
+        root.addEventListener('click', function (e) {
+            var card = e.target.closest('[data-achievement]');
+            if (card) { open(card); return; }
+        });
+        popup.addEventListener('click', function (e) {
+            if (e.target === popup || e.target.closest('[data-ach-close]')) close();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !popup.hidden) close();
+        });
+    }
+    initAchievementPopup(document);

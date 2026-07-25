@@ -15,20 +15,21 @@
         {% endif %}
     </div>
 
-    {% comment %}«Скопировать опыт»: кнопка «Выбрать топ» открывает модалку выбора «n из m»
-    (n ≤ 3) со списком мероприятий центра — привычный компонент (ensureSelectModal из
-    selects.js). Выбранные меро показываются чипами (можно снять), их роли выделяются в
-    тексте. Текст собирается на клиенте (initExperienceCopy в misc.js) из data-experience-events
-    и кладётся в data-copy-text. Показываем блок только владельцу (can_edit) и только если
-    есть системный опыт для перечисления.{% endcomment %}
+    {% comment %}«Скопировать опыт» — второстепенное действие блока (шаринг — редкий кейс),
+    поэтому секция намеренно приглушена: сама кнопка копирования — обычная secondary, а
+    «выбрать топ» — тихая текстовая ссылка. Ссылка открывает модалку выбора «n из m» (n ≤ 3)
+    со списком мероприятий центра (общий компонент ensureSelectModal из selects.js); выбранное
+    видно и внутри окна, и чипами тут. Роли выделяются в тексте. Текст собирается на клиенте
+    (initExperienceCopy в misc.js) и кладётся в data-copy-text. Показываем только владельцу
+    (can_edit) и только если есть системный опыт для перечисления.{% endcomment %}
     {% if can_edit and experience_share_url and experience.system_event_count %}
-    <div class="experience-copy" data-experience-copy style="padding:16px 20px 0;">
+    <div class="experience-copy" data-experience-copy style="padding:14px 20px 0;">
         <script type="application/json" data-experience-events>{% experience_copy_json experience experience_share_url %}</script>
-        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-            <button type="button" class="btn secondary" data-experience-pick-open>⭐ Выбрать топ</button>
-            <span class="cat-chips-row" data-experience-chosen style="flex:1;"></span>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <button type="button" class="btn secondary btn-sm" data-copy-text="">🔗 Скопировать опыт</button>
+            <button type="button" class="link-muted" data-experience-pick-open>выбрать топ мероприятий</button>
         </div>
-        <button type="button" class="btn secondary" data-copy-text="">🔗 Скопировать опыт</button>
+        <div class="cat-chips-row" data-experience-chosen style="margin-top:8px;"></div>
     </div>
     {% endif %}
 

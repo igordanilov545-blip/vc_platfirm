@@ -486,16 +486,18 @@
                 var items = selected.map(function (id) {
                     return { value: String(id), label: byId[id] ? byId[id].title : ('#' + id) };
                 });
-                renderSelectedChips(chosenRow, items, 'Топ не выбран', function (value) {
+                // Чипы выбранного (с крестиком); пусто → ничего не рисуем (пустая строка),
+                // чтобы блок не выделялся, пока топ не выбран — только тихая ссылка-триггер.
+                renderSelectedChips(chosenRow, items, '', function (value) {
                     var pos = selected.indexOf(parseInt(value, 10));
                     if (pos !== -1) selected.splice(pos, 1);
                     refresh();
                 });
-                // Достигнут лимит — кнопку выбора блокируем, чтобы не открывать пустую модалку.
+                // Достигнут лимит — ссылку выбора гасим (открывать пустую модалку незачем).
                 openBtn.disabled = selected.length >= COPY_MAX;
                 openBtn.textContent = selected.length
-                    ? '⭐ Выбрать топ (' + selected.length + '/' + COPY_MAX + ')'
-                    : '⭐ Выбрать топ';
+                    ? 'изменить топ (' + selected.length + '/' + COPY_MAX + ')'
+                    : 'выбрать топ мероприятий';
             }
 
             // Кандидаты для модалки: ещё не выбранные меро, отфильтрованные по подстроке.
@@ -519,6 +521,17 @@
                     onPick: function (it) {
                         var id = parseInt(it.value, 10);
                         if (selected.indexOf(id) === -1 && selected.length < COPY_MAX) selected.push(id);
+                        refresh();
+                    },
+                    // Полоса «Выбрано» внутри окна: те же меро, что и чипы снаружи.
+                    selectedItems: function () {
+                        return selected.map(function (id) {
+                            return { value: String(id), label: byId[id] ? byId[id].title : ('#' + id) };
+                        });
+                    },
+                    onUnpick: function (value) {
+                        var pos = selected.indexOf(parseInt(value, 10));
+                        if (pos !== -1) selected.splice(pos, 1);
                         refresh();
                     },
                 });

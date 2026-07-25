@@ -134,6 +134,11 @@
                             });
                         },
                         onPick: function (it) { setSelected(it.value, true); render(); },
+                        // Полоса «Выбрано» внутри окна (мультивыбор): показать и дать снять.
+                        selectedItems: function () {
+                            return optionItems(true).map(function (it) { return { value: it.value, label: it.label }; });
+                        },
+                        onUnpick: function (value) { setSelected(value, false); render(); },
                     });
                 });
             }
@@ -185,6 +190,7 @@
                     '</div>' +
                     '<button type="button" class="user-picker-modal-close" aria-label="Закрыть">×</button>' +
                 '</div>' +
+                '<div class="user-picker-modal-selected" data-picker-selected hidden></div>' +
                 '<div class="user-picker-modal-body"></div>' +
                 '<div class="user-picker-modal-foot"></div>' +
             '</div>';
@@ -195,6 +201,7 @@
         var footEl = backdrop.querySelector('.user-picker-modal-foot');
         var closeBtn = backdrop.querySelector('.user-picker-modal-close');
         var modesEl = backdrop.querySelector('[data-modes]');
+        var selectedEl = backdrop.querySelector('[data-picker-selected]');
 
         var cfg = null;          // конфиг текущего открытия
         var visibleCount = 0;
@@ -204,7 +211,34 @@
             return cfg.candidates(query);
         }
 
+        // Полоса «Выбрано: …» прямо внутри окна — чтобы при множественном выборе было
+        // видно, что уже отмечено, и можно было снять, не закрывая модалку. Общая для всех
+        // потребителей: работает, если конфиг отдаёт selectedItems() и onUnpick(value).
+        // Single-режим полосу не показывает (там выбор — одно значение, окно закрывается).
+        function renderSelected() {
+            if (!cfg || cfg.single || typeof cfg.selectedItems !== 'function') {
+                selectedEl.hidden = true;
+                return;
+            }
+            var items = cfg.selectedItems() || [];
+            selectedEl.hidden = false;
+            selectedEl.innerHTML = '';
+            var label = document.createElement('span');
+            label.className = 'user-picker-selected-label';
+            label.textContent = items.length ? 'Выбрано (' + items.length + '):' : 'Пока ничего не выбрано';
+            selectedEl.appendChild(label);
+            if (!items.length) return;
+            var row = document.createElement('span');
+            row.className = 'cat-chips-row';
+            selectedEl.appendChild(row);
+            renderSelectedChips(row, items, '', function (value) {
+                if (cfg.onUnpick) cfg.onUnpick(value);
+                renderPage(true);
+            });
+        }
+
         function renderPage(reset) {
+            renderSelected();
             var list = candidates();
             if (reset) { visibleCount = 0; bodyEl.innerHTML = ''; }
             if (!list.length) {
@@ -376,6 +410,13 @@
                     selected.set(it.value, it.label);
                     renderSelected();
                 },
+                // Полоса «Выбрано» внутри окна (мультивыбор людей): видно и можно снять.
+                selectedItems: function () {
+                    var arr = [];
+                    selected.forEach(function (label, value) { arr.push({ value: value, label: label }); });
+                    return arr;
+                },
+                onUnpick: function (value) { selected.delete(value); renderSelected(); },
                 onOrderChange: function (order) {
                     st.order = order;
                     load(function () { ensureSelectModal().refresh(modalConfig()); });

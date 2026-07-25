@@ -107,9 +107,9 @@ class ExperienceBlockRenderTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, 'data-experience-copy')
         self.assertContains(r, 'Скопировать опыт')
-        # Кнопка открытия модалки выбора «топ» + меро попало в JSON-конфиг выбора.
+        # Ссылка открытия модалки выбора «топ» + меро попало в JSON-конфиг выбора.
         self.assertContains(r, 'data-experience-pick-open')
-        self.assertContains(r, 'Выбрать топ')
+        self.assertContains(r, 'выбрать топ мероприятий')
         self.assertContains(r, '"title": "Меро для опыта"')
 
     def test_no_copy_block_without_system_experience(self):

@@ -1088,6 +1088,23 @@ input:focus, select:focus, textarea:focus {
   font-size: 20px; line-height: 1; padding: 4px; flex-shrink: 0;
 }
 .user-picker-modal-close:hover { color: var(--text-primary); }
+/* Полоса «Выбрано (n): чипы» под шапкой окна — видно, что уже отмечено, и можно снять,
+   не закрывая модалку (мультивыбор: люди, требования, топ-меро). */
+.user-picker-modal-selected {
+  padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.user-picker-modal-selected[hidden] { display: none; }
+.user-picker-selected-label { font-size: 12px; color: var(--text-tertiary); }
+/* Тихая текстовая кнопка-ссылка (второстепенное действие, не должна перетягивать
+   внимание): без рамки/фона, приглушённый цвет, подчёркивание при наведении. */
+.link-muted {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--text-tertiary);
+  text-decoration: underline dotted; text-underline-offset: 2px;
+}
+.link-muted:hover:not([disabled]) { color: var(--text-secondary); text-decoration-style: solid; }
+.link-muted[disabled] { cursor: default; opacity: 0.5; text-decoration: none; }
 .user-picker-modal-body {
   overflow-y: auto; flex: 1; padding: 6px;
 }

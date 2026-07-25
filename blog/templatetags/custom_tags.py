@@ -1,4 +1,5 @@
 from django import template
+from django.utils.safestring import mark_safe
 
 register = template.Library()
 
@@ -79,3 +80,26 @@ def star_rating(rating, scale=10):
         rating = 0
     count = max(0, min(round(rating), scale))
     return '⭐' * count
+
+
+@register.simple_tag
+def experience_copy_json(experience, share_url):
+    """JSON-конфиг для «Скопировать опыт» (initExperienceCopy в misc.js): total_count,
+    ссылка на публичный опыт и список системных мероприятий (id/title/role) для выбора
+    топ-3 и выделения ролей. Кладётся внутрь <script type="application/json"> — экранируем
+    только `<` (закрытие тега), остальное json.dumps даёт валидным."""
+    import json
+
+    events = [
+        {'id': item['event_id'], 'title': item['title'], 'role': item.get('role') or 'volunteer'}
+        for item in experience['items']
+        if item['kind'] == 'system'
+    ]
+    payload = {
+        'total': experience['total_count'],
+        'url': share_url,
+        'events': events,
+    }
+    # </script> внутри значений сломал бы разметку — экранируем '<' в безопасную форму.
+    raw = json.dumps(payload, ensure_ascii=False).replace('<', '\\u003c')
+    return mark_safe(raw)

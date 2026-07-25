@@ -1,3 +1,4 @@
+{% load custom_tags %}
 {% comment %}Блок «Мой опыт» — все мероприятия центра, где волонтёр участвовал (attended),
 + самозаявленный внешний опыт (ExternalExperience). Именно это видит САМ волонтёр в своём
 профиле (без своих неудачных/отклонённых заявок — те видит только менеджер в таблице
@@ -8,17 +9,38 @@
         <h3 style="margin:0;">🎖️ Мой опыт</h3>
         {% if can_edit %}
         <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-            {% if experience_share_url %}
-            <button type="button" class="btn secondary"
-                    data-copy-text="Участвовал(а) в {{ experience.total_count }} мероприятиях. Подробно ознакомиться со всеми мероприятиями можно тут: {{ experience_share_url }}">
-                🔗 Скопировать опыт
-            </button>
-            {% endif %}
             <a href="{% url 'external_experience_add' %}" class="btn"
                data-modal data-modal-title="Добавить внешнее мероприятие">＋ Внешнее мероприятие</a>
         </div>
         {% endif %}
     </div>
+
+    {% comment %}«Скопировать опыт»: волонтёр отмечает до 3 мероприятий центра, которые
+    хочет назвать явно в тексте; роли (тим-лидер/волонтёр) выделяются отдельно. Текст
+    собирается на клиенте (initExperienceCopy в misc.js) из data-experience-events и
+    кладётся в data-copy-text кнопки. Показываем блок только владельцу (can_edit) и только
+    если есть системный опыт для перечисления.{% endcomment %}
+    {% if can_edit and experience_share_url and experience.system_event_count %}
+    <div class="experience-copy" data-experience-copy style="padding:16px 20px 0;">
+        <script type="application/json" data-experience-events>{% experience_copy_json experience experience_share_url %}</script>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+            <span style="color:var(--text-secondary); font-size:13px;">Выделить в тексте (до 3):</span>
+            <span class="mono" style="color:var(--text-tertiary); font-size:12px;" data-experience-copy-hint>0 из 3</span>
+        </div>
+        <div class="cat-chips-row" style="margin-bottom:10px;">
+            {% for item in experience.items %}
+                {% if item.kind == 'system' %}
+                <button type="button" class="cat-chip cat-chip--toggle {{ item.event_id|chip_color }}"
+                        data-experience-pick="{{ item.event_id }}" aria-pressed="false"
+                        title="{% if item.role == 'team_lead' %}тим-лидер{% else %}волонтёр{% endif %}">
+                    <span class="cat-chip-label">{% if item.role == 'team_lead' %}★ {% endif %}{{ item.title }}</span>
+                </button>
+                {% endif %}
+            {% endfor %}
+        </div>
+        <button type="button" class="btn secondary" data-copy-text="">🔗 Скопировать опыт</button>
+    </div>
+    {% endif %}
 
     <table class="responsive-table" data-sortable data-collapse-rows="5">
         <thead><tr><th data-sort-key="event">Мероприятие</th><th data-sort-key="date">Дата</th><th data-sort-key="kind">Тип</th><th data-sort-key="note">Что делал</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>

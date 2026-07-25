@@ -4,9 +4,28 @@
 """
 import datetime
 
-from blog.models import User
+from blog.models import EventStaff, User
 
 _DATE_MIN = datetime.date.min
+
+# Метка «интересной» роли (тим-лидер/координатор) — её мы хотим выделять в экспорте
+# опыта отдельно от рядового волонтёрства (см. build_experience: role_label).
+ROLE_TEAM_LEAD = 'team_lead'
+ROLE_VOLUNTEER = 'volunteer'
+ROLE_LABELS = {ROLE_TEAM_LEAD: 'тим-лидер', ROLE_VOLUNTEER: 'волонтёр'}
+
+
+def _team_lead_event_ids(user: User) -> set:
+    """Мероприятия, где волонтёр был тим-лидером (активное назначение EventStaff).
+
+    Роль на меро определяем по назначению team_lead, а не по факту участия: это та роль,
+    которую мы хотим подсветить в скопированном опыте («был тим-лидером на …»). Менеджер
+    как отдельная роль в опыте волонтёра не выделяется — экспорт опыта про волонтёрский
+    путь, а не про штат (реальные ТЛ — почти всегда и участники своих меро)."""
+    return set(
+        EventStaff.objects.filter(user=user, staff_role='team_lead')
+        .values_list('event_id', flat=True)
+    )
 
 
 def build_experience(user: User) -> dict:
@@ -14,8 +33,12 @@ def build_experience(user: User) -> dict:
 
     items — список записей вида:
       {'kind': 'system'|'external'|'upcoming', 'title': str, 'date': date|None,
-       'event_id': int|None, 'exp_id': int|None}
+       'event_id': int|None, 'exp_id': int|None, 'role': str|None, 'role_label': str|None}
     отсортированный по дате (свежие сверху; записи без даты — в конец).
+
+    role/role_label заданы только у системных мероприятий (kind='system'): роль волонтёра
+    на этом меро — 'team_lead' (был тим-лидером) или 'volunteer' (рядовой волонтёр). Нужны
+    для экспорта опыта с выделением интересных ролей (см. _experience_block.html).
 
     system_event_count — число РАЗНЫХ мероприятий центра с явкой (для статистики/текста
     экспорта учитываем именно системные, но общий счётчик total_count включает и внешние).
@@ -24,6 +47,7 @@ def build_experience(user: User) -> dict:
     волонтёр мыслит в терминах заявок и хочет видеть, что и когда у него запланировано,
     без «легаси» (отклонённые/отменённые заявки и заявки на уже прошедшее сюда не входят).
     """
+    team_lead_event_ids = _team_lead_event_ids(user)
     # Активные заявки на будущее — отдельно от системного опыта (тот только про уже
     # состоявшееся участие), но в том же списке «Мой опыт», сверху.
     upcoming_items = []
@@ -46,6 +70,8 @@ def build_experience(user: User) -> dict:
             'description': status_labels.get(app.status, app.get_status_display()),
             'event_id': app.event_id,
             'exp_id': None,
+            'role': None,
+            'role_label': None,
         })
     upcoming_items.sort(key=lambda i: (i['date'] is None, i['date'] or _DATE_MIN))
 
@@ -61,12 +87,15 @@ def build_experience(user: User) -> dict:
         day = p.event_day.day
         cur = by_event.get(event.id)
         if cur is None or day > cur['date']:
+            role = ROLE_TEAM_LEAD if event.id in team_lead_event_ids else ROLE_VOLUNTEER
             by_event[event.id] = {
                 'kind': 'system',
                 'title': event.title,
                 'date': day,
                 'event_id': event.id,
                 'exp_id': None,
+                'role': role,
+                'role_label': ROLE_LABELS[role],
             }
 
     items = list(by_event.values())
@@ -87,6 +116,8 @@ def build_experience(user: User) -> dict:
             'description': exp.description,
             'event_id': None,
             'exp_id': exp.id,
+            'role': None,
+            'role_label': None,
         })
 
     # Ранжирование: сначала мероприятия ВЦ (kind='system'), внутри — по времени

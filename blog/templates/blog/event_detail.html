@@ -184,6 +184,18 @@
             <span class="cat-chip {{ requirement.id|chip_color }}" title="{{ requirement.description }}"><span class="cat-chip-label">{{ requirement.title }}</span></span>
         {% endfor %}
     </div>
+    {% comment %}Расшифровка требований — чтобы волонтёр видел не только название, но и
+    что оно означает (у требований с описанием). Показываем всем, кто открыл меро.{% endcomment %}
+    <ul style="margin:8px 0 0; padding-left:18px; color:var(--text-secondary); font-size:13px;">
+        {% for requirement in requirements %}
+            {% if requirement.description %}<li><strong>{{ requirement.title }}</strong> — {{ requirement.description }}</li>{% endif %}
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% comment %}Ссылка на пост в Telegram-канале — если менеджер её задал. Видна всем
+    (в т.ч. волонтёру): можно перейти к анонсу меро в канале.{% endcomment %}
+    {% if event.post_in_chanel_link %}
+    <p style="margin-top:8px;">📢 Пост в канале: <a href="{{ event.post_in_chanel_link }}" target="_blank" rel="noopener">{{ event.post_in_chanel_link }}</a></p>
     {% endif %}
     {% if is_manager %}
         <p>{% if event.published_at %}Опубликовано: {{ event.published_at }}{% else %}<span class="pill warning"><span class="dot"></span>Не опубликовано</span> — волонтёры ещё не получили уведомление в боте{% endif %}</p>

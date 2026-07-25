@@ -424,3 +424,95 @@
         var text = btn.getAttribute('data-share-url') || btn.getAttribute('data-copy-text') || '';
         copyToClipboard(text).then(function () { flashCopied(btn); });
     });
+
+    // ======================================================================
+    // «Скопировать опыт» с выбором топ-0..3 мероприятий и ролями.
+    // Волонтёр отмечает до 3 мероприятий центра, которые хочет назвать явно; текст
+    // собирается на клиенте и кладётся в data-copy-text кнопки копирования (её жмут
+    // обычным обработчиком выше). Роли (тим-лидер/волонтёр) выделяются отдельно —
+    // «был тим-лидером на …, волонтёром на …». Данные о меро+ролях приходят из
+    // <script type="application/json" data-experience-events> (см. _experience_block.html).
+    // ======================================================================
+    var COPY_MAX = 3;
+
+    function joinRu(names) {
+        // «a», «a и b», «a, b и c» — человекочитаемое перечисление через запятую и «и».
+        if (names.length === 0) return '';
+        if (names.length === 1) return names[0];
+        return names.slice(0, -1).join(', ') + ' и ' + names[names.length - 1];
+    }
+
+    function buildExperienceCopyText(cfg, selectedIds) {
+        // cfg: {total, url, events:[{id,title,role}]}; selectedIds — массив id (в порядке отметки).
+        var word = declMero(cfg.total);
+        var text = 'Я участвовал(а) в ' + cfg.total + ' ' + word;
+        var byId = {};
+        cfg.events.forEach(function (e) { byId[e.id] = e; });
+        var chosen = selectedIds.map(function (id) { return byId[id]; }).filter(Boolean);
+        if (chosen.length) {
+            text += ', включая ' + joinRu(chosen.map(function (e) { return e.title; }));
+        }
+        text += '.';
+        // Роли — только по выбранным меро (иначе перечисление ролей по всем участиям
+        // раздуло бы текст; выделяем именно то, что волонтёр решил подсветить).
+        var leads = chosen.filter(function (e) { return e.role === 'team_lead'; }).map(function (e) { return e.title; });
+        var vols = chosen.filter(function (e) { return e.role !== 'team_lead'; }).map(function (e) { return e.title; });
+        var parts = [];
+        if (leads.length) parts.push('тим-лидером на ' + joinRu(leads));
+        if (vols.length) parts.push('волонтёром на ' + joinRu(vols));
+        if (parts.length) text += ' Был(а) ' + parts.join(', ') + '.';
+        if (cfg.url) text += ' Подробнее о всех мероприятиях: ' + cfg.url;
+        return text;
+    }
+
+    function declMero(n) {
+        // Склонение «мероприятие» по числу (1 мероприятии — предложный падеж «в N …»).
+        var mod100 = n % 100, mod10 = n % 10;
+        if (mod100 >= 11 && mod100 <= 14) return 'мероприятиях';
+        if (mod10 === 1) return 'мероприятии';
+        if (mod10 >= 2 && mod10 <= 4) return 'мероприятиях';
+        return 'мероприятиях';
+    }
+
+    function initExperienceCopy(root) {
+        root.querySelectorAll('[data-experience-copy]').forEach(function (box) {
+            if (box.dataset.expCopyInit) return;
+            box.dataset.expCopyInit = '1';
+            var dataEl = box.querySelector('[data-experience-events]');
+            var btn = box.querySelector('[data-copy-text]');
+            if (!dataEl || !btn) return;
+            var cfg;
+            try { cfg = JSON.parse(dataEl.textContent); } catch (e) { return; }
+
+            var selected = [];  // id в порядке отметки (чтобы порядок в тексте совпадал с кликами)
+            var hint = box.querySelector('[data-experience-copy-hint]');
+
+            function refresh() {
+                btn.setAttribute('data-copy-text', buildExperienceCopyText(cfg, selected));
+                box.querySelectorAll('[data-experience-pick]').forEach(function (chip) {
+                    var id = parseInt(chip.getAttribute('data-experience-pick'), 10);
+                    var on = selected.indexOf(id) !== -1;
+                    chip.classList.toggle('active', on);
+                    chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+                    // Достигнут лимит — неотмеченные чипы блокируем (нельзя выбрать >3).
+                    chip.toggleAttribute('disabled', !on && selected.length >= COPY_MAX);
+                });
+                if (hint) hint.textContent = selected.length + ' из ' + COPY_MAX;
+            }
+
+            box.querySelectorAll('[data-experience-pick]').forEach(function (chip) {
+                chip.addEventListener('click', function () {
+                    var id = parseInt(chip.getAttribute('data-experience-pick'), 10);
+                    var pos = selected.indexOf(id);
+                    if (pos !== -1) {
+                        selected.splice(pos, 1);
+                    } else if (selected.length < COPY_MAX) {
+                        selected.push(id);
+                    }
+                    refresh();
+                });
+            });
+            refresh();
+        });
+    }
+    initExperienceCopy(document);

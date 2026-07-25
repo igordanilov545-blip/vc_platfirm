@@ -426,13 +426,13 @@
     });
 
     // ======================================================================
-    // «Скопировать опыт» с выбором топ-0..3 мероприятий и ролями.
-    // Волонтёр отмечает до 3 мероприятий центра, которые хочет назвать явно; текст
-    // собирается на клиенте и кладётся в data-copy-text кнопки копирования (её жмут
-    // обычным обработчиком выше). Каждое меро называется ОДИН раз; выбранные меро
-    // группируются по роли с подписью-заголовком («Тим-лидер: …. Волонтёр: ….») — так
-    // роль читается без повтора названий. Данные о меро+ролях приходят из
-    // <script type="application/json" data-experience-events> (см. _experience_block.html).
+    // «Скопировать опыт»: кнопка «Выбрать топ» открывает привычную модалку выбора
+    // «n из m» (ensureSelectModal из selects.js) со списком мероприятий центра; лимит —
+    // 3 (COPY_MAX). Выбранные меро показываются чипами (снять — крестиком), их роли
+    // группируются в итоговом тексте («Тим-лидер: …. Волонтёр: ….», каждое меро названо
+    // один раз). Текст кладётся в data-copy-text кнопки копирования (её жмут обычным
+    // обработчиком выше). Данные о меро+ролях — из <script data-experience-events>
+    // (см. _experience_block.html).
     // ======================================================================
     var COPY_MAX = 3;
 
@@ -468,39 +468,62 @@
             if (box.dataset.expCopyInit) return;
             box.dataset.expCopyInit = '1';
             var dataEl = box.querySelector('[data-experience-events]');
-            var btn = box.querySelector('[data-copy-text]');
-            if (!dataEl || !btn) return;
+            var copyBtn = box.querySelector('[data-copy-text]');
+            var openBtn = box.querySelector('[data-experience-pick-open]');
+            var chosenRow = box.querySelector('[data-experience-chosen]');
+            if (!dataEl || !copyBtn || !openBtn || !chosenRow) return;
             var cfg;
             try { cfg = JSON.parse(dataEl.textContent); } catch (e) { return; }
+            if (typeof ensureSelectModal !== 'function') return;
 
-            var selected = [];  // id в порядке отметки (чтобы порядок в тексте совпадал с кликами)
-            var hint = box.querySelector('[data-experience-copy-hint]');
+            var byId = {};
+            cfg.events.forEach(function (e) { byId[e.id] = e; });
+            var selected = [];  // id в порядке выбора (порядок в тексте совпадает с выбором)
 
             function refresh() {
-                btn.setAttribute('data-copy-text', buildExperienceCopyText(cfg, selected));
-                box.querySelectorAll('[data-experience-pick]').forEach(function (chip) {
-                    var id = parseInt(chip.getAttribute('data-experience-pick'), 10);
-                    var on = selected.indexOf(id) !== -1;
-                    chip.classList.toggle('active', on);
-                    chip.setAttribute('aria-pressed', on ? 'true' : 'false');
-                    // Достигнут лимит — неотмеченные чипы блокируем (нельзя выбрать >3).
-                    chip.toggleAttribute('disabled', !on && selected.length >= COPY_MAX);
+                copyBtn.setAttribute('data-copy-text', buildExperienceCopyText(cfg, selected));
+                // Выбранные меро — чипами с крестиком (общий рендер из selects.js).
+                var items = selected.map(function (id) {
+                    return { value: String(id), label: byId[id] ? byId[id].title : ('#' + id) };
                 });
-                if (hint) hint.textContent = selected.length + ' из ' + COPY_MAX;
-            }
-
-            box.querySelectorAll('[data-experience-pick]').forEach(function (chip) {
-                chip.addEventListener('click', function () {
-                    var id = parseInt(chip.getAttribute('data-experience-pick'), 10);
-                    var pos = selected.indexOf(id);
-                    if (pos !== -1) {
-                        selected.splice(pos, 1);
-                    } else if (selected.length < COPY_MAX) {
-                        selected.push(id);
-                    }
+                renderSelectedChips(chosenRow, items, 'Топ не выбран', function (value) {
+                    var pos = selected.indexOf(parseInt(value, 10));
+                    if (pos !== -1) selected.splice(pos, 1);
                     refresh();
                 });
+                // Достигнут лимит — кнопку выбора блокируем, чтобы не открывать пустую модалку.
+                openBtn.disabled = selected.length >= COPY_MAX;
+                openBtn.textContent = selected.length
+                    ? '⭐ Выбрать топ (' + selected.length + '/' + COPY_MAX + ')'
+                    : '⭐ Выбрать топ';
+            }
+
+            // Кандидаты для модалки: ещё не выбранные меро, отфильтрованные по подстроке.
+            // При достигнутом лимите список пуст (добавлять больше нельзя).
+            function candidates(query) {
+                if (selected.length >= COPY_MAX) return [];
+                return cfg.events
+                    .filter(function (e) { return selected.indexOf(e.id) === -1; })
+                    .filter(function (e) { return !query || e.title.toLowerCase().indexOf(query) !== -1; })
+                    .map(function (e) {
+                        // Роль-подсказку показываем прямо в подписи строки модалки.
+                        var suffix = e.role === 'team_lead' ? ' — тим-лидер' : '';
+                        return { value: String(e.id), label: e.title + suffix };
+                    });
+            }
+
+            openBtn.addEventListener('click', function () {
+                ensureSelectModal().open({
+                    single: false,
+                    candidates: candidates,
+                    onPick: function (it) {
+                        var id = parseInt(it.value, 10);
+                        if (selected.indexOf(id) === -1 && selected.length < COPY_MAX) selected.push(id);
+                        refresh();
+                    },
+                });
             });
+
             refresh();
         });
     }

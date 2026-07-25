@@ -5,6 +5,7 @@
 Владелец видит отдельный файл profile_self.html.{% endcomment %}
 <div class="page-header">
     <h1>{{ target.full_name }}</h1>
+    <a href="{% url 'profile_achievements' target.id %}" class="btn secondary">🏅 Достижения{% if achievement_earned_count %} <span class="pill success" style="margin-left:4px;">{{ achievement_earned_count }}</span>{% endif %}</a>
 </div>
 
 {% comment %}Верх: ник + статус-пилюли (роль, блеклист) и действия по верификации/ЧС.{% endcomment %}
@@ -60,8 +61,6 @@
     <div class="stat-tile"><div class="value">{{ target.season_event_count }}</div><div class="label">Мероприятий за сезон</div></div>
     <div class="stat-tile"><div class="value">{{ target.external_experiences.count }}</div><div class="label">Внешние мероприятия</div></div>
 </div>
-
-{% include 'blog/partials/_achievements_block.html' %}
 
 {% comment %}Блок «Инфо»: ФИО, контакты И чарн (объединены, отдельного блока «Внутреннее» нет).{% endcomment %}
 {% if has_extended_access %}

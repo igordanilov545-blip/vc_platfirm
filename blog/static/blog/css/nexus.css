@@ -1711,19 +1711,44 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
   font-size: 12px; font-weight: 600; color: var(--text-primary);
   line-height: 1.25;
 }
+.achievement-sub {
+  font-size: 11px; font-weight: 700; color: var(--_tier-c, var(--text-secondary));
+}
+
+/* --- Уровни сложности (tier). ЕДИНАЯ точка смены оформления рамок: цвета заданы
+   здесь как --_tier-c (основной) и --_tier-soft (заливка). Ключи tier'ов и их
+   привязка к достижениям — в blog/services/achievements.py::TIERS. Чтобы сменить
+   палитру уровней — правим ТОЛЬКО значения ниже. --- */
+.ach-tier--none     { --_tier-c: var(--accent, #7c5cff); --_tier-soft: rgba(124,92,255,0.10); }
+.ach-tier--bronze   { --_tier-c: #b87333; --_tier-soft: rgba(184,115,51,0.14); }
+.ach-tier--silver   { --_tier-c: #9aa4ad; --_tier-soft: rgba(154,164,173,0.16); }
+.ach-tier--gold     { --_tier-c: #e0a800; --_tier-soft: rgba(224,168,0,0.16); }
+.ach-tier--obsidian { --_tier-c: #2b2b33; --_tier-soft: rgba(43,43,51,0.20); }
+.ach-tier--scarlet  { --_tier-c: #e2354a; --_tier-soft: rgba(226,53,74,0.14); }
+.ach-tier--violet   { --_tier-c: #8b3ff0; --_tier-soft: rgba(139,63,240,0.16); }
+/* Уникальные обводки точечных достижений (вне шкалы 1..6). */
+.ach-tier--event    { --_tier-c: #1f9d8f; --_tier-soft: rgba(31,157,143,0.16); }
+.ach-tier--course   { --_tier-c: #2f6fed; --_tier-soft: rgba(47,111,237,0.16); }
+/* Обсидиан на тёмной теме почти сливается с фоном — подсветим кромку светлее. */
+@media (prefers-color-scheme: dark) {
+  .ach-tier--obsidian { --_tier-c: #8a8a99; --_tier-soft: rgba(138,138,153,0.18); }
+}
+:root[data-theme="dark"] .ach-tier--obsidian { --_tier-c: #8a8a99; --_tier-soft: rgba(138,138,153,0.18); }
+
+/* Полученное достижение — рамка и заливка цвета своего уровня, иконка с лёгким свечением. */
 .achievement--earned {
-  border-color: var(--accent, #7c5cff);
-  background: linear-gradient(180deg, var(--accent-soft, rgba(124,92,255,0.10)), var(--bg-card) 70%);
+  border-color: var(--_tier-c);
+  border-width: 2px;
+  background: linear-gradient(180deg, var(--_tier-soft), var(--bg-card) 72%);
 }
-/* Незакрытое общее достижение — приглушённое/серое (виден как цель). */
-.achievement--locked { opacity: 0.55; filter: grayscale(0.7); }
-.achievement--locked:hover { opacity: 0.85; filter: grayscale(0.3); }
-.achievement-step {
-  position: absolute; top: 6px; right: 8px;
-  font-size: 10px; font-weight: 700; color: var(--accent, #7c5cff);
-  background: var(--accent-soft, rgba(124,92,255,0.12));
-  padding: 1px 5px; border-radius: var(--radius-pill);
+.achievement--earned .achievement-icon {
+  filter: drop-shadow(0 0 6px var(--_tier-soft));
 }
+/* Незакрытое достижение/ступень — приглушённое/серое (видно как цель). */
+.achievement--locked { opacity: 0.5; filter: grayscale(0.85); }
+.achievement--locked:hover { opacity: 0.82; filter: grayscale(0.3); }
+
+.achievement-group-card + .achievement-group-card { margin-top: 14px; }
 
 .achievement-popup-backdrop {
   position: fixed; inset: 0; z-index: 1200;
@@ -1743,7 +1768,11 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
 }
 .achievement-popup-close:hover { color: var(--text-primary); }
 .achievement-popup-icon { font-size: 46px; line-height: 1; margin-bottom: 8px; }
-.achievement-popup-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+.achievement-popup-title { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+.achievement-popup-tier {
+  font-size: 12px; font-weight: 700; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;
+}
 .achievement-popup-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.45; }
 .achievement-popup-meta {
   margin-top: 12px; font-size: 12.5px; color: var(--text-tertiary);

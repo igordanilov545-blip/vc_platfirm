@@ -559,6 +559,7 @@
 
         var iconEl = popup.querySelector('[data-ach-popup-icon]');
         var titleEl = popup.querySelector('[data-ach-popup-title]');
+        var tierEl = popup.querySelector('[data-ach-popup-tier]');
         var descEl = popup.querySelector('[data-ach-popup-desc]');
         var metaEl = popup.querySelector('[data-ach-popup-meta]');
         var dateEl = popup.querySelector('[data-ach-popup-date]');
@@ -568,10 +569,15 @@
             titleEl.textContent = card.getAttribute('data-ach-title') || '';
             descEl.textContent = card.getAttribute('data-ach-desc') || '';
 
+            // Уровень (tier) — подпись под названием, если задан.
+            if (tierEl) {
+                var tier = card.getAttribute('data-ach-tier');
+                if (tier) { tierEl.textContent = tier; tierEl.style.display = ''; }
+                else { tierEl.textContent = ''; tierEl.style.display = 'none'; }
+            }
+
             var meta = [];
-            var next = card.getAttribute('data-ach-next');
             var earned = card.getAttribute('data-ach-earned') === '1';
-            if (next) meta.push((earned ? 'Следующая ступень: ' : 'Первая ступень: ') + next);
             var percent = card.getAttribute('data-ach-percent');
             var holders = card.getAttribute('data-ach-holders');
             if (percent !== null && percent !== '') meta.push('Есть у ' + percent + '% волонтёров');

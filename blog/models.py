@@ -1350,6 +1350,12 @@ class AchievementDefinition(models.Model):
     description = models.TextField(blank=True, default='')
     # Иконка — на этом этапе строка с эмодзи (⏱️🏅🌟…); позже можно заменить на файл.
     icon = models.CharField(max_length=50, blank=True, default='🏅')
+    # Уровень сложности/редкости для оформления рамки (см. achievements.TIERS):
+    # '1'..'6' — обычная шкала (бронза…фиолетовый), 'event'/'course' — уникальные
+    # обводки точечных достижений. У series ЯВНЫЙ tier не используется — там уровень
+    # каждой карточки-ступени = её порядковый номер (1-я ступень=1 …). Хранится строкой,
+    # чтобы вместить и числа, и текстовые уникальные уровни. Пусто → нейтральная рамка.
+    tier = models.CharField(max_length=20, blank=True, default='')
     # Для series — список ступеней [{"value": n, "label": "..."}], по возрастанию value.
     # Для single — null/пусто.
     series_steps = models.JSONField(blank=True, null=True)

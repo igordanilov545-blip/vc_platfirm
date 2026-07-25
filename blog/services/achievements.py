@@ -27,6 +27,45 @@ from blog.logging_utils import get_web_logger
 logger = get_web_logger(__name__)
 
 
+# ======================================================================
+# Уровни сложности достижений (tier) — ЕДИНАЯ точка правды об оформлении рамок.
+# Обычная шкала 1..6 (по возрастанию редкости) + уникальные уровни вне шкалы для
+# точечных достижений («был на конкретном меро» — 'event', «прошёл курс» — 'course').
+#
+# Как задаётся tier:
+#   • series — N-я ступень имеет tier = N (1-я = бронза … 6-я = фиолетовый), это НЕ
+#     хранится, а выводится по порядку ступени в build_profile_achievements;
+#   • single/hidden/manual — tier хранится явно в AchievementDefinition.tier
+#     (1 — «заполнить профиль/быть волонтёром», 6 — «откликнуться за минуту»,
+#     'event'/'course' — уникальные обводки точечных достижений).
+#
+# СМЕНА ОФОРМЛЕНИЯ: меняем только `css_class` здесь + соответствующие CSS-классы
+# .ach-tier--* в nexus.css. Ни шаблоны, ни движок трогать не нужно — они оперируют
+# ключом tier, а не цветами.
+# ======================================================================
+TIERS = {
+    1: {'name': 'Бронза', 'css_class': 'ach-tier--bronze'},
+    2: {'name': 'Серебро', 'css_class': 'ach-tier--silver'},
+    3: {'name': 'Золото', 'css_class': 'ach-tier--gold'},
+    4: {'name': 'Обсидиан', 'css_class': 'ach-tier--obsidian'},
+    5: {'name': 'Алый кристалл', 'css_class': 'ach-tier--scarlet'},
+    6: {'name': 'Фиолетовый кристалл', 'css_class': 'ach-tier--violet'},
+    'event': {'name': 'Мероприятие', 'css_class': 'ach-tier--event'},
+    'course': {'name': 'Курс', 'css_class': 'ach-tier--course'},
+}
+# Максимальный обычный уровень — ступени series выше него всё равно красим топовым
+# уровнем (страховка, если у series окажется больше 6 ступеней).
+_MAX_NUMERIC_TIER = 6
+
+
+def tier_meta(tier):
+    """Метаданные уровня (name, css_class) по ключу tier. Неизвестный/пустой tier →
+    нейтральное оформление (ach-tier--none). Числовой tier > 6 приводим к 6."""
+    if isinstance(tier, int) and tier > _MAX_NUMERIC_TIER:
+        tier = _MAX_NUMERIC_TIER
+    return TIERS.get(tier, {'name': '', 'css_class': 'ach-tier--none'})
+
+
 # ----------------------------------------------------------------------
 # Эвалуаторы прогресса. Каждый принимает User, возвращает int (series) или bool (single).
 # Держим их «тонкими» и на ORM напрямую (сервисный слой это допускает): считаем по
@@ -262,76 +301,158 @@ def recalc_user_achievements(user, *, notify=False):
     return newly
 
 
+# Технический демо-аккаунт: волонтёр, у которого есть ВСЕ существующие достижения (все
+# ступени series, все single/hidden/manual) — витрина оформления. Новые достижения
+# появляются у него автоматически (grant_all_achievements зовётся при создании
+# определения через dc.create_definition и командой sync_all_achievements_account).
+ALL_ACHIEVEMENTS_LOGIN = 'all_achivments'
+
+
+def grant_all_achievements(user, *, granted_by=None):
+    """Выдать пользователю ВСЕ достижения из справочника (для техаккаунта-витрины):
+    каждую ступень каждого series + каждое single/hidden/manual. Идемпотентно —
+    уже выданное пропускается. Пересчитывает агрегаты затронутых достижений.
+    Возвращает число новых строк."""
+    granted = 0
+    touched = set()
+    for d in dc.get_active_definitions():
+        if d.kind == 'series':
+            targets = [step_value for step_value, _ in d.steps()]
+        else:
+            targets = [None]
+        for sv in targets:
+            if not dc.has_user_achievement(user, d, sv):
+                dc.grant_achievement(user, d, series_value=sv, granted_by=granted_by)
+                granted += 1
+                touched.add(d)
+    for d in touched:
+        dc.recompute_achievement_stat(d)
+    if granted:
+        logger.info('Техаккаунт-витрина: выдано достижений user=%s count=%s', user.id, granted)
+    return granted
+
+
+def sync_all_achievements_account():
+    """Синхронизировать техаккаунт-витрину `all_achivments`: если он существует —
+    доначислить ему все недостающие достижения. Возвращает число новых строк (0, если
+    аккаунта нет). Аккаунт создаётся отдельно (миграция/команда create_all_achievements)."""
+    user = dc.get_user_by_login(ALL_ACHIEVEMENTS_LOGIN)
+    if not user:
+        return 0
+    return grant_all_achievements(user)
+
+
+def _card_tier(tier):
+    """Дополняет карточку метаданными уровня (tier_name/tier_class) по ключу tier."""
+    meta = tier_meta(tier)
+    return {'tier': tier, 'tier_name': meta['name'], 'tier_class': meta['css_class']}
+
+
 def build_profile_achievements(user, *, viewer_is_owner=False):
-    """Данные для блока достижений в профиле волонтёра.
+    """Данные для страницы «Мои достижения».
 
-    Возвращает список групп: [{'group': str, 'items': [card, …]}, …], где card —
-    достижение с прогрессом для рендера карточки (achievements.md §Дополнительно,
-    «Видимость»):
-      • common (общие) — показываем ВСЕГДА, даже незакрытые (приглушённо);
-      • hidden (скрытые) — только полученные;
-    поля карточки: title, description, icon, earned(bool), earned_at, current_step,
-    next_step, progress, holders_percent/holders_count.
+    Возвращает список групп: [{'group': str, 'items': [card, …]}, …].
 
-    percent считается от «живых» держателей (dc.count_stats_denominator) — не размываем
-    процент выпускниками (см. док). У скрытых показываем абсолютное число держателей."""
+    КАЖДАЯ КАРТОЧКА — это отдельный «значок»:
+      • single/hidden/manual — одна карточка на достижение, tier берётся из
+        AchievementDefinition.tier (см. TIERS);
+      • series — по карточке НА КАЖДУЮ СТУПЕНЬ (10ч/50ч/…); tier ступени = её порядковый
+        номер (1-я=бронза … 6-я=фиолетовый). Незакрытые ступени показываем приглушённо
+        как цель (common), у скрытых — только полученные ступени.
+
+    Видимость (achievements.md): common — показываем всегда (в т.ч. незакрытые как цель),
+    hidden — только полученное. percent держателей — от «живых» (count_stats_denominator),
+    у скрытых показываем абсолютное число.
+
+    Поля карточки: code, title, description, icon, kind, visibility, earned(bool),
+    earned_at, tier/tier_name/tier_class, holders_count, holders_percent; для ступеней
+    series дополнительно step_value/step_label."""
     definitions = dc.get_active_definitions()
     grants = dc.get_user_achievements(user)
     stats_map = dc.get_achievement_stats_map()
     denom = dc.count_stats_denominator() or 0
 
-    # Собираем по каждому определению: максимально взятую ступень и дату (для series) или
-    # факт (для single). У series берём наибольший series_value как «текущую» ступень.
-    by_def = {}
+    # Индексы выданного: для single — дата по achievement_id; для series — дата по паре
+    # (achievement_id, series_value), т.к. у каждой ступени своя строка/дата.
+    single_at = {}
+    step_at = {}
     for g in grants:
-        cur = by_def.get(g.achievement_id)
-        val = g.series_value if g.series_value is not None else 0
-        if cur is None or val > cur['value']:
-            by_def[g.achievement_id] = {'value': val, 'granted_at': g.granted_at}
-        # earliest granted_at по определению — для single это единственная строка;
-        # для series хотим дату ПОСЛЕДНЕЙ взятой ступени (уже покрыто выбором max value).
+        if g.series_value is None:
+            single_at.setdefault(g.achievement_id, g.granted_at)
+        else:
+            step_at[(g.achievement_id, g.series_value)] = g.granted_at
+
+    def _holders(d):
+        holders = stats_map.get(d.id, 0)
+        percent = round(holders * 100 / denom) if (d.visibility == 'common' and denom) else None
+        return holders, percent
 
     groups = {}
-    for d in definitions:
-        earned_info = by_def.get(d.id)
-        earned = earned_info is not None
-        if d.visibility == 'hidden' and not earned:
-            continue  # скрытые до получения не показываем
 
-        card = {
-            'code': d.code,
-            'title': d.title,
-            'description': d.description,
-            'icon': d.icon,
-            'kind': d.kind,
-            'visibility': d.visibility,
-            'earned': earned,
-            'earned_at': earned_info['granted_at'] if earned else None,
-        }
+    def _add(d, card):
+        grp = d.group or 'Прочее'
+        groups.setdefault(grp, {'group': grp, 'items': []})
+        groups[grp]['items'].append(card)
+
+    for d in definitions:
+        holders, percent = _holders(d)
 
         if d.kind == 'series':
-            steps = d.steps()
-            current = earned_info['value'] if earned else 0
-            # Следующая невзятая ступень (для подписи «сделай X»).
-            next_step = next((s for s in steps if s[0] > current), None)
-            card['current_step'] = current
-            card['next_step_value'] = next_step[0] if next_step else None
-            card['next_step_label'] = next_step[1] if next_step else None
-            card['max_step'] = steps[-1][0] if steps else None
+            # Одна карточка на ступень. Ступень взята, если по паре (d, step) есть строка.
+            for idx, (step_value, step_label) in enumerate(d.steps(), start=1):
+                granted_at = step_at.get((d.id, step_value))
+                earned = granted_at is not None
+                if d.visibility == 'hidden' and not earned:
+                    continue
+                card = {
+                    'code': f'{d.code}:{step_value}',
+                    'title': d.title,
+                    'step_value': step_value,
+                    'step_label': step_label,
+                    'description': d.description,
+                    'icon': d.icon,
+                    'kind': 'series',
+                    'visibility': d.visibility,
+                    'earned': earned,
+                    'earned_at': granted_at,
+                    'holders_count': holders,
+                    'holders_percent': percent,
+                }
+                card.update(_card_tier(idx))  # tier ступени = её порядковый номер
+                _add(d, card)
+        else:  # single / hidden-факт / manual
+            granted_at = single_at.get(d.id)
+            earned = granted_at is not None
+            if d.visibility == 'hidden' and not earned:
+                continue
+            # tier у single хранится строкой ('1'..'6'/'event'/'course'); числа приводим к int.
+            raw = (d.tier or '').strip()
+            tier_key = int(raw) if raw.isdigit() else (raw or None)
+            card = {
+                'code': d.code,
+                'title': d.title,
+                'step_value': None,
+                'step_label': None,
+                'description': d.description,
+                'icon': d.icon,
+                'kind': 'single',
+                'visibility': d.visibility,
+                'earned': earned,
+                'earned_at': granted_at,
+                'holders_count': holders,
+                'holders_percent': percent,
+            }
+            card.update(_card_tier(tier_key))
+            _add(d, card)
 
-        holders = stats_map.get(d.id, 0)
-        card['holders_count'] = holders
-        if d.visibility == 'common' and denom:
-            card['holders_percent'] = round(holders * 100 / denom)
-        else:
-            card['holders_percent'] = None
-
-        groups.setdefault(d.group or 'Прочее', {'group': d.group or 'Прочее', 'items': []})
-        groups[d.group or 'Прочее']['items'].append(card)
-
-    # Порядок групп — как в определениях (по первому появлению), карточки внутри —
-    # полученные сверху, затем незакрытые (общие цели), стабильно по названию.
+    # Порядок карточек внутри группы: полученные сверху, затем незакрытые; внутри —
+    # по возрастанию уровня (ступени series идут 1→6), стабильно по названию.
     ordered = list(groups.values())
+
+    def _sort_key(c):
+        t = c['tier'] if isinstance(c['tier'], int) else 99  # уникальные (event/course) — в конец
+        return (not c['earned'], t, c['title'], c['step_value'] or 0)
+
     for grp in ordered:
-        grp['items'].sort(key=lambda c: (not c['earned'], c['title']))
+        grp['items'].sort(key=_sort_key)
     return ordered

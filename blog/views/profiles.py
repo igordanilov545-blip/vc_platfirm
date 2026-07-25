@@ -124,11 +124,9 @@ def profile_detail(request, user_id):
     from blog.services.experience import build_experience
     experience = build_experience(target)
 
-    # Достижения (achievements.md): показываем в профиле владельцу и тем, у кого
-    # расширенный доступ (менеджер/ТЛ) — как публичный, мотивирующий слой. Общие
-    # незакрытые видны как цели, скрытые — только полученные (build_profile_achievements).
-    from blog.services.achievements import build_profile_achievements
-    achievement_groups = build_profile_achievements(target, viewer_is_owner=is_owner)
+    # Достижения вынесены на отдельную страницу (profile_achievements) — тут только
+    # счётчик полученных для кнопки-перехода «🏅 Достижения».
+    achievement_earned_count = dc.user_achievements_qs().filter(user=target).count()
 
     context = {
         'target': target,
@@ -137,7 +135,7 @@ def profile_detail(request, user_id):
         'has_extended_access': has_extended,
         'can_see_comments': can_see_comments,
         'experience': experience,
-        'achievement_groups': achievement_groups,
+        'achievement_earned_count': achievement_earned_count,
         # Ссылка «Скопировать опыт» — публичная страница опыта по токену (раздел 4).
         'experience_share_url': request.build_absolute_uri(
             reverse('public_experience', args=[target.experience_token])
@@ -284,6 +282,30 @@ def profile_detail(request, user_id):
     # а не ветвления в одном файле.
     template = 'blog/profile_self.html' if is_owner else 'blog/profile_manage.html'
     return render(request, template, context)
+
+@login_required
+def profile_achievements(request, user_id):
+    """Отдельная страница «Мои достижения» (achievements.md). Доступ — как к профилю:
+    владелец видит свои, менеджер/ТЛ с расширенным доступом — чужие (access-control.md
+    правило 5). Каждая карточка — значок с рамкой по уровню сложности (tier); series
+    раскрывается по ступеням (build_profile_achievements)."""
+    target = get_object_or_404(User, pk=user_id)
+    is_owner = request.user.id == target.id
+    if not (is_owner or has_extended_access_to_profile(request.user, target)):
+        raise PermissionDenied('Нет доступа к достижениям этого пользователя.')
+
+    from blog.services.achievements import build_profile_achievements
+    groups = build_profile_achievements(target, viewer_is_owner=is_owner)
+    earned_count = sum(1 for grp in groups for c in grp['items'] if c['earned'])
+    total_count = sum(len(grp['items']) for grp in groups)
+
+    return render(request, 'blog/profile_achievements.html', {
+        'target': target,
+        'is_owner': is_owner,
+        'achievement_groups': groups,
+        'earned_count': earned_count,
+        'total_count': total_count,
+    })
 
 @login_required
 @xframe_options_sameorigin

@@ -1,0 +1,54 @@
+{% extends 'blog/base.html' %}
+{% block title %}Достижения — {{ target.full_name }}{% endblock %}
+{% block content %}
+{% comment %}Отдельная страница «Мои достижения» (achievements.md). Каждая карточка —
+значок с рамкой по уровню сложности (tier); series раскрыт по ступеням. Данные —
+build_profile_achievements: achievement_groups = [{group, items:[card,…]}].{% endcomment %}
+<div class="page-header">
+    <div>
+        <h1>🏅 {% if is_owner %}Мои достижения{% else %}Достижения: {{ target.full_name }}{% endif %}</h1>
+        <p style="color:var(--text-secondary); margin:4px 0 0;">Получено {{ earned_count }} из {{ total_count }}</p>
+    </div>
+    <a href="{% url 'profile_detail' target.id %}" class="btn secondary">← В профиль</a>
+</div>
+
+{% for grp in achievement_groups %}
+<div class="card achievement-group-card">
+    <h3 class="achievement-group-title">{{ grp.group }}</h3>
+    <div class="achievement-grid">
+        {% for a in grp.items %}
+        <button type="button"
+                class="achievement {{ a.tier_class }} {% if a.earned %}achievement--earned{% else %}achievement--locked{% endif %}"
+                data-achievement
+                data-ach-title="{{ a.title }}{% if a.step_label %} · {{ a.step_label }}{% endif %}"
+                data-ach-icon="{{ a.icon }}"
+                data-ach-desc="{{ a.description }}"
+                data-ach-tier="{{ a.tier_name }}"
+                data-ach-earned="{{ a.earned|yesno:'1,0' }}"
+                {% if a.earned_at %}data-ach-date="{{ a.earned_at|date:'d.m.Y' }}"{% endif %}
+                {% if a.holders_percent is not None %}data-ach-percent="{{ a.holders_percent }}"{% else %}data-ach-holders="{{ a.holders_count }}"{% endif %}>
+            <span class="achievement-icon">{{ a.icon }}</span>
+            <span class="achievement-title">{{ a.title }}</span>
+            {% if a.step_label %}<span class="achievement-sub">{{ a.step_label }}</span>{% endif %}
+        </button>
+        {% endfor %}
+    </div>
+</div>
+{% empty %}
+<div class="card"><p style="color:var(--text-secondary); margin:0;">Достижений пока нет.</p></div>
+{% endfor %}
+
+{% comment %}Одиночный попап на страницу — наполняется из data-* нажатой карточки
+(initAchievementPopup в misc.js). Открывается и у полученного (перечитать условие).{% endcomment %}
+<div class="achievement-popup-backdrop" data-achievement-popup hidden>
+    <div class="achievement-popup" role="dialog" aria-modal="true">
+        <button type="button" class="achievement-popup-close" aria-label="Закрыть" data-ach-close>×</button>
+        <div class="achievement-popup-icon" data-ach-popup-icon></div>
+        <div class="achievement-popup-title" data-ach-popup-title></div>
+        <div class="achievement-popup-tier" data-ach-popup-tier></div>
+        <div class="achievement-popup-desc" data-ach-popup-desc></div>
+        <div class="achievement-popup-meta" data-ach-popup-meta></div>
+        <div class="achievement-popup-date" data-ach-popup-date></div>
+    </div>
+</div>
+{% endblock %}

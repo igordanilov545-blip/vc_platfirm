@@ -204,133 +204,189 @@ class StatTests(TestCase):
 
 
 class ProfileDisplayTests(TestCase):
-    def test_common_shown_even_if_unearned(self):
-        user = f.make_user()
+    """build_profile_achievements: series раскрыт по ступеням, tier, видимость, %."""
+
+    def _cards(self, user):
         groups = build_profile_achievements(user, viewer_is_owner=True)
-        all_codes = {c['code'] for g in groups for c in g['items']}
-        # Общее незакрытое достижение показывается как цель.
-        self.assertIn('hours_total', all_codes)
+        return [c for g in groups for c in g['items']]
+
+    def test_series_expands_into_one_card_per_step(self):
+        """series отдаётся карточкой на КАЖДУЮ ступень (10/50/100/250/500/1000 = 6 карточек)."""
+        user = f.make_user()
+        cards = self._cards(user)
+        hours = [c for c in cards if c['title'] == 'Волонтёрские часы']
+        self.assertEqual(len(hours), 6)
+        self.assertEqual({c['step_value'] for c in hours}, {10, 50, 100, 250, 500, 1000})
+
+    def test_series_step_tier_by_order(self):
+        """tier ступени = её порядковый номер: 1-я=1(бронза) … 6-я=6(фиолетовый)."""
+        user = f.make_user()
+        hours = sorted(
+            (c for c in self._cards(user) if c['title'] == 'Волонтёрские часы'),
+            key=lambda c: c['step_value'],
+        )
+        self.assertEqual([c['tier'] for c in hours], [1, 2, 3, 4, 5, 6])
+        self.assertEqual(hours[0]['tier_class'], 'ach-tier--bronze')
+        self.assertEqual(hours[5]['tier_class'], 'ach-tier--violet')
+
+    def test_series_steps_earned_reflect_progress(self):
+        """При 60 часах взяты ступени 10 и 50 (earned), 100+ — нет (locked)."""
+        from blog.services.stats import recalc_user_aggregates
+        user = f.make_user()
+        _attend(user, f.make_event(), hours=60)
+        recalc_user_aggregates(user)
+        hours = {c['step_value']: c for c in self._cards(user) if c['title'] == 'Волонтёрские часы'}
+        self.assertTrue(hours[10]['earned'])
+        self.assertTrue(hours[50]['earned'])
+        self.assertFalse(hours[100]['earned'])
+        self.assertIsNotNone(hours[10]['earned_at'])
+
+    def test_common_series_shown_even_if_unearned(self):
+        """Общие series-ступени показываются как цель даже незакрытыми."""
+        user = f.make_user()
+        titles = {c['title'] for c in self._cards(user)}
+        self.assertIn('Волонтёрские часы', titles)
+
+    def test_single_tier_from_definition(self):
+        """У single tier берётся из определения (profile_complete=1 бронза)."""
+        user = f.make_user()
+        card = next(c for c in self._cards(user) if c['code'] == 'profile_complete')
+        self.assertEqual(card['tier'], 1)
+        self.assertEqual(card['tier_class'], 'ach-tier--bronze')
+
+    def test_single_tier_high(self):
+        user = f.make_user()
+        card = next(c for c in self._cards(user) if c['code'] == 'response_1min')
+        self.assertEqual(card['tier'], 6)
+        self.assertEqual(card['tier_class'], 'ach-tier--violet')
+
+    def test_unique_tier_event_and_course(self):
+        """Уникальные уровни event/course дают свои обводки вне шкалы 1..6."""
+        de = AchievementDefinition.objects.create(
+            code='was_at_x', kind='single', visibility='hidden', group='Мероприятия',
+            title='Был на X', tier='event', source_type='manual_grant',
+        )
+        dc_ = AchievementDefinition.objects.create(
+            code='course_x', kind='single', visibility='hidden', group='Курсы',
+            title='Курс X', tier='course', source_type='manual_grant',
+        )
+        user = f.make_user()
+        dc.grant_achievement(user, de, series_value=None)
+        dc.grant_achievement(user, dc_, series_value=None)
+        cards = {c['code']: c for c in self._cards(user)}
+        self.assertEqual(cards['was_at_x']['tier_class'], 'ach-tier--event')
+        self.assertEqual(cards['course_x']['tier_class'], 'ach-tier--course')
 
     def test_earned_card_has_date_and_flag(self):
         user = f.make_user()
-        event = f.make_event()
-        _attend(user, event, hours=1)
+        _attend(user, f.make_event(), hours=1)
         recalc_user_achievements(user)
-        groups = build_profile_achievements(user, viewer_is_owner=True)
-        card = next(c for g in groups for c in g['items'] if c['code'] == 'first_event')
+        card = next(c for c in self._cards(user) if c['code'] == 'first_event')
         self.assertTrue(card['earned'])
         self.assertIsNotNone(card['earned_at'])
 
     def test_hidden_unearned_not_shown(self):
-        """Скрытое достижение до получения в профиле НЕ показывается (в отличие от общих)."""
         AchievementDefinition.objects.create(
             code='secret_x', kind='single', visibility='hidden', group='Секреты',
             title='Тайна', description='?', source_type='auto',
         )
         user = f.make_user()
-        groups = build_profile_achievements(user, viewer_is_owner=True)
-        all_codes = {c['code'] for g in groups for c in g['items']}
-        self.assertNotIn('secret_x', all_codes)
+        codes = {c['code'] for c in self._cards(user)}
+        self.assertNotIn('secret_x', codes)
 
-    def test_hidden_earned_shown_with_holders_count_not_percent(self):
-        """Скрытое полученное показывается; у него абсолютное число держателей, а не %."""
+    def test_hidden_series_step_unearned_not_shown(self):
+        """У скрытого series незакрытые ступени НЕ показываются (только полученные)."""
+        d = AchievementDefinition.objects.create(
+            code='secret_series', kind='series', visibility='hidden', group='Секреты',
+            title='Тайный ряд', source_type='auto',
+            series_steps=[{'value': 1, 'label': '1'}, {'value': 2, 'label': '2'}],
+        )
+        user = f.make_user()
+        dc.grant_achievement(user, d, series_value=1)  # взята только 1-я
+        cards = [c for c in self._cards(user) if c['title'] == 'Тайный ряд']
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0]['step_value'], 1)
+
+    def test_hidden_earned_holders_count_not_percent(self):
         d = AchievementDefinition.objects.create(
             code='secret_y', kind='single', visibility='hidden', group='Секреты',
-            title='Тайна 2', description='?', source_type='auto',
+            title='Тайна 2', source_type='auto',
         )
         user = f.make_user()
         dc.grant_achievement(user, d, series_value=None)
         dc.recompute_achievement_stat(d)
-        groups = build_profile_achievements(user, viewer_is_owner=True)
-        card = next(c for g in groups for c in g['items'] if c['code'] == 'secret_y')
-        self.assertTrue(card['earned'])
+        card = next(c for c in self._cards(user) if c['code'] == 'secret_y')
         self.assertIsNone(card['holders_percent'])
         self.assertEqual(card['holders_count'], 1)
 
-    def test_series_card_next_step_and_max(self):
-        user = f.make_user()
-        event = f.make_event()
-        _attend(user, event, hours=60)
-        from blog.services.stats import recalc_user_aggregates
-        recalc_user_aggregates(user)
-        groups = build_profile_achievements(user, viewer_is_owner=True)
-        card = next(c for g in groups for c in g['items'] if c['code'] == 'hours_total')
-        self.assertEqual(card['current_step'], 50)          # взято 10 и 50 → текущая 50
-        self.assertEqual(card['next_step_value'], 100)      # следующая невзятая
-        self.assertEqual(card['max_step'], 1000)
-
-    def test_series_all_steps_done_no_next(self):
-        user = f.make_user()
-        event = f.make_event()
-        _attend(user, event, hours=1000)
-        from blog.services.stats import recalc_user_aggregates
-        recalc_user_aggregates(user)
-        groups = build_profile_achievements(user, viewer_is_owner=True)
-        card = next(c for g in groups for c in g['items'] if c['code'] == 'hours_total')
-        self.assertEqual(card['current_step'], 1000)
-        self.assertIsNone(card['next_step_value'])
-
     def test_earned_sorted_before_locked(self):
-        """Внутри группы полученные карточки идут выше незакрытых."""
-        user = f.make_user()  # profile_complete получит (полный профиль) — earned;
-        recalc_user_achievements(user)  # verified_account — нет (locked) в группе «Профиль»
+        user = f.make_user()
+        recalc_user_achievements(user)
         groups = build_profile_achievements(user, viewer_is_owner=True)
         profile_grp = next(g for g in groups if g['group'] == 'Профиль')
         earned_flags = [c['earned'] for c in profile_grp['items']]
-        # Все earned=True идут раньше любого earned=False.
         self.assertEqual(earned_flags, sorted(earned_flags, reverse=True))
 
     def test_percent_none_when_no_denominator(self):
-        """Нет живых держателей (никто не участвовал) → процент None, без деления на ноль."""
         user = f.make_user()  # без участий — denominator=0
-        groups = build_profile_achievements(user, viewer_is_owner=True)
-        card = next(c for g in groups for c in g['items'] if c['code'] == 'hours_total')
+        card = next(c for c in self._cards(user) if c['title'] == 'Волонтёрские часы')
         self.assertIsNone(card['holders_percent'])
 
     def test_holders_percent_present_for_common(self):
         user = f.make_user()
-        event = f.make_event()
-        _attend(user, event, hours=1)
+        _attend(user, f.make_event(), hours=1)
         recalc_user_achievements(user)
         dc.recompute_achievement_stat(AchievementDefinition.objects.get(code='first_event'))
-        groups = build_profile_achievements(user, viewer_is_owner=True)
-        card = next(c for g in groups for c in g['items'] if c['code'] == 'first_event')
+        card = next(c for c in self._cards(user) if c['code'] == 'first_event')
         self.assertIsNotNone(card['holders_percent'])
 
 
-class ProfilePageRenderTests(TestCase):
-    def test_own_profile_shows_achievements_block(self):
+class AchievementsPageTests(TestCase):
+    def test_profile_has_achievements_button(self):
+        """На профиле есть кнопка перехода на страницу достижений."""
         from django.urls import reverse
         user = f.make_user()
-        event = f.make_event()
-        _attend(user, event, hours=1)
-        recalc_user_achievements(user)
         self.client.force_login(user)
         r = self.client.get(reverse('profile_detail', args=[user.id]))
         self.assertEqual(r.status_code, 200)
-        self.assertContains(r, 'Достижения')
-        self.assertContains(r, 'data-achievement')
-        # Полученное «Первое мероприятие» — earned-класс; незакрытые общие — тоже видны.
-        self.assertContains(r, 'achievement--earned')
-        self.assertContains(r, 'achievement--locked')
-        # Попап «как получить» с data-полями (иконка/описание/дата/держатели) отрендерен.
-        self.assertContains(r, 'data-achievement-popup')
-        self.assertContains(r, 'data-ach-desc')
-        self.assertContains(r, 'data-ach-earned')
+        self.assertContains(r, reverse('profile_achievements', args=[user.id]))
+        self.assertContains(r, 'Мои достижения')
 
-    def test_manager_sees_volunteer_achievements(self):
-        """Менеджер на чужом профиле тоже видит блок достижений волонтёра."""
+    def test_achievements_page_renders_cards_and_popup(self):
+        from django.urls import reverse
+        user = f.make_user()
+        _attend(user, f.make_event(), hours=1)
+        recalc_user_achievements(user)
+        self.client.force_login(user)
+        r = self.client.get(reverse('profile_achievements', args=[user.id]))
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'data-achievement')
+        self.assertContains(r, 'achievement--earned')   # first_event получено
+        self.assertContains(r, 'achievement--locked')   # незакрытые ступени
+        self.assertContains(r, 'data-achievement-popup')
+        self.assertContains(r, 'data-ach-tier')
+        # Рамка по уровню — есть tier-классы.
+        self.assertContains(r, 'ach-tier--')
+
+    def test_manager_can_view_volunteer_achievements(self):
         from django.urls import reverse
         manager = f.make_manager()
         volunteer = f.make_user()
-        event = f.make_event()
-        _attend(volunteer, event, hours=1)
+        _attend(volunteer, f.make_event(), hours=1)
         recalc_user_achievements(volunteer)
         self.client.force_login(manager)
-        r = self.client.get(reverse('profile_detail', args=[volunteer.id]))
+        r = self.client.get(reverse('profile_achievements', args=[volunteer.id]))
         self.assertEqual(r.status_code, 200)
-        self.assertContains(r, 'Достижения')
         self.assertContains(r, 'achievement--earned')
+
+    def test_stranger_cannot_view_others_achievements(self):
+        """Посторонний волонтёр не видит чужую страницу достижений (403)."""
+        from django.urls import reverse
+        me = f.make_user()
+        other = f.make_user()
+        self.client.force_login(me)
+        r = self.client.get(reverse('profile_achievements', args=[other.id]))
+        self.assertEqual(r.status_code, 403)
 
 
 class EvaluatorTests(TestCase):
@@ -617,3 +673,61 @@ class HookIntegrationTests(TestCase):
         self.assertIn('first_event', codes)
         self.assertIn('hours_total', codes)   # ступень 10 взята
         self.assertIn('events_total', codes)  # ступень 1 взята
+
+
+class TierRegistryTests(TestCase):
+    def test_tier_meta_numeric(self):
+        from blog.services.achievements import tier_meta
+        self.assertEqual(tier_meta(1)['css_class'], 'ach-tier--bronze')
+        self.assertEqual(tier_meta(6)['css_class'], 'ach-tier--violet')
+
+    def test_tier_meta_unique(self):
+        from blog.services.achievements import tier_meta
+        self.assertEqual(tier_meta('event')['css_class'], 'ach-tier--event')
+        self.assertEqual(tier_meta('course')['css_class'], 'ach-tier--course')
+
+    def test_tier_meta_unknown_is_none(self):
+        from blog.services.achievements import tier_meta
+        self.assertEqual(tier_meta(None)['css_class'], 'ach-tier--none')
+        self.assertEqual(tier_meta('bogus')['css_class'], 'ach-tier--none')
+
+    def test_tier_above_max_clamped(self):
+        """Ступень series выше 6 всё равно красится топовым уровнем (страховка)."""
+        from blog.services.achievements import tier_meta
+        self.assertEqual(tier_meta(9)['css_class'], 'ach-tier--violet')
+
+
+class AllAchievementsAccountTests(TestCase):
+    def test_command_creates_account_with_all_achievements(self):
+        from django.core.management import call_command
+        from blog.models import User
+        from blog.services.achievements import ALL_ACHIEVEMENTS_LOGIN
+        call_command('create_all_achievements_account')
+        user = User.objects.get(login=ALL_ACHIEVEMENTS_LOGIN)
+        # Волонтёр (без ролей ТЛ/менеджера).
+        self.assertFalse(user.is_active_team_leader())
+        self.assertFalse(user.is_active_manager())
+        # Есть строка на КАЖДУЮ ступень каждого series + каждое single.
+        total_targets = 0
+        for d in dc.get_active_definitions():
+            total_targets += len(d.steps()) if d.kind == 'series' else 1
+        self.assertEqual(UserAchievement.objects.filter(user=user).count(), total_targets)
+
+    def test_command_idempotent_and_syncs_new(self):
+        from django.core.management import call_command
+        from blog.models import User
+        from blog.services.achievements import ALL_ACHIEVEMENTS_LOGIN
+        call_command('create_all_achievements_account')
+        user = User.objects.get(login=ALL_ACHIEVEMENTS_LOGIN)
+        before = UserAchievement.objects.filter(user=user).count()
+        # Появилось новое достижение — повторный запуск доначисляет его витрине.
+        AchievementDefinition.objects.create(
+            code='brand_new', kind='single', visibility='common', group='Новое',
+            title='Новое', source_type='auto', tier='3',
+        )
+        call_command('create_all_achievements_account')
+        after = UserAchievement.objects.filter(user=user).count()
+        self.assertEqual(after, before + 1)
+        self.assertTrue(
+            UserAchievement.objects.filter(user=user, achievement__code='brand_new').exists()
+        )

@@ -64,6 +64,7 @@ urlpatterns = [
     path('applications/import/commit/', views.import_commit, name='import_commit'),
 
     path('profile/<int:user_id>/', views.profile_detail, name='profile_detail'),
+    path('profile/<int:user_id>/achievements/', views.profile_achievements, name='profile_achievements'),
     path('profile/<int:user_id>/comment/', views.profile_comment_add, name='profile_comment_add'),
     path('profile/<int:user_id>/letters/<int:event_id>/', views.letter_view, name='letter_view'),
     path('profile/<int:user_id>/letters/download-all/', views.letters_download_all, name='letters_download_all'),

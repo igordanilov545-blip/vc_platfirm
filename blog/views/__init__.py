@@ -14,7 +14,7 @@ from .auth import (  # noqa: F401
     logout_view, webapp_entry, webapp_auth, verify_telegram_start,
 )
 from .profiles import (  # noqa: F401
-    profile_edit, complete_profile, profile_detail, profile_achievements, profile_comment_add,
+    profile_edit, complete_profile, profile_detail, profile_achievements, profile_stats, profile_comment_add,
     letter_view, letters_download_all, external_experience_add, external_experience_edit, external_experience_delete,
     public_experience,
 )

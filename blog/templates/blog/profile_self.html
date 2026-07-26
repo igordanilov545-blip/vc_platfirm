@@ -7,6 +7,7 @@
     <h1>{{ target.full_name }}</h1>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <a href="{% url 'profile_achievements' target.id %}" class="btn secondary" data-tour="profile-achievements">🏅 Мои достижения{% if achievement_earned_count %} <span class="pill success" style="margin-left:4px;">{{ achievement_earned_count }}</span>{% endif %}</a>
+        <a href="{% url 'profile_stats' target.id %}" class="btn secondary">📊 Моя статистика</a>
         <a href="{% url 'profile_edit' %}" class="btn secondary" data-tour="profile-edit">✎ Редактировать профиль</a>
     </div>
 </div>

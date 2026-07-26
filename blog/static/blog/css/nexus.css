@@ -1783,3 +1783,33 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
 @media (max-width: 720px) {
   .achievement-grid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
 }
+
+/* ======================================================================
+   Карточки периодической статистики (страница «Моя статистика»). Каждая — слепок
+   за период под шаринг (месяц/сезон ПГАС). Пустой период приглушён.
+   ====================================================================== */
+.stats-section-title {
+  margin: 20px 0 10px; font-size: 13px; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-tertiary);
+}
+.stats-grid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.stat-card {
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  background: var(--bg-card); padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.stat-card--empty { opacity: 0.55; }
+.stat-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.stat-card-title { font-size: 16px; font-weight: 700; }
+.stat-card-subtitle { font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.03em; }
+.stat-card-empty-note { font-size: 13px; color: var(--text-tertiary); }
+.stat-card-numbers {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: 10px 8px;
+}
+.stat-card-num { display: flex; flex-direction: column; align-items: flex-start; }
+.stat-card-num .v { font-size: 22px; font-weight: 800; line-height: 1.1; color: var(--accent, #7c5cff); }
+.stat-card-num .l { font-size: 11px; color: var(--text-secondary); }
+.stat-card-extra { font-size: 12.5px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 4px; }

@@ -227,10 +227,6 @@
         },
     };
 </script>
-{# Поведение интерфейса вынесено из base.html в модули static/blog/js/ (Фаза 4 рефакторинга,
-   см. static/blog/js/README.md). Порядок ВАЖЕН: модуль может вызывать функции предыдущих
-   (напр. selects инициализирует форму меро из forms; init*(document)-самовызовы в конце
-   каждого модуля инициализируют текущую страницу). Всё в глобальном scope, как раньше. #}
 <script src="{% static 'blog/js/ui.js' %}"></script>
 <script src="{% static 'blog/js/modal.js' %}"></script>
 <script src="{% static 'blog/js/forms.js' %}"></script>

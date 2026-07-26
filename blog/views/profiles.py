@@ -308,6 +308,24 @@ def profile_achievements(request, user_id):
     })
 
 @login_required
+def profile_stats(request, user_id):
+    """Страница «Моя статистика» — карточки за периоды (месяц/сезон ПГАС) под шаринг
+    (achievements.md §«Периодическая статистика»). Доступ — как к профилю."""
+    target = get_object_or_404(User, pk=user_id)
+    is_owner = request.user.id == target.id
+    if not (is_owner or has_extended_access_to_profile(request.user, target)):
+        raise PermissionDenied('Нет доступа к статистике этого пользователя.')
+
+    from blog.services.stats_cards import build_period_stats
+    data = build_period_stats(target)
+    return render(request, 'blog/profile_stats.html', {
+        'target': target,
+        'is_owner': is_owner,
+        'months': data['months'],
+        'season': data['season'],
+    })
+
+@login_required
 @xframe_options_sameorigin
 def letter_view(request, user_id, event_id):
     """Благодарственное письмо — генерируется на лету, PDF не хранится

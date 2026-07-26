@@ -254,13 +254,49 @@ EVALUATORS = {
 }
 
 
+# Префиксы ДИНАМИЧЕСКИХ достижений (по одному на объект справочника). Их код
+# параметризован id объекта (category_3, organization_7), а прогресс считается по
+# участиям волонтёра в этом конкретном объекте. Сами определения заводятся/удаляются
+# сигналами при создании/удалении объекта (см. ensure_*_achievement / signals.py).
+def ev_category_count(user, category_id):
+    """Сколько РАЗНЫХ меро данной категории посетил волонтёр (series по категории)."""
+    return (
+        _attended(user)
+        .filter(event_day__event__category_map__category_id=category_id)
+        .values('event_day__event').distinct().count()
+    )
+
+
+def ev_organization_count(user, organization_id):
+    """Сколько РАЗНЫХ меро данной организации посетил волонтёр (series по организации)."""
+    return (
+        _attended(user)
+        .filter(event_day__event__organization_id=organization_id)
+        .values('event_day__event').distinct().count()
+    )
+
+
+# Префикс → функция (user, obj_id) для параметризованных динамических достижений.
+DYNAMIC_EVALUATORS = {
+    'category_': ev_category_count,
+    'organization_': ev_organization_count,
+}
+
+
 def progress_for(user, definition):
     """Текущий прогресс пользователя по auto-достижению (int для series, bool для single).
-    None — если для кода нет эвалуатора (движок такое достижение не считает)."""
+    None — если для кода нет эвалуатора (движок такое достижение не считает — напр.
+    точечные event_<id> выдаются не движком, а хуком завершения меро)."""
     fn = EVALUATORS.get(definition.code)
-    if fn is None:
-        return None
-    return fn(user)
+    if fn is not None:
+        return fn(user)
+    # Динамические: code = "<prefix><obj_id>" (category_3 / organization_7).
+    for prefix, dyn_fn in DYNAMIC_EVALUATORS.items():
+        if definition.code.startswith(prefix):
+            rest = definition.code[len(prefix):]
+            if rest.isdigit():
+                return dyn_fn(user, int(rest))
+    return None
 
 
 def recalc_user_achievements(user, *, notify=False):
@@ -299,6 +335,94 @@ def recalc_user_achievements(user, *, notify=False):
             user.id, len(newly), notify, [ua.achievement.code for ua in newly],
         )
     return newly
+
+
+# ======================================================================
+# Динамические достижения: по одному на каждый объект справочника (категория,
+# организация — series-ряд; мероприятие — точечный single). Заводятся/удаляются
+# сигналами при создании/удалении объекта (blog/signals.py), чтобы «в таблице есть
+# объект → есть и достижение» держалось само собой.
+# ======================================================================
+# Разумные дефолтные ступени для «N раз в категории/с организацией».
+_CATEGORY_STEPS = [1, 3, 5, 10, 25]
+_ORGANIZATION_STEPS = [1, 3, 5, 10]
+
+
+def _steps_json(values):
+    labels = {1: '1 мероприятие'}
+    return [{'value': v, 'label': labels.get(v, f'{v} мероприятий')} for v in values]
+
+
+def ensure_category_achievement(category):
+    """Создать/обновить series-достижение под категорию (идемпотентно). Название
+    отражает текущее имя категории (при переименовании — обновляем title)."""
+    d, _ = dc.upsert_definition(
+        code=f'category_{category.id}',
+        defaults=dict(
+            kind='series', visibility='common', group='Категории',
+            title=f'Волонтёр категории «{category.name}»',
+            description=f'Участвуй в мероприятиях категории «{category.name}».',
+            icon='🎯', series_steps=_steps_json(_CATEGORY_STEPS),
+            source_type='auto', is_active=True,
+        ),
+    )
+    return d
+
+
+def ensure_organization_achievement(organization):
+    d, _ = dc.upsert_definition(
+        code=f'organization_{organization.id}',
+        defaults=dict(
+            kind='series', visibility='common', group='Организации',
+            title=f'Партнёр «{organization.name}»',
+            description=f'Участвуй в мероприятиях организации «{organization.name}».',
+            icon='🤝', series_steps=_steps_json(_ORGANIZATION_STEPS),
+            source_type='auto', is_active=True,
+        ),
+    )
+    return d
+
+
+def ensure_event_achievement(event):
+    """Точечное достижение «был на конкретном мероприятии» (hidden, tier 'event').
+    Выдаётся не движком, а при завершении меро (grant_event_participants)."""
+    d, _ = dc.upsert_definition(
+        code=f'event_{event.id}',
+        defaults=dict(
+            kind='single', visibility='hidden', group='Мероприятия',
+            title=f'Участник: {event.title}',
+            description=f'Ты участвовал в мероприятии «{event.title}».',
+            icon='🎪', series_steps=None,
+            source_type='auto', is_active=True, tier='event',
+        ),
+    )
+    return d
+
+
+def remove_dynamic_achievement(code):
+    """Удалить динамическое достижение по коду (при удалении объекта). Каскадом уйдут
+    выданные user_achievements и agregate-строка (FK on_delete=CASCADE)."""
+    dc.delete_definition_by_code(code)
+
+
+def grant_event_participants(event, *, granted_by=None):
+    """Выдать точечное достижение event_<id> всем волонтёрам с явкой (attended) на этом
+    меро. Зовётся при завершении меро (event_close). Идемпотентно."""
+    d = ensure_event_achievement(event)
+    user_ids = (
+        dc.participations_qs().filter(event_day__event=event, status='attended')
+        .values_list('user_id', flat=True).distinct()
+    )
+    from blog.models import User
+    granted = 0
+    for user in User.objects.filter(id__in=list(user_ids)):
+        if not dc.has_user_achievement(user, d, None):
+            dc.grant_achievement(user, d, series_value=None, granted_by=granted_by)
+            granted += 1
+    dc.recompute_achievement_stat(d)
+    if granted:
+        logger.info('Достижение за меро выдано участникам: event=%s code=%s count=%s', event.id, d.code, granted)
+    return granted
 
 
 # Технический демо-аккаунт: волонтёр, у которого есть ВСЕ существующие достижения (все
@@ -346,6 +470,26 @@ def _card_tier(tier):
     """Дополняет карточку метаданными уровня (tier_name/tier_class) по ключу tier."""
     meta = tier_meta(tier)
     return {'tier': tier, 'tier_name': meta['name'], 'tier_class': meta['css_class']}
+
+
+_MONTHS_RU = ['', 'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+              'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
+
+
+def current_season_label():
+    """Человекочитаемый период текущего сезона ПГАС: «сен 2025 — фев 2026» (месяц
+    старта — месяц конца, годы). None, если активного сезона нет. Используется, чтобы
+    у сезонных достижений в явном виде было написано, за КАКОЙ это сезон."""
+    from blog.services.stats import current_season
+    season = current_season()
+    if not season:
+        return None
+    s = season.start_season
+    start = f'{_MONTHS_RU[s.month][:3]} {s.year}'
+    if season.end_season:
+        e = season.end_season
+        return f'{start} — {_MONTHS_RU[e.month][:3]} {e.year}'
+    return f'{start} — …'
 
 
 def build_profile_achievements(user, *, viewer_is_owner=False):
@@ -397,8 +541,19 @@ def build_profile_achievements(user, *, viewer_is_owner=False):
         groups.setdefault(grp, {'group': grp, 'items': []})
         groups[grp]['items'].append(card)
 
+    # Сезонные достижения — в явном виде дописываем период текущего сезона в название/
+    # описание («за сезон сен 2025 — фев 2026»), чтобы было понятно, за какой это сезон.
+    season_label = current_season_label()
+    season_codes = {'hours_season', 'events_season'}
+
+    def _titled(d):
+        if season_label and d.code in season_codes:
+            return f'{d.title} ({season_label})', f'{d.description} Текущий сезон: {season_label}.'
+        return d.title, d.description
+
     for d in definitions:
         holders, percent = _holders(d)
+        title, description = _titled(d)
 
         if d.kind == 'series':
             # Одна карточка на ступень. Ступень взята, если по паре (d, step) есть строка.
@@ -409,10 +564,10 @@ def build_profile_achievements(user, *, viewer_is_owner=False):
                     continue
                 card = {
                     'code': f'{d.code}:{step_value}',
-                    'title': d.title,
+                    'title': title,
                     'step_value': step_value,
                     'step_label': step_label,
-                    'description': d.description,
+                    'description': description,
                     'icon': d.icon,
                     'kind': 'series',
                     'visibility': d.visibility,
@@ -433,10 +588,10 @@ def build_profile_achievements(user, *, viewer_is_owner=False):
             tier_key = int(raw) if raw.isdigit() else (raw or None)
             card = {
                 'code': d.code,
-                'title': d.title,
+                'title': title,
                 'step_value': None,
                 'step_label': None,
-                'description': d.description,
+                'description': description,
                 'icon': d.icon,
                 'kind': 'single',
                 'visibility': d.visibility,

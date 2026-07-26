@@ -1,0 +1,27 @@
+{% comment %}Одна карточка статистики за период. Ожидает card (dict из build_period_stats).
+Пустой период (нет участий) приглушаем, но показываем — «тихий» месяц тоже часть истории.{% endcomment %}
+<div class="stat-card{% if card.empty %} stat-card--empty{% endif %}">
+    <div class="stat-card-head">
+        <div class="stat-card-title">{{ card.title }}</div>
+        <div class="stat-card-subtitle">{{ card.subtitle }}</div>
+    </div>
+    {% if card.empty %}
+    <div class="stat-card-empty-note">Без активности</div>
+    {% else %}
+    <div class="stat-card-numbers">
+        <div class="stat-card-num"><span class="v">{{ card.hours }}</span><span class="l">часов</span></div>
+        <div class="stat-card-num"><span class="v">{{ card.events }}</span><span class="l">меро</span></div>
+        <div class="stat-card-num"><span class="v">{{ card.people_helped }}</span><span class="l">людям помог</span></div>
+        <div class="stat-card-num"><span class="v">{{ card.categories }}</span><span class="l">категорий</span></div>
+        <div class="stat-card-num"><span class="v">{{ card.organizations }}</span><span class="l">организаций</span></div>
+    </div>
+    <div class="stat-card-extra">
+        {% if card.favourite_category %}
+        <div>❤️ Любимая категория: <b>{{ card.favourite_category.name }}</b> ({{ card.favourite_category.events }} меро)</div>
+        {% endif %}
+        {% if card.fastest_application_minutes is not None %}
+        <div>⚡ Самая быстрая заявка: <b>{{ card.fastest_application_minutes }} мин</b> после поста</div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>

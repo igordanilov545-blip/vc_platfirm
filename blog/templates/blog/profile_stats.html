@@ -1,0 +1,28 @@
+{% extends 'blog/base.html' %}
+{% block title %}Статистика — {{ target.full_name }}{% endblock %}
+{% block content %}
+{% comment %}Страница «Моя статистика» — карточки-слепки за периоды (месяц/сезон ПГАС)
+под шаринг (achievements.md §«Периодическая статистика»). Каждая карточка самодостаточна,
+чтобы её можно было «фоточкой» выложить в канал. Данные — build_period_stats.{% endcomment %}
+<div class="page-header">
+    <div>
+        <h1>📊 {% if is_owner %}Моя статистика{% else %}Статистика: {{ target.full_name }}{% endif %}</h1>
+        <p style="color:var(--text-secondary); margin:4px 0 0;">Итоги по периодам — можно поделиться</p>
+    </div>
+    <a href="{% url 'profile_detail' target.id %}" class="btn secondary">← В профиль</a>
+</div>
+
+{% if season %}
+<h3 class="stats-section-title">Сезон ПГАС</h3>
+<div class="stats-grid">
+    {% include 'blog/partials/_stat_card.html' with card=season %}
+</div>
+{% endif %}
+
+<h3 class="stats-section-title">По месяцам</h3>
+<div class="stats-grid">
+    {% for card in months %}
+        {% include 'blog/partials/_stat_card.html' with card=card %}
+    {% endfor %}
+</div>
+{% endblock %}

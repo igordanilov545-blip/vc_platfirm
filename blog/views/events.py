@@ -667,6 +667,17 @@ def event_close(request, event_id):
             'Мероприятие завершено: event=%s people_helped=%s by=%s',
             event.id, event.people_helped, actor(request.user),
         )
+        # Завершение меро — момент выдачи точечного достижения «был на этом меро» всем с
+        # явкой + пересчёт остальных достижений участников (people_helped стал известен,
+        # достижения по категории/организации/меро могли дозакрыться).
+        from blog.services.achievements import grant_event_participants, recalc_user_achievements
+        grant_event_participants(event, granted_by=request.user)
+        for uid in dc.participations_qs().filter(
+            event_day__event=event, status='attended'
+        ).values_list('user_id', flat=True).distinct():
+            user = dc.get_user_by_id(uid)
+            if user:
+                recalc_user_achievements(user)
         messages.success(request, f'Мероприятие «{event.title}» завершено.')
         return redirect('event_detail', event_id=event.id)
 

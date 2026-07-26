@@ -109,7 +109,8 @@ from .letters import (  # noqa: F401
 )
 from .achievements import (  # noqa: F401
     achievement_definitions_qs, get_active_definitions, get_definition_by_code,
-    create_definition, user_achievements_qs, get_user_achievements,
+    create_definition, upsert_definition, delete_definition_by_code,
+    user_achievements_qs, get_user_achievements,
     has_user_achievement, grant_achievement, recompute_achievement_stat,
     get_achievement_stats_map, count_stats_denominator,
 )
@@ -190,7 +191,8 @@ __all__ = [
     'application_change_logs_qs', 'user_comments_qs', 'organizer_interactions_qs',
     'web_sessions_qs', 'web_page_views_qs', 'button_click_events_qs', 'bot_session_pings_qs',
     'achievement_definitions_qs', 'get_active_definitions', 'get_definition_by_code',
-    'create_definition', 'user_achievements_qs', 'get_user_achievements',
+    'create_definition', 'upsert_definition', 'delete_definition_by_code',
+    'user_achievements_qs', 'get_user_achievements',
     'has_user_achievement', 'grant_achievement', 'recompute_achievement_stat',
     'get_achievement_stats_map', 'count_stats_denominator',
     'get_full_table', 'create_record_generic',

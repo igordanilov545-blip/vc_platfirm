@@ -5,7 +5,10 @@
 Владелец видит отдельный файл profile_self.html.{% endcomment %}
 <div class="page-header">
     <h1>{{ target.full_name }}</h1>
-    <a href="{% url 'profile_achievements' target.id %}" class="btn secondary">🏅 Достижения{% if achievement_earned_count %} <span class="pill success" style="margin-left:4px;">{{ achievement_earned_count }}</span>{% endif %}</a>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a href="{% url 'profile_achievements' target.id %}" class="btn secondary">🏅 Достижения{% if achievement_earned_count %} <span class="pill success" style="margin-left:4px;">{{ achievement_earned_count }}</span>{% endif %}</a>
+        <a href="{% url 'profile_stats' target.id %}" class="btn secondary">📊 Статистика</a>
+    </div>
 </div>
 
 {% comment %}Верх: ник + статус-пилюли (роль, блеклист) и действия по верификации/ЧС.{% endcomment %}

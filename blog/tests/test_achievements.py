@@ -754,3 +754,165 @@ class AllAchievementsAccountTests(TestCase):
         self.assertTrue(
             UserAchievement.objects.filter(user=user, achievement__code='brand_new').exists()
         )
+
+
+class DynamicAchievementTests(TestCase):
+    """Достижения на каждый объект справочника: создаются/удаляются сигналами."""
+
+    def test_category_creation_creates_definition(self):
+        cat = f.make_category()
+        self.assertTrue(AchievementDefinition.objects.filter(code=f'category_{cat.id}').exists())
+
+    def test_category_deletion_removes_definition(self):
+        cat = f.make_category()
+        code = f'category_{cat.id}'
+        self.assertTrue(AchievementDefinition.objects.filter(code=code).exists())
+        cat.delete()
+        self.assertFalse(AchievementDefinition.objects.filter(code=code).exists())
+
+    def test_organization_creation_creates_definition(self):
+        org = f.make_organization()
+        self.assertTrue(AchievementDefinition.objects.filter(code=f'organization_{org.id}').exists())
+
+    def test_organization_deletion_removes_definition(self):
+        org = f.make_organization()
+        code = f'organization_{org.id}'
+        org.delete()
+        self.assertFalse(AchievementDefinition.objects.filter(code=code).exists())
+
+    def test_event_creation_creates_hidden_event_definition(self):
+        event = f.make_event()
+        d = AchievementDefinition.objects.filter(code=f'event_{event.id}').first()
+        self.assertIsNotNone(d)
+        self.assertEqual(d.visibility, 'hidden')
+        self.assertEqual(d.tier, 'event')
+
+    def test_category_rename_updates_title(self):
+        cat = f.make_category(name='Старое имя')
+        cat.name = 'Новое имя'
+        cat.save()
+        d = AchievementDefinition.objects.get(code=f'category_{cat.id}')
+        self.assertIn('Новое имя', d.title)
+
+    def test_category_series_progress(self):
+        """Участие в 3 разных меро одной категории → взяты ступени 1 и 3 её достижения."""
+        cat = f.make_category()
+        user = f.make_user()
+        for _ in range(3):
+            event = f.make_event()
+            EventCategoryMap.objects.create(event=event, category=cat)
+            _attend(user, event, hours=1)
+        recalc_user_achievements(user)
+        steps = set(
+            UserAchievement.objects.filter(user=user, achievement__code=f'category_{cat.id}')
+            .values_list('series_value', flat=True)
+        )
+        self.assertIn(1, steps)
+        self.assertIn(3, steps)
+        self.assertNotIn(5, steps)
+
+    def test_organization_series_progress(self):
+        org = f.make_organization()
+        user = f.make_user()
+        for _ in range(3):
+            _attend(user, f.make_event(organization=org), hours=1)
+        recalc_user_achievements(user)
+        steps = set(
+            UserAchievement.objects.filter(user=user, achievement__code=f'organization_{org.id}')
+            .values_list('series_value', flat=True)
+        )
+        self.assertIn(3, steps)
+
+
+class EventCompletionAchievementTests(TestCase):
+    def test_event_badge_granted_on_completion(self):
+        """При завершении меро точечное достижение event_<id> выдаётся всем с явкой."""
+        from django.urls import reverse
+        manager = f.make_manager()
+        volunteer = f.make_user()
+        event = f.make_event()
+        shift = f.make_shift(event, days_from_now=-2)
+        f.make_participation(volunteer, shift, status='attended', hours=4)
+        self.client.force_login(manager)
+        # Завершаем меро через вьюху (people_helped обязателен).
+        self.client.post(reverse('event_close', args=[event.id]), {'people_helped': '10'})
+        self.assertTrue(
+            UserAchievement.objects.filter(
+                user=volunteer, achievement__code=f'event_{event.id}'
+            ).exists()
+        )
+
+    def test_no_badge_for_absent(self):
+        from django.urls import reverse
+        manager = f.make_manager()
+        absent = f.make_user()
+        event = f.make_event()
+        shift = f.make_shift(event, days_from_now=-2)
+        f.make_participation(absent, shift, status='absent_unexcused', hours=0)
+        self.client.force_login(manager)
+        self.client.post(reverse('event_close', args=[event.id]), {'people_helped': '5'})
+        self.assertFalse(
+            UserAchievement.objects.filter(
+                user=absent, achievement__code=f'event_{event.id}'
+            ).exists()
+        )
+
+
+class SeasonLabelTests(TestCase):
+    def test_season_label_present_when_active(self):
+        from blog.services.achievements import current_season_label
+        f.make_season(days_ago_start=30, days_ahead_end=60)
+        self.assertIsNotNone(current_season_label())
+
+    def test_season_label_none_without_season(self):
+        from blog.services.achievements import current_season_label
+        self.assertIsNone(current_season_label())
+
+    def test_season_card_title_has_period(self):
+        f.make_season(days_ago_start=30, days_ahead_end=60)
+        user = f.make_user()
+        groups = build_profile_achievements(user, viewer_is_owner=True)
+        titles = [c['title'] for g in groups for c in g['items']]
+        # Хотя бы одна сезонная карточка содержит период (год в скобках).
+        self.assertTrue(any('за сезон' in t and '(' in t for t in titles))
+
+
+class PeriodStatsTests(TestCase):
+    def test_month_card_aggregates(self):
+        from blog.services.stats_cards import build_period_stats
+        user = f.make_user()
+        event = f.make_event(people_helped=30)
+        cat = f.make_category()
+        EventCategoryMap.objects.create(event=event, category=cat)
+        # Смена в текущем месяце.
+        _attend(user, event, hours=6, days_ago=1)
+        data = build_period_stats(user)
+        current = data['months'][0]
+        self.assertEqual(current['hours'], 6)
+        self.assertEqual(current['events'], 1)
+        self.assertEqual(current['people_helped'], 30)
+        self.assertEqual(current['categories'], 1)
+        self.assertFalse(current['empty'])
+
+    def test_empty_month_marked(self):
+        from blog.services.stats_cards import build_period_stats
+        user = f.make_user()
+        data = build_period_stats(user)
+        # Без активности все месяцы пустые.
+        self.assertTrue(all(c['empty'] for c in data['months']))
+
+    def test_stats_page_renders(self):
+        from django.urls import reverse
+        user = f.make_user()
+        _attend(user, f.make_event(people_helped=10), hours=3, days_ago=1)
+        self.client.force_login(user)
+        r = self.client.get(reverse('profile_stats', args=[user.id]))
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'stat-card')
+
+    def test_stats_access_denied_for_stranger(self):
+        from django.urls import reverse
+        me = f.make_user(); other = f.make_user()
+        self.client.force_login(me)
+        r = self.client.get(reverse('profile_stats', args=[other.id]))
+        self.assertEqual(r.status_code, 403)

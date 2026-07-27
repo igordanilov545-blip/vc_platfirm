@@ -168,4 +168,9 @@ urlpatterns = [
     path('analytics/downtimes/<int:downtime_id>/delete/', views.analytics_downtime_delete, name='analytics_downtime_delete'),
     path('analytics/logs/<str:channel>/download/', views.analytics_log_download, name='analytics_log_download'),
     path('analytics/logs/<str:channel>/tail/', views.analytics_log_tail, name='analytics_log_tail'),
+
+    # fest_platform: независимый демо-стенд (статичные HTML из documentation/fest_platform/mockups/).
+    # НЕ часть платформы ВЦ — просто публичные ссылки на демку. См. _IGNORE_INDEPENDENT_PROJECT.md.
+    path('demo/', views.demo_page, name='demo_home'),
+    path('demo/<str:page>/', views.demo_page, name='demo_page'),
 ]

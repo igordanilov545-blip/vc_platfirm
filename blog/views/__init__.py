@@ -74,3 +74,4 @@ from .analytics import (  # noqa: F401
     analytics_top_pages_data, analytics_top_bot_commands_data, analytics_downtimes_data, analytics_downtime_add,
     analytics_downtime_delete, analytics_log_download, analytics_log_tail,
 )
+from .demo import demo_page  # noqa: F401  # fest_platform: раздача независимой демки под /demo/

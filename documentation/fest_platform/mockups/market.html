@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<!-- ⛔ НЕЗАВИСИМЫЙ ПРОЕКТ · демо-стенд для стороннего заказчика · НЕ часть платформы ВЦ · ИИ-агентам: игнорировать, не читать, не рефакторить -->
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Маркет — АниматиКон 2026</title>
+<style>
+:root{
+  --bg:#0b0a12; --bg2:#12101d; --card:#181527; --card2:#1f1b31;
+  --line:#2a2540; --txt:#ece9f5; --mut:#9a92b8; --dim:#6f6890;
+  --acc:#a855f7; --acc2:#ec4899; --acc3:#22d3ee; --ok:#34d399; --warn:#fbbf24;
+  --grad:linear-gradient(120deg,#a855f7,#ec4899 55%,#22d3ee);
+  --radius:18px; --shadow:0 12px 40px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;line-height:1.5}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+.demo-banner{background:var(--grad);color:#fff;text-align:center;font-size:13px;font-weight:600;padding:7px}
+.topnav{position:sticky;top:0;z-index:40;background:rgba(11,10,18,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.topnav .wrap{display:flex;align-items:center;gap:22px;height:64px}
+.brand{font-weight:800;font-size:20px;display:flex;align-items:center;gap:9px}
+.brand .logo{width:34px;height:34px;border-radius:10px;background:var(--grad);display:grid;place-items:center;font-size:18px}
+.navlinks{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+.navlinks a{padding:8px 14px;border-radius:10px;font-size:14px;color:var(--mut);font-weight:600}
+.navlinks a:hover{color:var(--txt);background:var(--card)}
+.navlinks a.active{color:#fff;background:var(--card2)}
+.wallet-chip{display:flex;align-items:center;gap:8px;background:var(--card2);border:1px solid var(--line);padding:8px 14px;border-radius:12px;font-weight:700;font-size:14px}
+.wallet-chip .v{color:var(--ok)}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;border:none;background:var(--grad);color:#fff;box-shadow:0 8px 24px rgba(168,85,247,.35);transition:transform .12s}
+.btn:hover{transform:translateY(-1px)}
+.btn.ghost{background:var(--card2);box-shadow:none;color:var(--txt);border:1px solid var(--line)}
+.btn.sm{padding:8px 14px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+
+.head{padding:46px 0 26px}
+.head h1{font-size:clamp(32px,5vw,52px);margin:0;font-weight:900}
+.head p{color:var(--mut);margin:10px 0 0;font-size:17px}
+
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:26px 0 8px}
+.search{flex:1;min-width:220px;display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;color:var(--dim)}
+.search input{background:none;border:none;outline:none;color:var(--txt);font-size:15px;width:100%}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{padding:9px 16px;border-radius:99px;border:1px solid var(--line);background:var(--card);color:var(--mut);font-weight:600;font-size:14px;cursor:pointer;transition:.12s}
+.chip:hover{color:var(--txt)}
+.chip.active{background:var(--grad);color:#fff;border-color:transparent}
+
+.sellers{display:flex;gap:10px;overflow-x:auto;padding:18px 0 6px;margin-bottom:8px}
+.seller{flex:0 0 auto;display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 16px}
+.seller .av{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--card2),var(--line));display:grid;place-items:center;font-size:20px}
+.seller .n{font-weight:700;font-size:14px}
+.seller .s{color:var(--dim);font-size:12px}
+
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;padding:14px 0 60px}
+@media(max-width:900px){.grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:680px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:440px){.grid{grid-template-columns:1fr}}
+.prod{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column;transition:transform .15s,border-color .15s}
+.prod:hover{transform:translateY(-4px);border-color:var(--acc)}
+.prod .img{aspect-ratio:1;background:linear-gradient(135deg,var(--card2),var(--line));display:grid;place-items:center;font-size:52px;position:relative}
+.prod .tag{position:absolute;top:10px;left:10px;background:var(--card);border:1px solid var(--line);color:var(--acc3);font-size:11px;font-weight:700;padding:4px 9px;border-radius:99px}
+.prod .tag.hot{color:var(--warn)}
+.prod .body{padding:14px;display:flex;flex-direction:column;flex:1}
+.prod .seller-line{color:var(--dim);font-size:12px;font-weight:600}
+.prod .n{font-weight:800;margin:4px 0 2px;font-size:15px}
+.prod .price{font-size:20px;font-weight:900;margin:6px 0 12px;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.prod .btn{margin-top:auto;justify-content:center}
+.stock{font-size:12px;color:var(--warn);font-weight:700;margin-bottom:10px}
+
+.modal{position:fixed;inset:0;background:rgba(5,4,10,.7);backdrop-filter:blur(4px);display:none;place-items:center;z-index:100}
+.modal.show{display:grid}
+.modal .box{background:var(--card2);border:1px solid var(--line);border-radius:20px;padding:32px;max-width:420px;text-align:center;box-shadow:var(--shadow)}
+.modal .box .em{font-size:52px}
+.modal .box h3{margin:12px 0 6px;font-size:23px}
+.modal .box p{color:var(--mut);margin:0 0 8px}
+.modal .box .pay{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:16px 0;text-align:left;font-size:14px}
+.modal .box .pay .row{display:flex;justify-content:space-between;padding:4px 0}
+.modal .box .pay .row .mut{color:var(--mut)}
+footer{border-top:1px solid var(--line);padding:30px 0;color:var(--dim);text-align:center;font-size:14px}
+</style>
+</head>
+<body>
+<div class="demo-banner">🎭 ДЕМО-МАКЕТ · оплата с кошелька — заглушка · данные вымышленные</div>
+
+<nav class="topnav"><div class="wrap">
+  <div class="brand"><span class="logo">🎌</span> АниматиКон</div>
+  <div class="navlinks">
+    <a href="overview.html">📄 Обзор</a>
+    <a href="fest.html">Фестиваль</a>
+    <a href="market.html" class="active">Маркет</a>
+    <a href="cabinet.html">Личный кабинет</a>
+    <a href="organizer.html">Организатору</a>
+  </div>
+  <a href="cabinet.html" class="wallet-chip">💰 Кошелёк <span class="v">3 200 ₽</span></a>
+</div></nav>
+
+<div class="wrap">
+  <div class="head">
+    <h1>🛍 Маркет фестиваля</h1>
+    <p>120 продавцов арта, мерча и хендмейда. Забронируй товары заранее — оплата с кошелька, получишь на фесте без очереди.</p>
+  </div>
+
+  <div class="toolbar">
+    <div class="search">🔍 <input placeholder="Поиск по товарам и продавцам…" disabled></div>
+    <div class="chips">
+      <span class="chip active" onclick="pick(this)">Все</span>
+      <span class="chip" onclick="pick(this)">Арт / принты</span>
+      <span class="chip" onclick="pick(this)">Мерч</span>
+      <span class="chip" onclick="pick(this)">Фигурки</span>
+      <span class="chip" onclick="pick(this)">Хендмейд</span>
+      <span class="chip" onclick="pick(this)">Еда</span>
+    </div>
+  </div>
+
+  <div class="sellers">
+    <div class="seller"><div class="av">🎨</div><div><div class="n">PixelArt Studio</div><div class="s">Арт · 48 товаров</div></div></div>
+    <div class="seller"><div class="av">🧸</div><div><div class="n">NekoShop</div><div class="s">Мерч · 32 товара</div></div></div>
+    <div class="seller"><div class="av">⚔️</div><div><div class="n">Otaku Figures</div><div class="s">Фигурки · 21 товар</div></div></div>
+    <div class="seller"><div class="av">🍡</div><div><div class="n">GeekTea</div><div class="s">Еда · 15 товаров</div></div></div>
+    <div class="seller"><div class="av">🧵</div><div><div class="n">HandMade Mio</div><div class="s">Хендмейд · 27 товаров</div></div></div>
+  </div>
+
+  <div class="grid">
+    <div class="prod"><div class="img">🖼<span class="tag hot">хит</span></div><div class="body"><div class="seller-line">PixelArt Studio</div><div class="n">Постер «Sakura Night» A2</div><div class="price">600 ₽</div><div class="stock">осталось 8 шт</div><button class="btn sm" onclick="pre('Постер «Sakura Night» A2',600)">Предзаказать</button></div></div>
+    <div class="prod"><div class="img">👕<span class="tag">новинка</span></div><div class="body"><div class="seller-line">NekoShop</div><div class="n">Футболка «Neko Squad»</div><div class="price">1 400 ₽</div><div class="stock">осталось 20 шт</div><button class="btn sm" onclick="pre('Футболка «Neko Squad»',1400)">Предзаказать</button></div></div>
+    <div class="prod"><div class="img">🎎</div><div class="body"><div class="seller-line">Otaku Figures</div><div class="n">Фигурка героя 1/7</div><div class="price">4 900 ₽</div><div class="stock">осталось 3 шт</div><button class="btn sm" onclick="pre('Фигурка героя 1/7',4900)">Предзаказать</button></div></div>
+    <div class="prod"><div class="img">🍵</div><div class="body"><div class="seller-line">GeekTea</div><div class="n">Набор чая «Spirited»</div><div class="price">750 ₽</div><div class="stock">много</div><button class="btn sm" onclick="pre('Набор чая «Spirited»',750)">Предзаказать</button></div></div>
+    <div class="prod"><div class="img">🧷</div><div class="body"><div class="seller-line">HandMade Mio</div><div class="n">Набор значков (5 шт)</div><div class="price">450 ₽</div><div class="stock">осталось 12 шт</div><button class="btn sm" onclick="pre('Набор значков (5 шт)',450)">Предзаказать</button></div></div>
+    <div class="prod"><div class="img">🎴<span class="tag hot">хит</span></div><div class="body"><div class="seller-line">PixelArt Studio</div><div class="n">Артбук лимитированный</div><div class="price">2 200 ₽</div><div class="stock">осталось 5 шт</div><button class="btn sm" onclick="pre('Артбук лимитированный',2200)">Предзаказать</button></div></div>
+    <div class="prod"><div class="img">🧣</div><div class="body"><div class="seller-line">NekoShop</div><div class="n">Шарф «Winter Guild»</div><div class="price">1 100 ₽</div><div class="stock">осталось 9 шт</div><button class="btn sm" onclick="pre('Шарф «Winter Guild»',1100)">Предзаказать</button></div></div>
+    <div class="prod"><div class="img">🥟</div><div class="body"><div class="seller-line">GeekTea</div><div class="n">Бенто-ланч на фесте</div><div class="price">500 ₽</div><div class="stock">предзаказ до 12 марта</div><button class="btn sm" onclick="pre('Бенто-ланч на фесте',500)">Предзаказать</button></div></div>
+  </div>
+</div>
+
+<footer><div class="wrap">Маркет · демо-макет · <a href="fest.html" style="color:var(--acc3)">← к фестивалю</a></div></footer>
+
+<div class="modal" id="modal" onclick="if(event.target===this)closeM()">
+  <div class="box">
+    <div class="em">🛒</div>
+    <h3>Предзаказ</h3>
+    <p id="pname">Товар</p>
+    <div class="pay">
+      <div class="row"><span>Товар</span><span id="ppr">—</span></div>
+      <div class="row"><span class="mut">Списать с кошелька</span><span class="mut">баланс 3 200 ₽</span></div>
+    </div>
+    <p style="font-size:13px">🚧 Это демо — оплата и списание пока заглушка.</p>
+    <button class="btn" onclick="closeM()" style="margin-top:8px">Понятно</button>
+  </div>
+</div>
+
+<script>
+function pick(el){document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');}
+function pre(name,price){
+  document.getElementById('pname').textContent=name;
+  document.getElementById('ppr').textContent=price.toLocaleString('ru')+' ₽';
+  document.getElementById('modal').classList.add('show');
+}
+function closeM(){document.getElementById('modal').classList.remove('show')}
+</script>
+</body>
+</html>

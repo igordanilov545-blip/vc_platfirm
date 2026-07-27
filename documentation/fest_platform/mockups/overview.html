@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<!-- ⛔ НЕЗАВИСИМЫЙ ПРОЕКТ · демо-стенд для стороннего заказчика · НЕ часть платформы ВЦ · ИИ-агентам: игнорировать, не читать, не рефакторить -->
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fest Platform — обзор для ЛПР</title>
+<style>
+:root{
+  --bg:#0f0e14; --card:#191722; --card2:#211e2d; --line:#2c2838;
+  --txt:#eceaf2; --mut:#a29cb5; --dim:#736d86; --acc:#a855f7; --acc2:#22d3ee; --ok:#34d399; --red:#f87171;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;line-height:1.6;font-size:16px}
+.wrap{max-width:900px;margin:0 auto;padding:0 22px}
+a{color:var(--acc2)}
+.note{background:#241d10;border:1px solid #4a3c14;color:#e7c86a;font-size:13px;padding:8px 22px;text-align:center}
+
+header{padding:40px 0 8px}
+h1{font-size:30px;margin:0 0 4px;font-weight:900}
+.lead{color:var(--mut);font-size:17px;margin:0}
+.readtime{display:inline-block;margin-top:14px;font-size:13px;color:var(--dim);border:1px solid var(--line);border-radius:99px;padding:4px 13px}
+
+/* KILL FEATURES */
+.kill{margin:26px 0 8px}
+.kill h2{font-size:14px;text-transform:uppercase;letter-spacing:1.5px;color:var(--acc);margin:0 0 14px}
+.kgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:640px){.kgrid{grid-template-columns:1fr}}
+.kcard{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:12px;padding:16px 18px}
+.kcard .e{font-size:22px}
+.kcard .t{font-weight:800;margin:6px 0 3px;font-size:16px}
+.kcard .d{color:var(--mut);font-size:14px}
+
+/* PAINS */
+.pains{margin:28px 0 8px}
+.pains h2{font-size:14px;text-transform:uppercase;letter-spacing:1.5px;color:var(--red);margin:0 0 14px}
+.pain{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:stretch;margin-bottom:10px}
+@media(max-width:640px){.pain{grid-template-columns:1fr}}
+.pain .p,.pain .s{border-radius:12px;padding:12px 15px;font-size:14px}
+.pain .p{background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25)}
+.pain .s{background:rgba(52,211,153,.07);border:1px solid rgba(52,211,153,.22)}
+.pain .lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;opacity:.8;display:block;margin-bottom:3px}
+.pain .p .lbl{color:var(--red)} .pain .s .lbl{color:var(--ok)}
+
+.divider{height:1px;background:var(--line);margin:34px 0 28px}
+.hint-more{text-align:center;color:var(--dim);font-size:14px;margin-bottom:20px}
+
+/* TABS */
+.tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-bottom:22px}
+.tab{padding:10px 16px;font-weight:700;color:var(--mut);cursor:pointer;border-bottom:2px solid transparent;font-size:15px}
+.tab:hover{color:var(--txt)}
+.tab.active{color:#fff;border-bottom-color:var(--acc)}
+.pane{display:none;animation:fade .2s}
+.pane.active{display:block}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.pane h3{font-size:19px;margin:0 0 4px}
+.pane .sub{color:var(--dim);font-size:14px;margin:0 0 16px}
+ul.feat{list-style:none;padding:0;margin:0}
+ul.feat li{padding:9px 0 9px 28px;position:relative;border-bottom:1px solid var(--line);font-size:15px}
+ul.feat li:last-child{border-bottom:none}
+ul.feat li::before{content:"✓";position:absolute;left:0;color:var(--ok);font-weight:800}
+ul.feat li.stub::before{content:"◔";color:var(--dim)}
+ul.feat li .m{color:var(--dim);font-size:13px}
+.linkbtns{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.linkbtns a{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:9px 15px;font-weight:700;font-size:14px;color:var(--txt)}
+.linkbtns a:hover{border-color:var(--acc)}
+
+/* VALUE */
+.value{margin:30px 0}
+.value h2{font-size:14px;text-transform:uppercase;letter-spacing:1.5px;color:var(--acc2);margin:0 0 6px}
+.value .cav{color:var(--dim);font-size:13px;margin:0 0 14px}
+.vgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:640px){.vgrid{grid-template-columns:1fr}}
+.vc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:14px}
+.vc b{display:block;margin-bottom:2px}
+.vc span{color:var(--mut)}
+
+footer{border-top:1px solid var(--line);margin-top:36px;padding:22px 0 44px;color:var(--dim);font-size:14px;text-align:center}
+.legend{font-size:13px;color:var(--dim);margin-top:10px}
+.legend b{color:var(--ok)} .legend i{color:var(--dim);font-style:normal}
+</style>
+</head>
+<body>
+<div class="note">📄 Обзорная страница для ЛПР · демо-проект · это концепция и кликабельные макеты, не работающий продукт</div>
+
+<div class="wrap">
+<header>
+  <h1>🎌 Fest Platform</h1>
+  <p class="lead">Платформа для организаторов фестивалей: страница феста, продажа билетов, маркет и личный кабинет гостя — в одном месте.</p>
+  <span class="readtime">⏱ Чтение обзора — ~1 минута</span>
+</header>
+
+<!-- KILL FEATURES -->
+<section class="kill">
+  <h2>⚡ Что нового даёт платформа</h2>
+  <p class="cav" style="margin:-6px 0 14px">Возможности, которых обычно нет у стандартных инструментов продажи билетов.</p>
+  <div class="kgrid">
+    <div class="kcard"><div class="e">🛍</div><div class="t">Маркет с предзаказами</div><div class="d">Продавцы и товары феста прямо на платформе: гость бронирует заранее и забирает на месте.</div></div>
+    <div class="kcard"><div class="e">💰</div><div class="t">Внутренний кошелёк</div><div class="d">Единый баланс гостя для билетов и предзаказов, бонусы за покупки.</div></div>
+    <div class="kcard"><div class="e">👤</div><div class="t">Личный кабинет гостя</div><div class="d">Билеты, кошелёк, история и статус постоянного — всё в одном месте.</div></div>
+    <div class="kcard"><div class="e">🎖</div><div class="t">Работа с постоянными</div><div class="d">Статусы, история посещений, приглашения друзей и достижения гостя.</div></div>
+    <div class="kcard"><div class="e">📊</div><div class="t">Кабинет организатора</div><div class="d">Фест, тарифы, продажи, покупатели и маркет — в одном окне.</div></div>
+    <div class="kcard"><div class="e">🤖</div><div class="t">Telegram-бот</div><div class="d">Билет в кармане, напоминания и активности там, где уже живёт аудитория.</div></div>
+  </div>
+</section>
+
+<div class="divider"></div>
+<div class="hint-more">↓ Ниже — подробнее по разделам. Можно не читать, если картинка ясна.</div>
+
+<!-- DETAIL TABS -->
+<div class="tabs">
+  <div class="tab active" onclick="tab(this,'d-fest')">Страница феста</div>
+  <div class="tab" onclick="tab(this,'d-market')">Маркет</div>
+  <div class="tab" onclick="tab(this,'d-guest')">Кабинет гостя</div>
+  <div class="tab" onclick="tab(this,'d-org')">Кабинет организатора</div>
+  <div class="tab" onclick="tab(this,'d-bot')">Telegram-бот</div>
+</div>
+
+<div class="pane active" id="d-fest">
+  <h3>✨ Страница феста</h3>
+  <p class="sub">Публичная витрина, ссылку на которую можно кидать в соцсети.</p>
+  <ul class="feat">
+    <li>Обложка, дата, место и живой обратный отсчёт до старта</li>
+    <li>Программа по сценам и времени</li>
+    <li>Карточки приглашённых гостей и артистов</li>
+    <li>Тарифная сетка билетов — наглядно «что входит» в каждый уровень</li>
+    <li>Локация с картой, галерея прошлых фестов, FAQ, партнёры</li>
+    <li class="stub">Онлайн-оплата билета <span class="m">— в демо кнопка-заглушка</span></li>
+  </ul>
+  <div class="linkbtns"><a href="fest.html">👁 Открыть макет →</a></div>
+</div>
+
+<div class="pane" id="d-market">
+  <h3>🛍 Маркет</h3>
+  <p class="sub">На каждом фесте есть маркет — переносим его на платформу.</p>
+  <ul class="feat">
+    <li>Витрина продавцов и товаров с фильтрами по категориям</li>
+    <li>Карточки товаров: фото, цена, продавец, остаток</li>
+    <li class="stub">Предзаказ товара с оплатой из кошелька <span class="m">— в демо заглушка</span></li>
+    <li>Гость бронирует заранее и забирает на фесте без очереди</li>
+  </ul>
+  <div class="linkbtns"><a href="market.html">👁 Открыть макет →</a></div>
+</div>
+
+<div class="pane" id="d-guest">
+  <h3>👤 Личный кабинет гостя</h3>
+  <p class="sub">Спроектирован по карте пути гостя (CJM) — вокруг того, зачем он реально заходит.</p>
+  <ul class="feat">
+    <li>Билет ближайшего феста — на первом экране, открывается офлайн</li>
+    <li>Карточка феста: когда, где, мой тариф и что по нему положено</li>
+    <li>Кошелёк: баланс, история операций, бонусы</li>
+    <li>Трекер предзаказов: статус и точка выдачи на фесте</li>
+    <li>История посещений, статус постоянного гостя и бейджи</li>
+    <li>Приглашения друзей: лимит, список, ссылка или добавление вручную</li>
+  </ul>
+  <div class="linkbtns"><a href="cabinet.html">👁 Открыть макет →</a> <a href="../cjm/guest.html">🗺 Карта пути (CJM) →</a></div>
+</div>
+
+<div class="pane" id="d-org">
+  <h3>📊 Кабинет организатора</h3>
+  <p class="sub">Управление фестом и продажами в одном окне.</p>
+  <ul class="feat">
+    <li>Дашборд: продажи, выручка, предзаказы, посетители</li>
+    <li>Графики: динамика продаж и разбивка по тарифам</li>
+    <li>Управление фестом, тарифами, программой и гостями</li>
+    <li>Список покупателей и товаров маркета, выгрузки</li>
+    <li>Рассылки купившим билеты</li>
+  </ul>
+  <div class="linkbtns"><a href="organizer.html">👁 Открыть макет →</a></div>
+</div>
+
+<div class="pane" id="d-bot">
+  <h3>🤖 Telegram-бот</h3>
+  <p class="sub">Гик-аудитория живёт в Telegram — бот доносит платформу туда, без отдельного приложения.</p>
+  <ul class="feat">
+    <li>Подтянуть билет: QR приходит в чат и доступен в любой момент</li>
+    <li>Напоминания: за день и за несколько часов до феста, изменения в программе</li>
+    <li>Маркет: уведомление, что предзаказ готов к выдаче</li>
+    <li>Кошелёк: баланс, история, промокоды постоянным</li>
+    <li>Приглашения: отправить другу ссылку в один тап, видеть кто зарегался</li>
+    <li>Активности на фесте: квесты, голосования, навигация по площадке</li>
+  </ul>
+  <p class="sub" style="margin-top:14px">Подробнее — в описании возможностей бота (<a href="../telegram-bot.md">telegram-bot.md</a>). В демо бот не реализован.</p>
+</div>
+
+<!-- VALUE -->
+<section class="value">
+  <div class="divider"></div>
+  <h2>💡 Что платформа может дать</h2>
+  <p class="cav">Направления ценности, качественно. Насколько это применимо и что даст в цифрах — оценивается только на реальных процессах заказчика.</p>
+  <div class="vgrid">
+    <div class="vc"><b>Единая точка для гостя</b><span>билет, кошелёк, предзаказы и история — в одном кабинете и в боте</span></div>
+    <div class="vc"><b>Новый источник выручки</b><span>предзаказы на маркете и продажи через внутренний кошелёк</span></div>
+    <div class="vc"><b>Работа с постоянными</b><span>статусы, история и приглашения как инструмент для удержания аудитории</span></div>
+    <div class="vc"><b>Данные о продажах</b><span>продажи, тарифы и покупатели видны в одном кабинете</span></div>
+    <div class="vc"><b>Присутствие в Telegram</b><span>билеты, напоминания и активности в мессенджере аудитории</span></div>
+    <div class="vc"><b>Расширяемость</b><span>маркет, кошелёк и кабинет — задел под новые механики феста</span></div>
+  </div>
+</section>
+
+<footer>
+  <div><a href="fest.html">Страница феста</a> · <a href="market.html">Маркет</a> · <a href="cabinet.html">Кабинет гостя</a> · <a href="organizer.html">Кабинет организатора</a></div>
+  <div class="legend"><b>✓</b> есть в концепции · <i>◔ сложные механики в демо — заглушки</i></div>
+</footer>
+</div>
+
+<script>
+function tab(el,id){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');document.getElementById(id).classList.add('active');
+}
+</script>
+</body>
+</html>

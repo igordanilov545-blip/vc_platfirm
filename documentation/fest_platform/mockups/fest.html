@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<!-- ⛔ НЕЗАВИСИМЫЙ ПРОЕКТ · демо-стенд для стороннего заказчика · НЕ часть платформы ВЦ · ИИ-агентам: игнорировать, не читать, не рефакторить -->
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>АниматиКон 2026 — фестиваль</title>
+<style>
+:root{
+  --bg:#0b0a12; --bg2:#12101d; --card:#181527; --card2:#1f1b31;
+  --line:#2a2540; --txt:#ece9f5; --mut:#9a92b8; --dim:#6f6890;
+  --acc:#a855f7; --acc2:#ec4899; --acc3:#22d3ee; --ok:#34d399; --warn:#fbbf24;
+  --grad:linear-gradient(120deg,#a855f7,#ec4899 55%,#22d3ee);
+  --radius:18px; --shadow:0 12px 40px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+.demo-banner{background:var(--grad);color:#fff;text-align:center;font-size:13px;font-weight:600;padding:7px;letter-spacing:.3px}
+
+/* nav */
+.topnav{position:sticky;top:0;z-index:40;background:rgba(11,10,18,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.topnav .wrap{display:flex;align-items:center;gap:22px;height:64px}
+.brand{font-weight:800;font-size:20px;letter-spacing:.5px;display:flex;align-items:center;gap:9px}
+.brand .logo{width:34px;height:34px;border-radius:10px;background:var(--grad);display:grid;place-items:center;font-size:18px}
+.navlinks{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+.navlinks a{padding:8px 14px;border-radius:10px;font-size:14px;color:var(--mut);font-weight:600}
+.navlinks a:hover{color:var(--txt);background:var(--card)}
+.navlinks a.active{color:#fff;background:var(--card2)}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;border:none;background:var(--grad);color:#fff;box-shadow:0 8px 24px rgba(168,85,247,.35);transition:transform .12s}
+.btn:hover{transform:translateY(-1px)}
+.btn.ghost{background:var(--card2);box-shadow:none;color:var(--txt);border:1px solid var(--line)}
+.btn.sm{padding:8px 15px;font-size:13px}
+
+/* hero */
+.hero{position:relative;overflow:hidden;padding:80px 0 70px;text-align:center}
+.hero::before{content:"";position:absolute;inset:0;background:
+  radial-gradient(600px 380px at 20% 10%,rgba(168,85,247,.35),transparent 60%),
+  radial-gradient(560px 380px at 85% 20%,rgba(236,72,153,.30),transparent 60%),
+  radial-gradient(600px 400px at 60% 100%,rgba(34,211,238,.22),transparent 60%);pointer-events:none}
+.hero .badge{display:inline-block;background:var(--card2);border:1px solid var(--line);color:var(--acc3);padding:6px 16px;border-radius:99px;font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+.hero h1{font-size:clamp(42px,8vw,88px);line-height:1.02;margin:18px 0 6px;font-weight:900;letter-spacing:-1px;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero .sub{font-size:clamp(17px,2.4vw,22px);color:var(--mut);max-width:640px;margin:0 auto 14px}
+.hero .meta{display:flex;gap:26px;justify-content:center;flex-wrap:wrap;color:var(--txt);font-weight:600;margin:22px 0 30px}
+.hero .meta span{display:flex;align-items:center;gap:8px}
+.hero .cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;position:relative}
+
+/* countdown */
+.countdown{display:flex;gap:14px;justify-content:center;margin:34px 0 0;flex-wrap:wrap;position:relative}
+.cd-box{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 22px;min-width:92px}
+.cd-box .num{font-size:40px;font-weight:900;line-height:1;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums}
+.cd-box .lbl{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-top:6px}
+
+/* sections */
+section{padding:64px 0}
+.sec-head{text-align:center;margin-bottom:40px}
+.sec-head .kicker{color:var(--acc2);font-weight:800;letter-spacing:2px;text-transform:uppercase;font-size:13px}
+.sec-head h2{font-size:clamp(28px,4vw,42px);margin:8px 0 0;font-weight:900}
+.sec-head p{color:var(--mut);max-width:560px;margin:12px auto 0}
+
+.grid{display:grid;gap:18px}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:860px){.g3,.g4{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.g3,.g4{grid-template-columns:1fr}}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px}
+.about-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:stretch}
+@media(max-width:800px){.about-grid{grid-template-columns:1fr}}
+.stat-tile{text-align:center;padding:26px 14px}
+.stat-tile .v{font-size:34px;font-weight:900;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.stat-tile .k{color:var(--mut);font-size:14px;margin-top:4px}
+
+/* program timeline */
+.timeline{max-width:760px;margin:0 auto}
+.tl-scene{margin-bottom:26px}
+.tl-scene h3{display:flex;align-items:center;gap:10px;font-size:18px;margin:0 0 12px}
+.tl-scene h3 .dot{width:12px;height:12px;border-radius:50%}
+.tl-item{display:flex;gap:16px;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:var(--card);margin-bottom:8px}
+.tl-item .time{font-weight:800;color:var(--acc3);min-width:58px;font-variant-numeric:tabular-nums}
+.tl-item .t{font-weight:600}
+.tl-item .d{color:var(--dim);font-size:13px}
+
+/* guests */
+.guest{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;transition:transform .15s,border-color .15s}
+.guest:hover{transform:translateY(-4px);border-color:var(--acc)}
+.guest .ph{aspect-ratio:1;background:linear-gradient(135deg,var(--card2),var(--line));display:grid;place-items:center;font-size:54px}
+.guest .info{padding:14px}
+.guest .info .n{font-weight:800}
+.guest .info .r{color:var(--acc2);font-size:13px;font-weight:600}
+
+/* tickets */
+.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:stretch}
+@media(max-width:860px){.tiers{grid-template-columns:1fr}}
+.tier{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px;display:flex;flex-direction:column;position:relative}
+.tier.pop{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc),0 20px 50px rgba(168,85,247,.25);transform:scale(1.03)}
+.tier .flag{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--grad);color:#fff;font-size:12px;font-weight:800;padding:5px 14px;border-radius:99px;letter-spacing:.5px}
+.tier .tn{font-size:20px;font-weight:800}
+.tier .price{font-size:38px;font-weight:900;margin:10px 0 2px}
+.tier .price small{font-size:15px;color:var(--mut);font-weight:600}
+.tier .left{font-size:12px;color:var(--warn);font-weight:700;margin-bottom:14px}
+.tier ul{list-style:none;padding:0;margin:0 0 20px;flex:1}
+.tier li{padding:7px 0;font-size:14px;display:flex;gap:9px;border-bottom:1px dashed var(--line)}
+.tier li .ic{color:var(--ok)}
+.tier li.no{color:var(--dim)}
+.tier li.no .ic{color:var(--dim)}
+
+/* faq */
+.faq{max-width:760px;margin:0 auto}
+.faq details{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;padding:0 18px}
+.faq summary{cursor:pointer;padding:16px 0;font-weight:700;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";color:var(--acc);font-size:22px}
+.faq details[open] summary::after{content:"–"}
+.faq .a{padding:0 0 16px;color:var(--mut)}
+
+/* partners */
+.partners{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+.partner{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 28px;color:var(--mut);font-weight:700}
+
+/* footer */
+footer{border-top:1px solid var(--line);padding:36px 0;color:var(--dim);text-align:center;font-size:14px}
+
+/* sticky buy */
+.stickybuy{position:fixed;right:24px;bottom:24px;z-index:50}
+.stickybuy .btn{padding:15px 26px;font-size:16px;box-shadow:0 12px 34px rgba(236,72,153,.5)}
+
+/* popup */
+.modal{position:fixed;inset:0;background:rgba(5,4,10,.7);backdrop-filter:blur(4px);display:none;place-items:center;z-index:100}
+.modal.show{display:grid}
+.modal .box{background:var(--card2);border:1px solid var(--line);border-radius:20px;padding:34px;max-width:400px;text-align:center;box-shadow:var(--shadow)}
+.modal .box .em{font-size:52px}
+.modal .box h3{margin:12px 0 6px;font-size:24px}
+.modal .box p{color:var(--mut);margin:0 0 22px}
+.map-ph{height:260px;border-radius:var(--radius);border:1px solid var(--line);background:
+  linear-gradient(135deg,#1a1730,#241d3d);display:grid;place-items:center;color:var(--dim);font-weight:700}
+.gallery{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:700px){.gallery{grid-template-columns:repeat(2,1fr)}}
+.gallery .g{aspect-ratio:4/3;border-radius:12px;background:linear-gradient(135deg,var(--card2),var(--line));display:grid;place-items:center;font-size:34px;border:1px solid var(--line)}
+</style>
+</head>
+<body>
+<div class="demo-banner">🎭 ДЕМО-МАКЕТ · все кнопки — заглушки · данные вымышленные</div>
+
+<nav class="topnav"><div class="wrap">
+  <div class="brand"><span class="logo">🎌</span> АниматиКон</div>
+  <div class="navlinks">
+    <a href="overview.html">📄 Обзор</a>
+    <a href="fest.html" class="active">Фестиваль</a>
+    <a href="market.html">Маркет</a>
+    <a href="cabinet.html">Личный кабинет</a>
+    <a href="organizer.html">Организатору</a>
+  </div>
+  <button class="btn sm" onclick="tba()">Купить билет</button>
+</div></nav>
+
+<!-- HERO -->
+<header class="hero"><div class="wrap">
+  <span class="badge">14–15 марта 2026 · Новосибирск</span>
+  <h1>АниматиКон 2026</h1>
+  <p class="sub">Крупнейший гик- и аниме-фестиваль Сибири: косплей, маркет, гости, турниры и два дня чистого фана.</p>
+  <div class="meta">
+    <span>📍 Экспоцентр «Сибирь»</span>
+    <span>👥 12 000+ гостей</span>
+    <span>🎤 40+ активностей</span>
+  </div>
+  <div class="cta">
+    <button class="btn" onclick="tba()">🎟 Купить билет</button>
+    <a class="btn ghost" href="#program">Смотреть программу</a>
+  </div>
+  <div class="countdown" id="cd">
+    <div class="cd-box"><div class="num" id="cd-d">–</div><div class="lbl">дней</div></div>
+    <div class="cd-box"><div class="num" id="cd-h">–</div><div class="lbl">часов</div></div>
+    <div class="cd-box"><div class="num" id="cd-m">–</div><div class="lbl">минут</div></div>
+    <div class="cd-box"><div class="num" id="cd-s">–</div><div class="lbl">секунд</div></div>
+  </div>
+</div></header>
+
+<!-- ABOUT -->
+<section id="about"><div class="wrap">
+  <div class="sec-head"><span class="kicker">О фестивале</span><h2>Два дня, целая вселенная</h2></div>
+  <div class="about-grid">
+    <div class="card">
+      <p style="margin-top:0;font-size:17px;color:var(--txt)">АниматиКон — это место встречи всех, кто любит аниме, игры, комиксы и косплей. Главная сцена, косплей-дефиле, огромный маркет с артом и мерчем, зона настолок, турниры по файтингам, автограф-сессии приглашённых гостей и afterparty.</p>
+      <p style="color:var(--mut)">За 6 лет фестиваль вырос из встречи на 300 человек в главное гик-событие региона. В 2026 — новая площадка, три сцены и рекордный состав гостей.</p>
+    </div>
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <div class="card stat-tile"><div class="v">12k+</div><div class="k">гостей</div></div>
+      <div class="card stat-tile"><div class="v">120</div><div class="k">продавцов маркета</div></div>
+      <div class="card stat-tile"><div class="v">3</div><div class="k">сцены</div></div>
+      <div class="card stat-tile"><div class="v">6</div><div class="k">лет фестивалю</div></div>
+    </div>
+  </div>
+</div></section>
+
+<!-- PROGRAM -->
+<section id="program" style="background:var(--bg2)"><div class="wrap">
+  <div class="sec-head"><span class="kicker">Программа</span><h2>Расписание по сценам</h2><p>Суббота, 14 марта. Полная программа на два дня — в приложении.</p></div>
+  <div class="timeline">
+    <div class="tl-scene">
+      <h3><span class="dot" style="background:var(--acc)"></span> Главная сцена</h3>
+      <div class="tl-item"><div class="time">12:00</div><div><div class="t">Открытие фестиваля</div><div class="d">Приветствие, розыгрыш призов</div></div></div>
+      <div class="tl-item"><div class="time">14:30</div><div><div class="t">Косплей-дефиле</div><div class="d">Индивидуальные выступления</div></div></div>
+      <div class="tl-item"><div class="time">18:00</div><div><div class="t">Гала-шоу и награждение</div><div class="d">Лучший косплей года</div></div></div>
+    </div>
+    <div class="tl-scene">
+      <h3><span class="dot" style="background:var(--acc3)"></span> Сцена гостей</h3>
+      <div class="tl-item"><div class="time">13:00</div><div><div class="t">Q&A с приглашёнными сэйю</div><div class="d">Автограф-сессия после</div></div></div>
+      <div class="tl-item"><div class="time">16:00</div><div><div class="t">Мастер-класс по рисунку</div><div class="d">От приглашённого иллюстратора</div></div></div>
+    </div>
+    <div class="tl-scene">
+      <h3><span class="dot" style="background:var(--ok)"></span> Игровая зона</h3>
+      <div class="tl-item"><div class="time">11:00</div><div><div class="t">Турнир Tekken 8</div><div class="d">Открытая сетка, регистрация на месте</div></div></div>
+      <div class="tl-item"><div class="time">15:00</div><div><div class="t">Just Dance баттл</div><div class="d">Призы победителям</div></div></div>
+    </div>
+  </div>
+</div></section>
+
+<!-- GUESTS -->
+<section id="guests"><div class="wrap">
+  <div class="sec-head"><span class="kicker">Приглашённые</span><h2>Гости фестиваля</h2></div>
+  <div class="grid g4">
+    <div class="guest"><div class="ph">🎤</div><div class="info"><div class="n">Юки Танака</div><div class="r">Сэйю</div></div></div>
+    <div class="guest"><div class="ph">🎨</div><div class="info"><div class="n">Илья Ворон</div><div class="r">Иллюстратор</div></div></div>
+    <div class="guest"><div class="ph">👘</div><div class="info"><div class="n">Мия Косплей</div><div class="r">Косплеер</div></div></div>
+    <div class="guest"><div class="ph">🎮</div><div class="info"><div class="n">ProGamer_RU</div><div class="r">Стример</div></div></div>
+  </div>
+</div></section>
+
+<!-- TICKETS -->
+<section id="tickets" style="background:var(--bg2)"><div class="wrap">
+  <div class="sec-head"><span class="kicker">Билеты</span><h2>Выбери свой уровень</h2><p>Чем выше уровень — тем больше плюшек. Количество ограничено.</p></div>
+  <div class="tiers">
+    <div class="tier">
+      <div class="tn">Стандарт</div>
+      <div class="price">1 200 ₽</div>
+      <div class="left">осталось 340</div>
+      <ul>
+        <li><span class="ic">✓</span> Вход на оба дня</li>
+        <li><span class="ic">✓</span> Доступ к маркету</li>
+        <li><span class="ic">✓</span> Все открытые сцены</li>
+        <li class="no"><span class="ic">✕</span> Фаст-пасс без очереди</li>
+        <li class="no"><span class="ic">✕</span> Автограф-сессия</li>
+        <li class="no"><span class="ic">✕</span> Подарочный набор мерча</li>
+      </ul>
+      <button class="btn ghost" onclick="tba()">Купить</button>
+    </div>
+    <div class="tier pop">
+      <div class="flag">🔥 Популярный</div>
+      <div class="tn">Фаст-пасс</div>
+      <div class="price">2 500 ₽</div>
+      <div class="left">осталось 85</div>
+      <ul>
+        <li><span class="ic">✓</span> Всё из «Стандарт»</li>
+        <li><span class="ic">✓</span> Отдельный вход без очереди</li>
+        <li><span class="ic">✓</span> Автограф-сессия гостей</li>
+        <li><span class="ic">✓</span> Фирменный браслет</li>
+        <li class="no"><span class="ic">✕</span> Подарочный набор мерча</li>
+        <li class="no"><span class="ic">✕</span> Лаунж-зона VIP</li>
+      </ul>
+      <button class="btn" onclick="tba()">Купить</button>
+    </div>
+    <div class="tier">
+      <div class="tn">VIP</div>
+      <div class="price">4 900 ₽</div>
+      <div class="left">осталось 12</div>
+      <ul>
+        <li><span class="ic">✓</span> Всё из «Фаст-пасс»</li>
+        <li><span class="ic">✓</span> Подарочный набор мерча</li>
+        <li><span class="ic">✓</span> Лаунж-зона VIP с едой</li>
+        <li><span class="ic">✓</span> Первые ряды на гала-шоу</li>
+        <li><span class="ic">✓</span> Фото с гостями</li>
+        <li><span class="ic">✓</span> Металлический бейдж-коллекционный</li>
+      </ul>
+      <button class="btn ghost" onclick="tba()">Купить</button>
+    </div>
+  </div>
+</div></section>
+
+<!-- LOCATION + GALLERY -->
+<section id="location"><div class="wrap">
+  <div class="sec-head"><span class="kicker">Место и атмосфера</span><h2>Где и как это было</h2></div>
+  <div class="grid" style="grid-template-columns:1fr 1fr;gap:20px;margin-bottom:22px">
+    <div class="card">
+      <h3 style="margin-top:0">📍 Экспоцентр «Сибирь»</h3>
+      <p style="color:var(--mut)">г. Новосибирск, ул. Немировича-Данченко, 121. Рядом парковка и метро «Площадь Маркса».</p>
+      <button class="btn ghost sm" onclick="tba()">Открыть на карте</button>
+    </div>
+    <div class="map-ph">🗺 Карта площадки</div>
+  </div>
+  <div class="gallery">
+    <div class="g">📸</div><div class="g">🎭</div><div class="g">👥</div><div class="g">🕹</div>
+  </div>
+</div></section>
+
+<!-- FAQ -->
+<section id="faq" style="background:var(--bg2)"><div class="wrap">
+  <div class="sec-head"><span class="kicker">Вопросы</span><h2>FAQ</h2></div>
+  <div class="faq">
+    <details open><summary>Можно ли прийти в костюме?</summary><div class="a">Конечно! Косплей приветствуется. Для реквизита действуют правила безопасности — проверка на входе.</div></details>
+    <details><summary>Билет именной?</summary><div class="a">Нет, билет на предъявителя — можно подарить или передать. QR приходит в личный кабинет и в Telegram.</div></details>
+    <details><summary>Есть ли скидки постоянным гостям?</summary><div class="a">Да, ядро постоянных гостей получает промокод и ранний доступ к продажам. Подробнее — в личном кабинете.</div></details>
+    <details><summary>Что такое маркет?</summary><div class="a">Это зона из 120 продавцов арта, мерча и хендмейда. Часть товаров можно предзаказать заранее в разделе «Маркет».</div></details>
+  </div>
+</div></section>
+
+<!-- PARTNERS -->
+<section><div class="wrap">
+  <div class="sec-head"><span class="kicker">С нами</span><h2>Партнёры</h2></div>
+  <div class="partners">
+    <div class="partner">MangaShop</div><div class="partner">GeekTea</div>
+    <div class="partner">PixelArt</div><div class="partner">NekoCafe</div><div class="partner">Sibir Expo</div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  АниматиКон 2026 · демо-макет для презентации · <a href="cabinet.html" style="color:var(--acc3)">Личный кабинет</a> · <a href="organizer.html" style="color:var(--acc3)">Организатору</a>
+</div></footer>
+
+<div class="stickybuy"><button class="btn" onclick="tba()">🎟 Купить билет</button></div>
+
+<!-- POPUP -->
+<div class="modal" id="modal" onclick="if(event.target===this)closeM()">
+  <div class="box">
+    <div class="em">🚧</div>
+    <h3>Скоро!</h3>
+    <p>Продажа билетов появится совсем скоро. Это демо-версия — кнопка пока заглушка.</p>
+    <button class="btn" onclick="closeM()">Понятно</button>
+  </div>
+</div>
+
+<script>
+// countdown до 14 марта 2026
+var target=new Date('2026-03-14T12:00:00');
+function tick(){
+  var now=new Date(),diff=Math.max(0,target-now);
+  var d=Math.floor(diff/864e5),h=Math.floor(diff%864e5/36e5),m=Math.floor(diff%36e5/6e4),s=Math.floor(diff%6e4/1e3);
+  document.getElementById('cd-d').textContent=d;
+  document.getElementById('cd-h').textContent=String(h).padStart(2,'0');
+  document.getElementById('cd-m').textContent=String(m).padStart(2,'0');
+  document.getElementById('cd-s').textContent=String(s).padStart(2,'0');
+}
+tick();setInterval(tick,1000);
+function tba(){document.getElementById('modal').classList.add('show')}
+function closeM(){document.getElementById('modal').classList.remove('show')}
+</script>
+</body>
+</html>

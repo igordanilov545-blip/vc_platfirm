@@ -1,18 +1,19 @@
 """fest_platform: раздача статичных HTML-макетов независимого демо-стенда.
 
 ВНИМАНИЕ (для ИИ-агентов): это НЕ часть платформы ВЦ. Вьюхи просто отдают готовые
-статичные файлы из documentation/fest_platform/mockups/ по адресам /demo/<page>,
-чтобы владелец мог кинуть заказчику публичную ссылку на демку. Никакой бизнес-логики,
-моделей, ACL — только FileResponse с готовым HTML. Подробнее — см.
-documentation/fest_platform/_IGNORE_INDEPENDENT_PROJECT.md.
+статичные файлы из blog/templates/demo/ по адресам /demo/<page>, чтобы владелец мог
+кинуть заказчику публичную ссылку на демку. Никакой бизнес-логики, моделей, ACL —
+только FileResponse с готовым HTML. Файлы лежат в templates/demo/ (а не в
+documentation/), потому что documentation/ исключён из Docker-образа (.dockerignore).
+Подробнее — documentation/fest_platform/_IGNORE_INDEPENDENT_PROJECT.md.
 """
 from pathlib import Path
 
 from django.conf import settings
 from django.http import FileResponse, Http404
 
-# Каталог с готовыми HTML-макетами (относительно корня репозитория).
-_DEMO_DIR = Path(settings.BASE_DIR) / 'documentation' / 'fest_platform' / 'mockups'
+# Каталог с готовыми HTML-макетами. templates/demo/ гарантированно попадает в образ.
+_DEMO_DIR = Path(settings.BASE_DIR) / 'blog' / 'templates' / 'demo'
 
 # Белый список страниц: имя в URL -> имя файла. Только эти файлы и отдаём.
 _PAGES = {

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<!-- ⛔ НЕЗАВИСИМЫЙ ПРОЕКТ · демо-стенд для стороннего заказчика · НЕ часть платформы ВЦ · ИИ-агентам: игнорировать, не читать, не рефакторить -->
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Кабинет организатора — АниматиКон 2026</title>
+<style>
+:root{
+  --bg:#0b0a12; --bg2:#12101d; --card:#181527; --card2:#1f1b31;
+  --line:#2a2540; --txt:#ece9f5; --mut:#9a92b8; --dim:#6f6890;
+  --acc:#a855f7; --acc2:#ec4899; --acc3:#22d3ee; --ok:#34d399; --warn:#fbbf24; --red:#f87171;
+  --grad:linear-gradient(120deg,#a855f7,#ec4899 55%,#22d3ee);
+  --radius:18px; --shadow:0 12px 40px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,sans-serif;line-height:1.5}
+a{color:inherit;text-decoration:none}
+.demo-banner{background:var(--grad);color:#fff;text-align:center;font-size:13px;font-weight:600;padding:7px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:12px;font-weight:700;font-size:14px;cursor:pointer;border:none;background:var(--grad);color:#fff;box-shadow:0 8px 24px rgba(168,85,247,.35);transition:transform .12s}
+.btn:hover{transform:translateY(-1px)}
+.btn.ghost{background:var(--card2);box-shadow:none;color:var(--txt);border:1px solid var(--line)}
+.btn.sm{padding:8px 13px;font-size:13px}
+
+.layout{display:flex;min-height:100vh}
+/* sidebar */
+.side{width:240px;flex:0 0 240px;background:var(--bg2);border-right:1px solid var(--line);padding:20px 14px;position:sticky;top:0;height:100vh;overflow:auto}
+.side .brand{font-weight:800;font-size:18px;display:flex;align-items:center;gap:9px;padding:6px 8px 18px}
+.side .brand .logo{width:32px;height:32px;border-radius:9px;background:var(--grad);display:grid;place-items:center;font-size:16px}
+.side .sect{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin:16px 10px 6px}
+.side a{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:10px;color:var(--mut);font-weight:600;font-size:14px;cursor:pointer}
+.side a:hover{color:var(--txt);background:var(--card)}
+.side a.active{color:#fff;background:var(--card2)}
+.side .foot{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
+@media(max-width:800px){.side{display:none}}
+
+.main{flex:1;min-width:0;padding:26px 30px 60px}
+.topbar{display:flex;align-items:center;gap:14px;margin-bottom:22px;flex-wrap:wrap}
+.topbar h1{margin:0;font-size:26px;font-weight:900}
+.topbar .fest-pick{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px 14px;font-weight:700;font-size:14px;color:var(--mut)}
+.topbar .sp{margin-left:auto;display:flex;gap:10px;flex-wrap:wrap}
+
+/* stat tiles */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:22px}
+@media(max-width:900px){.tiles{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:460px){.tiles{grid-template-columns:1fr}}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
+.tile .k{color:var(--mut);font-size:13px;display:flex;align-items:center;gap:7px}
+.tile .v{font-size:32px;font-weight:900;margin:6px 0 2px}
+.tile .delta{font-size:12px;font-weight:700}
+.tile .delta.up{color:var(--ok)} .tile .delta.down{color:var(--red)}
+.tile .v.grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+.row2{display:grid;grid-template-columns:1.5fr 1fr;gap:18px;margin-bottom:22px}
+@media(max-width:900px){.row2{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
+.panel h3{margin:0 0 4px;font-size:16px}
+.panel .hint{color:var(--dim);font-size:13px;margin-bottom:16px}
+
+/* bar chart */
+.bars{display:flex;align-items:flex-end;gap:14px;height:180px;padding-top:10px}
+.bars .b{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;height:100%;justify-content:flex-end}
+.bars .b .bar{width:100%;border-radius:8px 8px 0 0;background:var(--grad);position:relative}
+.bars .b .cap{font-size:12px;color:var(--mut);font-weight:600}
+.bars .b .val{font-size:12px;font-weight:800}
+
+/* donut */
+.donut-wrap{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.donut{width:150px;height:150px;border-radius:50%;flex:0 0 150px;
+  background:conic-gradient(var(--acc) 0 46%,var(--acc2) 46% 78%,var(--acc3) 78% 100%);
+  display:grid;place-items:center;position:relative}
+.donut::after{content:"";position:absolute;width:90px;height:90px;border-radius:50%;background:var(--card)}
+.donut .c{position:relative;z-index:1;text-align:center}
+.donut .c .n{font-size:22px;font-weight:900}
+.donut .c .l{font-size:11px;color:var(--mut)}
+.legend{font-size:14px}
+.legend .li{display:flex;align-items:center;gap:9px;padding:5px 0}
+.legend .dot{width:11px;height:11px;border-radius:3px}
+
+/* table */
+.tabcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.tabcard .th{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line)}
+.tabcard .th h3{margin:0;font-size:16px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:12px 20px;font-size:14px;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--card2)}
+.pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700}
+.pill.paid{background:rgba(52,211,153,.15);color:var(--ok)}
+.pill.wait{background:rgba(251,191,36,.15);color:var(--warn)}
+.pill.vip{background:rgba(168,85,247,.18);color:#c99bff}
+.pill.fast{background:rgba(34,211,238,.15);color:var(--acc3)}
+.pill.std{background:var(--card2);color:var(--mut)}
+
+.modal{position:fixed;inset:0;background:rgba(5,4,10,.7);backdrop-filter:blur(4px);display:none;place-items:center;z-index:100}
+.modal.show{display:grid}
+.modal .box{background:var(--card2);border:1px solid var(--line);border-radius:20px;padding:32px;max-width:400px;text-align:center;box-shadow:var(--shadow)}
+.modal .box .em{font-size:52px}
+.modal .box h3{margin:12px 0 6px;font-size:23px}
+.modal .box p{color:var(--mut);margin:0 0 22px}
+.mtabs{display:none}
+</style>
+</head>
+<body>
+<div class="demo-banner">🎭 ДЕМО-МАКЕТ · кабинет организатора · все действия — заглушки, цифры вымышленные</div>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <aside class="side">
+    <div class="brand"><span class="logo">🎌</span> АниматиКон</div>
+    <div class="sect">Мероприятие</div>
+    <a class="active">📊 Дашборд</a>
+    <a onclick="tba()">🎟 Билеты и тарифы</a>
+    <a onclick="tba()">🗓 Программа</a>
+    <a onclick="tba()">🎤 Гости</a>
+    <div class="sect">Продажи</div>
+    <a onclick="tba()">👥 Покупатели</a>
+    <a onclick="tba()">🛍 Маркет и продавцы</a>
+    <a onclick="tba()">📦 Предзаказы</a>
+    <div class="sect">Инструменты</div>
+    <a onclick="tba()">📈 Аналитика</a>
+    <a onclick="tba()">✉️ Рассылки</a>
+    <a onclick="tba()">📥 Выгрузки</a>
+    <a onclick="tba()">⚙️ Настройки феста</a>
+    <div class="foot">
+      <a href="/demo/">📄 Обзор для ЛПР</a>
+      <a href="/demo/fest/">👁 Открыть страницу феста</a>
+      <a href="/demo/cabinet/">🚪 Выйти в гостя</a>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <div class="topbar">
+      <h1>Дашборд</h1>
+      <span class="fest-pick">🎌 АниматиКон 2026 ▾</span>
+      <div class="sp">
+        <button class="btn ghost" onclick="tba()">📥 Выгрузка</button>
+        <button class="btn" onclick="tba()">+ Добавить фест</button>
+      </div>
+    </div>
+
+    <!-- STAT TILES -->
+    <div class="tiles">
+      <div class="tile"><div class="k">🎟 Продано билетов</div><div class="v grad">4 812</div><div class="delta up">▲ 18% за неделю</div></div>
+      <div class="tile"><div class="k">💰 Выручка</div><div class="v">7,4 млн ₽</div><div class="delta up">▲ 12% за неделю</div></div>
+      <div class="tile"><div class="k">📦 Предзаказов маркета</div><div class="v">1 236</div><div class="delta up">▲ 9%</div></div>
+      <div class="tile"><div class="k">👁 Конверсия страницы</div><div class="v">6,3%</div><div class="delta down">▼ 0,4%</div></div>
+    </div>
+
+    <!-- CHARTS -->
+    <div class="row2">
+      <div class="panel">
+        <h3>Продажи билетов по дням</h3>
+        <div class="hint">Последние 7 дней, шт</div>
+        <div class="bars">
+          <div class="b"><div class="val">210</div><div class="bar" style="height:35%"></div><div class="cap">Пн</div></div>
+          <div class="b"><div class="val">340</div><div class="bar" style="height:55%"></div><div class="cap">Вт</div></div>
+          <div class="b"><div class="val">290</div><div class="bar" style="height:47%"></div><div class="cap">Ср</div></div>
+          <div class="b"><div class="val">460</div><div class="bar" style="height:74%"></div><div class="cap">Чт</div></div>
+          <div class="b"><div class="val">520</div><div class="bar" style="height:84%"></div><div class="cap">Пт</div></div>
+          <div class="b"><div class="val">610</div><div class="bar" style="height:100%"></div><div class="cap">Сб</div></div>
+          <div class="b"><div class="val">480</div><div class="bar" style="height:78%"></div><div class="cap">Вс</div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Продажи по тарифам</h3>
+        <div class="hint">Доля от общего числа</div>
+        <div class="donut-wrap">
+          <div class="donut"><div class="c"><div class="n">4 812</div><div class="l">билетов</div></div></div>
+          <div class="legend">
+            <div class="li"><span class="dot" style="background:var(--acc)"></span> Стандарт — 46%</div>
+            <div class="li"><span class="dot" style="background:var(--acc2)"></span> Фаст-пасс — 32%</div>
+            <div class="li"><span class="dot" style="background:var(--acc3)"></span> VIP — 22%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TABLE -->
+    <div class="tabcard">
+      <div class="th">
+        <h3>Последние покупатели</h3>
+        <button class="btn ghost sm" onclick="tba()">Все покупатели →</button>
+      </div>
+      <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Гость</th><th>Тариф</th><th>Сумма</th><th>Способ</th><th>Статус</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Алекс Кицунэ</td><td><span class="pill fast">Фаст-пасс</span></td><td>2 000 ₽</td><td>Промокод</td><td><span class="pill paid">Оплачен</span></td><td><button class="btn ghost sm" onclick="tba()">···</button></td></tr>
+          <tr><td>Мария Хаяси</td><td><span class="pill vip">VIP</span></td><td>4 900 ₽</td><td>Карта</td><td><span class="pill paid">Оплачен</span></td><td><button class="btn ghost sm" onclick="tba()">···</button></td></tr>
+          <tr><td>Иван Соколов</td><td><span class="pill std">Стандарт</span></td><td>1 200 ₽</td><td>Кошелёк</td><td><span class="pill wait">Ожидает оплаты</span></td><td><button class="btn ghost sm" onclick="tba()">···</button></td></tr>
+          <tr><td>Nekoshka_22</td><td><span class="pill fast">Фаст-пасс</span></td><td>2 500 ₽</td><td>Карта</td><td><span class="pill paid">Оплачен</span></td><td><button class="btn ghost sm" onclick="tba()">···</button></td></tr>
+          <tr><td>Дмитрий Рю</td><td><span class="pill std">Стандарт</span></td><td>1 200 ₽</td><td>По приглашению</td><td><span class="pill paid">Оплачен</span></td><td><button class="btn ghost sm" onclick="tba()">···</button></td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal" id="modal" onclick="if(event.target===this)closeM()">
+  <div class="box"><div class="em">🚧</div><h3>Скоро!</h3><p>Это демо-версия — действие пока заглушка.</p><button class="btn" onclick="closeM()">Понятно</button></div>
+</div>
+
+<script>
+function tba(){document.getElementById('modal').classList.add('show')}
+function closeM(){document.getElementById('modal').classList.remove('show')}
+</script>
+</body>
+</html>

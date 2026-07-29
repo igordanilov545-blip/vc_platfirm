@@ -3,10 +3,10 @@
 приложения (риск утечки чужих данных/обхода видимости), поэтому отдельно проверяем,
 что показывается только опубликованное/по правильному токену.
 """
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from blog.models import ExternalExperience
+from blog.models import ExternalExperience, User
 from . import factories as f
 
 
@@ -130,3 +130,63 @@ class ExternalExperienceCrudTests(TestCase):
         r = self.client.post(reverse('external_experience_delete', args=[exp.id]))
         self.assertEqual(r.status_code, 404)
         self.assertTrue(ExternalExperience.objects.filter(id=exp.id).exists())
+
+
+@override_settings(ANALYTICS_ADMIN_TG_IDS=['999'])
+class TechAdminProfileManagementTests(TestCase):
+    """Тех.админ (ANALYTICS_ADMIN_TG_IDS) — единственный, кто может редактировать и
+    удалять ЧУЖОЙ профиль целиком (не бизнес-роль менеджера/ТЛ, см. decorators.
+    tech_admin_required). Менеджер без этого telegram_id доступа к этим действиям
+    иметь не должен — частый повод для путаницы «менеджер = вход» здесь не работает."""
+
+    def setUp(self):
+        self.admin = f.make_manager(telegram_id='999')
+        self.target = f.make_user(first_name='Старое')
+
+    def test_manager_without_tg_id_forbidden_to_edit(self):
+        other_manager = f.make_manager()
+        self.client.force_login(other_manager)
+        r = self.client.get(reverse('profile_admin_edit', args=[self.target.id]))
+        self.assertEqual(r.status_code, 403)
+
+    def test_manager_without_tg_id_forbidden_to_delete(self):
+        other_manager = f.make_manager()
+        self.client.force_login(other_manager)
+        r = self.client.get(reverse('profile_admin_delete', args=[self.target.id]))
+        self.assertEqual(r.status_code, 403)
+
+    def test_tech_admin_can_edit_other_profile(self):
+        self.client.force_login(self.admin)
+        r = self.client.post(reverse('profile_admin_edit', args=[self.target.id]), {
+            'first_name': 'Новое', 'last_name': self.target.last_name or '',
+            'middle_name': '', 'telegram_username': self.target.telegram_username,
+            'phone': self.target.phone, 'email': '', 'birthday': '', 'about': '',
+            'VK_username': '', 'system_username': self.target.system_username or '',
+        })
+        self.assertIn(r.status_code, (200, 302))
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.first_name, 'Новое')
+
+    def test_tech_admin_can_delete_other_profile(self):
+        self.client.force_login(self.admin)
+        session = self.client.session
+        session_key = f'captcha_profile_admin_delete_{self.target.id}'
+        session[session_key] = 42
+        session.save()
+        r = self.client.post(reverse('profile_admin_delete', args=[self.target.id]), {
+            'reason': 'Тестовое удаление', 'captcha_answer': '42',
+        })
+        self.assertIn(r.status_code, (200, 302))
+        self.assertFalse(User.objects.filter(id=self.target.id).exists())
+
+    def test_delete_requires_reason(self):
+        self.client.force_login(self.admin)
+        r = self.client.post(reverse('profile_admin_delete', args=[self.target.id]), {
+            'reason': '', 'captcha_answer': '1',
+        })
+        self.assertTrue(User.objects.filter(id=self.target.id).exists())
+
+    def test_tech_admin_cannot_delete_own_profile(self):
+        self.client.force_login(self.admin)
+        r = self.client.get(reverse('profile_admin_delete', args=[self.admin.id]))
+        self.assertEqual(r.status_code, 403)

@@ -1,9 +1,13 @@
 {% extends 'blog/base.html' %}
-{% block title %}Мой профиль — редактирование{% endblock %}
+{% block title %}{% if target %}Редактирование профиля волонтёра{% else %}Мой профиль — редактирование{% endif %}{% endblock %}
 {% block content %}
+{% comment %}target передаётся только тех.админом, редактирующим чужой профиль
+(profile_admin_edit); при самостоятельном редактировании (profile_edit) target нет —
+используем request.user, как и раньше.{% endcomment %}
+{% with target=target|default:user %}
 <div class="page-header">
-    <h1>Редактирование профиля</h1>
-    <a href="{% url 'profile_detail' user.id %}" class="btn secondary">← К профилю</a>
+    <h1>{% if target.id != user.id %}Редактирование профиля: {{ target.full_name }}{% else %}Редактирование профиля{% endif %}</h1>
+    <a href="{% url 'profile_detail' target.id %}" class="btn secondary">← К профилю</a>
 </div>
 
 {% if missing_fields %}
@@ -24,17 +28,17 @@
     <div class="field">
         <label>Telegram</label>
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:4px 0;">
-            {% if user.telegram_username %}
-                <span>@{{ user.telegram_username }}</span>
+            {% if target.telegram_username %}
+                <span>@{{ target.telegram_username }}</span>
             {% endif %}
-            {% if user.telegram_verified %}
+            {% if target.telegram_verified %}
                 <span class="pill success"><span class="dot"></span>подтверждён</span>
-            {% elif user.telegram_username %}
+            {% elif target.telegram_username %}
                 <span class="pill warning"><span class="dot"></span>не подтверждён</span>
             {% else %}
                 <span class="pill warning"><span class="dot"></span>не привязан</span>
             {% endif %}
-            {% if not user.telegram_verified %}
+            {% if not target.telegram_verified and target.id == user.id %}
                 <form method="post" action="{% url 'verify_telegram_start' %}" style="margin:0;">
                     {% csrf_token %}
                     <button type="submit" class="btn secondary" style="padding:4px 12px; font-size:0.85rem;">Подтвердить телеграм</button>
@@ -47,7 +51,7 @@
         </div>
     </div>
 
-    <form method="post" action="{% url 'profile_edit' %}">
+    <form method="post" action="{% if target.id != user.id %}{% url 'profile_admin_edit' target.id %}{% else %}{% url 'profile_edit' %}{% endif %}">
         {% csrf_token %}
         {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
         {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
@@ -64,8 +68,9 @@
         {% endfor %}
         <div class="event-form-actions">
             <button type="submit" class="btn">Сохранить</button>
-            <a href="{% url 'profile_detail' user.id %}" class="btn secondary">Отмена</a>
+            <a href="{% url 'profile_detail' target.id %}" class="btn secondary">Отмена</a>
         </div>
     </form>
 </div>
+{% endwith %}
 {% endblock %}

@@ -8,6 +8,10 @@
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <a href="{% url 'profile_achievements' target.id %}" class="btn secondary">🏅 Достижения{% if achievement_earned_count %} <span class="pill success" style="margin-left:4px;">{{ achievement_earned_count }}</span>{% endif %}</a>
         <a href="{% url 'profile_stats' target.id %}" class="btn secondary">📊 Статистика</a>
+        {% if is_tech_admin %}
+            <a href="{% url 'profile_admin_edit' target.id %}" class="btn secondary">✏️ Редактировать профиль</a>
+            <a href="{% url 'profile_admin_delete' target.id %}" class="btn danger" data-modal data-modal-title="Удаление профиля: {{ target.full_name }}">🗑️ Удалить профиль</a>
+        {% endif %}
     </div>
 </div>
 

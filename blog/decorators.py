@@ -1,8 +1,7 @@
 from functools import wraps
-from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from blog.services.roles import is_manager
+from blog.services.roles import is_manager, is_tech_admin
 
 
 def manager_required(view_func):
@@ -23,8 +22,7 @@ def tech_admin_required(view_func):
     @wraps(view_func)
     @login_required
     def _wrapped(request, *args, **kwargs):
-        allowed_ids = settings.ANALYTICS_ADMIN_TG_IDS
-        if str(request.user.telegram_id) not in allowed_ids:
+        if not is_tech_admin(request.user):
             raise PermissionDenied('Доступно только техническим администраторам.')
         return view_func(request, *args, **kwargs)
     return _wrapped

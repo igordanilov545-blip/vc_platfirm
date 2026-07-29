@@ -1,4 +1,5 @@
 """Резолвинг ролей и контекстных прав тим-лидера (access-control.md)."""
+from django.conf import settings
 from django.db import transaction
 
 from data_base import data_controller as dc
@@ -12,6 +13,16 @@ def is_manager(user: User) -> bool:
     if not user or not user.is_authenticated:
         return False
     return user.manager_roles.filter(revoked_at__isnull=True).exists()
+
+
+def is_tech_admin(user: User) -> bool:
+    """Технический администратор — не бизнес-роль, а закрытый список telegram_id
+    в .env (ANALYTICS_ADMIN_TG_IDS). Даёт доступ к техническому дашборду аналитики
+    и к административному редактированию/удалению чужих профилей (единственный,
+    кто может удалить чужой профиль целиком — не путать с блокировкой менеджером)."""
+    if not user or not user.is_authenticated:
+        return False
+    return str(getattr(user, 'telegram_id', '')) in settings.ANALYTICS_ADMIN_TG_IDS
 
 
 def is_team_leader(user: User) -> bool:

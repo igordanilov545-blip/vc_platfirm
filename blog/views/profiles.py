@@ -488,6 +488,71 @@ def letters_download_all(request, user_id):
     resp['Content-Disposition'] = _content_disposition('attachment', f'Письма_{safe_name}.zip')
     return resp
 
+@tech_admin_required
+def profile_admin_edit(request, user_id):
+    """Редактирование чужого профиля техническим администратором (ANALYTICS_ADMIN_TG_IDS).
+    Не бизнес-роль менеджера/ТЛ — отдельный закрытый доступ (см. decorators.tech_admin_required).
+    Форма — та же, что и в личном кабинете (ProfileForm), просто применяется к чужому
+    instance."""
+    target = get_object_or_404(User, pk=user_id)
+    form = ProfileForm(request.POST or None, instance=target)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        logger.info('Профиль отредактирован тех.админом: user=%s by=%s', target.id, actor(request.user))
+        messages.success(request, f'Профиль «{target.full_name}» обновлён.')
+        return redirect('profile_detail', user_id=target.id)
+
+    return render(request, 'blog/profile_edit.html', {
+        'form': form,
+        'target': target,
+        'next': '',
+        'missing_fields': account_missing_fields(target),
+    })
+
+
+@tech_admin_required
+def profile_admin_delete(request, user_id):
+    """Полное удаление чужого профиля техническим администратором — с двухфакторным
+    подтверждением (капча x+y, как event_delete). Каскадом удаляются заявки, участия,
+    комментарии и т.п. (FK on_delete=CASCADE/SET_NULL на User, см. models.py). В отличие
+    от блокировки менеджером (user_blacklist) — необратимо стирает профиль, а не просто
+    закрывает доступ."""
+    target = get_object_or_404(User, pk=user_id)
+    if target.id == request.user.id:
+        raise PermissionDenied('Нельзя удалить собственный профиль.')
+    session_key = f'captcha_profile_admin_delete_{target.id}'
+
+    if request.method == 'POST':
+        reason = (request.POST.get('reason') or '').strip()
+        if not reason:
+            messages.error(request, 'Укажите причину удаления.')
+            return redirect('profile_detail', user_id=target.id)
+        if not _check_captcha(request, session_key, request.POST.get('captcha_answer')):
+            messages.error(request, 'Неверный ответ на пример — удаление отменено. Попробуйте ещё раз.')
+            return modal_form_response(request, None, None, success_redirect=reverse('profile_detail', args=[target.id]))
+
+        full_name = target.full_name
+        logger.info(
+            'Профиль удалён тех.админом: user=%s name=%r by=%s reason=%r',
+            target.id, full_name, actor(request.user), reason,
+        )
+        target.delete()
+        messages.success(request, f'Профиль «{full_name}» удалён.')
+        return modal_form_response(request, None, None, success_redirect=reverse('user_list'))
+
+    return render_captcha_modal(
+        request,
+        session_key=session_key,
+        action_url=reverse('profile_admin_delete', args=[target.id]),
+        confirm_text=f'Удалить профиль «{target.full_name}» безвозвратно? Все его заявки, '
+                      f'участия и комментарии будут удалены вместе с ним.',
+        submit_label='Удалить профиль',
+        title=f'Удаление профиля: {target.full_name}',
+        reason_field=True,
+        reason_label='Причина удаления (обязательно)',
+    )
+
+
 @login_required
 def profile_comment_add(request, user_id):
     target = get_object_or_404(User, pk=user_id)

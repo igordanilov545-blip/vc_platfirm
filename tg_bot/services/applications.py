@@ -305,14 +305,16 @@ def all_applications(user_id: int, limit: int = 20):
     """Все заявки по всем мероприятиям (tg-bot.md §6.1) — только для менеджера."""
     close_old_connections()
     user = get_user(user_id)
-    if not roles_service.is_manager(user):
+    if not roles_service.has_manager_access(user):
         return None, 'forbidden'
     apps = dc.get_applications()[:limit]
     return apps, None
 
 def notify_manager_processed_application(user_id: int, application):
     """Оповещение ТЛ меро, что заявку обработал именно менеджер (bot-update.md §2.4.A) —
-    вызывается после успешной обработки, только если обработавший — менеджер (не ТЛ)."""
+    вызывается после успешной обработки, только если обработавший — менеджер (не ТЛ).
+    Сознательно на реальной роли (is_manager), а не has_manager_access: это про то, кем
+    человек ЯВЛЯЕТСЯ, а не про доступ."""
     close_old_connections()
     user = get_user(user_id)
     if not roles_service.is_manager(user):

@@ -70,7 +70,7 @@ def active_events_with_organizers(user_id: int):
     """Активные мероприятия с контактами организатора (tg-bot.md §6.2) — только менеджер."""
     close_old_connections()
     user = get_user(user_id)
-    if not roles_service.is_manager(user):
+    if not roles_service.has_manager_access(user):
         return None, 'forbidden'
     return dc.get_active_events(), None
 
@@ -79,7 +79,7 @@ def unpublished_events(user_id: int):
     только менеджер."""
     close_old_connections()
     user = get_user(user_id)
-    if not roles_service.is_manager(user):
+    if not roles_service.has_manager_access(user):
         return None, 'forbidden'
     return dc.get_unpublished_events(), None
 
@@ -89,7 +89,7 @@ def publish_event_from_bot(user_id: int, event_id: int):
     (event|None, код_ошибки|None)."""
     close_old_connections()
     user = get_user(user_id)
-    if not roles_service.is_manager(user):
+    if not roles_service.has_manager_access(user):
         return None, 'forbidden'
     event = dc.get_event_by_id(event_id)
     if not event:
@@ -107,7 +107,7 @@ def broadcastable_events(user_id: int):
     (bot-update.md §2.4.D), с датой последней рассылки — только менеджер."""
     close_old_connections()
     user = get_user(user_id)
-    if not roles_service.is_manager(user):
+    if not roles_service.has_manager_access(user):
         return None, 'forbidden'
     return dc.get_broadcastable_events(), None
 
@@ -119,7 +119,7 @@ def broadcast_event_from_bot(user_id: int, event_id: int):
     from blog.services.notifications import broadcast_new_event
 
     user = get_user(user_id)
-    if not roles_service.is_manager(user):
+    if not roles_service.has_manager_access(user):
         return None, None, 'forbidden'
     event = dc.get_event_by_id(event_id)
     if not event:

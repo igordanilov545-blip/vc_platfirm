@@ -146,7 +146,9 @@ def user_is_team_leader(user) -> bool:
     return roles_service.is_team_leader(user)
 
 def user_is_manager(user) -> bool:
-    return roles_service.is_manager(user)
+    """Права менеджера в боте — реальная роль ИЛИ тех.админ (полный доступ «под
+    капотом», роль/статус не меняются, см. roles.has_manager_access)."""
+    return roles_service.has_manager_access(user)
 
 LOGIN_RE = re.compile(r'^[a-zA-Z0-9_.-]{3,50}$')
 

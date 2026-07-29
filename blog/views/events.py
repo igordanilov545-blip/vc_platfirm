@@ -53,7 +53,7 @@ def public_event_detail(request, token):
 
 @login_required
 def event_list(request):
-    manager_view = is_manager(request.user)
+    manager_view = has_manager_access(request.user)
     # Волонтёр по умолчанию видит только непрошедшие меро: галка «Скрыть прошедшие»
     # предустановлена. Менеджеру — как раньше (показываем всё, галка снята). Явный
     # GET-параметр (переход по ссылке с фильтром) перекрывает дефолт в обе стороны.
@@ -225,7 +225,7 @@ def event_detail(request, event_id):
         'can_manage_applications': can_manage_applications,
         'can_edit_applications': can_manage_applications and not is_finished,
         'is_finished': is_finished,
-        'is_manager': is_manager(request.user),
+        'is_manager': has_manager_access(request.user),
         'comments': event.comments.all(),
         'comment_form': EventCommentForm() if can_manage_applications else None,
         'has_open_recruitment': has_open_recruitment,

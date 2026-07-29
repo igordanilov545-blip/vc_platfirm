@@ -377,7 +377,7 @@ def application_process_all(request, event_id=None):
             raise PermissionDenied('Нет прав на обработку заявок этого мероприятия.')
         if event.event_status == 'finished':
             raise PermissionDenied('Мероприятие завершено — заявки менять больше нельзя.')
-    elif not is_manager(request.user):
+    elif not has_manager_access(request.user):
         raise PermissionDenied('Нет прав на обработку заявок.')
 
     pending = _pending_applications_queryset(event_id)

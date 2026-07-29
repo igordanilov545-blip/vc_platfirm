@@ -5,11 +5,12 @@
 НЕ завершено; расширенный доступ к чужому профилю — только если целевой волонтёр
 подал заявку/участвует именно в этом меро.
 """
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from blog.services.roles import (
-    can_process_applications, has_extended_access_to_profile, is_team_leader_of_event,
+    can_process_applications, has_extended_access_to_profile, has_manager_access,
+    is_manager, is_team_leader_of_event, role_label, role_slug,
 )
 from . import factories as f
 
@@ -39,6 +40,59 @@ class TeamLeaderOwnVsForeignEventTests(TestCase):
     def test_plain_volunteer_cannot_process_anywhere(self):
         volunteer = f.make_user()
         self.assertFalse(can_process_applications(volunteer, self.own_event.id))
+
+
+@override_settings(ANALYTICS_ADMIN_TG_IDS=['444'])
+class TechAdminGetsManagerAccessTests(TestCase):
+    """Тех.админ (ANALYTICS_ADMIN_TG_IDS) получает фактические права менеджера ВЕЗДЕ
+    (has_manager_access), но его видимая роль (is_manager/role_label/role_slug) не
+    меняется — он остаётся тем, кем был (волонтёр/ТЛ/менеджер). Права ≠ отображаемая
+    роль — не путать has_manager_access с is_manager (roles.py, has_manager_access
+    docstring)."""
+
+    def test_plain_volunteer_tech_admin_gets_manager_access(self):
+        volunteer = f.make_user(telegram_id='444')
+        self.assertTrue(has_manager_access(volunteer))
+        # но реальная роль/ярлык остаются волонтёрскими
+        self.assertFalse(is_manager(volunteer))
+        self.assertEqual(role_label(volunteer), 'Волонтёр')
+        self.assertEqual(role_slug(volunteer), 'volunteer')
+
+    def test_team_leader_tech_admin_gets_manager_access_keeps_tl_label(self):
+        tl = f.make_team_leader(telegram_id='444')
+        self.assertTrue(has_manager_access(tl))
+        self.assertFalse(is_manager(tl))
+        self.assertEqual(role_label(tl), 'Тим-лидер')
+        self.assertEqual(role_slug(tl), 'team_leader')
+
+    def test_can_process_applications_on_any_event_without_role(self):
+        volunteer = f.make_user(telegram_id='444')
+        event = f.make_event()
+        self.assertTrue(can_process_applications(volunteer, event.id))
+
+    def test_extended_profile_access_to_any_volunteer_without_role(self):
+        volunteer = f.make_user(telegram_id='444')
+        other = f.make_user()
+        self.assertTrue(has_extended_access_to_profile(volunteer, other))
+
+    def test_regular_user_without_tg_id_unaffected(self):
+        volunteer = f.make_user()
+        self.assertFalse(has_manager_access(volunteer))
+
+    def test_manager_context_flag_true_for_tech_admin_on_dashboard(self):
+        volunteer = f.make_user(telegram_id='444')
+        self.client.force_login(volunteer)
+        r = self.client.get(reverse('dashboard'))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.context['is_manager'])
+        # роль в UI по-прежнему «Волонтёр», не «Менеджер»
+        self.assertEqual(r.context['role_label'], 'Волонтёр')
+
+    def test_manager_only_view_accessible_to_tech_admin_volunteer(self):
+        volunteer = f.make_user(telegram_id='444')
+        self.client.force_login(volunteer)
+        r = self.client.get(reverse('user_list'))
+        self.assertEqual(r.status_code, 200)
 
 
 class TeamLeaderFinishedEventLosesRightsTests(TestCase):

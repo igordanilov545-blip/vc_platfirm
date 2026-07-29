@@ -25,6 +25,19 @@ def is_tech_admin(user: User) -> bool:
     return str(getattr(user, 'telegram_id', '')) in settings.ANALYTICS_ADMIN_TG_IDS
 
 
+def has_manager_access(user: User) -> bool:
+    """Есть ли у пользователя фактические права менеджера — реальная роль ИЛИ
+    тех.админ (ANALYTICS_ADMIN_TG_IDS). Используется во ВСЕХ ACL-проверках и
+    UI-гейтах менеджерских разделов вместо is_manager() напрямую.
+
+    Тех.админ получает полный доступ «под капотом» (видит и может всё, что и
+    менеджер), но его отображаемая роль/статус (role_label, пилюля в профиле)
+    не меняется — он остаётся тем, кем был (волонтёр/ТЛ/менеджер). Поэтому
+    role_label/role_slug ниже сознательно продолжают звать is_manager(), а не эту
+    функцию."""
+    return is_manager(user) or is_tech_admin(user)
+
+
 def is_team_leader(user: User) -> bool:
     if not user or not user.is_authenticated:
         return False
@@ -41,26 +54,26 @@ def is_team_leader_of_event(user: User, event_id: int) -> bool:
 
 
 def can_process_applications(user: User, event_id: int) -> bool:
-    """Менеджер — на всех меро; тим-лидер — только на своих (правило 3 db.md)."""
-    return is_manager(user) or is_team_leader_of_event(user, event_id)
+    """Менеджер (и тех.админ) — на всех меро; тим-лидер — только на своих (правило 3 db.md)."""
+    return has_manager_access(user) or is_team_leader_of_event(user, event_id)
 
 
 def can_manage_event(user: User) -> bool:
-    """CRUD мероприятий, назначение персонала — только менеджер."""
-    return is_manager(user)
+    """CRUD мероприятий, назначение персонала — менеджер (и тех.админ)."""
+    return has_manager_access(user)
 
 
 def has_extended_access_to_profile(viewer: User, target: User) -> bool:
     """Расширенный + внутренний профиль чужого волонтёра (access-control.md, правило 5):
 
-    владелец или менеджер — всегда; тим-лидер — только пока одновременно:
+    владелец или менеджер (и тех.админ) — всегда; тим-лидер — только пока одновременно:
     - он team_lead на мероприятии, и
     - мероприятие ещё не завершено (event_status != 'finished'), и
     - целевой волонтёр подал заявку на это меро ИЛИ участвует в нём.
     """
     if not viewer or not viewer.is_authenticated:
         return False
-    if viewer.id == target.id or is_manager(viewer):
+    if viewer.id == target.id or has_manager_access(viewer):
         return True
     if not is_team_leader(viewer):
         return False

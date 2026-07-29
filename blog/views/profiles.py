@@ -114,9 +114,9 @@ def profile_detail(request, user_id):
     from data_base import data_controller as dc
     target = get_object_or_404(User, pk=user_id)
     is_owner = request.user.id == target.id
-    is_mgr = is_manager(request.user)
-    # Расширенный + внутренний профиль: владелец, менеджер, либо ТЛ в контексте
-    # своего мероприятия (access-control.md, правило 5).
+    is_mgr = has_manager_access(request.user)
+    # Расширенный + внутренний профиль: владелец, менеджер (и тех.админ), либо ТЛ
+    # в контексте своего мероприятия (access-control.md, правило 5).
     has_extended = has_extended_access_to_profile(request.user, target)
     # Комментарии волонтёр не видит никогда, даже о себе (access-control.md, правило 6).
     can_see_comments = is_mgr or (is_team_leader(request.user) and has_extended and not is_owner)
@@ -384,7 +384,7 @@ def letter_view(request, user_id, event_id):
             )
             # ?debug=1 (только менеджеру) — вернуть текст трейса прямо в ответ, чтобы
             # диагностировать прод без доступа к логам сервера. Временная мера.
-            if request.GET.get('debug') == '1' and is_manager(request.user):
+            if request.GET.get('debug') == '1' and has_manager_access(request.user):
                 import traceback
                 return HttpResponse(
                     'LETTER RENDER ERROR\n\n' + traceback.format_exc(),
@@ -556,7 +556,7 @@ def profile_admin_delete(request, user_id):
 @login_required
 def profile_comment_add(request, user_id):
     target = get_object_or_404(User, pk=user_id)
-    is_mgr = is_manager(request.user)
+    is_mgr = has_manager_access(request.user)
     can_comment = is_mgr or (
         is_team_leader(request.user)
         and has_extended_access_to_profile(request.user, target)

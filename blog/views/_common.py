@@ -65,7 +65,7 @@ from blog.services.applications import (
 from blog.services import roles as roles_service
 from blog.services.roles import (
     account_is_complete, account_missing_fields, can_process_applications,
-    has_extended_access_to_profile, is_manager, is_team_leader, role_label,
+    has_extended_access_to_profile, has_manager_access, is_manager, is_team_leader, role_label,
 )
 from blog.services.stats import recalc_user_aggregates
 from blog.services import charts as charts_service
@@ -235,7 +235,7 @@ __all__ = [
     'import_service', 'notifications_service', 'reports_service', 'report_exports',
     'can_cancel_application', 'cancel_application', 'event_closing_checklist',
     'process_application', 'roles_service', 'account_is_complete', 'account_missing_fields',
-    'can_process_applications', 'has_extended_access_to_profile', 'is_manager',
+    'can_process_applications', 'has_extended_access_to_profile', 'is_manager', 'has_manager_access',
     'is_team_leader', 'role_label', 'recalc_user_aggregates', 'charts_service',
     'event_timeline_service', 'organization_report_service', 'person_report_service',
     'volunteers_report_service', 'report_builders_service', 'docx_response',

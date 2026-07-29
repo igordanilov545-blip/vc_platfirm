@@ -1,11 +1,14 @@
-from blog.services.roles import is_manager, is_team_leader, is_tech_admin, role_label
+from blog.services.roles import has_manager_access, is_team_leader, is_tech_admin, role_label
 
 
 def role_flags(request):
     user = getattr(request, 'user', None)
     authenticated = bool(user and user.is_authenticated)
     return {
-        'is_manager': is_manager(user) if authenticated else False,
+        # has_manager_access (не is_manager!): тех.админ получает полный доступ ко
+        # всем менеджерским разделам UI, оставаясь при этом видимой ролью, кем был
+        # (role_label ниже сознательно на реальном is_manager — не путать).
+        'is_manager': has_manager_access(user) if authenticated else False,
         'is_team_leader': is_team_leader(user) if authenticated else False,
         'role_label': role_label(user) if authenticated else None,
         'is_tech_admin': is_tech_admin(user) if authenticated else False,

@@ -72,7 +72,7 @@ def pgas_certificate_issue(request, user_id):
 
     target = get_object_or_404(User, pk=user_id)
     is_owner = request.user.id == target.id
-    is_mgr = is_manager(request.user)
+    is_mgr = has_manager_access(request.user)
     if not (is_mgr or is_owner):
         return HttpResponseForbidden('Нет доступа к выдаче справки для этого профиля.')
     # Волонтёр может выдать справку себе только при выполнении всех условий (как раньше

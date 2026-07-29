@@ -22,10 +22,10 @@ def dashboard(request):
     user = request.user
     context = {
         'role_label': role_label(user),
-        'is_manager': is_manager(user),
+        'is_manager': has_manager_access(user),
         'is_team_leader': is_team_leader(user),
     }
-    if is_manager(user):
+    if has_manager_access(user):
         # Доступ к данным — через контроллер, а не прямым ORM (coding-principles §1,
         # refactor-plan Фаза 2 — перевод веба на data_controller).
         from data_base import data_controller as dc

@@ -482,6 +482,21 @@ class Season(models.Model):
         return f"Season: {self.start_season} - {self.end_season or '...'}"
 
 
+class EventGroup(models.Model):
+    """Мероприятие верхнего уровня: объединяет позиции, не меняя их заявки и смены."""
+    title = models.CharField(max_length=255)
+    managers = models.ManyToManyField(User, blank=True, related_name='managed_event_groups')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'event_groups'
+        verbose_name = 'Мероприятие'
+        verbose_name_plural = 'Мероприятия'
+
+    def __str__(self):
+        return self.title
+
+
 class Event(models.Model):
     """Основная сущность события.
 
@@ -489,6 +504,11 @@ class Event(models.Model):
     живут на уровне смены (EventShift), а не мероприятия — у мероприятия из нескольких
     смен каждая смена сама решает, открыт у неё набор или нет. На Event остаётся только
     общий event_status жизненного цикла (upcoming/ongoing/passed/finished)."""
+    # Имя Event и таблица events сохранены: заявки, бот и отчёты работают с позициями.
+    event_group = models.ForeignKey(
+        EventGroup, on_delete=models.PROTECT, null=True, blank=True,
+        related_name='positions', verbose_name='Мероприятие',
+    )
     STATUS_CHOICES = [
         ('upcoming', 'Предстоит'),
         ('ongoing', 'Идёт'),
@@ -550,8 +570,8 @@ class Event(models.Model):
 
     class Meta:
         db_table = 'events'
-        verbose_name = 'Мероприятие'
-        verbose_name_plural = 'Мероприятия'
+        verbose_name = 'Позиция'
+        verbose_name_plural = 'Позиции'
 
     def __str__(self):
         return self.title

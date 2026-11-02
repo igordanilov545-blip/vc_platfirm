@@ -53,6 +53,44 @@ def public_event_detail(request, token):
 
 @login_required
 def event_list(request):
+    """Верхний уровень: мероприятия со сводками по позициям."""
+    from blog.services.event_groups import event_group_rows
+    return render(request, 'blog/event_list.html', {'event_groups': event_group_rows()})
+
+
+@manager_required
+def event_group_create(request):
+    """Создать мероприятие без вмешательства в жизненный цикл позиций."""
+    from blog.forms.events import EventGroupForm
+    form = EventGroupForm(request.POST or None, initial={'managers': [request.user.pk]}, assigned_by=request.user)
+    if request.method == 'POST' and form.is_valid():
+        group = form.save()
+        return modal_form_response(request, None, None, success_redirect=reverse('event_group_detail', args=[group.pk]))
+    return modal_form_response(
+        request, 'blog/event_group_form.html', {'form': form, 'title': 'Новое мероприятие'},
+        partial_template='blog/partials/_event_group_form.html',
+    )
+
+
+@manager_required
+def event_group_edit(request, group_id):
+    """Редактировать название и менеджеров мероприятия, сохраняя позиции."""
+    from blog.forms.events import EventGroupForm
+    group = get_object_or_404(dc.event_groups_qs(), pk=group_id)
+    form = EventGroupForm(request.POST or None, instance=group, assigned_by=request.user)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        return modal_form_response(request, None, None, success_redirect=reverse('event_group_detail', args=[group.pk]))
+    return modal_form_response(
+        request, 'blog/event_group_form.html', {'form': form, 'title': 'Редактировать мероприятие'},
+        partial_template='blog/partials/_event_group_form.html',
+    )
+
+
+@login_required
+def event_group_detail(request, group_id):
+    """Прежний список позиций и смен, ограниченный выбранным мероприятием."""
+    group = get_object_or_404(dc.event_groups_qs(), pk=group_id)
     manager_view = has_manager_access(request.user)
     # Волонтёр по умолчанию видит только непрошедшие меро: галка «Скрыть прошедшие»
     # предустановлена. Менеджеру — как раньше (показываем всё, галка снята). Явный
@@ -61,9 +99,8 @@ def event_list(request):
         hide_passed = request.GET.get('hide_passed') == '1'
     else:
         hide_passed = not manager_view
-    from data_base import data_controller as dc
     events = list(
-        dc.events_qs().select_related('location', 'organization', 'dobro_ru_shared_link')
+        dc.events_qs().filter(event_group=group).select_related('location', 'organization', 'dobro_ru_shared_link')
         .prefetch_related('shifts')
     )
 
@@ -171,7 +208,8 @@ def event_list(request):
         e.first_day or datetime.date.max,
     ))
 
-    return render(request, 'blog/event_list.html', {
+    return render(request, 'blog/position_list.html', {
+        'event_group': group,
         'events': rows,
         'manager_view': manager_view,
         'hide_passed': hide_passed,
@@ -180,7 +218,7 @@ def event_list(request):
 @login_required
 def event_detail(request, event_id):
     from data_base import data_controller as dc
-    event = get_object_or_404(dc.events_qs().select_related('location', 'organization', 'organizer'), pk=event_id)
+    event = get_object_or_404(dc.events_qs().select_related('location', 'organization', 'organizer', 'event_group'), pk=event_id)
     event.close_recruit_if_passed()
     shifts = list(event.shifts.select_related('location').order_by('day'))
     # Пока мероприятие не началось — смены идут по возрастанию даты (ближайшая сверху).
@@ -419,18 +457,22 @@ def event_create(request):
     # Создание меро из превью Excel-импорта (bot-update.md-подобный флоу для веба):
     # кнопка «Создать мероприятие «X»» на import_preview передаёт название и метку,
     # что нужно вернуться назад на превью импорта, а не на страницу меро.
-    initial = {'title': request.GET.get('title')} if request.GET.get('title') else None
+    initial = {}
+    if request.GET.get('title'):
+        initial['title'] = request.GET['title']
+    if request.GET.get('group'):
+        initial['event_group'] = get_object_or_404(dc.event_groups_qs(), pk=request.GET['group']).pk
     from_import = request.GET.get('from_import') == '1'
 
     form = EventForm(request.POST or None, initial=initial, assigned_by=request.user)
     if request.method == 'POST' and form.is_valid():
         event = form.save()
-        messages.success(request, 'Мероприятие создано.')
+        messages.success(request, 'Позиция создана.')
         redirect_url = reverse('import_preview') if from_import else reverse('event_detail', args=[event.id])
         return modal_form_response(request, None, None, success_redirect=redirect_url)
     return modal_form_response(
         request, 'blog/event_form.html',
-        {'form': form, 'title': 'Новое мероприятие', 'submit_label': 'Создать',
+        {'form': form, 'title': 'Новая позиция', 'submit_label': 'Создать',
          'volunteer_needed_options': VOLUNTEER_NEEDED_OPTIONS},
         partial_template='blog/partials/_event_form_body.html',
     )
@@ -443,7 +485,7 @@ def event_edit(request, event_id):
     набор, явку) снова доступна для правок, как у обычного прошедшего меро."""
     event = get_object_or_404(Event, pk=event_id)
     if event.event_status == 'finished':
-        raise PermissionDenied('Мероприятие завершено — сначала откройте его обратно кнопкой на странице меро.')
+        raise PermissionDenied('Позиция завершена — сначала откройте её обратно кнопкой на странице позиции.')
 
     form = EventForm(request.POST or None, instance=event, show_closing_fields=True, assigned_by=request.user)
     if request.method == 'POST' and form.is_valid():
@@ -452,7 +494,7 @@ def event_edit(request, event_id):
         # одобренным волонтёрам, кому на момент одобрения ссылки ещё не было (task-3).
         from blog.services.notifications import send_pending_approval_links
         send_pending_approval_links(event)
-        messages.success(request, 'Мероприятие обновлено.')
+        messages.success(request, 'Позиция обновлена.')
         return modal_form_response(
             request, None, None,
             success_redirect=reverse('event_detail', args=[event.id]),
@@ -490,15 +532,15 @@ def event_delete(request, event_id):
             for user in dc.users_qs().filter(id__in=affected_user_ids):
                 recalc_user_aggregates(user)
         logger.info('Мероприятие удалено: event=%s title=%r by=%s', event_id, title, actor(request.user))
-        messages.success(request, f'Мероприятие «{title}» удалено.')
+        messages.success(request, f'Позиция «{title}» удалена.')
         return modal_form_response(request, None, None, success_redirect=reverse('event_list'))
 
     return render_captcha_modal(
         request,
         session_key=session_key,
         action_url=reverse('event_delete', args=[event.id]),
-        confirm_text=f'Удалить мероприятие «{event.title}» безвозвратно? Вместе с ним удалятся все смены, заявки и явка по нему.',
-        submit_label='Удалить мероприятие',
+        confirm_text=f'Удалить позицию «{event.title}» безвозвратно? Вместе с ней удалятся все смены, заявки и явка по ней.',
+        submit_label='Удалить позицию',
         title=f'Удаление: {event.title}',
     )
 
@@ -620,7 +662,7 @@ def event_reopen(request, event_id):
     закрытии; чеклист всё равно перепроверяет актуальное состояние на всякий случай)."""
     event = get_object_or_404(Event, pk=event_id)
     if event.event_status != 'finished':
-        messages.error(request, 'Мероприятие не завершено — открывать нечего.')
+        messages.error(request, 'Позиция не завершена — открывать нечего.')
         return redirect('event_detail', event_id=event.id)
 
     captcha_key = f'captcha_event_reopen_{event.id}'
@@ -629,7 +671,7 @@ def event_reopen(request, event_id):
             event.event_status = 'passed'
             event.save(update_fields=['event_status'])
             logger.info('Мероприятие открыто обратно для редактирования: event=%s by=%s', event.id, actor(request.user))
-            messages.success(request, f'Мероприятие «{event.title}» снова открыто для редактирования.')
+            messages.success(request, f'Позиция «{event.title}» снова открыта для редактирования.')
             return redirect('event_detail', event_id=event.id)
         messages.error(request, 'Неверный ответ на пример.')
 
@@ -637,7 +679,7 @@ def event_reopen(request, event_id):
         request,
         session_key=captcha_key,
         action_url=reverse('event_reopen', args=[event.id]),
-        confirm_text='Мероприятие будет снова доступно для редактирования (заявки, набор, явка, часы) — не забудьте завершить его обратно, когда закончите.',
+        confirm_text='Позиция будет снова доступна для редактирования (заявки, набор, явка, часы) — не забудьте завершить её обратно, когда закончите.',
         submit_label='Открыть для редактирования',
         title=f'Открыть завершённое: {event.title}',
     )
@@ -652,7 +694,7 @@ def event_close(request, event_id):
 
     if request.method == 'POST':
         if not checklist['ready']:
-            messages.error(request, 'Мероприятие ещё не готово к завершению — проверьте условия ниже.')
+            messages.error(request, 'Позиция ещё не готова к завершению — проверьте условия ниже.')
             return redirect('event_close', event_id=event.id)
 
         people_helped = request.POST.get('people_helped', '').strip()
@@ -678,7 +720,7 @@ def event_close(request, event_id):
             user = dc.get_user_by_id(uid)
             if user:
                 recalc_user_achievements(user)
-        messages.success(request, f'Мероприятие «{event.title}» завершено.')
+        messages.success(request, f'Позиция «{event.title}» завершена.')
         return redirect('event_detail', event_id=event.id)
 
     return render(request, 'blog/event_close.html', {'event': event, 'checklist': checklist})

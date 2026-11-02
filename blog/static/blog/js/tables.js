@@ -396,6 +396,9 @@
 
             var table = document.querySelector(input.getAttribute('data-table-filter'));
             if (!table) return;
+            // Списки позиций совмещают поиск с существующим тумблером прошедших смен.
+            var passedSelector = input.getAttribute('data-table-hide-passed');
+            var hidePassed = passedSelector ? document.querySelector(passedSelector) : null;
             var delay = parseInt(input.getAttribute('data-filter-debounce'), 10);
             if (isNaN(delay)) delay = 1500;
             var debounceTimer = null;
@@ -403,13 +406,17 @@
             function apply() {
                 var query = input.value.trim().toLowerCase();
                 table.querySelectorAll('tbody tr[data-search]').forEach(function (row) {
-                    row.hidden = !!query && row.getAttribute('data-search').toLowerCase().indexOf(query) === -1;
+                    var matchesSearch = !query || row.getAttribute('data-search').toLowerCase().indexOf(query) !== -1;
+                    var matchesPassed = !hidePassed || !hidePassed.checked || row.getAttribute('data-passed') !== '1';
+                    row.hidden = !(matchesSearch && matchesPassed);
                 });
             }
             input.addEventListener('input', function () {
                 clearTimeout(debounceTimer);
                 debounceTimer = setTimeout(apply, delay);
             });
+            if (hidePassed) hidePassed.addEventListener('change', apply);
+            apply();
         });
     }
     initTableFilter(document);

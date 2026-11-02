@@ -29,6 +29,9 @@ urlpatterns = [
     path('webapp/auth/', views.webapp_auth, name='webapp_auth'),
 
     path('events/', views.event_list, name='event_list'),
+    path('events/groups/new/', views.event_group_create, name='event_group_create'),
+    path('events/groups/<int:group_id>/', views.event_group_detail, name='event_group_detail'),
+    path('events/groups/<int:group_id>/edit/', views.event_group_edit, name='event_group_edit'),
     path('events/new/', views.event_create, name='event_create'),
     path('events/<int:event_id>/', views.event_detail, name='event_detail'),
     path('events/<int:event_id>/edit/', views.event_edit, name='event_edit'),

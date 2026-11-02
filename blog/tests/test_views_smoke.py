@@ -30,8 +30,14 @@ class ManagerPagesSmokeTests(TestCase):
         self.assertEqual(r.context['new_applications_count'], 1)
 
     def test_event_list(self):
+        from blog.models import EventGroup
+        group = EventGroup.objects.create(title='Смоук-фестиваль')
+        self.event.event_group = group
+        self.event.save(update_fields=['event_group'])
         r = self.client.get(reverse('event_list'))
         self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'Смоук-фестиваль')
+        r = self.client.get(reverse('event_group_detail', args=[group.pk]))
         self.assertContains(r, 'Смоук-меро')
 
     def test_event_detail(self):

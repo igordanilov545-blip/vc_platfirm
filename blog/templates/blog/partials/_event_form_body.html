@@ -4,6 +4,12 @@
     {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
 
     <div class="field">
+        {{ form.event_group.label_tag }}
+        {{ form.event_group }}
+        {% if form.event_group.errors %}<div class="field-error">{{ form.event_group.errors|striptags }}</div>{% endif %}
+    </div>
+
+    <div class="field">
         {{ form.title.label_tag }}
         {{ form.title }}
         {% if form.title.errors %}<div class="field-error">{{ form.title.errors|striptags }}</div>{% endif %}

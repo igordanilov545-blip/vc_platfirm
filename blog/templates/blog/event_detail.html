@@ -2,18 +2,21 @@
 {% load custom_tags %}
 {% block title %}{{ event.title }}{% endblock %}
 {% block content %}
+{% if event.event_group_id %}
+<p><a href="{% url 'event_list' %}">Мероприятия</a> / <a href="{% url 'event_group_detail' event.event_group_id %}">{{ event.event_group.title }}</a> / Позиция</p>
+{% endif %}
 <div class="page-header">
     <h1>{{ event.title }}</h1>
     {% if is_manager %}
     <div class="event-toolbar">
         {% if not event.published_at and event.event_status != 'finished' %}
-        <form method="post" action="{% url 'event_publish' event.id %}" class="inline" data-confirm="Опубликовать мероприятие «{{ event.title }}»? После публикации откроется подача заявок.">
+        <form method="post" action="{% url 'event_publish' event.id %}" class="inline" data-confirm="Опубликовать позицию «{{ event.title }}»? После публикации откроется подача заявок.">
             {% csrf_token %}
             <button type="submit" class="btn" data-tour="event-publish">📣 Опубликовать</button>
         </form>
         {% endif %}
         {% if event.published_at and event.event_status != 'finished' %}
-        <form method="post" action="{% url 'event_broadcast' event.id %}" class="inline" data-confirm="{% if event.broadcast_sent_at %}Рассылка по этому мероприятию уже была сделана. Отправить ещё раз (получат только те, кто пока не подал заявку)?{% else %}Сделать рассылку о мероприятии «{{ event.title }}» подписанным волонтёрам?{% endif %}">
+        <form method="post" action="{% url 'event_broadcast' event.id %}" class="inline" data-confirm="{% if event.broadcast_sent_at %}Рассылка по этой позиции уже была сделана. Отправить ещё раз (получат только те, кто пока не подал заявку)?{% else %}Сделать рассылку о позиции «{{ event.title }}» подписанным волонтёрам?{% endif %}">
             {% csrf_token %}
             <button type="submit" class="btn secondary" data-tour="event-broadcast">🔔 {% if event.broadcast_sent_at %}Сделать рассылку ещё раз{% else %}Сделать рассылку{% endif %}</button>
         </form>
@@ -28,26 +31,26 @@
         {% comment %}Завершённое меро редактируем ПОЛНОЦЕННО (общая инфо + явка/часы/набор):
         кнопка ведёт на отдельную СТРАНИЦУ подтверждения (капча), а не в модалку —
         после подтверждения меро открывается обратно (finished→passed) и вся страница
-        мероприятия становится редактируемой (таблица явки, часы, набор). Не data-modal.{% endcomment %}
+        позиции становится редактируемой (таблица явки, часы, набор). Не data-modal.{% endcomment %}
         <a href="{% url 'event_reopen' event.id %}" class="btn secondary" data-tour="event-reopen">✏️ Редактировать (явку, часы, набор)</a>
         {% else %}
         <a href="{% url 'event_edit' event.id %}" class="btn secondary" data-modal data-modal-title="Редактировать: {{ event.title }}">Редактировать</a>
         {% endif %}
-        <a href="{% url 'report_event_pdf' event.id %}" class="btn secondary" target="_blank" title="Скачать DOCX-отчёт по мероприятию">📄 Отчёт (DOCX)</a>
+        <a href="{% url 'report_event_pdf' event.id %}" class="btn secondary" target="_blank" title="Скачать DOCX-отчёт по позиции">📄 Отчёт (DOCX)</a>
         {% if closing_checklist %}
         <a href="{% url 'event_close' event.id %}" class="btn {% if closing_checklist.ready %}danger{% else %}secondary{% endif %}" data-tour="event-close">
-            {% if closing_checklist.ready %}✅ Завершить мероприятие{% else %}Завершить мероприятие{% endif %}
+            {% if closing_checklist.ready %}✅ Завершить позицию{% else %}Завершить позицию{% endif %}
         </a>
         {% endif %}
-        <a href="{% url 'event_delete' event.id %}" class="btn danger" data-modal data-modal-title="Удаление мероприятия">🗑 Удалить</a>
+        <a href="{% url 'event_delete' event.id %}" class="btn danger" data-modal data-modal-title="Удаление позиции">🗑 Удалить</a>
     </div>
     {% endif %}
     {% if has_open_recruitment and not is_finished %}
         {% if my_active_application %}
-        <a href="{% url 'application_edit' my_active_application.id %}" class="btn secondary" data-modal data-modal-title="Моя заявка: {{ event.title }}" data-tour="event-my-application">📝 Моя заявка на это мероприятие</a>
+        <a href="{% url 'application_edit' my_active_application.id %}" class="btn secondary" data-modal data-modal-title="Моя заявка: {{ event.title }}" data-tour="event-my-application">📝 Моя заявка на эту позицию</a>
         {% else %}
         {% with any_open=shifts|has_open_shift %}
-        <a href="{% url 'application_create' %}?event={{ event.id }}" class="btn" data-modal data-modal-title="Подать заявку: {{ event.title }}" data-tour="event-apply">✅ {% if any_open %}Подать заявку на мероприятие{% else %}Подать заявку (в резерв — набор закрыт){% endif %}</a>
+        <a href="{% url 'application_create' %}?event={{ event.id }}" class="btn" data-modal data-modal-title="Подать заявку: {{ event.title }}" data-tour="event-apply">✅ {% if any_open %}Подать заявку на позицию{% else %}Подать заявку (в резерв — набор закрыт){% endif %}</a>
         {% endwith %}
         {% endif %}
     {% endif %}
@@ -55,17 +58,17 @@
 
 {% if is_finished %}
 <div class="card" style="background:var(--neutral-soft);">
-    <p style="margin:0;"><span class="pill neutral"><span class="dot"></span>Мероприятие завершено</span> — заявки, явка и набор больше не редактируются, доступен только просмотр.</p>
+    <p style="margin:0;"><span class="pill neutral"><span class="dot"></span>Позиция завершена</span> — заявки, явка и набор больше не редактируются, доступен только просмотр.</p>
 </div>
 {% endif %}
 
-{% comment %}Мини-дашборд менеджера — сводка по мероприятию вверху страницы: ID (виден
+{% comment %}Мини-дашборд менеджера — сводка по позиции вверху страницы: ID (виден
 только менеджеру), тим-лидеры, ответственный менеджер (+смена), общий % набора и по дням.{% endcomment %}
 {% if can_manage_applications %}
 <div class="card event-dashboard">
     <div class="event-dash-grid">
         <div class="event-dash-cell">
-            <div class="event-dash-label">ID мероприятия</div>
+            <div class="event-dash-label">ID позиции</div>
             <div class="event-dash-value mono">#{{ event.id }}</div>
         </div>
         <div class="event-dash-cell">
@@ -108,7 +111,7 @@
 {% endif %}
 
 {% comment %}Часы на Добро.ру — статус и переключатель, только менеджеру и только после
-завершения мероприятия. Для меро без учёта Добро.ру (kind='none') блок не показываем.{% endcomment %}
+завершения позиции. Для меро без учёта Добро.ру (kind='none') блок не показываем.{% endcomment %}
 {% if is_manager and is_finished and event.dobro_ru_link_kind != 'none' %}
 <div class="card">
     <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
@@ -204,7 +207,7 @@
 </div>
 
 <div class="card" style="padding:0; overflow:hidden;">
-    <h3 style="padding:20px 20px 0;">Смены мероприятия</h3>
+    <h3 style="padding:20px 20px 0;">Смены позиции</h3>
     <p style="padding:0 20px; color:var(--text-secondary); font-size:13px;">Ближайшая/идущая смена — сверху, прошедшие уходят в конец списка.</p>
     <table class="responsive-table shift-table" data-sortable>
         <thead>
@@ -241,9 +244,9 @@
                 {% if is_manager and event.event_status != 'finished' %}
                 <td data-label="" class="row-actions" style="white-space:nowrap;">
                     <a href="{% url 'event_shift_edit' event.id shift.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Редактировать смену: {{ event.title }}">Изменить</a>
-                    {% comment %}Единственную смену удалить нельзя — для таких меро есть удаление мероприятия целиком.{% endcomment %}
+                    {% comment %}Единственную смену удалить нельзя — для таких меро есть удаление позиции целиком.{% endcomment %}
                     {% if shifts|length > 1 %}
-                    <form method="post" action="{% url 'event_shift_delete' event.id shift.id %}" class="inline" data-confirm="Удалить эту смену мероприятия?">
+                    <form method="post" action="{% url 'event_shift_delete' event.id shift.id %}" class="inline" data-confirm="Удалить эту смену позиции?">
                         {% csrf_token %}
                         <button type="submit" class="btn danger btn-sm">Удалить</button>
                     </form>
@@ -264,13 +267,13 @@
 
 {% if is_participant %}
 <div class="card">
-    <h3 data-tour="event-participant">👥 Для участников мероприятия</h3>
+    <h3 data-tour="event-participant">👥 Для участников позиции</h3>
     <p>Волонтёров участвовало: {{ volunteers_count }}</p>
     {% if event.chat_link %}<p>Ссылка на чат: <a href="{{ event.chat_link }}">{{ event.chat_link }}</a></p>{% endif %}
     {% if event.dobro_ru_link %}<p>Добро.ру: <a href="{{ event.dobro_ru_link }}">{{ event.dobro_ru_link }}</a></p>{% endif %}
 
     {% if my_feedback %}
-        <p style="color:var(--text-secondary); font-size:13px;">Вы уже оставили оценку этому мероприятию.</p>
+        <p style="color:var(--text-secondary); font-size:13px;">Вы уже оставили оценку этой позиции.</p>
     {% elif feedback_form %}
         <form method="post" action="{% url 'event_feedback_add' event.id %}" style="max-width:400px;">
             {% csrf_token %}
@@ -283,7 +286,7 @@
 
 {% if is_participant %}
 <div class="card">
-    <h3>⭐ Отзывы о мероприятии</h3>
+    <h3>⭐ Отзывы о позиции</h3>
     {% if avg_rating %}
         <p style="color:var(--text-secondary); font-size:13px; margin-top:-8px;">Средняя оценка: {{ avg_rating|floatformat:1 }}/10 ({{ feedback_count }} отзывов)</p>
     {% endif %}
@@ -312,7 +315,7 @@
             {% if can_edit_applications %}
             {% comment %}Ручное добавление волонтёров — зафиксировано на текущем меро (?event=).{% endcomment %}
             <a href="{% url 'application_manual_create' %}?event={{ event.id }}" class="btn secondary btn-sm" data-modal data-modal-title="Добавить волонтёров" data-tour="event-add-volunteers">➕ Добавить волонтёров</a>
-            {% comment %}Excel-импорт зафиксирован на текущем меро — колонка «Мероприятие»
+            {% comment %}Excel-импорт зафиксирован на текущем меро — колонка «Позиция»
             в файле игнорируется (import_preview?event=), см. pipeline на странице «Заявки».{% endcomment %}
             <a href="{% url 'import_preview' %}?event={{ event.id }}" class="btn secondary btn-sm">📥 Загрузить заявки</a>
             {% endif %}
@@ -443,11 +446,11 @@
 </div>
 {% endif %}
 
-{% comment %}Блок комментариев к мероприятию — внизу страницы (после набора/явки),
+{% comment %}Блок комментариев к позиции — внизу страницы (после набора/явки),
 чтобы не оттеснять оперативную работу с заявками наверх.{% endcomment %}
 {% if can_manage_applications and comments %}
 <div class="card">
-    <h3>📝 Комментарии к мероприятию</h3>
+    <h3>📝 Комментарии к позиции</h3>
     {% for c in comments %}
         <p style="border-bottom:1px solid var(--border-subtle); padding-bottom:8px; margin-bottom:8px;">
             {{ c.text|linebreaksbr }}

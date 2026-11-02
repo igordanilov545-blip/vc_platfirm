@@ -1,0 +1,19 @@
+<form method="post" data-modal-form>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <div class="field">
+        {{ form.title.label_tag }}{{ form.title }}{{ form.title.errors }}
+    </div>
+    <div class="field">
+        {{ form.managers.label_tag }}
+        <div class="category-chips" data-chip-select="{{ form.managers.id_for_label }}" data-chip-empty="Менеджеры не назначены">
+            <div class="cat-chips-row" data-chips-selected></div>
+            <div class="cat-chips-available-wrap">
+                <div class="cat-chips-available-label">Доступные менеджеры:</div>
+                <div class="cat-chips-row" data-chips-available></div>
+            </div>
+        </div>
+        {{ form.managers }}{{ form.managers.errors }}
+    </div>
+    <button type="submit" class="btn">Сохранить</button>
+</form>

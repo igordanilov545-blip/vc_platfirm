@@ -29,6 +29,7 @@ from .dashboard import (  # noqa: F401
     dashboard, incident_resolve,
 )
 from .events import (  # noqa: F401
+    event_group_create, event_group_edit, event_group_detail,
     public_event_list, public_event_detail, event_list, event_detail,
     event_comment_add, event_change_log_mark_read, event_feedback_add, event_create,
     event_edit, event_delete, event_publish, event_broadcast,

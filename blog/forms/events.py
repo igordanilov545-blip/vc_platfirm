@@ -6,6 +6,8 @@
 Общие импорты (django.forms, модели) — из ._common.
 """
 from ._common import *  # noqa: F401,F403
+from django.db import transaction
+from blog.models import EventGroup
 
 
 def _intervals_overlap(start_a, end_a, start_b, end_b):
@@ -38,6 +40,30 @@ class ManagerChoiceField(forms.ModelChoiceField):
     def label_from_instance(self, obj):
         name = f'{obj.last_name or ""} {obj.first_name or ""}'.strip()
         return name or (obj.telegram_username or str(obj.telegram_id))
+
+class EventGroupForm(forms.ModelForm):
+    """Название мероприятия и его менеджеры; роли и позиции не изменяются."""
+    managers = TeamLeadChoiceField(
+        queryset=dc.active_manager_users_qs(), required=False,
+        label='Менеджеры', widget=forms.SelectMultiple,
+    )
+
+    class Meta:
+        model = EventGroup
+        fields = ['title', 'managers']
+        labels = {'title': 'Название'}
+
+    def __init__(self, *args, assigned_by=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.assigned_by = assigned_by
+
+    @transaction.atomic
+    def save(self, commit=True):
+        group = super().save(commit=False)
+        if commit:
+            dc.save_event_group(group, list(self.cleaned_data['managers']), assigned_by=self.assigned_by)
+        return group
+
 
 class EventForm(forms.ModelForm):
     """Форма создания/редактирования мероприятия.
@@ -84,7 +110,7 @@ class EventForm(forms.ModelForm):
     class Meta:
         model = Event
         fields = [
-            'title', 'description', 'scale',
+            'event_group', 'title', 'description', 'scale',
             'organization', 'organizer', 'location',
             'chat_link', 'post_in_chanel_link', 'dobro_ru_link',
             'people_helped', 'internal_comment', 'letter',
@@ -92,7 +118,7 @@ class EventForm(forms.ModelForm):
         labels = {
             'title': 'Название',
             'description': 'Описание',
-            'scale': 'Масштаб мероприятия',
+            'scale': 'Масштаб позиции',
             'location': 'Локация',
             'chat_link': 'Ссылка на чат',
             'post_in_chanel_link': 'Ссылка на пост в канале',
@@ -104,8 +130,8 @@ class EventForm(forms.ModelForm):
             'letter': 'Шаблон благодарственного письма',
         }
         widgets = {
-            'title': forms.TextInput(attrs={'maxlength': 255, 'placeholder': 'Название мероприятия'}),
-            'description': forms.Textarea(attrs={'rows': 3, 'maxlength': 250, 'placeholder': 'Кратко опишите мероприятие (до 250 символов)'}),
+            'title': forms.TextInput(attrs={'maxlength': 255, 'placeholder': 'Название позиции'}),
+            'description': forms.Textarea(attrs={'rows': 3, 'maxlength': 250, 'placeholder': 'Кратко опишите позицию (до 250 символов)'}),
             'internal_comment': forms.Textarea(attrs={'rows': 3}),
             'chat_link': forms.URLInput(attrs={'placeholder': 'https://t.me/…'}),
             'post_in_chanel_link': forms.URLInput(attrs={'placeholder': 'https://t.me/…'}),
@@ -120,6 +146,9 @@ class EventForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.show_closing_fields = show_closing_fields
         self.assigned_by = assigned_by
+        self.fields['event_group'].queryset = dc.event_groups_qs().order_by('title')
+        if not self.instance.pk and not self.initial.get('event_group'):
+            self.initial['event_group'] = dc.event_groups_qs().order_by('pk').first()
         # Смены просят только при создании нового меро (правило "нет меро без смен") —
         # при редактировании существующего смены управляются отдельно на event_detail.
         # Несколько смен добавляются прямо в форме создания (chip-виджет на клиенте,
@@ -215,6 +244,11 @@ class EventForm(forms.ModelForm):
                 self.add_error(None, 'Смены мероприятия пересекаются по времени. Проверьте даты и время смен.')
                 valid = False
         return valid
+
+    def clean_event_group(self):
+        """Старые точки создания без нового поля продолжают работать с первой группой."""
+        return (self.cleaned_data.get('event_group') or self.instance.event_group
+                or dc.event_groups_qs().order_by('pk').first())
 
     def save(self, commit=True):
         event = super().save(commit=False)

@@ -68,6 +68,11 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+db.sqlite3-shm
+db.sqlite3-wal
+staticfiles/
+.runtime/
+.uv-cache/
 
 # Flask stuff:
 instance/

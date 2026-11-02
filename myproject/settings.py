@@ -56,6 +56,9 @@ WEBAPP_URL = env('WEBAPP_URL', default='')
 # На shared-хостинге Beget бот работает через webhook, а не long polling.
 TG_WEBHOOK_SECRET = env('TG_WEBHOOK_SECRET', default='')
 
+# Optional explicit LibreOffice executable (Windows paths may contain spaces).
+SOFFICE_BIN = env('SOFFICE_BIN', default='')
+
 # Закрытый список telegram_id, кому доступен технический дашборд аналитики (/analytics/)
 # — не бизнес-роль (менеджер/ТЛ), а конкретные люди, которым доверена техническая
 # диагностика нагрузки и внутренние логи. Пример в .env: ANALYTICS_ADMIN_TG_IDS=123456,789012

@@ -1846,3 +1846,9 @@ blog/templates/blog/partials/_settings_categories.html (new).
 `GET /categories/` (AJAX) → 200; `POST /categories/new/` → 200 + `{"redirect": "/settings/?tab=categories"}`,
 категория создана; `POST /categories/<id>/edit/` → 200, имя обновлено;
 `POST /categories/<id>/delete/` → 302 на `/settings/?tab=categories`, запись удалена без остатка.
+
+## Windows local startup
+Промт: клонировать приватный репозиторий, адаптировать запуск под Windows, проверить и остановить; минимум изменений.
+План: локальное окружение и SQLite, запуск сайта и бота одной командой, совместимость LibreOffice, проверка остановки.
+Итог: добавлены setup/start-windows.ps1 и README.windows.md, локальный .env исключён из Git; токен и username бота настроены. Проверены 484 теста, HTTP и вход менеджера, DOCX/PDF; совместный запуск сайта и реального бота завершён через Ctrl+Break с кодом 0, порт освобождён. Данные сервера не переносились. Исправлены завершение дочерних процессов, очистка сессии бота, LibreOffice Windows paths; gunicorn исключён на Windows. Публикация не выполнялась.
+

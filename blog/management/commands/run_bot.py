@@ -3,8 +3,9 @@
     python manage.py run_bot
 """
 import asyncio
+from contextlib import suppress
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from tg_bot.bot import create_bot, create_dispatcher
 from tg_bot.notifier import run_notifier_loop
@@ -21,24 +22,35 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         logger.info('Запуск процесса бота (run_bot).')
-        asyncio.run(self._run())
+        try:
+            asyncio.run(self._run())
+        except KeyboardInterrupt:
+            pass
 
     async def _run(self):
         from aiogram.types import BotCommand
 
         bot = create_bot()
-        dp = create_dispatcher()
-
-        # Нативное меню команд Telegram (кнопка «/» в клиенте, tg-bot.md §9).
-        await bot.set_my_commands([
-            BotCommand(command='start', description='Начать / главное меню'),
-            BotCommand(command='login', description='Авторизоваться на сайте'),
-            BotCommand(command='help', description='Помощь'),
-        ])
-
-        notifier_task = asyncio.create_task(run_notifier_loop(bot))
+        notifier_task = None
         try:
-            await dp.start_polling(bot)
+            info = await bot.get_webhook_info()
+            if info.url:
+                raise CommandError(
+                    'У бота включён webhook. Для локальной разработки используйте отдельного '
+                    'бота или снимите webhook: python manage.py set_webhook --delete. '
+                    'Снятие webhook отключит доставку обновлений на сервер.'
+                )
+            dp = create_dispatcher()
+            await bot.set_my_commands([
+                BotCommand(command='start', description='Начать / главное меню'),
+                BotCommand(command='login', description='Авторизоваться на сайте'),
+                BotCommand(command='help', description='Помощь'),
+            ])
+            notifier_task = asyncio.create_task(run_notifier_loop(bot))
+            await dp.start_polling(bot, close_bot_session=False)
         finally:
-            notifier_task.cancel()
+            if notifier_task is not None:
+                notifier_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await notifier_task
             await bot.session.close()

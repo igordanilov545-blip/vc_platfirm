@@ -4,9 +4,9 @@ LibreOffice конвертирует в PDF → PyMuPDF растрирует с�
 
 Здесь — единственное место, зависящее от системных бинарей: LibreOffice (`soffice`)
 для docx→pdf и PyMuPDF (самодостаточен) для растра. Проверять генерацию нужно на
-проде (Docker-образ несёт libreoffice-writer; локально на Windows soffice обычно
-нет — конвертация упадёт, это ожидаемо)."""
+Windows и Linux: LibreOffice находится в PATH или через настройку SOFFICE_BIN."""
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import tempfile
@@ -14,8 +14,21 @@ import tempfile
 from django.conf import settings
 from django.http import HttpResponse
 
-# Путь к бинарю LibreOffice. Переопределяется настройкой SOFFICE_BIN при нужде.
-SOFFICE_BIN = getattr(settings, 'SOFFICE_BIN', 'soffice')
+def _soffice_bin():
+    configured = getattr(settings, 'SOFFICE_BIN', '')
+    if configured:
+        return configured
+    found = shutil.which('soffice')
+    if found:
+        return found
+    if os.name == 'nt':
+        for variable in ('ProgramFiles', 'ProgramFiles(x86)'):
+            root = os.environ.get(variable)
+            if root:
+                executable = Path(root) / 'LibreOffice' / 'program' / 'soffice.exe'
+                if executable.is_file():
+                    return str(executable)
+    return 'soffice'
 
 
 def docx_to_pdf_bytes(docx_bytes: bytes, timeout: int = 120) -> bytes:
@@ -29,10 +42,10 @@ def docx_to_pdf_bytes(docx_bytes: bytes, timeout: int = 120) -> bytes:
         with open(src_path, 'wb') as f:
             f.write(docx_bytes)
 
-        profile = os.path.join(tmp, 'lo_profile')
+        profile = (Path(tmp) / 'lo_profile').as_uri()
         cmd = [
-            SOFFICE_BIN, '--headless', '--norestore',
-            f'-env:UserInstallation=file://{profile}',
+            _soffice_bin(), '--headless', '--norestore',
+            f'-env:UserInstallation={profile}',
             '--convert-to', 'pdf', '--outdir', tmp, src_path,
         ]
         result = subprocess.run(
@@ -78,7 +91,7 @@ def certificate_pdf_from_docx(docx_bytes: bytes) -> bytes:
 
 def soffice_available() -> bool:
     """Есть ли LibreOffice в системе (для дружелюбной ошибки вместо стектрейса)."""
-    return bool(shutil.which(SOFFICE_BIN))
+    return bool(shutil.which(_soffice_bin()))
 
 
 def certificate_response(pdf_bytes: bytes, filename: str) -> HttpResponse:

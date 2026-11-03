@@ -1,10 +1,10 @@
-{% load static %}<!DOCTYPE html>
+{% load static custom_tags %}<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Волонтёрский центр{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'blog/css/nexus.css' %}">
+    <link rel="stylesheet" href="{% versioned_static 'blog/css/nexus.css' %}">
     {% block extra_head %}{% endblock %}
     <script>
         // Тема применяется до отрисовки, чтобы избежать "мигания" не той темой.
@@ -17,7 +17,7 @@
         })();
     </script>
     {# Утилиты дат — единый источник истины для всех календарей; в <head>, т.к. нужны рано. #}
-    <script src="{% static 'blog/js/calendar-utils.js' %}"></script>
+    <script src="{% versioned_static 'blog/js/calendar-utils.js' %}"></script>
 </head>
 <body class="{% if request.COOKIES.sidebar_collapsed == '1' %}sidebar-collapsed{% endif %}"{% if analytics_page_view_id %} data-page-view-id="{{ analytics_page_view_id }}"{% endif %}>
 {% if user.is_authenticated %}
@@ -238,19 +238,19 @@
         },
     };
 </script>
-<script src="{% static 'blog/js/ui.js' %}"></script>
-<script src="{% static 'blog/js/modal.js' %}"></script>
-<script src="{% static 'blog/js/qr-scanner.js' %}"></script>
-<script src="{% static 'blog/js/forms.js' %}"></script>
-<script src="{% static 'blog/js/calendar.js' %}"></script>
-<script src="{% static 'blog/js/selects.js' %}"></script>
-<script src="{% static 'blog/js/tables.js' %}"></script>
-<script src="{% static 'blog/js/misc.js' %}"></script>
-<script src="{% static 'blog/js/letter_editor.js' %}"></script>
-<script src="{% static 'blog/js/letter_modal.js' %}"></script>
-<script src="{% static 'blog/js/analytics.js' %}"></script>
+<script src="{% versioned_static 'blog/js/ui.js' %}"></script>
+<script src="{% versioned_static 'blog/js/modal.js' %}"></script>
+<script src="{% versioned_static 'blog/js/qr-scanner.js' %}"></script>
+<script src="{% versioned_static 'blog/js/forms.js' %}"></script>
+<script src="{% versioned_static 'blog/js/calendar.js' %}"></script>
+<script src="{% versioned_static 'blog/js/selects.js' %}"></script>
+<script src="{% versioned_static 'blog/js/tables.js' %}"></script>
+<script src="{% versioned_static 'blog/js/misc.js' %}"></script>
+<script src="{% versioned_static 'blog/js/letter_editor.js' %}"></script>
+<script src="{% versioned_static 'blog/js/letter_modal.js' %}"></script>
+<script src="{% versioned_static 'blog/js/analytics.js' %}"></script>
 
-<script src="{% static 'blog/js/companion.js' %}"></script>
+<script src="{% versioned_static 'blog/js/companion.js' %}"></script>
 <script>
     // Глобальный сквозной компаньон-тур: гусь ведёт «за руку» по ВСЕМ страницам и
     // функциям — сам переходит по страницам (шаг с url → движок сохраняет прогресс в

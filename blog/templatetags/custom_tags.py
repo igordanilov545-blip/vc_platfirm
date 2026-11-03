@@ -1,7 +1,37 @@
+from functools import lru_cache
+import hashlib
+from pathlib import Path
+
 from django import template
+from django.conf import settings
+from django.contrib.staticfiles import finders
+from django.templatetags.static import static
 from django.utils.safestring import mark_safe
 
 register = template.Library()
+
+
+@lru_cache(maxsize=128)
+def _asset_revision(filename, mtime_ns, size):
+    """Reuse a digest until file metadata changes, without reading it on every page."""
+    return hashlib.sha256(Path(filename).read_bytes()).hexdigest()[:12]
+
+
+@register.simple_tag
+def versioned_static(name):
+    """Keep debug asset URLs content-versioned too; production already uses a manifest."""
+    url = static(name)
+    if settings.DEBUG:
+        filename = finders.find(name)
+        if filename:
+            try:
+                stat = Path(filename).stat()
+                revision = _asset_revision(filename, stat.st_mtime_ns, stat.st_size)
+                return url + ('&' if '?' in url else '?') + 'v=' + revision
+            except OSError:
+                pass  # Keep the normal static URL if a file disappears during deployment.
+    return url
+
 
 @register.filter
 def getattribute(obj, attr):

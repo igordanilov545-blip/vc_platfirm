@@ -1,5 +1,6 @@
 """Users table: full dataset, separate identity columns, roles and private cache."""
 from datetime import date
+import re
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -30,6 +31,15 @@ class UserTableTests(TestCase):
     def full(self, **headers):
         return self.client.get(self.url, {'all': '1', 'table_owner': self.manager.pk},
                                HTTP_X_REQUESTED_WITH='XMLHttpRequest', **headers)
+
+    def test_page_invalidates_browser_cache_for_search_script_and_table_styles(self):
+        from django.test import override_settings
+        with override_settings(DEBUG=True):
+            html = self.client.get(self.url).content.decode()
+        for pattern in (r'src="([^"]*tables[^"/]*\.js[^\"]*)"',
+                        r'href="([^"]*nexus[^"/]*\.css[^\"]*)"'):
+            url = re.search(pattern, html).group(1)
+            self.assertIn('?v=', url)
 
     def test_default_page_remains_small_but_full_load_reaches_oldest_user(self):
         first = self.client.get(self.url)

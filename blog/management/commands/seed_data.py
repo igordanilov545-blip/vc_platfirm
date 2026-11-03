@@ -41,7 +41,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f'✓ Категорий создано: {len(DEFAULT_CATEGORIES)}'))
 
         if not Season.objects.exists():
-            Season.objects.create(start_season=timezone.now().date(), end_season=None)
+            Season.objects.create(start_season=timezone.localdate(), end_season=None)
             self.stdout.write(self.style.SUCCESS('✓ Стартовый сезон создан (без даты окончания)'))
 
         self.stdout.write(self.style.SUCCESS('\nВсе справочные данные загружены!'))

@@ -52,7 +52,7 @@ class Command(BaseCommand):
         if event_created:
             EventShift.objects.create(
                 event=event,
-                day=timezone.now().date(),
+                day=timezone.localdate(),
                 start_time=timezone.now(),
                 end_time=timezone.now() + timezone.timedelta(hours=3),
                 volunteer_needed=10,

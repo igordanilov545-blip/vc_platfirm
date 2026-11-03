@@ -1,0 +1,14 @@
+<section data-qr-result>
+<h2>{{ scanned_user.full_name }}</h2>
+{% if nearest_shift %}<p class="pill success">Ближайшая смена: {{ nearest_shift.event.title }} · {{ nearest_shift.start_time|date:'d.m.Y H:i' }} МСК</p>{% endif %}
+{% for row in shift_rows %}
+<div class="card{% if forloop.first %} qr-nearest-shift{% endif %}">
+    <h3>{{ row.shift.event.event_group.title }} · {{ row.shift.event.title }}</h3>
+    <p>{{ row.shift.start_time|date:'d.m.Y H:i' }} — {{ row.shift.end_time|date:'d.m.Y H:i' }} МСК</p>
+    {% if row.attendance %}<p>Вход: {{ row.attendance.entered_at|date:'d.m.Y H:i:s' }} МСК</p>{% endif %}
+    {% if row.can_mark %}<button type="button" class="btn" data-qr-mark="{{ row.action }}" data-shift-id="{{ row.shift.id }}">{% if row.action == 'out' %}Отметить выход{% else %}Отметить вход{% endif %}</button>
+    {% else %}<p class="event-dash-muted">Нет права отметки на этой смене или позиция завершена.</p>{% endif %}
+</div>
+{% empty %}<p>Нет смен, ожидающих отметки.</p>{% endfor %}
+<p data-qr-mark-status role="status"></p>
+</section>

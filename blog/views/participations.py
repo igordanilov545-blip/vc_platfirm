@@ -4,6 +4,7 @@
 dc=data_controller, logger, декораторы). Здесь только вьюхи этого домена.
 """
 from ._common import *  # noqa: F401,F403
+from decimal import Decimal, InvalidOperation
 
 
 @login_required
@@ -85,11 +86,12 @@ def participation_set_hours(request, participation_id):
 
     raw = (request.POST.get('hours') or '').strip()
     try:
-        hours = int(raw)
-    except (TypeError, ValueError):
-        return JsonResponse({'error': 'Часы должны быть целым числом.'}, status=400)
-    if hours < 0:
-        return JsonResponse({'error': 'Часы не могут быть отрицательными.'}, status=400)
+        hours = Decimal(raw.replace(',', '.'))
+        if not hours.is_finite() or hours < 0 or hours > Decimal('999999.99'):
+            raise ValueError()
+        hours = hours.quantize(Decimal('.01'))
+    except (TypeError, ValueError, InvalidOperation):
+        return JsonResponse({'error': 'Укажите неотрицательное число часов.'}, status=400)
 
     participation.hours = hours
     participation.hours_overridden = True
@@ -100,7 +102,7 @@ def participation_set_hours(request, participation_id):
         'Часы участия скорректированы вручную (веб): participation=%s hours=%s by=%s subject=%s',
         participation.id, hours, actor(request.user), actor(participation.user),
     )
-    return JsonResponse({'hours': participation.hours})
+    return JsonResponse({'hours': float(participation.hours)})
 
 @login_required
 def participation_edit(request, participation_id):

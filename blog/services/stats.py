@@ -33,7 +33,7 @@ def log_churn_change(user, reason, delta, *, actor=None, event=None, note=None, 
 
 
 def current_season():
-    today = timezone.now().date()
+    today = timezone.localdate()
     return (
         dc.seasons_qs().filter(start_season__lte=today)
         .filter(Q(end_season__isnull=True) | Q(end_season__gte=today))
@@ -160,7 +160,7 @@ def close_season(season):
 
     dc.reset_all_season_counters()
 
-    today = timezone.now().date()
+    today = timezone.localdate()
     if not season.end_season or season.end_season > today:
         season.end_season = today
         season.save(update_fields=['end_season'])

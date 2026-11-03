@@ -7,6 +7,8 @@
 <div class="card">
     <h3>Проверка перед завершением</h3>
     <ul class="checklist">
+        <li class="{% if checklist.no_unmarked_attendance %}checklist-ok{% else %}checklist-bad{% endif %}">Явка отмечена у всех участников</li>
+        <li class="{% if checklist.no_open_entries %}checklist-ok{% else %}checklist-bad{% endif %}">Все вошедшие участники отметили выход</li>
         <li class="{% if checklist.all_days_past %}checklist-ok{% else %}checklist-fail{% endif %}">
             {% if checklist.all_days_past %}✅{% else %}⛔{% endif %}
             Все дни позиции уже прошли

@@ -94,7 +94,7 @@ def make_event(title=None, published=True, **kw):
 
 def make_shift(event, days_from_now=3, volunteer_needed=5, recruit_status='open', **kw):
     """Смена мероприятия. По умолчанию — через 3 дня (upcoming, набор открыт)."""
-    day = (timezone.now() + timedelta(days=days_from_now)).date()
+    day = timezone.localdate(timezone.now() + timedelta(days=days_from_now))
     start = timezone.now() + timedelta(days=days_from_now, hours=1)
     end = timezone.now() + timedelta(days=days_from_now, hours=5)
     defaults = dict(
@@ -141,7 +141,7 @@ def make_participation(user, shift, status='attended', hours=4, **kw):
 
 
 def make_season(days_ago_start=30, days_ahead_end=60):
-    today = timezone.now().date()
+    today = timezone.localdate()
     return Season.objects.create(
         start_season=today - timedelta(days=days_ago_start),
         end_season=today + timedelta(days=days_ahead_end),

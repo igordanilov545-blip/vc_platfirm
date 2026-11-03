@@ -7,6 +7,9 @@
 
 ## С чем работаешь → куда смотреть
 
+Личный QR: `qr_attendance.py::qr_png_for_telegram`, реэкспорт через пакет;
+хендлер `common.cmd_get_qr` отправляет PNG как фото без требования заполненной анкеты.
+
 | Домен | Файл | Функции |
 |---|---|---|
 | **Пользователи** (первое касание, регистрация, профиль, подписки, узнавание аккаунта, роли, веб-креды, статистика) | [`users.py`](users.py) | `get_or_create_user`, `complete_registration`, `update_profile`, `toggle_*`, `recognize_by_telegram`, `confirm_recognized_account`, `user_*`, `set_web_credentials`, `user_stats` |

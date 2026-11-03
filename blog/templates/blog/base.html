@@ -32,8 +32,9 @@
     <a href="{% url 'dashboard' %}" data-track="nav:dashboard" class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" title="Главная"><span class="icon">🏠</span><span class="nav-label"> Главная</span></a>
     <a href="{% url 'event_list' %}" data-track="nav:event_list" class="nav-link {% if request.resolver_match.url_name == 'event_list' %}active{% endif %}" title="Мероприятия"><span class="icon">📅</span><span class="nav-label"> Мероприятия</span></a>
 
-    {% if is_manager %}
+    {% if is_manager or can_scan_qr %}
     <div class="nav-section-title">Управление</div>
+    {% if is_manager %}
     <a href="{% url 'pending_applications' %}" data-track="nav:pending_applications" class="nav-link {% if request.resolver_match.url_name in 'pending_applications,import_preview,import_commit' %}active{% endif %}" title="Заявки"><span class="icon">🕓</span><span class="nav-label"> Заявки</span></a>
     <a href="{% url 'user_list' %}" data-track="nav:user_list" class="nav-link {% if request.resolver_match.url_name == 'user_list' %}active{% endif %}" title="Пользователи"><span class="icon">👥</span><span class="nav-label"> Пользователи</span></a>
     {% comment %}Локации/организаторы/организации/требования вынесены в Настройки
@@ -41,6 +42,8 @@
     <a href="{% url 'report_period' %}" data-track="nav:report_period" class="nav-link {% if request.resolver_match.url_name == 'report_period' %}active{% endif %}" title="Отчёты"><span class="icon">📊</span><span class="nav-label"> Отчёты</span></a>
     {% comment %}Добро.ру теперь вкладка внутри хаба «Отчёты» — ссылка ведёт прямо на неё.{% endcomment %}
     <a href="{% url 'report_period' %}?view=dobro" data-track="nav:dobro_page" class="nav-link" title="Добро.ру"><span class="icon">❤️</span><span class="nav-label"> Добро.ру</span></a>
+    {% endif %}
+    {% if can_scan_qr %}<a href="{% url 'qr_scanner' %}" class="nav-link {% if request.resolver_match.url_name == 'qr_scanner' %}active{% endif %}" title="Сканер QR"><span class="icon">▦</span><span class="nav-label"> Сканер QR</span></a>{% endif %}
     {% endif %}
 
     {% if is_tech_admin %}
@@ -175,8 +178,9 @@
             <span class="more-icon">👤</span><span>Профиль и статистика</span>
         </a>
 
-        {% if is_manager %}
+        {% if is_manager or can_scan_qr %}
         <div class="more-section-title">Управление</div>
+        {% if is_manager %}
         <a href="{% url 'user_list' %}" class="more-item {% if request.resolver_match.url_name == 'user_list' %}active{% endif %}">
             <span class="more-icon">👥</span><span>Пользователи</span>
         </a>
@@ -186,6 +190,8 @@
         <a href="{% url 'report_period' %}?view=dobro" class="more-item">
             <span class="more-icon">❤️</span><span>Добро.ру</span>
         </a>
+        {% endif %}
+        {% if can_scan_qr %}<a href="{% url 'qr_scanner' %}" class="more-item"><span class="more-icon">▦</span><span>Сканер QR</span></a>{% endif %}
         {% endif %}
 
         {% if is_tech_admin %}
@@ -215,6 +221,9 @@
 {# --- URL-конфиг для вынесенного JS (статические .js не рендерят {% templatetag openblock %} url {% templatetag closeblock %}) --- #}
 <script>
     window.VC_URLS = {
+        qrScan: '{% url "qr_scan" %}',
+        qrMark: '{% url "qr_mark" %}',
+        qrDecoder: '{% static "blog/js/vendor/jsQR.js" %}',
         usersPickerData: '{% url "users_picker_data" %}',
         quickCreate: {
             location: '{% url "quick_create_location" %}',
@@ -229,6 +238,7 @@
 </script>
 <script src="{% static 'blog/js/ui.js' %}"></script>
 <script src="{% static 'blog/js/modal.js' %}"></script>
+<script src="{% static 'blog/js/qr-scanner.js' %}"></script>
 <script src="{% static 'blog/js/forms.js' %}"></script>
 <script src="{% static 'blog/js/calendar.js' %}"></script>
 <script src="{% static 'blog/js/selects.js' %}"></script>

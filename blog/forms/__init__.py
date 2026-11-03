@@ -5,6 +5,7 @@
 доменных модулей. Карта «домен → формы» — в README.md.
 """
 from .auth import LoginForm, RegisterForm  # noqa: F401
+from .qr_attendance import ScannerGrantForm  # noqa: F401
 from .references import (  # noqa: F401
     QuickLocationForm, LocationForm, QuickOrganizationForm, OrganizationForm,
     QuickOrganizerForm, OrganizerForm, QuickCategoryForm, CategoryForm,

@@ -106,7 +106,7 @@ def build_period_stats(user, *, months_back=12):
     включая пустые — чтобы был виден и «тихий» месяц) + текущий сезон ПГАС.
 
     Возвращает {'months': [card,…], 'season': card|None}."""
-    today = timezone.now().date()
+    today = timezone.localdate()
 
     months = []
     y, m = today.year, today.month

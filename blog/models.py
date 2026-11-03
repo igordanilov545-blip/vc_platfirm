@@ -1,9 +1,15 @@
 import uuid
+import secrets
 
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
+
+
+def new_qr_token():
+    """32 ASCII-байта (192 бита случайности), помещающиеся в QR version 2-L."""
+    return secrets.token_urlsafe(24)
 
 
 class UserManager(BaseUserManager):
@@ -79,8 +85,8 @@ class User(AbstractBaseUser):
     # Кэшированная статистика
     total_event_count = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     season_event_count = models.IntegerField(default=0, validators=[MinValueValidator(0)])
-    total_hours = models.IntegerField(default=0, validators=[MinValueValidator(0)])
-    season_hours = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    total_hours = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    season_hours = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     churn_score = models.FloatField(default=0)
 
     # Веб-аутентификация (доп. канал входа).
@@ -596,7 +602,7 @@ class Event(models.Model):
         if not shifts:
             return self.event_status
 
-        today = timezone.now().date()
+        today = timezone.localdate()
         shift_dates = [s.day for s in shifts]
         first_day, last_day = min(shift_dates), max(shift_dates)
 
@@ -694,7 +700,7 @@ class EventShift(models.Model):
     def compute_status(self):
         """Статус смены по датам (независимо от общего статуса мероприятия):
         idёт/предстоит/прошла — используется для подсветки строк в таблицах смен."""
-        today = timezone.now().date()
+        today = timezone.localdate()
         if self.day == today:
             return 'ongoing'
         if self.day < today:
@@ -854,6 +860,7 @@ class ApplicationChangeLog(models.Model):
 class Participation(models.Model):
     """Подтвержденные участия."""
     STATUS_CHOICES = [
+        ('pending', 'Не отмечен'),
         ('attended', 'Присутствовал'),
         ('absent_excused', 'Отсутствовал (уважительно)'),
         ('absent_unexcused', 'Отсутствовал (без предупреждения)'),
@@ -862,11 +869,11 @@ class Participation(models.Model):
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='participations')
     event_day = models.ForeignKey(EventShift, on_delete=models.CASCADE, related_name='participations')
-    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='attended')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='pending')
     # Отработал ли волонтёр полную смену (db.md, правило 7a) — не влияет на часы,
     # отдельная отметка добросовестного участия, проставляется тим-лидером вместе со статусом.
     full_shift = models.BooleanField(default=False)
-    hours = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    hours = models.DecimalField(max_digits=8, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     # Часы проставлены/изменены вручную тим-лидером (а не автоматически из длительности
     # смены). Если True — автоматический пересчёт часов при изменении времени смены их
     # НЕ перезаписывает (ручная корректировка приоритетнее).
@@ -890,6 +897,45 @@ class Participation(models.Model):
         verbose_name_plural = 'Участия'
         indexes = [
             models.Index(fields=['user', 'event_day']),
+        ]
+
+
+class UserQRCode(models.Model):
+    """Постоянный личный QR; токен загружается только при запросе самого QR/сканировании."""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='personal_qr')
+    token = models.CharField(max_length=32, unique=True, default=new_qr_token, editable=False)
+
+    class Meta:
+        db_table = 'user_qr_codes'
+
+
+class ScannerGrant(models.Model):
+    """Отдельное право отмечать вход/выход на мероприятии, без выдачи роли ТЛ."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='scanner_grants')
+    event_group = models.ForeignKey(EventGroup, on_delete=models.CASCADE, related_name='scanner_grants')
+    assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'qr_scanner_grants'
+        constraints = [models.UniqueConstraint(fields=['user', 'event_group'], condition=models.Q(revoked_at__isnull=True), name='one_active_scanner_grant')]
+
+
+class ShiftAttendance(models.Model):
+    """Фактический вход и выход; одобрение заявки не создаёт эту запись."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shift_attendance')
+    shift = models.ForeignKey(EventShift, on_delete=models.CASCADE, related_name='qr_attendance')
+    entered_at = models.DateTimeField(default=timezone.now)
+    exited_at = models.DateTimeField(null=True, blank=True)
+    entered_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
+    exited_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
+
+    class Meta:
+        db_table = 'shift_attendance'
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'shift'], name='one_attendance_per_user_shift'),
+            models.CheckConstraint(condition=models.Q(exited_at__isnull=True) | models.Q(exited_at__gte=models.F('entered_at')), name='attendance_exit_after_entry'),
         ]
 
 

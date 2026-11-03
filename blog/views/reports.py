@@ -9,7 +9,7 @@ from ._common import *  # noqa: F401,F403
 def _report_period_range(request):
     """Диапазон дат для отчёта: пресет (`period`) или произвольный диапазон
     (`date_from`/`date_to` — brandbook §6.3, date range picker, стиль Booking.com)."""
-    today = timezone.now().date()
+    today = timezone.localdate()
 
     raw_from = request.GET.get('date_from')
     raw_to = request.GET.get('date_to')

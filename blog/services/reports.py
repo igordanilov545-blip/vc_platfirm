@@ -418,7 +418,7 @@ def recruitment_efficiency(date_from=None, date_to=None, event_ids=None):
             event=shift.event, status='approved', assigned_at__isnull=False,
         ).order_by('-assigned_at').first()
         if last_approved and last_approved.assigned_at:
-            days = (shift.day - last_approved.assigned_at.date()).days
+            days = (shift.day - timezone.localtime(last_approved.assigned_at).date()).days
             if days >= 0:
                 avg_recruit_days.append(days)
 
@@ -454,9 +454,9 @@ def _days_ago(d):
     if not d:
         return None
     from django.utils import timezone
-    today = timezone.now().date()
+    today = timezone.localdate()
     if hasattr(d, 'date'):
-        d = d.date()
+        d = timezone.localtime(d).date() if timezone.is_aware(d) else d.date()
     return (today - d).days
 
 
@@ -555,7 +555,7 @@ def _volunteer_activity_metrics(user_ids):
         m['days_with_us'] = _days_ago(first_day)  # с первого меро
         m['days_since_last_event'] = _days_ago(last_day)
         last_app = last_app_by_user.get(uid)
-        m['last_application'] = _fmt_date(last_app.date() if last_app else None)
+        m['last_application'] = _fmt_date(last_app)
         m['days_since_last_app'] = _days_ago(last_app)
     return metrics
 
@@ -603,7 +603,7 @@ def events_table(date_from=None, date_to=None, event_ids=None):
         org = event.organization
         organizer = event.organizer
         shift_cells = [
-            f"{s.day.strftime('%d.%m.%Y')} {s.start_time.strftime('%H:%M')}–{s.end_time.strftime('%H:%M')}"
+            f"{s.day.strftime('%d.%m.%Y')} {timezone.localtime(s.start_time).strftime('%H:%M')}–{timezone.localtime(s.end_time).strftime('%H:%M')}"
             + (f" ({s.volunteer_needed} чел.)" if s.volunteer_needed else '')
             for s in shifts
         ]
@@ -686,7 +686,7 @@ def _role_table(role, date_from, date_to, event_ids):
                     season_n += 1
         m['role_events_season'] = season_n
         assigned = assign_dates.get(uid)
-        m['role_assigned_at'] = _fmt_date(assigned.date() if assigned else None)
+        m['role_assigned_at'] = _fmt_date(assigned)
         m['role_days_since_assigned'] = _days_ago(assigned)
         m['role_first_event'] = _fmt_date(ev_days[0] if ev_days else None)
         m['role_last_event'] = _fmt_date(ev_days[-1] if ev_days else None)
@@ -873,6 +873,7 @@ def post_publication_timing(date_from=None, date_to=None, event_ids=None):
     by_hour = [0] * 24
     by_weekday = [0] * 7  # 0 = понедельник
     for event in events.values_list('post_published_at', flat=True):
+        event = timezone.localtime(event)
         by_hour[event.hour] += 1
         by_weekday[event.weekday()] += 1
     return {'by_hour': by_hour, 'by_weekday': by_weekday}

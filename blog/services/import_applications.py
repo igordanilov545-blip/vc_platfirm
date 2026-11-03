@@ -90,7 +90,7 @@ def parse_excel(file, fixed_event=None) -> dict:
     if missing:
         return {'rows': [], 'errors': [f'Не найдены обязательные колонки: {missing}'], 'mismatched_titles': []}
 
-    today = timezone.now().date()
+    today = timezone.localdate()
     rows = []
     errors = []
     mismatched_titles = set()

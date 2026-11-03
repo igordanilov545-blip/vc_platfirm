@@ -14,6 +14,18 @@ from tg_bot.ui import answer_with_expiring_keyboard
 router = Router(name='common')
 
 
+@router.message(Command('get_qr'))
+@router.message(F.text.lower().in_({'qr код', 'qr-код', 'qr code', '📱 qr код'}))
+async def cmd_get_qr(message: Message):
+    """Фото QR доступно сразу после первого появления telegram_id в БД."""
+    from aiogram.types import BufferedInputFile
+    png = await sync_to_async(services.qr_png_for_telegram)(message.from_user.id)
+    if png is None:
+        await message.answer('Сначала нажмите /start.')
+        return
+    await message.answer_photo(BufferedInputFile(png, filename='qr.png'))
+
+
 async def _menu_for(user) -> tuple:
     is_tl = await sync_to_async(services.user_is_team_leader)(user)
     is_mgr = await sync_to_async(services.user_is_manager)(user)

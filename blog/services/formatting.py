@@ -8,7 +8,14 @@
 `_fmt_day` в `custom_tags.py` (особый формат `dd.mm.yy (день недели)`).
 """
 
+from django.utils import timezone
+
 DASH = '—'
+
+
+def _local(value):
+    """Aware datetime переводится в часовой пояс проекта; date и старые naive не меняем."""
+    return timezone.localtime(value) if hasattr(value, 'tzinfo') and timezone.is_aware(value) else value
 
 
 def fmt_date(value) -> str:
@@ -17,7 +24,7 @@ def fmt_date(value) -> str:
     if not value:
         return DASH
     try:
-        return value.strftime('%d.%m.%Y')
+        return _local(value).strftime('%d.%m.%Y')
     except AttributeError:
         return str(value)
 
@@ -35,4 +42,4 @@ def fmt_dt(value, with_time: bool = True) -> str:
         return str(value)
     has_time = hasattr(value, 'hour')
     fmt = '%d.%m.%Y %H:%M' if (with_time and has_time) else '%d.%m.%Y'
-    return value.strftime(fmt)
+    return _local(value).strftime(fmt)

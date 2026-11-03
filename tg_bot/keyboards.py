@@ -26,6 +26,7 @@ def _add_webapp_button(builder: ReplyKeyboardBuilder):
 def guest_menu() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.button(text='📅 Мероприятия')
+    builder.button(text='📱 QR код')
     builder.button(text='📝 Зарегистрироваться')
     # Подписку на новые мероприятия можно включать/выключать и гостю — уведомления
     # приходят всем активным подписчикам независимо от завершённости регистрации.
@@ -39,6 +40,7 @@ def guest_menu() -> ReplyKeyboardMarkup:
 def main_menu(is_team_leader: bool = False, is_manager: bool = False) -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.button(text='📅 Мероприятия')
+    builder.button(text='📱 QR код')
     builder.button(text='📝 Мои заявки')
     builder.button(text='📊 Статистика')
     builder.button(text='🔔 Подписка')

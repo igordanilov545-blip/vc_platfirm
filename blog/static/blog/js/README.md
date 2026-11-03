@@ -19,6 +19,11 @@
 
 ## Что в каком файле
 
+`qr-scanner.js` — `initQrScanner(root)` для `[data-qr-scanner]`: камера, фото,
+существующая модалка участника, POST сканирования/входа/выхода и освобождение камеры.
+Декодер `vendor/jsQR.js` 1.4.0 загружается лениво, только при использовании сканера;
+изображения камеры/файла обрабатываются локально. URL берутся из `window.VC_URLS`.
+
 | Файл | Отвечает за |
 |---|---|
 | [`calendar-utils.js`](calendar-utils.js) | `window.CalendarUtils` — единый источник дат (MONTHS/DOW/parseISO/toISO/fmt/sameDay). Грузится в `<head>` (нужен рано). |

@@ -1,0 +1,24 @@
+{% extends 'blog/base.html' %}
+{% block title %}Сканер QR{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Сканер QR</h1>
+{% if is_manager %}<a class="btn secondary" href="{% url 'qr_scanner_grant' %}" data-modal data-modal-title="Доступ к сканеру">Выдать доступ</a>{% endif %}</div>
+<div class="card qr-scanner" data-qr-scanner>
+    {% csrf_token %}
+    <video data-qr-video playsinline muted hidden></video>
+    <div class="qr-scanner-actions">
+        <button type="button" class="btn" data-qr-start>Включить камеру</button>
+        <button type="button" class="btn secondary" data-qr-stop hidden>Выключить камеру</button>
+        <label class="btn secondary">Выбрать фото QR<input type="file" data-qr-file accept="image/*" hidden></label>
+    </div>
+    <p data-qr-status role="status">Наведите камеру на QR-код участника или выберите его фото.</p>
+</div>
+{% if is_manager %}
+<div class="card"><h2>Отдельный доступ к сканеру</h2>
+{% for grant in scanner_grants %}
+<div class="qr-grant-row"><span>{{ grant.user.full_name }} — {{ grant.event_group.title }}</span>
+<form method="post" action="{% url 'qr_scanner_revoke' grant.id %}">{% csrf_token %}<button class="btn secondary btn-sm" type="submit">Отозвать</button></form></div>
+{% empty %}<p>Отдельных назначений пока нет.</p>{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

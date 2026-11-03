@@ -143,7 +143,7 @@ def event_group_detail(request, group_id):
         )
         dobro_shared_usage = {r['dobro_ru_shared_link_id']: r['n'] for r in shared_usage}
 
-    today = timezone.now().date()
+    today = timezone.localdate()
     rows = []
     for event in events:
         shifts = sorted(event.shifts.all(), key=lambda s: s.day)
@@ -224,7 +224,7 @@ def event_detail(request, event_id):
     # Пока мероприятие не началось — смены идут по возрастанию даты (ближайшая сверху).
     # Прошедшие смены уходят в конец списка, а не сортируются по дате среди актуальных —
     # так самая близкая предстоящая/идущая смена всегда наверху.
-    today = timezone.now().date()
+    today = timezone.localdate()
     shifts.sort(key=lambda s: (s.day < today, s.day))
     team_leads = event.staff.filter(staff_role='team_lead').select_related('user')
     # Ответственный менеджер меро — назначение EventStaff со staff_role='manager'

@@ -3,6 +3,7 @@
 Фасад: хендлеры делают `from tg_bot import services` и `services.<func>` — все имена
 реэкспортируются здесь из доменных модулей. Карта «домен → функции» — в README.md.
 """
+from .qr_attendance import qr_png_for_telegram  # noqa: F401
 from .users import (  # noqa: F401
     get_or_create_user, get_user, is_guest, complete_registration,
     update_profile, toggle_subscription, toggle_application_notifications, recognize_by_telegram,

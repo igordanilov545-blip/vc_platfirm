@@ -420,7 +420,7 @@ class Command(BaseCommand):
 
     # ------------------------------------------------ open-recruit / upcoming
     def _create_open_recruiting_events(self, count, locations, categories, orgs, organizers, manager, team_leads, volunteers):
-        today = timezone.now().date()
+        today = timezone.localdate()
         for i in range(count):
             day0 = today + timedelta(days=RND.randint(7, 21))
             event = Event.objects.create(
@@ -464,7 +464,7 @@ class Command(BaseCommand):
             self.stdout.write(f'  меро с открытым набором: {event.title} (id={event.id})')
 
     def _create_upcoming_event(self, locations, categories, orgs, organizers, manager, team_leads):
-        today = timezone.now().date()
+        today = timezone.localdate()
         day0 = today + timedelta(days=RND.randint(25, 40))
         event = Event.objects.create(
             title='[Ожидает открытия набора] Большой городской субботник',

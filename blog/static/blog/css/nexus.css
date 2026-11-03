@@ -554,6 +554,13 @@ th.has-reveal, td.has-reveal { position: relative; }
 .event-dash-recruit-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .recruit-pct, .event-dash-day-pct { font-weight: 700; color: hsl(calc(var(--pct, 0) * 1.2), 65%, 42%); }
 .recruit-bar { height: 8px; border-radius: 999px; background: var(--bg-card-hover); overflow: hidden; }
+.personal-qr-image { display: block; max-width: 100%; height: auto; margin: auto; background: white; }
+.qr-scanner video { display: block; width: 100%; max-height: 55vh; object-fit: contain; margin-bottom: 1rem; }
+.qr-scanner video[hidden] { display: none; }
+.qr-scanner-actions, .qr-grant-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.qr-grant-row { justify-content: space-between; margin-bottom: 12px; }
+.qr-nearest-shift { border-color: var(--accent); }
+.attendance-pending { color: var(--text-secondary); }
 .recruit-bar-fill { display: block; height: 100%; border-radius: 999px; background: hsl(calc(var(--pct, 0) * 1.2), 70%, 45%); transition: width .3s ease; }
 .event-dash-days { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-top: 12px; }
 .event-dash-day-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }

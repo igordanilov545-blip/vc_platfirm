@@ -259,7 +259,7 @@ def event_shifts_json(request, event_id):
         'shifts': [
             {
                 'id': s.id,
-                'label': f'{s.day.strftime("%d.%m.%Y")} {s.start_time.strftime("%H:%M")}–{s.end_time.strftime("%H:%M")}',
+                'label': f'{s.day.strftime("%d.%m.%Y")} {timezone.localtime(s.start_time).strftime("%H:%M")}–{timezone.localtime(s.end_time).strftime("%H:%M")}',
                 'closed': s.recruit_status != 'open',
             }
             for s in shifts

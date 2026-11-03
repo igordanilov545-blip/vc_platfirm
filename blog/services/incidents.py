@@ -35,8 +35,8 @@ def sync_ongoing_event_incidents():
     и автоматически резолвит те, что были актуальны раньше, но уже не подходят."""
     now = timezone.now()
     horizon = now + timedelta(hours=dc.get_const('event_ongoing_horizon_hours', default=24))
-    today = now.date()
-    horizon_date = horizon.date()
+    today = timezone.localdate(now)
+    horizon_date = timezone.localdate(horizon)
 
     qs = dc.events_qs().filter(
         shifts__day__gte=today, shifts__day__lte=horizon_date,

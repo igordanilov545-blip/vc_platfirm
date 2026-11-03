@@ -1,5 +1,6 @@
 {% extends 'blog/base.html' %}
 {% load custom_tags %}
+{% load l10n %}
 {% block title %}{{ event.title }}{% endblock %}
 {% block content %}
 {% if event.event_group_id %}
@@ -403,6 +404,7 @@
                     {% if p %}
                         {% if can_edit_applications %}
                         <div class="attendance-btns" data-attendance-group="{{ p.id }}">
+                            <button type="button" class="att-btn{% if p.status == 'pending' %} active{% endif %}" data-attendance-set="pending" data-participation-id="{{ p.id }}">Не отмечен</button>
                             <button type="button" class="att-btn att-attended{% if p.status == 'attended' %} active{% endif %}" data-attendance-set="attended" data-participation-id="{{ p.id }}">Был</button>
                             <button type="button" class="att-btn att-unexcused{% if p.status == 'absent_unexcused' %} active{% endif %}" data-attendance-set="absent_unexcused" data-participation-id="{{ p.id }}">Не был</button>
                             <button type="button" class="att-btn att-excused{% if p.status == 'absent_excused' %} active{% endif %}" data-attendance-set="absent_excused" data-participation-id="{{ p.id }}">Уважит.</button>
@@ -413,7 +415,7 @@
                 <td data-label="Часы" class="num mono" data-hours-cell data-sort-value="{% if p %}{{ p.hours }}{% endif %}">
                     {% if p %}
                         {% if can_edit_applications %}
-                        <input type="number" min="0" step="1" value="{{ p.hours }}" data-attendance-hours data-participation-id="{{ p.id }}" style="width:64px; text-align:right; padding:4px 6px;" {% if p.status != 'attended' %}disabled{% endif %}>
+                        <input type="number" min="0" step="0.01" value="{{ p.hours|unlocalize }}" data-attendance-hours data-participation-id="{{ p.id }}" style="width:64px; text-align:right; padding:4px 6px;" {% if p.status != 'attended' %}disabled{% endif %}>
                         {% else %}{{ p.hours }}{% endif %}
                     {% else %}—{% endif %}
                 </td>

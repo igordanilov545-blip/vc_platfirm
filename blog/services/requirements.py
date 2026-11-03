@@ -11,6 +11,7 @@
 тим-лидеру в уведомлении о новой заявке указывается причина.
 """
 import datetime
+from django.utils import timezone
 
 from data_base import data_controller as dc
 
@@ -39,7 +40,7 @@ def check_application_requirements(event, user) -> dict:
         ).values_list('requirement_id', flat=True)
     )
 
-    today = datetime.date.today()
+    today = timezone.localdate()
     for req in requirements:
         if req.check_type == 'age':
             if not user.birthday:

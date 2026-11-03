@@ -356,7 +356,7 @@ def render_docx(user: User, events: list, *, period_label: str, issue_date=None)
     from docx import Document
     from docx.text.paragraph import Paragraph
 
-    issue_date = issue_date or timezone.now().date()
+    issue_date = issue_date or timezone.localdate()
     replacements = build_replacements(user, period_label=period_label, issue_date=issue_date)
 
     doc = Document(io.BytesIO(get_template().docx_file))
@@ -414,4 +414,4 @@ def season_range():
     season = data_controller.get_current_season()
     if season is None:
         return None, None
-    return season.start_season, (season.end_season or timezone.now().date())
+    return season.start_season, (season.end_season or timezone.localdate())

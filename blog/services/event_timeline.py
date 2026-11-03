@@ -4,6 +4,8 @@
 (часть 2 — мероприятия периода подряд).
 """
 from data_base import data_controller as dc
+from django.utils import timezone
+from blog.services.formatting import fmt_dt
 
 
 STATUS_COLOR = {
@@ -66,7 +68,7 @@ def _stamp(label, moment) -> str:
     if moment is None:
         return label
     try:
-        return f'{label} {moment.strftime("%d.%m.%Y %H:%M")}'
+        return f'{label} {fmt_dt(moment)}'
     except (AttributeError, ValueError):
         return label
 
@@ -75,6 +77,8 @@ def _time_range(shift) -> str:
     """Интервал смены «14:30–18:00» из start_time/end_time (datetime или time)."""
     def _hm(value):
         try:
+            if hasattr(value, 'tzinfo') and timezone.is_aware(value):
+                value = timezone.localtime(value)
             return value.strftime('%H:%M')
         except (AttributeError, ValueError):
             return ''

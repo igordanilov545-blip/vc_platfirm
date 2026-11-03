@@ -32,16 +32,16 @@ class ApplicationApprovalFlowTests(TestCase):
         # Участие создано по выбранной смене.
         part = Participation.objects.filter(user=self.volunteer, event_day=self.shift).first()
         self.assertIsNotNone(part, 'approve должен создать Participation')
-        self.assertEqual(part.status, 'attended')
+        self.assertEqual(part.status, 'pending')
 
         # Решение по смене зафиксировано.
         dec = ApplicationShiftDecision.objects.get(application=self.application, shift=self.shift)
         self.assertEqual(dec.status, 'approved')
 
-        # Агрегаты волонтёра пересчитаны (часы = длительность смены, 4ч).
+        # Одобрение ещё не подтверждает присутствие и не начисляет часы.
         self.volunteer.refresh_from_db()
         self.assertEqual(self.volunteer.total_hours, part.hours)
-        self.assertEqual(self.volunteer.total_event_count, 1)
+        self.assertEqual(self.volunteer.total_event_count, 0)
 
     def test_reject_shift_removes_participation(self):
         # Сначала одобряем — появляется участие.

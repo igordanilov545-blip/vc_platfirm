@@ -137,6 +137,7 @@
 |---|---|---|
 | Форма создания/редактирования (модалка + страница) | [`partials/_modal_form.html`](../blog/templates/blog/partials/_modal_form.html) | `{% include %}` + вьюха через `views.modal_form_response` |
 | Модалка/bottom-sheet (открытие форм по AJAX) | `base.html` (`#modal-backdrop`, `loadModal`) | ссылка с `data-modal data-modal-title="…"` |
+| Личный QR / карточка сканирования | те же `#modal-backdrop`, `openModal`/`loadModal`; `_personal_qr.html`, `_qr_scan_result.html` | Личный QR — только изображение; карточку сканера заполняет `qr-scanner.js`. Нового механизма модалок нет; размер стандартной формы мероприятия сохранён. |
 | Быстрое создание справочника из формы | `base.html` (`#quick-add-backdrop`) + `quick_create_*` вьюхи | вложенная модалка над формой меро |
 | Одиночный календарь / выбор даты | `base.html` → `initDatepickers` (`data-datepicker`) | поле с `data-datepicker`, стили `.cal/.cal-grid` из `nexus.css` |
 | Утилиты дат (локализация, ISO, формат) — **единый источник** | `base.html` (`<head>`) → `window.CalendarUtils` | `CalendarUtils.MONTHS/DOW/parseISO/toISO/fmt/sameDay` — любой календарь берёт даты отсюда, свои копии не заводим |

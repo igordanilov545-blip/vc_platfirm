@@ -149,4 +149,4 @@ def bot_session_pings_qs():
 
 def get_current_season():
     """Текущий сезон (последний начавшийся) или None — для сезонных срезов отчётов."""
-    return Season.objects.filter(start_season__lte=timezone.now().date()).order_by('-start_season').first()
+    return Season.objects.filter(start_season__lte=timezone.localdate()).order_by('-start_season').first()

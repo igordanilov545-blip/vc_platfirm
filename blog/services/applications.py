@@ -72,18 +72,13 @@ def process_application(application: Application, new_status: str, processed_by:
     shifts = list(application.selected_shifts.all() or application.event.shifts.all())
     if new_status == 'approved' and application.user:
         for shift in shifts:
-            duration_hours = max(0, round((shift.end_time - shift.start_time).total_seconds() / 3600))
-            # По умолчанию считаем, что волонтёр пришёл и отработал полную смену —
-            # часы сразу равны длительности смены, без ручного "перетыкивания" (см.
-            # events.md: тим-лидер меняет статус только если по факту было иначе).
+            # Одобрение даёт место на смене, но не подтверждает физическое присутствие.
             dc.get_or_create_participation(
                 application.user, shift,
-                defaults={'status': 'attended', 'hours': duration_hours, 'full_shift': True},
+                defaults={'status': 'pending', 'hours': 0, 'full_shift': False},
             )
-        # Approve создаёт participations сразу со status='attended' и часами — кэш
-        # (total_hours/total_event_count/season_*) обязан пересчитаться тут же, а не
-        # только при последующей ручной простановке явки, иначе статистика волонтёра
-        # "зависает" на нулях до первого вмешательства тим-лидера.
+        # Одобрение создаёт нейтральные участия без часов; агрегаты синхронизируем
+        # и здесь, и после фактической отметки, не выдавая достижения за одно одобрение.
         from blog.services.stats import recalc_user_aggregates
         recalc_user_aggregates(application.user)
     elif new_status == 'rejected' and application.user:
@@ -137,10 +132,9 @@ def process_shift_decision(application: Application, shift, new_status: str, pro
 
     if application.user:
         if new_status == 'approved':
-            duration_hours = max(0, round((shift.end_time - shift.start_time).total_seconds() / 3600))
             dc.get_or_create_participation(
                 application.user, shift,
-                defaults={'status': 'attended', 'hours': duration_hours, 'full_shift': True},
+                defaults={'status': 'pending', 'hours': 0, 'full_shift': False},
             )
             from blog.services.stats import recalc_user_aggregates
             recalc_user_aggregates(application.user)
@@ -291,7 +285,7 @@ def event_closing_checklist(event: Event) -> dict:
     Возвращает словарь с булевыми флагами по каждому условию и человекочитаемыми
     пояснениями — используется и для показа кнопки «Завершить», и на экране проверки.
     """
-    today = timezone.now().date()
+    today = timezone.localdate()
 
     shifts = list(event.shifts.all())
     all_days_past = bool(shifts) and all(s.day < today for s in shifts)
@@ -307,12 +301,16 @@ def event_closing_checklist(event: Event) -> dict:
     no_approved_without_user = not approved_without_user.exists()
 
     people_helped_filled = event.people_helped is not None
+    no_unmarked_attendance = not dc.participations_qs().filter(event_day__event=event, status='pending').exists()
+    no_open_entries = not dc.shift_attendance_qs().filter(shift__event=event, exited_at=None).exists()
 
     ready = (
         event.event_status != 'finished'
         and all_days_past
         and no_pending_applications
         and no_approved_without_user
+        and no_unmarked_attendance
+        and no_open_entries
     )
 
     return {
@@ -325,4 +323,6 @@ def event_closing_checklist(event: Event) -> dict:
         'no_approved_without_user': no_approved_without_user,
         'approved_without_user_count': approved_without_user.count(),
         'people_helped_filled': people_helped_filled,
+        'no_unmarked_attendance': no_unmarked_attendance,
+        'no_open_entries': no_open_entries,
     }

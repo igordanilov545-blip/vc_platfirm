@@ -148,7 +148,7 @@
         // Цвет имени.
         var name = row.querySelector('[data-name-for]');
         if (name) {
-            name.classList.remove('attendance-attended', 'attendance-absent_excused', 'attendance-absent_unexcused');
+            name.classList.remove('attendance-pending', 'attendance-attended', 'attendance-absent_excused', 'attendance-absent_unexcused');
             name.classList.add('attendance-' + status);
         }
         // Часы: редактируются только у пришедших.

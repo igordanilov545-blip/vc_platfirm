@@ -17,7 +17,7 @@ def open_events(limit: int = 7, user_id: int = None) -> list:
     пользователя (`my_application_id`, `my_application_status`) — чтобы в списке вместо
     кнопки «Подать заявку» показать статус уже поданной заявки (db.md правило 7d)."""
     close_old_connections()
-    today = timezone.now().date()
+    today = timezone.localdate()
     events = dc.get_open_events()
 
     my_apps = {}

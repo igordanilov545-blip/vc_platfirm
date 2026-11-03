@@ -45,6 +45,7 @@ class Command(BaseCommand):
                 BotCommand(command='start', description='Начать / главное меню'),
                 BotCommand(command='login', description='Авторизоваться на сайте'),
                 BotCommand(command='help', description='Помощь'),
+                BotCommand(command='get_qr', description='Мой QR-код'),
             ])
             notifier_task = asyncio.create_task(run_notifier_loop(bot))
             await dp.start_polling(bot, close_bot_session=False)

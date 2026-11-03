@@ -128,6 +128,9 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
+            # Сканер и бот пишут одновременно с аналитикой: резервируем запись до
+            # чтений внутри atomic, чтобы не срывать повышение read-lock → write-lock.
+            'OPTIONS': {'timeout': 20, 'transaction_mode': 'IMMEDIATE'},
         }
     }
 

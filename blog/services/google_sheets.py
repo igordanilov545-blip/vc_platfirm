@@ -22,7 +22,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.utils.datetime import to_excel
 
 from data_base import data_controller as dc
-from .fap_workbook import META_PREFIX
+from .fap_workbook import META_PREFIX, normalized_name
 
 
 API = 'https://sheets.googleapis.com/v4/spreadsheets/'
@@ -80,11 +80,17 @@ def _rgb(color):
     return {k: int(raw[i:i + 2], 16) / 255 for k, i in (('red', 0), ('green', 2), ('blue', 4))}
 
 
+def _shifts_sheet(payload):
+    matching = [sheet for sheet in payload.get('sheets', [])
+                if normalized_name(sheet['properties']['title']) == normalized_name('Смены')]
+    if len(matching) != 1:
+        raise ValidationError('В Google Таблице нужна одна вкладка «Смены» (регистр и пробелы не учитываются).')
+    return matching[0]
+
+
 def grid_to_xlsx(payload):
     """Только выбранная вкладка «Смены»; скрытые ID берутся из DeveloperMetadata."""
-    source = next((s for s in payload.get('sheets', []) if s['properties']['title'] == 'Смены'), None)
-    if source is None:
-        raise ValidationError('В Google Таблице нет вкладки «Смены».')
+    source = _shifts_sheet(payload)
     wb = Workbook()
     sheet = wb.active
     sheet.title = 'Смены'
@@ -154,7 +160,7 @@ def xlsx_update_requests(content, sheet_id, original=None):
     sheet = load_workbook(BytesIO(content))['Смены']
     original = original or {}
     requests_list = []
-    old_source = next((s for s in original.get('sheets', []) if s['properties']['title'] == 'Смены'), {})
+    old_source = next((s for s in original.get('sheets', []) if normalized_name(s['properties']['title']) == normalized_name('Смены')), {})
     grid = old_source.get('properties', {}).get('gridProperties', {})
     requests_list.append({'updateSheetProperties': {'properties': {'sheetId': sheet_id, 'gridProperties': {
         'rowCount': max(sheet.max_row, grid.get('rowCount', 1)), 'columnCount': max(sheet.max_column, grid.get('columnCount', 1)),
@@ -263,7 +269,10 @@ class GoogleSheetClient:
 
     def read_google(self, spreadsheet_id, sheet_id=None):
         if self.session:
-            self.payload = self._request('GET', API + spreadsheet_id, params={'ranges': "'Смены'", 'includeGridData': 'true'}).json()
+            metadata = self._request('GET', API + spreadsheet_id, params={'fields': 'sheets(properties(sheetId,title))'}).json()
+            title = _shifts_sheet(metadata)['properties']['title']
+            escaped = title.replace("'", "''")
+            self.payload = self._request('GET', API + spreadsheet_id, params={'ranges': f"'{escaped}'", 'includeGridData': 'true'}).json()
             return grid_to_xlsx(self.payload)
         params = {'format': 'xlsx'}
         if sheet_id is not None:

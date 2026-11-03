@@ -18,6 +18,76 @@ EXAMPLES = Path(__file__).resolve().parents[1] / 'resources' / 'fap'
 
 
 class FaPWorkbookTests(SimpleTestCase):
+    def test_marathon_short_dates_use_year_from_count_headers_and_keep_all_zone_blocks(self):
+        from blog.services.fap_workbook import read_xlsx, write_xlsx
+        source = (EXAMPLES / 'marathon.xlsx').read_bytes()
+        plan = read_xlsx(source)
+        self.assertEqual(plan['dates'], ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27'])
+        self.assertEqual(len(plan['directions']), 24)
+        first, second = plan['directions'][:2]
+        self.assertEqual(first['name'], second['name'])
+        self.assertNotEqual(first['id'], second['id'])
+        self.assertEqual(first['positions'][0]['days'][2]['quantities'][0]['count'], 12)
+        self.assertEqual(second['positions'][0]['days'][2]['quantities'][0]['count'], 9)
+        self.assertEqual(plan['directions'][-1]['positions'][0]['days'][2]['quantities'][0]['count'], 16)
+        self.assertTrue(any(d['name'] == 'Волонтёры-медики' for d in plan['directions']))
+        restored = read_xlsx(write_xlsx(plan, source))
+        self.assertEqual([d['id'] for d in restored['directions']], [d['id'] for d in plan['directions']])
+        self.assertEqual(restored['dates'], plan['dates'])
+
+    def test_names_headers_and_subtotals_ignore_case_and_whitespace(self):
+        from blog.services.fap_workbook import read_xlsx
+        book = load_workbook(EXAMPLES / 'marathon.xlsx')
+        sheet = book.active
+        sheet.title = '  с М е Н ы  '
+        sheet['J1'] = ' CHECK - IN / check - OUT '
+        for col in (14, 16, 18, 20):
+            sheet.cell(1, col, ' КОЛ - ВО / СМЕНА ')
+        sheet['E8'] = ' и т О Г о\u00a0в\tз О н е : '
+        sheet['E12'] = 'ИтОгО В зОнЕ:'
+        sheet['C3'] = ' ТИМ  ЛИДЕРЫ '
+        stream = BytesIO()
+        book.save(stream)
+        plan = read_xlsx(stream.getvalue())
+        self.assertEqual(len(plan['directions']), 24)
+        self.assertEqual(plan['directions'][0]['team_leaders'], [])
+        self.assertEqual(plan['dates'][0], '2026-09-24')
+
+    def test_date_formats_and_missing_or_conflicting_year(self):
+        from blog.services.fap_workbook import read_xlsx
+        def content(work, check, count):
+            book = load_workbook(EXAMPLES / 'one-day.xlsx')
+            sheet = book.active
+            sheet['F2'], sheet['G2'], sheet['I1'] = work, check, count
+            stream = BytesIO()
+            book.save(stream)
+            return stream.getvalue()
+        for text in (' 10 . 10 . 2026 ', 'Race day 10/10/26', '2026 - 10 - 10', '10 ОКТЯБРЯ 2026', '10 october 2026'):
+            with self.subTest(text=text):
+                self.assertEqual(read_xlsx(content(text, text, None))['dates'], ['2026-10-10'])
+        with self.assertRaises(ValidationError):
+            read_xlsx(content('Race day 10.10', '10.10', None))
+        with self.assertRaises(ValidationError):
+            read_xlsx(content('Race day 10.10', '11.10.2026', '10.10.2026'))
+
+    def test_google_selects_normalized_tab_name_before_reading_its_cells(self):
+        from unittest.mock import Mock
+        from blog.services.google_sheets import GoogleSheetClient
+        client = GoogleSheetClient.__new__(GoogleSheetClient)
+        client.session = object()
+        metadata = {'sheets': [{'properties': {'title': '  с М е Н ы  ', 'sheetId': 42}}, {'properties': {'title': 'Другой лист', 'sheetId': 99}}]}
+        client._request = Mock(side_effect=[Mock(json=lambda: metadata), Mock(json=lambda: {'sheets': [metadata['sheets'][0]]})])
+        with patch('blog.services.google_sheets.grid_to_xlsx', return_value=(b'xlsx', 42)):
+            self.assertEqual(client.read_google('spreadsheet', 99), (b'xlsx', 42))
+        self.assertEqual(client._request.call_args_list[1].kwargs['params']['ranges'], "'  с М е Н ы  '")
+        self.assertNotIn('ranges', client._request.call_args_list[0].kwargs['params'])
+
+    def test_shift_labels_ignore_case_and_whitespace_when_matching_counts(self):
+        from blog.services.fap_workbook import day_shifts
+        shifts = day_shifts('2026-09-24', ' b : 10:00-12:00\n a : 08:00-10:00', None,
+                            [{'label': '', 'count': 7}, {'label': 'A', 'count': 2}, {'label': 'B', 'count': 5}], [])
+        self.assertEqual([s['count'] for s in shifts], [5, 2])
+
     def test_position_column_names_do_not_affect_direction_or_shift_counts(self):
         from blog.services.fap_workbook import read_xlsx
         from blog.services.event_sheets import content_signature
@@ -140,6 +210,7 @@ class FaPWorkbookTests(SimpleTestCase):
         metadata = [dict(r['createDeveloperMetadata']['developerMetadata'], metadataId=i) for i, r in enumerate(batch) if 'createDeveloperMetadata' in r]
         payload = {'sheets': [{'properties': {'sheetId': 42, 'title': 'Смены'}, 'data': [{'rowData': updates['rows']}],
             'merges': [r['mergeCells']['range'] for r in batch if 'mergeCells' in r], 'developerMetadata': metadata}]}
+        payload['sheets'][0]['properties']['title'] = ' с М Е н ы '
         content, gid = grid_to_xlsx(payload)
         self.assertEqual(gid, 42)
         self.assertEqual(fingerprint(read_xlsx(content)), fingerprint(plan))
@@ -167,6 +238,18 @@ class FaPWorkbookTests(SimpleTestCase):
 class FaPImportTests(TestCase):
     def setUp(self):
         self.manager = f.make_manager()
+
+    def test_marathon_upload_creates_each_zone_as_a_separate_position(self):
+        from blog.models import EventGroup
+        from blog.services.event_sheets import import_workbook, export_workbook
+        group = EventGroup.objects.create(title='Марафон')
+        source = (EXAMPLES / 'marathon.xlsx').read_bytes()
+        import_workbook(self.manager, group, source)
+        self.assertEqual(group.positions.count(), 24)
+        ids = list(group.positions.order_by('pk').values_list('pk', flat=True))
+        exported = export_workbook(self.manager, group)
+        import_workbook(self.manager, group, exported)
+        self.assertEqual(list(group.positions.order_by('pk').values_list('pk', flat=True)), ids)
 
     def test_legacy_import_repair_preserves_first_event_and_shift_ids(self):
         import hashlib, uuid

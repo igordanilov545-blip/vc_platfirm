@@ -5,6 +5,7 @@ from io import BytesIO
 import json
 from pathlib import Path
 import re
+import unicodedata
 import uuid
 import posixpath
 from xml.etree import ElementTree as ET
@@ -16,11 +17,18 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.comments import Comment
 from openpyxl.cell.cell import MergedCell
 from openpyxl.utils import get_column_letter
+from openpyxl.utils.datetime import from_excel, CALENDAR_WINDOWS_1900
 
 
 TEMPLATE_DIR = Path(__file__).resolve().parents[1] / 'resources' / 'fap'
 MSK = ZoneInfo('Europe/Moscow')
 META_PREFIX = 'vc_fap:'
+
+
+def normalized_name(value):
+    """Ключ распознавания; исходное написание названий/имён не меняем."""
+    text = unicodedata.normalize('NFKC', str(value) if value is not None else '')
+    return re.sub(r'\s+', '', text.casefold()).replace('ё', 'е')
 
 
 def only_shifts_content(content):
@@ -32,9 +40,11 @@ def only_shifts_content(content):
         rel_attr = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id'
         book = ET.fromstring(source.read('xl/workbook.xml'))
         sheets = book.find('m:sheets', ns)
-        target = next((s for s in sheets if s.attrib['name'] == 'Смены'), None)
-        if target is None:
-            raise ValidationError('В таблице нужна вкладка с точным названием «Смены».')
+        matching = [s for s in sheets if normalized_name(s.attrib['name']) == normalized_name('Смены')]
+        if len(matching) != 1:
+            raise ValidationError('В таблице нужна одна вкладка «Смены» (регистр и пробелы не учитываются).')
+        target = matching[0]
+        target.set('name', 'Смены')
         index = list(sheets).index(target)
         removed_ids = {s.attrib[rel_attr] for s in sheets if s is not target}
         for child in list(sheets):
@@ -76,22 +86,55 @@ def _text(value):
     return str(value).strip() if value is not None else ''
 
 
-def _date(value):
+def _date(value, reference=None, epoch=CALENDAR_WINDOWS_1900):
     if isinstance(value, datetime):
         return value.date().isoformat()
     if isinstance(value, date):
         return value.isoformat()
-    for fmt in ('%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y'):
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
         try:
-            return datetime.strptime(_text(value), fmt).date().isoformat()
+            converted = from_excel(value, epoch)
+            return converted.date().isoformat() if isinstance(converted, datetime) else None
+        except (ValueError, OverflowError):
+            return None
+    text = normalized_name(value)
+    match = re.search(r'(?<!\d)(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)', text)
+    if match:
+        year, month, day = map(int, match.groups())
+    else:
+        match = re.search(r'(?<!\d)(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}|\d{2}))?(?!\d)', text)
+        if match:
+            day, month = map(int, match.groups()[:2])
+            year = int(match[3]) if match[3] else date.fromisoformat(reference).year if reference else None
+            if year is not None and year < 100:
+                year += 2000 if year < 69 else 1900
+        else:
+            months = (
+                ('январь', 'января', 'янв', 'january', 'jan'), ('февраль', 'февраля', 'фев', 'february', 'feb'),
+                ('март', 'марта', 'мар', 'march', 'mar'), ('апрель', 'апреля', 'апр', 'april', 'apr'),
+                ('май', 'мая', 'may'), ('июнь', 'июня', 'июн', 'june', 'jun'),
+                ('июль', 'июля', 'июл', 'july', 'jul'), ('август', 'августа', 'авг', 'august', 'aug'),
+                ('сентябрь', 'сентября', 'сен', 'сент', 'september', 'sep', 'sept'),
+                ('октябрь', 'октября', 'окт', 'october', 'oct'), ('ноябрь', 'ноября', 'ноя', 'november', 'nov'),
+                ('декабрь', 'декабря', 'дек', 'december', 'dec'),
+            )
+            match = re.search(r'(?<!\d)(\d{1,2})([а-яa-z]+)\.?(\d{4})?(?!\d)', text)
+            if not match:
+                return None
+            day = int(match[1])
+            month = next((i for i, names in enumerate(months, 1) if match[2] in names), 0)
+            year = int(match[3]) if match[3] else date.fromisoformat(reference).year if reference else None
+    if year is not None:
+        try:
+            return date(year, month, day).isoformat()
         except ValueError:
             pass
     return None
 
 
 def _names(value):
-    ignored = {'тим лидеры', 'тим-лидеры', 'менеджеры', 'менеджер бс', 'ответственные за зону'}
-    return [name.strip() for name in _text(value).splitlines() if name.strip() and name.strip().lower() not in ignored]
+    ignored = {normalized_name(name) for name in ('тим лидеры', 'тим-лидеры', 'тим-лидер', 'менеджеры', 'менеджер бс', 'ответственные за зону')}
+    return [name.strip() for name in _text(value).splitlines() if name.strip() and normalized_name(name.strip()) not in ignored]
 
 
 def _intervals(value, day, warnings):
@@ -125,16 +168,16 @@ def day_shifts(day, work, checkin_out, quantities, warnings, ids=None):
     """0…M подсмен, включая общий интервал с раздельными количествами A/B/C."""
     intervals = _intervals(work, day, warnings)
     checks = _intervals(checkin_out, day, warnings)
-    split = [item for item in quantities[1:] if item['count'] is not None and item['label'] != 'Без времени']
+    split = [item for item in quantities[1:] if item['count'] is not None and normalized_name(item['label']) != normalized_name('Без времени')]
     if len(intervals) == 1 and len(split) > 1:
         intervals = [{**intervals[0], 'label': item['label']} for item in split]
     result = []
     for index, interval in enumerate(intervals):
         label = interval['label'] or (split[index]['label'] if index < len(split) else '')
-        quantity = next((item for item in split if item['label'] == label), None)
+        quantity = next((item for item in split if normalized_name(item['label']) == normalized_name(label)), None)
         if quantity is None:
             quantity = split[index] if index < len(split) else quantities[0] if len(intervals) == 1 else {'count': None}
-        check = next((item for item in checks if item['label'] and item['label'] == label), None)
+        check = next((item for item in checks if item['label'] and normalized_name(item['label']) == normalized_name(label)), None)
         if check is None and checks:
             check = checks[min(index, len(checks) - 1)]
         known = ids or []
@@ -142,7 +185,7 @@ def day_shifts(day, work, checkin_out, quantities, warnings, ids=None):
             # Первый формат метаданных, до появления именованных подсмен.
             source_id = known[index] if index < len(known) else new_id()
         else:
-            matches = [old for old in known if label and old.get('label') == label]
+            matches = [old for old in known if label and normalized_name(old.get('label')) == normalized_name(label)]
             if not matches and len(intervals) == 1 and len(known) == 1:
                 matches = known
             if not matches:
@@ -155,6 +198,8 @@ def day_shifts(day, work, checkin_out, quantities, warnings, ids=None):
                        'checkout': check['end'] if check else None})
     if not intervals and any(item['count'] is not None for item in quantities):
         warnings.append(f'{day}: количество задано без рабочего времени; план сохранён, рабочая смена пока не создана.')
+    elif len(intervals) > 1 and not split and quantities[0]['count'] is not None:
+        warnings.append(f'{day}: несколько рабочих интервалов без распределения количества; общий план сохранён без выдуманного распределения.')
     return result
 
 
@@ -190,7 +235,7 @@ def group_directions(plan):
             incomplete = []
             for row in rows:
                 source = row['days'][day_index]
-                if not source['shifts']:
+                if not source['shifts'] or all(s['count'] is None for s in source['shifts']):
                     quantities = source['quantities']
                     counts = [q['count'] for q in quantities[1:] if q['count'] is not None]
                     count = sum(counts) if counts else quantities[0]['count']
@@ -231,6 +276,55 @@ def group_directions(plan):
     return grouped
 
 
+def _header_layout(sheet, value, epoch):
+    """Дни работы, check-in/out и количества — независимые блоки заголовка."""
+    def header(col):
+        return re.sub(r'[-/–—]', '', normalized_name(sheet.cell(1, col).value))
+
+    check_start = next((col for col in range(7, sheet.max_column + 1)
+                        if 'checkin' in header(col) and 'checkout' in header(col)), None)
+    if check_start is None:
+        raise ValidationError('В первой строке не найден блок Check-in / Check-out.')
+    days_count = check_start - 6
+    count_start = check_start + days_count
+    starts = [col for col in range(count_start, sheet.max_column + 1)
+              if 'кол' in header(col) and 'смен' in header(col)]
+    if len(starts) != days_count:
+        raise ValidationError('Количество блоков «Кол-во / смена» должно совпадать с количеством рабочих дней.')
+    widths = []
+    for i, start in enumerate(starts):
+        if i + 1 < len(starts):
+            widths.append(starts[i + 1] - start)
+            continue
+        merged = next((area for area in sheet.merged_cells.ranges
+                       if area.min_row <= 2 <= area.max_row and area.min_col == start), None)
+        end = merged.max_col if merged else start + 2
+        for area in sheet.merged_cells.ranges:
+            if area.min_row == 1 and start <= area.min_col <= start + 1:
+                end = max(end, area.max_col)
+        while re.fullmatch(r'[a-zа-я]', normalized_name(sheet.cell(2, end + 1).value)):
+            end += 1
+        widths.append(end - start + 1)
+    dates = []
+    for i, start in enumerate(starts):
+        headers = [value(2, 6 + i), value(2, check_start + i)]
+        headers += [value(row, col) for row in (1, 2) for col in range(start, start + widths[i])]
+        complete = [_date(item, epoch=epoch) for item in headers]
+        complete = [day for day in complete if day]
+        if not complete:
+            raise ValidationError(f'Не удалось определить год дня в колонке {get_column_letter(6 + i)}. Укажите полную дату в заголовке работы, check-in/out или количества.')
+        day = complete[0]
+        recognized = [_date(item, reference=day, epoch=epoch) for item in headers]
+        if any(item and item != day for item in recognized):
+            raise ValidationError(f'Даты рабочего дня, check-in/out и количества не совпадают в колонке {get_column_letter(6 + i)}.')
+        if not recognized[0]:
+            raise ValidationError(f'Не распознана дата рабочего дня в колонке {get_column_letter(6 + i)}.')
+        dates.append(day)
+    if len(set(dates)) != len(dates):
+        raise ValidationError('Рабочие дни должны иметь разные даты.')
+    return dates, starts, widths
+
+
 def read_xlsx(content):
     """Значения merged-ячеек наследуются логически; другие вкладки не используются."""
     try:
@@ -254,42 +348,21 @@ def read_xlsx(content):
         anchor = merged.get((row, col), (row, col, row))
         return values.cell(anchor[0], anchor[1]).value
 
-    dates = []
-    col = 6
-    while col <= sheet.max_column and _date(value(2, col)) and (col == 6 or sheet.cell(1, col).value is None):
-        dates.append(_date(value(2, col)))
-        col += 1
-    if not dates or len(set(dates)) != len(dates):
-        raise ValidationError('Во второй строке после колонки E нужны разные полные даты рабочих дней.')
-    count_start = 6 + 2 * len(dates)
-    starts = [c for c in range(count_start, sheet.max_column + 1)
-              if 'кол' in _text(sheet.cell(1, c).value).lower() and 'смен' in _text(sheet.cell(1, c).value).lower()]
-    if len(starts) != len(dates):
-        starts = [count_start + 3 * i for i in range(len(dates))]
-    widths = []
-    for i, start in enumerate(starts):
-        if i + 1 < len(starts):
-            widths.append(starts[i + 1] - start)
-            continue
-        end = start + 2
-        for area in sheet.merged_cells.ranges:
-            if area.min_row <= 2 and area.max_row <= 2 and start <= area.min_col <= start + 1:
-                end = max(end, area.max_col)
-        while re.fullmatch(r'[A-ZА-Я]', _text(sheet.cell(2, end + 1).value)):
-            end += 1
-        widths.append(end - start + 1)
+    dates, starts, widths = _header_layout(sheet, value, workbook.epoch)
     plan = {'dates': dates, 'directions': [], 'warnings': [], 'quantity_widths': widths}
     direction = None
     for row in range(3, sheet.max_row + 1):
         name = _text(value(row, 5))
-        if 'итого' in name.lower():
+        if normalized_name(value(row, 2)).startswith('итоги'):
+            break
+        if normalized_name(name).startswith('итого'):
             direction = None
             continue
-        if not isinstance(value(row, 1), (int, float)) or not name and not any(value(row, c) is not None for c in range(6, sheet.max_column + 1)):
+        if not _text(value(row, 2)) or not name and not any(value(row, c) is not None for c in range(6, sheet.max_column + 1)):
             continue
         metadata = _metadata(sheet.cell(row, 5))
         if direction is None:
-            end_row = next((r for r in range(row + 1, sheet.max_row + 1) if 'итого' in _text(value(r, 5)).lower()), row)
+            end_row = next((r for r in range(row + 1, sheet.max_row + 1) if normalized_name(value(r, 5)).startswith('итого')), row)
             direction = {'id': metadata.get('direction', new_id()), 'name': _text(value(row, 2)),
                          'order': len(plan['directions']), 'team_leaders': [], 'responsibles': [], 'positions': [], '_inherited': set()}
             for c, key in ((3, 'team_leaders'), (4, 'responsibles')):

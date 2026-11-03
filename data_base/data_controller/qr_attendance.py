@@ -56,15 +56,39 @@ def save_shift_exit(row, operator, at=None):
     return row
 
 
-def save_qr_participation(participation, hours, full_shift=False, operator=None):
+def save_qr_participation(participation, hours, full_shift=False, operator=None, *, status='attended'):
     """Явная отметка присутствия, отдельно от одобрения заявки."""
-    participation.status = 'attended'
+    participation.status = status
     participation.hours = hours
     participation.full_shift = full_shift
     participation.hours_overridden = False
     participation.save(update_fields=['status', 'hours', 'full_shift', 'hours_overridden'])
     logger.info('UPDATE participations via QR: participation=%s hours=%s by=%s', participation.pk, hours, actor(operator))
     return participation
+
+
+def save_shift_attendance(row, entered_at, exited_at, operator):
+    """Изменить либо снять отметки, сохранив строку истории сканирования."""
+    if row.entered_at != entered_at:
+        row.entered_by = operator
+    if row.exited_at != exited_at:
+        row.exited_by = operator
+    row.entered_at, row.exited_at = entered_at, exited_at
+    row.save(update_fields=['entered_at', 'exited_at', 'entered_by', 'exited_by'])
+    logger.info('UPDATE shift_attendance: attendance=%s entered=%s exited=%s by=%s', row.pk, entered_at, exited_at, actor(operator))
+    return row
+
+
+def revoke_shift_meal(user, shift, operator):
+    deleted, _ = ShiftMeal.objects.filter(user=user, shift=shift).delete()
+    if deleted:
+        logger.info('DELETE shift_meals: user=%s shift=%s by=%s', user.pk, shift.pk, actor(operator))
+
+
+def revoke_event_badge(user, group, operator):
+    deleted, _ = EventBadge.objects.filter(user=user, event_group=group).delete()
+    if deleted:
+        logger.info('DELETE event_badges: user=%s group=%s by=%s', user.pk, group.pk, actor(operator))
 
 
 def shift_meals_qs():

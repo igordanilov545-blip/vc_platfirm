@@ -35,15 +35,15 @@
                         {% if not row.can_mark %}<span class="qr-shift-meta">Отметка недоступна</span>{% endif %}
                     </td>
                     <td class="qr-mark-cell">
-                        <input type="checkbox" data-qr-mark="in" data-shift-id="{{ row.shift.pk }}" aria-label="Отметить вход: {{ row.shift.event.title }}, {{ row.shift.start_time|date:'d.m.Y H:i' }}" {% if row.attendance %}checked disabled{% elif not row.can_mark %}disabled{% endif %}>
-                        {% if row.attendance %}<time class="qr-mark-time" title="{{ row.attendance.entered_at|date:'d.m.Y H:i:s' }} МСК">{{ row.attendance.entered_at|date:'H:i' }}</time>{% endif %}
+                        <input type="checkbox" data-qr-mark="in" data-shift-id="{{ row.shift.pk }}" aria-label="Отметить вход: {{ row.shift.event.title }}, {{ row.shift.start_time|date:'d.m.Y H:i' }}" {% if row.attendance.entered_at %}checked{% endif %} {% if not row.can_mark %}disabled{% endif %}>
+                        {% if row.attendance.entered_at %}<time class="qr-mark-time" title="{{ row.attendance.entered_at|date:'d.m.Y H:i:s' }} МСК">{{ row.attendance.entered_at|date:'H:i' }}</time>{% endif %}
                     </td>
                     <td class="qr-mark-cell">
-                        <input type="checkbox" data-qr-mark="out" data-shift-id="{{ row.shift.pk }}" aria-label="Отметить выход: {{ row.shift.event.title }}, {{ row.shift.start_time|date:'d.m.Y H:i' }}" {% if row.attendance.exited_at %}checked disabled{% elif not row.attendance or not row.can_mark %}disabled{% endif %}>
+                        <input type="checkbox" data-qr-mark="out" data-shift-id="{{ row.shift.pk }}" aria-label="Отметить выход: {{ row.shift.event.title }}, {{ row.shift.start_time|date:'d.m.Y H:i' }}" {% if row.attendance.exited_at %}checked{% endif %} {% if not row.can_mark %}disabled{% endif %}>
                         {% if row.attendance.exited_at %}<time class="qr-mark-time">{{ row.attendance.exited_at|date:'H:i' }}</time>{% endif %}
                     </td>
                     <td class="qr-mark-cell">
-                        <input type="checkbox" data-qr-mark="lunch" data-shift-id="{{ row.shift.pk }}" aria-label="Выдан обед: {{ row.shift.event.title }}" {% if row.meal %}checked disabled{% elif not row.can_mark %}disabled{% endif %}>
+                        <input type="checkbox" data-qr-mark="lunch" data-shift-id="{{ row.shift.pk }}" aria-label="Выдан обед: {{ row.shift.event.title }}" {% if row.meal %}checked{% endif %} {% if not row.can_mark %}disabled{% endif %}>
                     </td>
                 </tr>
             {% empty %}<tr><td colspan="4" class="qr-empty-state">Нет доступных смен</td></tr>{% endfor %}
@@ -52,10 +52,10 @@
     </div>
     {% if badge_rows %}
     <div class="table-scroll"><table class="qr-shifts-table"><thead><tr><th>Мероприятие</th><th>Значок</th></tr></thead><tbody>
-    {% for row in badge_rows %}<tr><td>{{ row.group.title }}<span class="qr-shift-meta">Один значок на всё мероприятие</span></td><td class="qr-mark-cell"><input type="checkbox" data-qr-mark="badge" data-shift-id="{{ row.shift.pk }}" aria-label="Выдан значок: {{ row.group.title }}" {% if row.badge %}checked disabled{% elif not row.can_mark %}disabled{% endif %}></td></tr>{% endfor %}
+    {% for row in badge_rows %}<tr><td>{{ row.group.title }}<span class="qr-shift-meta">Один значок на всё мероприятие</span></td><td class="qr-mark-cell"><input type="checkbox" data-qr-mark="badge" data-shift-id="{{ row.shift.pk }}" aria-label="Выдан значок: {{ row.group.title }}" {% if row.badge %}checked{% endif %} {% if not row.can_mark %}disabled{% endif %}></td></tr>{% endfor %}
     </tbody></table></div>
     {% endif %}
-    <p class="qr-mark-help event-dash-muted">Галочки сохранятся при закрытии окна. До этого выбор можно изменить. Время отметок: {{ scanned_at|date:'H:i:s' }} МСК. Обед — на каждую смену, значок — один на мероприятие.</p>
+    <p class="qr-mark-help event-dash-muted">Галочки сохранятся при закрытии окна. Отметки можно менять и при повторном открытии. Время отметок: {{ scanned_at|date:'H:i:s' }} МСК. Обед — на каждую смену, значок — один на мероприятие.</p>
     <details class="qr-enrollment">
         <summary>＋ Записать на смену</summary>
         {% if enrollment_shifts %}

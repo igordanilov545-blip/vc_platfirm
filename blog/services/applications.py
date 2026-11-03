@@ -302,7 +302,7 @@ def event_closing_checklist(event: Event) -> dict:
 
     people_helped_filled = event.people_helped is not None
     no_unmarked_attendance = not dc.participations_qs().filter(event_day__event=event, status='pending').exists()
-    no_open_entries = not dc.shift_attendance_qs().filter(shift__event=event, exited_at=None).exists()
+    no_open_entries = not dc.shift_attendance_qs().filter(shift__event=event, entered_at__isnull=False, exited_at=None).exists()
 
     ready = (
         event.event_status != 'finished'

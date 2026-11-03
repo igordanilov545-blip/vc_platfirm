@@ -1085,10 +1085,10 @@ class ScannerGrant(models.Model):
 
 
 class ShiftAttendance(models.Model):
-    """Фактический вход и выход; одобрение заявки не создаёт эту запись."""
+    """Вход/выход; после снятия входа остаётся строка с пустыми отметками."""
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shift_attendance')
     shift = models.ForeignKey(EventShift, on_delete=models.CASCADE, related_name='qr_attendance')
-    entered_at = models.DateTimeField(default=timezone.now)
+    entered_at = models.DateTimeField(default=timezone.now, null=True, blank=True)
     exited_at = models.DateTimeField(null=True, blank=True)
     entered_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
     exited_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
@@ -1097,7 +1097,7 @@ class ShiftAttendance(models.Model):
         db_table = 'shift_attendance'
         constraints = [
             models.UniqueConstraint(fields=['user', 'shift'], name='one_attendance_per_user_shift'),
-            models.CheckConstraint(condition=models.Q(exited_at__isnull=True) | models.Q(exited_at__gte=models.F('entered_at')), name='attendance_exit_after_entry'),
+            models.CheckConstraint(condition=models.Q(exited_at__isnull=True) | (models.Q(entered_at__isnull=False) & models.Q(exited_at__gte=models.F('entered_at'))), name='attendance_exit_after_entry'),
         ]
 
 

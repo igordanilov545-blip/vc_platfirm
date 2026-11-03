@@ -48,12 +48,12 @@ def qr_scan(request):
 @require_POST
 @never_cache
 def qr_mark(request):
-    """Явный вход или выход; повторный запрос безопасен, ACL проверяется заново."""
+    """Совместимый URL всех четырёх отметок; ACL проверяется заново."""
     try:
         shift_id = int(request.POST.get('shift_id', ''))
         token = request.POST.get('token', '')
-        qr.mark_scan(request.user, token, shift_id, request.POST.get('action', ''))
-        context = qr.scan_context(request.user, token)
+        checked = json.loads(request.POST.get('checked', 'true'))
+        context = qr.mark_scan_context(request.user, token, shift_id, request.POST.get('action', ''), checked, scan_ticket=request.POST.get('scan_ticket') or None)
     except (ValueError, ValidationError) as error:
         message = error.messages[0] if isinstance(error, ValidationError) else 'Некорректная смена.'
         return HttpResponse(message, status=400)

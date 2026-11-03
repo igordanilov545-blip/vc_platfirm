@@ -23,19 +23,30 @@ function initQrScanner(root) {
         var stream = null, frame = null, token = null, busy = false;
         var scanTicket = null, pending = {}, saving = false, visitingProfile = false, updating = false, closeRequested = false;
         var storageKey = 'vc:qr-window:' + panel.dataset.operatorId;
+        var cameraKey = storageKey + ':camera';
+        var cameraMode = false, cameraStarting = false, leavingPage = false, lastCameraToken = null;
+        try { cameraMode = sessionStorage.getItem(cameraKey) === '1'; } catch (_) {}
         var canvas = document.createElement('canvas');
         var context = canvas.getContext('2d', {willReadFrequently: true});
         var csrf = panel.querySelector('[name=csrfmiddlewaretoken]').value;
 
-        function stopCamera() {
+        function pauseCamera() {
             if (frame) cancelAnimationFrame(frame);
             frame = null;
+            video.hidden = true;
+        }
+        function stopCamera() {
+            pauseCamera();
             if (stream) stream.getTracks().forEach(function (track) { track.stop(); });
             stream = null;
             video.srcObject = null;
             video.hidden = true;
             stop.hidden = true;
             start.disabled = false;
+        }
+        function setCameraMode(value) {
+            cameraMode = value;
+            try { sessionStorage.setItem(cameraKey, value ? '1' : '0'); } catch (_) {}
         }
         async function post(url, values, keepalive) {
             var response = await fetch(url, {
@@ -56,7 +67,9 @@ function initQrScanner(root) {
             try { sessionStorage.removeItem(storageKey); } catch (_) {}
         }
         function resetWindow() {
+            if (!token) return;
             forget(); token = null; scanTicket = null; pending = {}; visitingProfile = false; closeRequested = false;
+            if (cameraMode && !leavingPage && panel.isConnected) startCamera();
         }
         async function saveWindow(close, keepalive) {
             if (saving || !token) return;
@@ -124,24 +137,38 @@ function initQrScanner(root) {
             }
             card.querySelectorAll('[data-qr-mark]').forEach(function (checkbox) {
                 var key = checkbox.dataset.qrMark + ':' + checkbox.dataset.shiftId;
+                checkbox.dataset.savedChecked = checkbox.checked ? '1' : '0';
                 if (checkbox.disabled) delete pending[key];
-                else if (pending[key] || checkbox.dataset.qrMark === 'in' && checkbox.dataset.shiftId === card.dataset.suggestedEntry) {
+                else if (Object.prototype.hasOwnProperty.call(pending, key)) {
+                    checkbox.checked = pending[key].checked !== false;
+                } else if (checkbox.dataset.qrMark === 'in' && checkbox.dataset.shiftId === card.dataset.suggestedEntry) {
                     checkbox.checked = true;
-                    pending[key] = {kind: checkbox.dataset.qrMark, shift_id: Number(checkbox.dataset.shiftId)};
                 }
+                trackChoice(checkbox);
                 checkbox.addEventListener('change', function () {
-                    if (checkbox.checked) pending[key] = {kind: checkbox.dataset.qrMark, shift_id: Number(checkbox.dataset.shiftId)};
-                    else delete pending[key];
+                    var kind = checkbox.dataset.qrMark;
+                    var peerKind = kind === 'in' ? 'out' : 'in';
+                    if (kind === 'in' && !checkbox.checked || kind === 'out' && checkbox.checked) {
+                        var peer = card.querySelector('[data-qr-mark="' + peerKind + '"][data-shift-id="' + checkbox.dataset.shiftId + '"]');
+                        if (peer && !peer.disabled) { peer.checked = checkbox.checked; trackChoice(peer); }
+                    }
+                    trackChoice(checkbox);
                     showDraft();
                 });
             });
+            function trackChoice(checkbox) {
+                var key = checkbox.dataset.qrMark + ':' + checkbox.dataset.shiftId;
+                if (checkbox.disabled || checkbox.checked === (checkbox.dataset.savedChecked === '1')) delete pending[key];
+                else pending[key] = {kind: checkbox.dataset.qrMark, shift_id: Number(checkbox.dataset.shiftId), checked: checkbox.checked};
+            }
             function showDraft() {
                 card.querySelectorAll('[data-qr-mark]').forEach(function (checkbox) {
                     var key = checkbox.dataset.qrMark + ':' + checkbox.dataset.shiftId;
                     checkbox.closest('td').classList.toggle('qr-mark-pending', !!pending[key]);
                     var preview = checkbox.parentElement.querySelector('[data-qr-pending-time]');
                     if (preview) preview.remove();
-                    if (pending[key] && ['in', 'out'].includes(checkbox.dataset.qrMark)) {
+                    checkbox.parentElement.querySelectorAll('time:not([data-qr-pending-time])').forEach(function (time) { time.hidden = !!pending[key]; });
+                    if (pending[key] && checkbox.checked && ['in', 'out'].includes(checkbox.dataset.qrMark)) {
                         preview = document.createElement('time');
                         preview.dataset.qrPendingTime = '';
                         preview.className = 'qr-mark-time';
@@ -171,7 +198,7 @@ function initQrScanner(root) {
         async function found(value, ticket, choices) {
             if (busy) return;
             busy = true;
-            stopCamera();
+            pauseCamera();
             token = value;
             visitingProfile = false;
             pending = choices || {};
@@ -183,6 +210,8 @@ function initQrScanner(root) {
                 status.textContent = 'QR прочитан. Можно сканировать следующего участника.';
             } catch (error) {
                 status.textContent = error.message;
+                token = null;
+                if (cameraMode && !leavingPage) startCamera();
             } finally {
                 busy = false;
                 if (closeRequested) { closeRequested = false; saveWindow(true, false); }
@@ -192,6 +221,7 @@ function initQrScanner(root) {
             var saved;
             try { saved = JSON.parse(sessionStorage.getItem(storageKey)); } catch (_) {}
             if (saved && saved.token && saved.ticket) found(saved.token, saved.ticket, saved.pending);
+            else if (cameraMode) startCamera();
         }
         function decode(image, width, height) {
             canvas.width = width;
@@ -201,34 +231,51 @@ function initQrScanner(root) {
             return jsQR(pixels.data, width, height, {inversionAttempts: 'dontInvert'});
         }
         function readFrame() {
-            if (!stream || !panel.isConnected) return stopCamera();
+            frame = null;
+            if (!stream || !panel.isConnected || leavingPage) return stopCamera();
+            if (!cameraMode || token) return;
             if (video.readyState >= 2 && video.videoWidth) {
                 var width = Math.min(800, video.videoWidth);
                 var code = decode(video, width, Math.round(video.videoHeight * width / video.videoWidth));
-                if (code) { found(code.data); return; }
+                if (!code) lastCameraToken = null;
+                else if (code.data !== lastCameraToken) {
+                    lastCameraToken = code.data;
+                    found(code.data);
+                    return;
+                }
             }
             frame = requestAnimationFrame(readFrame);
         }
-        start.addEventListener('click', async function () {
-            stopCamera();
+        async function startCamera() {
+            if (cameraStarting || token || leavingPage || !panel.isConnected || !cameraMode) return;
+            pauseCamera();
+            cameraStarting = true;
             start.disabled = true;
             try {
                 await loadQrDecoder();
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Для камеры нужен HTTPS или localhost. Можно выбрать фото QR.');
-                stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}, audio: false});
-                if (!panel.isConnected) return stopCamera();
+                if (!stream || !stream.getVideoTracks().some(function (track) { return track.readyState === 'live'; })) {
+                    stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}, audio: false});
+                }
+                if (!panel.isConnected || leavingPage || !cameraMode) return stopCamera();
                 video.srcObject = stream;
                 video.hidden = false;
                 stop.hidden = false;
                 await video.play();
+                if (token) { pauseCamera(); return; }
                 status.textContent = 'Наведите камеру на QR-код.';
                 readFrame();
             } catch (error) { stopCamera(); status.textContent = error.message; }
+            finally { cameraStarting = false; }
+        }
+        start.addEventListener('click', function () {
+            setCameraMode(true);
+            startCamera();
         });
-        stop.addEventListener('click', stopCamera);
+        stop.addEventListener('click', function () { setCameraMode(false); stopCamera(); });
         file.addEventListener('change', async function () {
             if (!file.files[0]) return;
-            stopCamera();
+            pauseCamera();
             var bitmap;
             try {
                 await loadQrDecoder();
@@ -237,7 +284,10 @@ function initQrScanner(root) {
                 if (!code) throw new Error('QR-код на фото не найден.');
                 await found(code.data);
             } catch (error) { status.textContent = error.message; }
-            finally { if (bitmap) bitmap.close(); file.value = ''; }
+            finally {
+                if (bitmap) bitmap.close(); file.value = '';
+                if (!token && cameraMode) startCamera();
+            }
         });
         var observer = new MutationObserver(function () {
             if (!panel.isConnected) {
@@ -252,10 +302,12 @@ function initQrScanner(root) {
         });
         observer.observe(document.body, {childList: true, subtree: true});
         function onPageHide() {
+            leavingPage = true;
             stopCamera();
             if (!visitingProfile && Object.keys(pending).length) saveWindow(false, true);
         }
         function onPageShow(event) {
+            leavingPage = false;
             if (!event.persisted) return;
             visitingProfile = false;
             // BFCache уже хранит живую карточку и обработчики; не заменяем её

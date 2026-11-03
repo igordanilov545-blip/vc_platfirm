@@ -36,6 +36,7 @@ from .qr_attendance import (  # noqa: F401
     user_qr, user_from_qr, scanner_grants_qs, create_scanner_grant, revoke_scanner_grant,
     shift_attendance_qs, create_shift_entry, save_shift_exit, save_qr_participation,
     shift_meals_qs, event_badges_qs, issue_shift_meal, issue_event_badge,
+    save_shift_attendance, revoke_shift_meal, revoke_event_badge,
 )
 from .auth_tokens import (  # noqa: F401
     invalidate_user_auth_tokens, create_auth_token, get_auth_token,
@@ -144,6 +145,7 @@ __all__ = [
     'user_qr', 'user_from_qr', 'scanner_grants_qs', 'create_scanner_grant', 'revoke_scanner_grant',
     'shift_attendance_qs', 'create_shift_entry', 'save_shift_exit', 'save_qr_participation',
     'shift_meals_qs', 'event_badges_qs', 'issue_shift_meal', 'issue_event_badge',
+    'save_shift_attendance', 'revoke_shift_meal', 'revoke_event_badge',
     'event_groups_qs', 'save_event_group',
     'create_user', 'get_users',
     'get_user_by_telegram_id', 'get_user_by_id', 'get_user_by_login', 'is_login_taken',

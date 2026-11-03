@@ -67,9 +67,8 @@ def _scanned_user(operator, token):
 
 
 def _available_shifts(user):
-    """Будущие/текущие смены и прошедшие внутри ещё идущего мероприятия."""
+    """Ближайшие смены, прошедшие идущего мероприятия и история QR для исправлений."""
     now = timezone.now()
-    open_entries = dc.shift_attendance_qs().filter(user=user, exited_at=None).values('shift_id')
     attended = dc.shift_attendance_qs().filter(user=user).values('shift_id')
     ongoing_groups = dc.event_groups_qs().annotate(
         begins=Min('positions__shifts__start_time'), ends=Max('positions__shifts__end_time'),
@@ -79,7 +78,7 @@ def _available_shifts(user):
         Q(participations__user=user, participations__status='pending') | Q(pk__in=attended),
     ).filter(
         Q(end_time__gte=now) | Q(event__event_group_id__in=ongoing_groups) | Q(event_id__in=ongoing_positions)
-        | Q(pk__in=open_entries),
+        | Q(pk__in=attended),
     ).select_related('event__event_group').distinct()
 
 
@@ -111,7 +110,7 @@ def scan_context(operator, token, *, scan_ticket=None):
         record = records.get(shift.pk)
         rows.append({'shift': shift, 'attendance': record,
                      'meal': meals.get(shift.pk),
-                     'action': 'out' if record else 'in',
+                     'action': 'out' if record and record.entered_at else 'in',
                      'can_mark': shift.event.event_status != 'finished' and can_mark_shift(operator, shift)})
         if shift.event.event_group_id:
             group_id = shift.event.event_group_id
@@ -120,7 +119,7 @@ def scan_context(operator, token, *, scan_ticket=None):
                 groups[group_id] = candidate
     return {'scanned_user': user, 'shift_rows': rows, 'nearest_shift': rows[0]['shift'] if rows else None,
             'badge_rows': list(groups.values()), 'scan_ticket': ticket, 'scanned_at': scanned_at,
-            'last_attendance': max(records.values(), key=lambda row: (row.exited_at or row.entered_at, row.pk), default=None),
+            'last_attendance': max((row for row in records.values() if row.entered_at), key=lambda row: (row.exited_at or row.entered_at, row.pk), default=None),
             'enrollment_shifts': _enrollment_shifts(operator, user),
             'checkin_lead_minutes': dc.get_const('qr_enroll_checkin_lead_minutes', default=60)}
 
@@ -179,55 +178,64 @@ def enroll_scanned_user(operator, token, shift_id, *, defer_entry=False):
     return 'Записан на смену. Явка пока не отмечена.'
 
 
-@transaction.atomic
-def mark_scan(operator, token, shift_id, action, *, at=None):
-    """Повторная отправка не меняет вход/выход и не начисляет часы дважды."""
-    user = _scanned_user(operator, token)
-    shift = dc.event_shifts_qs().filter(pk=shift_id, participations__user=user).select_related('event__event_group').first()
-    if not shift:
-        raise ValidationError('Смена не найдена среди доступных для отметки.')
-    if not can_mark_shift(operator, shift):
-        raise PermissionDenied('Нет права отмечать эту смену.')
-    participation = dc.participations_qs().select_for_update().filter(user=user, event_day=shift).first()
-    if not participation:
-        raise ValidationError('Участие не найдено.')
+def _set_attendance(operator, user, shift, choices, at):
+    """Применить итоговые состояния пары вход/выход и пересчитать фактические часы."""
+    participation = dc.participations_qs().select_for_update().get(user=user, event_day=shift)
     record = dc.shift_attendance_qs().filter(user=user, shift=shift).first()
-    if record and (action == 'in' or action == 'out' and record.exited_at):
-        return record
-    if shift.event.event_status == 'finished':
-        raise ValidationError('Позиция завершена.')
-    if not _available_shifts(user).filter(pk=shift.pk).exists():
-        raise ValidationError('Явка уже отмечена или смена недоступна для регистрации.')
-    old_status = participation.status
-    if action == 'in':
-        if record:
-            return record
-        record, created = dc.create_shift_entry(user, shift, operator, at=at)
-        if not created:
-            return record
-        dc.save_qr_participation(participation, 0, operator=operator)
-    elif action == 'out':
-        if not record:
+    entered = record.entered_at if record else None
+    exited = record.exited_at if record else None
+    wanted_in = choices.get('in', bool(entered))
+    wanted_out = choices.get('out', bool(exited))
+    if not wanted_in:
+        if choices.get('out'):
             raise ValidationError('Сначала отметьте вход.')
-        if record.exited_at:
-            return record
-        if (at or timezone.now()) < record.entered_at:
-            raise ValidationError('Время выхода раньше входа.')
-        dc.save_shift_exit(record, operator, at=at)
-        hours = (Decimal(str((record.exited_at - record.entered_at).total_seconds())) / Decimal(3600)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
-        dc.save_qr_participation(participation, hours, full_shift=record.entered_at <= shift.start_time and record.exited_at >= shift.end_time, operator=operator)
-    else:
-        raise ValidationError('Неизвестное действие.')
+        wanted_out = False
+    entered = (entered or at) if wanted_in else None
+    exited = (exited or at) if wanted_out else None
+    if exited and exited < entered:
+        raise ValidationError('Время выхода раньше входа.')
+    if record and (record.entered_at, record.exited_at) == (entered, exited):
+        return record
+    if not record and not entered:
+        return None
+    if not _available_shifts(user).filter(pk=shift.pk).exists():
+        raise ValidationError('Смена недоступна для регистрации.')
+    created = False
+    old_status = participation.status
+    if not record:
+        record, created = dc.create_shift_entry(user, shift, operator, at=entered)
+    dc.save_shift_attendance(record, entered, exited, operator)
+    hours = (Decimal(str((exited - entered).total_seconds())) / Decimal(3600)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP) if exited else Decimal(0)
+    dc.save_qr_participation(participation, hours,
+                             full_shift=bool(exited and entered <= shift.start_time and exited >= shift.end_time),
+                             operator=operator, status='attended' if entered else 'pending')
     recalc_user_aggregates(user)
-    if action == 'in' and old_status != 'attended':
+    if created and old_status != 'attended':
         from blog.services.stats import apply_churn_activity_decay
         apply_churn_activity_decay(user, event=shift.event)
     return record
 
 
 @transaction.atomic
+def mark_scan(operator, token, shift_id, action, *, at=None):
+    """Совместимый одиночный вход/выход без изменения уже сохранённого времени."""
+    user = _scanned_user(operator, token)
+    dc.users_qs().select_for_update().get(pk=user.pk)
+    shift = dc.event_shifts_qs().filter(pk=shift_id, participations__user=user).select_related('event__event_group').first()
+    if not shift:
+        raise ValidationError('Смена не найдена среди доступных для отметки.')
+    if not can_mark_shift(operator, shift):
+        raise PermissionDenied('Нет права отмечать эту смену.')
+    if shift.event.event_status == 'finished':
+        raise ValidationError('Позиция завершена.')
+    if action not in ('in', 'out'):
+        raise ValidationError('Неизвестное действие.')
+    return _set_attendance(operator, user, shift, {action: True}, at or timezone.now())
+
+
+@transaction.atomic
 def commit_scan(operator, token, scan_ticket, changes):
-    """Закрытие окна: один атомарный пакет с подтверждённым временем сканирования."""
+    """Закрытие окна: атомарно установить либо снять выбранные отметки."""
     user = _scanned_user(operator, token)
     if not scan_ticket:
         raise ValidationError('Повторно отсканируйте QR-код.')
@@ -235,34 +243,52 @@ def commit_scan(operator, token, scan_ticket, changes):
     if not isinstance(changes, list) or len(changes) > dc.get_const('qr_scan_max_changes', default=100):
         raise ValidationError('Некорректный список отметок.')
     dc.users_qs().select_for_update().get(pk=user.pk)
+    shifts = {}
+    attendance = {}
     for item in changes:
         if not isinstance(item, dict) or item.get('kind') not in ('in', 'out', 'lunch', 'badge'):
             raise ValidationError('Неизвестная отметка.')
+        checked = item.get('checked', True)
+        if not isinstance(checked, bool):
+            raise ValidationError('Некорректное состояние отметки.')
         try:
             shift_id = int(item['shift_id'])
         except (ValueError, TypeError, KeyError):
             raise ValidationError('Некорректная смена.')
-        shift = dc.event_shifts_qs().filter(pk=shift_id, participations__user=user).select_related('event__event_group').first()
+        if shift_id not in shifts:
+            shifts[shift_id] = dc.event_shifts_qs().filter(pk=shift_id, participations__user=user).select_related('event__event_group').first()
+        shift = shifts[shift_id]
         if not shift:
             raise ValidationError('Смена не найдена среди участий человека.')
         if not can_mark_shift(operator, shift):
             raise PermissionDenied('Нет права отмечать эту смену.')
-        kind = item['kind']
-        if kind in ('in', 'out'):
-            mark_scan(operator, token, shift_id, kind, at=at)
-            continue
-        if kind == 'lunch' and dc.shift_meals_qs().filter(user=user, shift=shift).exists():
-            continue
-        if kind == 'badge' and dc.event_badges_qs().filter(user=user, event_group_id=shift.event.event_group_id).exists():
-            continue
         if shift.event.event_status == 'finished':
             raise ValidationError('Позиция завершена.')
-        if kind == 'lunch':
-            dc.issue_shift_meal(user, shift, operator, at)
+        kind = item['kind']
+        if kind in ('in', 'out'):
+            attendance.setdefault(shift_id, {})[kind] = checked
+        elif kind == 'lunch':
+            if checked:
+                dc.issue_shift_meal(user, shift, operator, at)
+            else:
+                dc.revoke_shift_meal(user, shift, operator)
         elif shift.event.event_group_id:
-            dc.issue_event_badge(user, shift.event.event_group, operator, at)
+            if checked:
+                dc.issue_event_badge(user, shift.event.event_group, operator, at)
+            else:
+                dc.revoke_event_badge(user, shift.event.event_group, operator)
         else:
             raise ValidationError('У позиции не указано мероприятие для выдачи значка.')
+    for shift_id, choices in attendance.items():
+        _set_attendance(operator, user, shifts[shift_id], choices, at)
+
+
+def mark_scan_context(operator, token, shift_id, action, checked=True, *, scan_ticket=None):
+    """Совместимость старого URL отметки с обедом, значком и снятием галочек."""
+    user = _scanned_user(operator, token)
+    ticket, _ = _scan_ticket(operator, user, scan_ticket)
+    commit_scan(operator, token, ticket, [{'kind': action, 'shift_id': shift_id, 'checked': checked}])
+    return scan_context(operator, token, scan_ticket=ticket)
 
 
 @transaction.atomic

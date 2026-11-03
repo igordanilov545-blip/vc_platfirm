@@ -214,7 +214,7 @@ class QRCardAndEnrollmentTests(TestCase):
         response = self.client.post(reverse('qr_scan'), {'token': self.token})
         self.assertContains(response, 'type="checkbox"')
         self.assertContains(response, 'data-qr-mark="out"')
-        self.assertContains(response, 'checked disabled')
+        self.assertNotContains(response, 'checked disabled')
 
     def test_card_opens_for_registered_user_with_incomplete_name(self):
         self.volunteer.first_name = None

@@ -58,6 +58,10 @@
     {% endif %}
 </div>
 
+{% if can_manage_applications %}
+<p><a href="{% url 'position_roster_export' event.pk %}" class="btn secondary" download>Скачать Excel участников позиции</a></p>
+{% endif %}
+
 {% if is_finished %}
 <div class="card" style="background:var(--neutral-soft);">
     <p style="margin:0;"><span class="pill neutral"><span class="dot"></span>Позиция завершена</span> — заявки, явка и набор больше не редактируются, доступен только просмотр.</p>
@@ -372,6 +376,8 @@
             <th data-sort-key="status">Статус</th>
             <th data-sort-key="attendance">Явка</th>
             <th data-sort-key="hours" class="num">Часы</th>
+            <th data-sort-key="lunch">Обед</th>
+            <th data-sort-key="badge" title="Один жетон на человека на всё мероприятие, общий для всех его смен и позиций">Жетон ⓘ</th>
             <th></th>
         </tr></thead>
         <tbody>
@@ -420,6 +426,12 @@
                         {% else %}{{ p.hours }}{% endif %}
                     {% else %}—{% endif %}
                 </td>
+                <td data-label="Обед" data-sort-value="{{ row.meal|yesno:'1,0' }}">
+                    {% if p %}<input type="checkbox" data-handout-kind="lunch" data-handout-url="{% url 'participation_handout' p.pk %}" data-handout-user="{{ p.user_id }}" data-handout-shift="{{ entry.shift.pk }}" aria-label="Выдан обед: {{ application.first_name }}, {{ entry.shift.start_time|date:'d.m.Y H:i' }}" {% if row.meal %}checked{% endif %} {% if not can_edit_applications %}disabled{% endif %}>{% else %}—{% endif %}
+                </td>
+                <td data-label="Жетон" data-sort-value="{{ row.badge|yesno:'1,0' }}">
+                    {% if p and event.event_group_id %}<input type="checkbox" data-handout-kind="badge" data-handout-url="{% url 'participation_handout' p.pk %}" data-handout-user="{{ p.user_id }}" data-handout-group="{{ event.event_group_id }}" aria-label="Выдан жетон на всё мероприятие: {{ application.first_name }}" title="Общий для всех смен и позиций человека в этом мероприятии" {% if row.badge %}checked{% endif %} {% if not can_edit_applications %}disabled{% endif %}>{% else %}—{% endif %}
+                </td>
                 <td data-label="">
                     {% comment %}Кнопки обработки заявки: после клика форма блокирует кнопку
                     (data-disable-on-submit) — нельзя принять/отклонить одну заявку несколько раз.{% endcomment %}
@@ -441,7 +453,7 @@
             </tr>
             {% endwith %}
         {% empty %}
-            <tr><td colspan="7">Заявок на эту смену пока нет.</td></tr>
+            <tr><td colspan="9">Заявок на эту смену пока нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>

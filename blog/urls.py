@@ -43,6 +43,8 @@ urlpatterns = [
 
     path('events/', views.event_list, name='event_list'),
     path('events/groups/new/', views.event_group_create, name='event_group_create'),
+    path('events/groups/<int:group_id>/volunteers.xlsx', views.event_group_roster_export, name='event_group_roster_export'),
+    path('events/<int:event_id>/volunteers.xlsx', views.position_roster_export, name='position_roster_export'),
     path('events/groups/<int:group_id>/sheet/', views.event_sheet, name='event_sheet'),
     path('events/groups/<int:group_id>/sheet/link/', views.event_sheet_link, name='event_sheet_link'),
     path('events/groups/<int:group_id>/sheet/sync/', views.event_sheet_sync, name='event_sheet_sync'),
@@ -71,6 +73,7 @@ urlpatterns = [
     path('events/<int:event_id>/applications/process-all/', views.application_process_all, name='event_application_process_all'),
 
     path('participations/<int:participation_id>/edit/', views.participation_edit, name='participation_edit'),
+    path('participations/<int:participation_id>/handout/', views.participation_handout, name='participation_handout'),
     path('participations/<int:participation_id>/set-status/', views.participation_set_status, name='participation_set_status'),
     path('participations/<int:participation_id>/set-hours/', views.participation_set_hours, name='participation_set_hours'),
 

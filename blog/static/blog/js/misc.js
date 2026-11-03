@@ -277,6 +277,55 @@
     }
     initAttendanceHoursInputs(document);
 
+    // Выдача в таблице: жетон общий во всех строках человека, обед — на смену.
+    function initPositionHandouts(root) {
+        (root || document).querySelectorAll('[data-handout-kind]').forEach(function (checkbox) {
+            if (checkbox.dataset.handoutInit) return;
+            checkbox.dataset.handoutInit = '1';
+            checkbox.addEventListener('change', async function () {
+                var kind = checkbox.dataset.handoutKind;
+                var checked = checkbox.checked;
+                var peers = Array.from(document.querySelectorAll('[data-handout-kind]')).filter(function (other) {
+                    return other.dataset.handoutKind === kind && other.dataset.handoutUser === checkbox.dataset.handoutUser
+                        && (kind === 'badge' ? other.dataset.handoutGroup === checkbox.dataset.handoutGroup : other.dataset.handoutShift === checkbox.dataset.handoutShift);
+                });
+                var disabled = peers.map(function (other) { return other.disabled; });
+                peers.forEach(function (other) { other.disabled = true; other.checked = checked; });
+                var error = checkbox.parentElement.querySelector('[data-handout-error]');
+                if (error) error.remove();
+                try {
+                    var response = await fetch(checkbox.dataset.handoutUrl, {
+                        method: 'POST', credentials: 'same-origin',
+                        headers: {'X-CSRFToken': getCsrfToken(), 'X-Requested-With': 'XMLHttpRequest'},
+                        body: new URLSearchParams({kind: kind, checked: JSON.stringify(checked)})
+                    });
+                    if (!response.ok) {
+                        var message = 'Не удалось сохранить выдачу.';
+                        if ((response.headers.get('content-type') || '').includes('application/json')) message = (await response.json()).error || message;
+                        throw new Error(message);
+                    }
+                    var saved = await response.json();
+                    if (typeof saved.checked !== 'boolean') throw new Error('Войдите в систему заново.');
+                    peers.forEach(function (other) {
+                        other.checked = saved.checked;
+                        other.closest('td').dataset.sortValue = saved.checked ? '1' : '0';
+                    });
+                } catch (failure) {
+                    peers.forEach(function (other) { other.checked = !checked; });
+                    error = document.createElement('span');
+                    error.dataset.handoutError = '';
+                    error.className = 'field-error';
+                    error.setAttribute('role', 'alert');
+                    error.textContent = failure.message;
+                    checkbox.parentElement.appendChild(error);
+                } finally {
+                    peers.forEach(function (other, index) { other.disabled = disabled[index]; });
+                }
+            });
+        });
+    }
+    initPositionHandouts(document);
+
     var quickAddBackdrop = document.getElementById('quick-add-backdrop');
     var quickAddBody = document.getElementById('quick-add-body');
     var quickAddTitle = document.getElementById('quick-add-title');

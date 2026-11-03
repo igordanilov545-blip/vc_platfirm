@@ -5,6 +5,20 @@ dc=data_controller, logger, декораторы). Здесь только вь�
 """
 from ._common import *  # noqa: F401,F403
 from decimal import Decimal, InvalidOperation
+import json
+
+
+@login_required
+@require_POST
+def participation_handout(request, participation_id):
+    """Выдача обеда/жетона в таблице позиции с общей логикой QR."""
+    from blog.services.handouts import set_participation_handout
+    try:
+        result = set_participation_handout(request.user, participation_id,
+                                          request.POST.get('kind'), json.loads(request.POST.get('checked', 'null')))
+    except (ValidationError, ValueError) as error:
+        return JsonResponse({'error': error.messages[0] if isinstance(error, ValidationError) else 'Некорректная отметка.'}, status=400)
+    return JsonResponse(result)
 
 
 @login_required

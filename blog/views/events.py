@@ -58,6 +58,22 @@ def event_list(request):
     return render(request, 'blog/event_list.html', {'event_groups': event_group_rows()})
 
 
+@login_required
+def event_group_roster_export(request, group_id):
+    from blog.services.roster_exports import build_roster_workbook
+    from .reports import _xlsx_response
+    group = get_object_or_404(dc.event_groups_qs(), pk=group_id)
+    return _xlsx_response(build_roster_workbook(request.user, group=group), f'event-{group.pk}-volunteers.xlsx')
+
+
+@login_required
+def position_roster_export(request, event_id):
+    from blog.services.roster_exports import build_roster_workbook
+    from .reports import _xlsx_response
+    position = get_object_or_404(dc.events_qs().select_related('event_group'), pk=event_id)
+    return _xlsx_response(build_roster_workbook(request.user, position=position), f'position-{position.pk}-volunteers.xlsx')
+
+
 @manager_required
 def event_group_create(request):
     """Создать мероприятие без вмешательства в жизненный цикл позиций."""
@@ -312,6 +328,8 @@ def event_detail(request, event_id):
         # Порядок сортировки задаём на сервере, а строки резерва помечаем data-reserve
         # в шаблоне — скрытие/показ полностью клиентское.
         parts_by_shift_user = {}
+        from blog.services.handouts import position_handouts
+        meals, badges = position_handouts(event)
         for p in dc.participations_qs().filter(event_day__in=shifts).select_related('user'):
             parts_by_shift_user[(p.event_day_id, p.user_id)] = p
 
@@ -342,7 +360,8 @@ def event_detail(request, event_id):
             for decision in decisions:
                 app = decision.application
                 participation = parts_by_shift_user.get((shift.id, app.user_id)) if app.user_id else None
-                rows.append({'decision': decision, 'participation': participation})
+                rows.append({'decision': decision, 'participation': participation,
+                             'meal': (app.user_id, shift.pk) in meals, 'badge': app.user_id in badges})
                 if decision.status == 'approved':
                     shift_approved += 1
                 elif decision.status == 'new':

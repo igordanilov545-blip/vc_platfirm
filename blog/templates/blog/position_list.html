@@ -5,6 +5,7 @@
 <div class="page-header">
     <div><a href="{% url 'event_list' %}">Мероприятия</a><h1>{{ event_group.title }}</h1><h2>Позиции</h2></div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        {% if is_manager %}<a class="btn secondary" href="{% url 'event_group_roster_export' event_group.pk %}" download>Скачать Excel участников</a>{% endif %}
         {% if event_group.sheet_link.google_url %}<a class="btn secondary" href="{{ event_group.sheet_link.google_url }}" target="_blank" rel="noopener noreferrer">Google Таблица ↗</a>{% endif %}
         {% if is_manager %}<span class="fap-actions"><a class="btn secondary" href="{% url 'event_sheet_link' event_group.pk %}" data-modal data-modal-title="Связать таблицу">Связать таблицу</a>{% include 'blog/partials/_sheet_help.html' %}</span><a class="btn secondary" href="{% url 'event_sheet' event_group.pk %}">План и обмен</a>{% endif %}
         {% comment %}Подача заявки живёт здесь (отдельной страницы подачи больше нет):

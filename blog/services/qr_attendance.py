@@ -15,6 +15,7 @@ from django.utils import timezone
 from data_base import data_controller as dc
 from blog.services.roles import has_manager_access, is_team_leader
 from blog.services.stats import recalc_user_aggregates
+from blog.services.handouts import change_handout
 
 
 def personal_token(user):
@@ -267,18 +268,8 @@ def commit_scan(operator, token, scan_ticket, changes):
         kind = item['kind']
         if kind in ('in', 'out'):
             attendance.setdefault(shift_id, {})[kind] = checked
-        elif kind == 'lunch':
-            if checked:
-                dc.issue_shift_meal(user, shift, operator, at)
-            else:
-                dc.revoke_shift_meal(user, shift, operator)
-        elif shift.event.event_group_id:
-            if checked:
-                dc.issue_event_badge(user, shift.event.event_group, operator, at)
-            else:
-                dc.revoke_event_badge(user, shift.event.event_group, operator)
         else:
-            raise ValidationError('У позиции не указано мероприятие для выдачи значка.')
+            change_handout(user, shift, operator, kind, checked, at)
     for shift_id, choices in attendance.items():
         _set_attendance(operator, user, shifts[shift_id], choices, at)
 

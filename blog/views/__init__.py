@@ -38,7 +38,7 @@ from .dashboard import (  # noqa: F401
     dashboard, incident_resolve,
 )
 from .events import (  # noqa: F401
-    event_group_create, event_group_edit, event_group_detail,
+    event_group_create, event_group_edit, event_group_detail, event_group_roster_export, position_roster_export,
     public_event_list, public_event_detail, event_list, event_detail,
     event_comment_add, event_change_log_mark_read, event_feedback_add, event_create,
     event_edit, event_delete, event_publish, event_broadcast,
@@ -46,7 +46,7 @@ from .events import (  # noqa: F401
     event_dobro_toggle, event_shift_add, event_shift_edit, event_shift_delete,
 )
 from .participations import (  # noqa: F401
-    participation_set_status, participation_set_hours, participation_edit,
+    participation_set_status, participation_set_hours, participation_edit, participation_handout,
 )
 from .applications import (  # noqa: F401
     application_create, application_manual_create, application_edit, application_cancel,

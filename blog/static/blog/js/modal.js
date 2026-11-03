@@ -78,7 +78,7 @@
         ['initSortableTables', 'initHideableColumns', 'initTableFilter', 'initCharCounters',
          'bindConfirmForms', 'initCategoryChips', 'initShiftChips', 'initDatepickers',
          'initDateRangePair', 'initTimepickers', 'initInfiniteScroll',
-         'bindRoleForms', 'initAttendanceHoursInputs', 'initLetterEditor',
+         'bindRoleForms', 'initAttendanceHoursInputs', 'initPositionHandouts', 'initLetterEditor',
          'initPasswordToggle', 'initToasts', 'initExperienceCopy',
          'initAchievementPopup', 'initQrScanner', 'initProfileCompletion'].forEach(function (fn) {
             if (typeof window[fn] === 'function') window[fn](root);

@@ -11,7 +11,7 @@ from .event_sheets import (  # noqa: F401
     google_sheets_settings, sheet_team_leader_bind,
 )
 from .qr_attendance import (  # noqa: F401
-    personal_qr, personal_qr_png, qr_scanner, qr_scan, qr_mark, qr_enroll,
+    personal_qr, personal_qr_png, qr_scanner, qr_scan, qr_mark, qr_commit, qr_enroll,
     qr_scanner_grant, qr_scanner_revoke,
 )
 from .quick_create import (  # noqa: F401

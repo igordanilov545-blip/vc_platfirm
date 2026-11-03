@@ -11,6 +11,7 @@
         <a href="{% url 'profile_achievements' target.id %}" class="btn secondary" data-tour="profile-achievements">🏅 Мои достижения{% if achievement_earned_count %} <span class="pill success" style="margin-left:4px;">{{ achievement_earned_count }}</span>{% endif %}</a>
         <a href="{% url 'profile_stats' target.id %}" class="btn secondary">📊 Моя статистика</a>
         <a href="{% url 'profile_edit' %}" class="btn secondary" data-tour="profile-edit">✎ Редактировать профиль</a>
+        {% include 'blog/partials/_profile_completion.html' with progress=profile_completion %}
     </div>
 </div>
 
@@ -24,13 +25,6 @@
     <div class="stat-tile"><div class="value">{{ target.total_event_count }}</div><div class="label">Мероприятий всего</div></div>
     <div class="stat-tile"><div class="value">{{ target.season_event_count }}</div><div class="label">Мероприятий за сезон</div></div>
     <div class="stat-tile"><div class="value">{{ target.external_experiences.count }}</div><div class="label">Внешние мероприятия</div></div>
-</div>
-
-{% include 'blog/partials/_profile_completion.html' with progress=profile_completion %}
-
-<div class="card">
-    <h3>Анкета волонтёра</h3>
-    {% include 'blog/partials/_volunteer_profile_fields.html' %}
 </div>
 
 {% comment %}Активные заявки — заявки на ещё не прошедшие мероприятия и их статусы.

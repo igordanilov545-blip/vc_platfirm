@@ -114,6 +114,7 @@ def profile_detail(request, user_id):
     from data_base import data_controller as dc
     target = get_object_or_404(User, pk=user_id)
     is_owner = request.user.id == target.id
+    from blog.services.profile_completion import can_view_questionnaire
     is_mgr = has_manager_access(request.user)
     # Расширенный + внутренний профиль: владелец, менеджер (и тех.админ), либо ТЛ
     # в контексте своего мероприятия (access-control.md, правило 5).
@@ -129,6 +130,7 @@ def profile_detail(request, user_id):
     achievement_earned_count = dc.user_achievements_qs().filter(user=target).count()
 
     context = {
+        'can_view_questionnaire': can_view_questionnaire(request.user, target),
         'target': target,
         'is_owner': is_owner,
         'is_manager': is_mgr,

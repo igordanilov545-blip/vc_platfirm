@@ -577,6 +577,8 @@ th.has-reveal, td.has-reveal { position: relative; }
 .qr-person-card .table-scroll { margin: -6px 0 0; }
 .qr-person-card .qr-shifts-table { width: 100%; table-layout: fixed; }
 .qr-shifts-table th:first-child { width: 64%; }
+.qr-person-card [data-qr-shifts-table] th:first-child { width: 52%; }
+.qr-shifts-table th { padding: 10px 6px; font-size: 12px; }
 .qr-shifts-table th:not(:first-child) { text-align: center; }
 .qr-shifts-table td { vertical-align: middle; padding: 12px 8px; overflow-wrap: anywhere; }
 .qr-shift-meta { display: block; margin-top: 4px; font-size: 12px; line-height: 1.45; color: var(--text-secondary); }
@@ -584,6 +586,8 @@ th.has-reveal, td.has-reveal { position: relative; }
 .qr-nearest-shift td:first-child { box-shadow: inset 3px 0 var(--accent); padding-left: 12px; }
 .qr-nearest-label { display: block; margin-bottom: 5px; font-size: 11px; font-weight: 600; color: var(--accent); }
 .qr-mark-cell { text-align: center; }
+.qr-mark-pending { background: var(--warning-soft); }
+.qr-shirt-size { margin: 5px 0 0; font-size: 14px; }
 .qr-mark-cell input[type="checkbox"] { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .qr-mark-cell input:disabled { cursor: default; }
 .qr-mark-time { display: block; margin-top: 4px; font-size: 11px; color: var(--text-secondary); }
@@ -664,6 +668,10 @@ form.inline { display: inline; }
 .profile-contact-option input[type="checkbox"] { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
 .profile-size-guide { padding-left: 20px; line-height: 1.7; }
 .profile-editor, .profile-completion { width: 100%; max-width: 960px; box-sizing: border-box; }
+.profile-completion--compact { width: 190px; max-width: 100%; margin-left: auto; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); }
+.profile-completion--compact .profile-completion-heading { margin-bottom: 6px; gap: 8px; }
+.profile-completion--compact h3 { font-size: 12px; }
+.profile-completion--compact .field-hint { font-size: 10px; margin: 5px 0 0; }
 .profile-completion-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .profile-completion-heading h3 { margin: 0; }
 .profile-completion-heading strong { color: var(--accent); font-variant-numeric: tabular-nums; }

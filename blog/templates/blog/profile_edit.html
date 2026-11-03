@@ -8,6 +8,7 @@
 <div class="page-header">
     <h1>{% if target.id != user.id %}Редактирование профиля: {{ target.full_name }}{% else %}Редактирование профиля{% endif %}</h1>
     <a href="{% url 'profile_detail' target.id %}" class="btn secondary">← К профилю</a>
+    {% include 'blog/partials/_profile_completion.html' with progress=form.completion %}
 </div>
 
 {% if missing_fields %}
@@ -18,8 +19,6 @@
     </p>
 </div>
 {% endif %}
-
-{% include 'blog/partials/_profile_completion.html' with progress=form.completion %}
 
 <div class="card profile-editor">
     <p style="color:var(--text-secondary); font-size:0.9rem; margin-top:0;">

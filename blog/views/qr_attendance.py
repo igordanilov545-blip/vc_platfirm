@@ -3,6 +3,7 @@ from ._common import *  # noqa: F401,F403
 from django.views.decorators.cache import never_cache
 from blog.forms import ScannerGrantForm
 from blog.services import qr_attendance as qr
+import json
 
 
 @login_required
@@ -37,7 +38,7 @@ def qr_scanner(request):
 def qr_scan(request):
     """Расшифрованный токен принимается POST, без изменения явки при просмотре."""
     try:
-        context = qr.scan_context(request.user, request.POST.get('token', ''))
+        context = qr.scan_context(request.user, request.POST.get('token', ''), scan_ticket=request.POST.get('scan_ticket') or None)
     except ValidationError as error:
         return HttpResponse(error.messages[0], status=400)
     return render(request, 'blog/partials/_qr_scan_result.html', context)
@@ -62,13 +63,26 @@ def qr_mark(request):
 @login_required
 @require_POST
 @never_cache
+def qr_commit(request):
+    try:
+        token = request.POST.get('token', '')
+        ticket = request.POST.get('scan_ticket', '')
+        qr.commit_scan(request.user, token, ticket, json.loads(request.POST.get('changes', '[]')))
+        context = qr.scan_context(request.user, token, scan_ticket=ticket)
+    except (ValidationError, ValueError) as error:
+        message = error.messages[0] if isinstance(error, ValidationError) else 'Некорректный список отметок.'
+        return HttpResponse(message, status=400)
+    return render(request, 'blog/partials/_qr_scan_result.html', context)
+
+
+@login_required
+@require_POST
+@never_cache
 def qr_enroll(request):
     """Записать владельца QR через общий пайплайн ручного добавления волонтёра."""
     try:
         token = request.POST.get('token', '')
-        notice = qr.enroll_scanned_user(request.user, token, int(request.POST.get('shift_id', '')))
-        context = qr.scan_context(request.user, token)
-        context['scan_notice'] = notice
+        context = qr.enroll_scan_context(request.user, token, int(request.POST.get('shift_id', '')), scan_ticket=request.POST.get('scan_ticket') or None)
     except (ValueError, ValidationError) as error:
         message = error.messages[0] if isinstance(error, ValidationError) else 'Некорректная смена.'
         return HttpResponse(message, status=400)

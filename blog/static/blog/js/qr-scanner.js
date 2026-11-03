@@ -21,6 +21,8 @@ function initQrScanner(root) {
         var stop = panel.querySelector('[data-qr-stop]');
         var file = panel.querySelector('[data-qr-file]');
         var stream = null, frame = null, token = null, busy = false;
+        var scanTicket = null, pending = {}, saving = false, visitingProfile = false, updating = false, closeRequested = false;
+        var storageKey = 'vc:qr-window:' + panel.dataset.operatorId;
         var canvas = document.createElement('canvas');
         var context = canvas.getContext('2d', {willReadFrequently: true});
         var csrf = panel.querySelector('[name=csrfmiddlewaretoken]').value;
@@ -35,9 +37,9 @@ function initQrScanner(root) {
             stop.hidden = true;
             start.disabled = false;
         }
-        async function post(url, values) {
+        async function post(url, values, keepalive) {
             var response = await fetch(url, {
-                method: 'POST', credentials: 'same-origin',
+                method: 'POST', credentials: 'same-origin', keepalive: !!keepalive,
                 headers: {'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest'},
                 body: new URLSearchParams(values)
             });
@@ -46,10 +48,56 @@ function initQrScanner(root) {
             if (!html.includes('data-qr-result')) throw new Error('Войдите в систему заново.');
             return html;
         }
+        function remember() {
+            if (!token || !scanTicket) return;
+            try { sessionStorage.setItem(storageKey, JSON.stringify({token: token, ticket: scanTicket, pending: pending})); } catch (_) {}
+        }
+        function forget() {
+            try { sessionStorage.removeItem(storageKey); } catch (_) {}
+        }
+        function resetWindow() {
+            forget(); token = null; scanTicket = null; pending = {}; visitingProfile = false; closeRequested = false;
+        }
+        async function saveWindow(close, keepalive) {
+            if (saving || !token) return;
+            var changes = Object.values(pending);
+            if (!changes.length) { if (close) closeModal(true); return; }
+            saving = true;
+            remember();
+            var card = modalBody.querySelector('[data-qr-result]');
+            var controls = card ? Array.from(card.querySelectorAll('input, select, button')) : [];
+            var previousDisabled = controls.map(function (control) { return control.disabled; });
+            controls.forEach(function (control) { control.disabled = true; });
+            var currentToken = token;
+            try {
+                await post(VC_URLS.qrCommit, {token: token, scan_ticket: scanTicket, changes: JSON.stringify(changes)}, keepalive);
+                if (token === currentToken) {
+                    pending = {}; forget();
+                    if (close && modalBody.querySelector('[data-qr-result]')) closeModal(true);
+                }
+            } catch (error) {
+                if (card && card.isConnected) {
+                    card.querySelector('[data-qr-mark-status]').textContent = 'Не удалось сохранить: ' + error.message;
+                    controls.forEach(function (control, index) { control.disabled = previousDisabled[index]; });
+                }
+            } finally { saving = false; }
+        }
+        function beforeClose(event) {
+            if (!modalBody.querySelector('[data-qr-result]') || !token) return;
+            if (busy || updating) { event.preventDefault(); closeRequested = true; return; }
+            if (saving || Object.keys(pending).length) {
+                event.preventDefault();
+                if (!saving) saveWindow(true, false);
+            }
+        }
+        modalBackdrop.addEventListener('modal:before-close', beforeClose);
+        modalBackdrop.addEventListener('modal:closed', resetWindow);
         function bindMarks() {
             var card = modalBody.querySelector('[data-qr-result]');
+            scanTicket = card.dataset.scanTicket;
             var cardToken = token;
             async function updateCard(url, values, checkbox) {
+                updating = true;
                 var controls = Array.from(card.querySelectorAll('input, select, button'));
                 var disabled = controls.map(function (control) { return control.disabled; });
                 controls.forEach(function (control) { control.disabled = true; });
@@ -58,6 +106,7 @@ function initQrScanner(root) {
                 message.textContent = '';
                 try {
                     values.token = cardToken;
+                    values.scan_ticket = scanTicket;
                     var html = await post(url, values);
                     if (card.isConnected && token === cardToken) {
                         modalBody.innerHTML = html;
@@ -67,14 +116,51 @@ function initQrScanner(root) {
                     if (checkbox) checkbox.checked = false;
                     message.textContent = error.message;
                     controls.forEach(function (control, index) { control.disabled = disabled[index]; });
-                } finally { card.removeAttribute('aria-busy'); }
+                } finally {
+                    card.removeAttribute('aria-busy');
+                    updating = false;
+                    if (closeRequested) { closeRequested = false; saveWindow(true, false); }
+                }
             }
             card.querySelectorAll('[data-qr-mark]').forEach(function (checkbox) {
+                var key = checkbox.dataset.qrMark + ':' + checkbox.dataset.shiftId;
+                if (checkbox.disabled) delete pending[key];
+                else if (pending[key] || checkbox.dataset.qrMark === 'in' && checkbox.dataset.shiftId === card.dataset.suggestedEntry) {
+                    checkbox.checked = true;
+                    pending[key] = {kind: checkbox.dataset.qrMark, shift_id: Number(checkbox.dataset.shiftId)};
+                }
                 checkbox.addEventListener('change', function () {
-                    if (!checkbox.checked) return;
-                    updateCard(VC_URLS.qrMark, {shift_id: checkbox.dataset.shiftId, action: checkbox.dataset.qrMark}, checkbox);
+                    if (checkbox.checked) pending[key] = {kind: checkbox.dataset.qrMark, shift_id: Number(checkbox.dataset.shiftId)};
+                    else delete pending[key];
+                    showDraft();
                 });
             });
+            function showDraft() {
+                card.querySelectorAll('[data-qr-mark]').forEach(function (checkbox) {
+                    var key = checkbox.dataset.qrMark + ':' + checkbox.dataset.shiftId;
+                    checkbox.closest('td').classList.toggle('qr-mark-pending', !!pending[key]);
+                    var preview = checkbox.parentElement.querySelector('[data-qr-pending-time]');
+                    if (preview) preview.remove();
+                    if (pending[key] && ['in', 'out'].includes(checkbox.dataset.qrMark)) {
+                        preview = document.createElement('time');
+                        preview.dataset.qrPendingTime = '';
+                        preview.className = 'qr-mark-time';
+                        preview.textContent = new Date(card.dataset.scanTime).toLocaleTimeString('ru-RU', {timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit'});
+                        checkbox.parentElement.appendChild(preview);
+                    }
+                });
+                card.querySelector('[data-qr-draft-status]').textContent = Object.keys(pending).length ? 'Выбрано отметок: ' + Object.keys(pending).length + '. Сохранятся при закрытии окна.' : '';
+                remember();
+            }
+            card.querySelectorAll('a[href]').forEach(function (link) {
+                link.addEventListener('click', function (event) {
+                    if (saving || updating) { event.preventDefault(); return; }
+                    if (event.ctrlKey || event.metaKey || event.shiftKey || link.target === '_blank') return;
+                    remember();
+                    visitingProfile = true;
+                });
+            });
+            showDraft();
             var form = card.querySelector('[data-qr-enroll]');
             if (form) form.addEventListener('submit', function (event) {
                 event.preventDefault();
@@ -82,20 +168,30 @@ function initQrScanner(root) {
                 updateCard(VC_URLS.qrEnroll, {shift_id: form.elements.shift_id.value});
             });
         }
-        async function found(value) {
+        async function found(value, ticket, choices) {
             if (busy) return;
             busy = true;
             stopCamera();
             token = value;
+            visitingProfile = false;
+            pending = choices || {};
             try {
-                var html = await post(VC_URLS.qrScan, {token: token});
+                var html = await post(VC_URLS.qrScan, {token: token, scan_ticket: ticket || ''});
                 openModal('Регистрация участника');
                 modalBody.innerHTML = html;
                 bindMarks();
                 status.textContent = 'QR прочитан. Можно сканировать следующего участника.';
             } catch (error) {
                 status.textContent = error.message;
-            } finally { busy = false; }
+            } finally {
+                busy = false;
+                if (closeRequested) { closeRequested = false; saveWindow(true, false); }
+            }
+        }
+        function restoreWindow() {
+            var saved;
+            try { saved = JSON.parse(sessionStorage.getItem(storageKey)); } catch (_) {}
+            if (saved && saved.token && saved.ticket) found(saved.token, saved.ticket, saved.pending);
         }
         function decode(image, width, height) {
             canvas.width = width;
@@ -144,10 +240,32 @@ function initQrScanner(root) {
             finally { if (bitmap) bitmap.close(); file.value = ''; }
         });
         var observer = new MutationObserver(function () {
-            if (!panel.isConnected) { stopCamera(); token = null; observer.disconnect(); }
+            if (!panel.isConnected) {
+                stopCamera();
+                modalBackdrop.removeEventListener('modal:before-close', beforeClose);
+                modalBackdrop.removeEventListener('modal:closed', resetWindow);
+                window.removeEventListener('pagehide', onPageHide);
+                window.removeEventListener('pageshow', onPageShow);
+                if (!visitingProfile && Object.keys(pending).length) saveWindow(false, true);
+                observer.disconnect();
+            }
         });
         observer.observe(document.body, {childList: true, subtree: true});
-        window.addEventListener('pagehide', stopCamera, {once: true});
+        function onPageHide() {
+            stopCamera();
+            if (!visitingProfile && Object.keys(pending).length) saveWindow(false, true);
+        }
+        function onPageShow(event) {
+            if (!event.persisted) return;
+            visitingProfile = false;
+            // BFCache уже хранит живую карточку и обработчики; не заменяем её
+            // параллельным запросом, который мог бы пересечься с закрытием.
+            if (token && modalBody.querySelector('[data-qr-result]')) return;
+            restoreWindow();
+        }
+        window.addEventListener('pagehide', onPageHide);
+        window.addEventListener('pageshow', onPageShow);
+        restoreWindow();
     });
 }
 initQrScanner(document);

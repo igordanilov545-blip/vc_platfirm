@@ -2,11 +2,12 @@
 from io import BytesIO
 import re
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import qrcode
 from qrcode.util import QRData, MODE_8BIT_BYTE
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.core import signing
 from django.db import transaction
 from django.db.models import Min, Max, Q
 from django.utils import timezone
@@ -69,33 +70,56 @@ def _available_shifts(user):
     """Будущие/текущие смены и прошедшие внутри ещё идущего мероприятия."""
     now = timezone.now()
     open_entries = dc.shift_attendance_qs().filter(user=user, exited_at=None).values('shift_id')
+    attended = dc.shift_attendance_qs().filter(user=user).values('shift_id')
     ongoing_groups = dc.event_groups_qs().annotate(
         begins=Min('positions__shifts__start_time'), ends=Max('positions__shifts__end_time'),
     ).filter(begins__lte=now, ends__gte=now).values('pk')
     ongoing_positions = dc.events_qs().annotate(begins=Min('shifts__start_time'), ends=Max('shifts__end_time')).filter(begins__lte=now, ends__gte=now).values('pk')
     return dc.event_shifts_qs().filter(
-        Q(participations__user=user, participations__status='pending') | Q(pk__in=open_entries),
+        Q(participations__user=user, participations__status='pending') | Q(pk__in=attended),
     ).filter(
         Q(end_time__gte=now) | Q(event__event_group_id__in=ongoing_groups) | Q(event_id__in=ongoing_positions)
         | Q(pk__in=open_entries),
     ).select_related('event__event_group').distinct()
 
 
-def scan_context(operator, token):
+def _scan_ticket(operator, user, ticket=None):
+    if ticket:
+        try:
+            payload = signing.loads(ticket, salt='qr-scan-window', max_age=60 * dc.get_const('qr_scan_window_minutes', default=720))
+            if payload['operator'] != operator.pk or payload['user'] != user.pk:
+                raise PermissionDenied('Окно сканирования принадлежит другому пользователю.')
+            return ticket, datetime.fromisoformat(payload['at'])
+        except (signing.BadSignature, ValueError, TypeError, KeyError):
+            raise ValidationError('Окно сканирования устарело или повреждено. Отсканируйте QR заново.')
+    at = timezone.now()
+    return signing.dumps({'operator': operator.pk, 'user': user.pk, 'at': at.isoformat()}, salt='qr-scan-window'), at
+
+
+def scan_context(operator, token, *, scan_ticket=None):
     """Мини-карточка без контактов: ФИО, незаконченные отметки и порядок смен."""
     user = _scanned_user(operator, token)
+    ticket, scanned_at = _scan_ticket(operator, user, scan_ticket)
     records = {row.shift_id: row for row in dc.shift_attendance_qs().filter(user=user).select_related('shift__event__event_group')}
+    meals = {row.shift_id: row for row in dc.shift_meals_qs().filter(user=user)}
+    badges = {row.event_group_id: row for row in dc.event_badges_qs().filter(user=user)}
     now = timezone.now()
     shifts = sorted(_available_shifts(user), key=lambda shift: (shift.end_time < now, shift.start_time, shift.pk))
     rows = []
+    groups = {}
     for shift in shifts:
         record = records.get(shift.pk)
-        if record and record.exited_at:
-            continue
         rows.append({'shift': shift, 'attendance': record,
+                     'meal': meals.get(shift.pk),
                      'action': 'out' if record else 'in',
                      'can_mark': shift.event.event_status != 'finished' and can_mark_shift(operator, shift)})
+        if shift.event.event_group_id:
+            group_id = shift.event.event_group_id
+            candidate = {'group': shift.event.event_group, 'shift': shift, 'badge': badges.get(group_id), 'can_mark': rows[-1]['can_mark']}
+            if group_id not in groups or candidate['can_mark']:
+                groups[group_id] = candidate
     return {'scanned_user': user, 'shift_rows': rows, 'nearest_shift': rows[0]['shift'] if rows else None,
+            'badge_rows': list(groups.values()), 'scan_ticket': ticket, 'scanned_at': scanned_at,
             'last_attendance': max(records.values(), key=lambda row: (row.exited_at or row.entered_at, row.pk), default=None),
             'enrollment_shifts': _enrollment_shifts(operator, user),
             'checkin_lead_minutes': dc.get_const('qr_enroll_checkin_lead_minutes', default=60)}
@@ -117,7 +141,7 @@ def _enrollment_shifts(operator, user):
 
 
 @transaction.atomic
-def enroll_scanned_user(operator, token, shift_id):
+def enroll_scanned_user(operator, token, shift_id, *, defer_entry=False):
     """Ручное одобрение одной смены; при скором начале сразу фиксируется вход."""
     from blog.services.applications import create_manual_application, application_shifts, ensure_shift_decisions, process_shift_decision
     from blog.services.requirements import check_application_requirements
@@ -148,13 +172,15 @@ def enroll_scanned_user(operator, token, shift_id):
     process_shift_decision(application, shift, 'approved', operator)
     lead_minutes = dc.get_const('qr_enroll_checkin_lead_minutes', default=60)
     if shift.start_time <= timezone.now() + timedelta(minutes=lead_minutes):
+        if defer_entry:
+            return 'Записан на смену. Вход выбран и сохранится при закрытии окна.'
         mark_scan(operator, token, shift.pk, 'in')
         return 'Записан на смену. Вход отмечен.'
     return 'Записан на смену. Явка пока не отмечена.'
 
 
 @transaction.atomic
-def mark_scan(operator, token, shift_id, action):
+def mark_scan(operator, token, shift_id, action, *, at=None):
     """Повторная отправка не меняет вход/выход и не начисляет часы дважды."""
     user = _scanned_user(operator, token)
     shift = dc.event_shifts_qs().filter(pk=shift_id, participations__user=user).select_related('event__event_group').first()
@@ -176,7 +202,7 @@ def mark_scan(operator, token, shift_id, action):
     if action == 'in':
         if record:
             return record
-        record, created = dc.create_shift_entry(user, shift, operator)
+        record, created = dc.create_shift_entry(user, shift, operator, at=at)
         if not created:
             return record
         dc.save_qr_participation(participation, 0, operator=operator)
@@ -185,9 +211,9 @@ def mark_scan(operator, token, shift_id, action):
             raise ValidationError('Сначала отметьте вход.')
         if record.exited_at:
             return record
-        if timezone.now() < record.entered_at:
+        if (at or timezone.now()) < record.entered_at:
             raise ValidationError('Время выхода раньше входа.')
-        dc.save_shift_exit(record, operator)
+        dc.save_shift_exit(record, operator, at=at)
         hours = (Decimal(str((record.exited_at - record.entered_at).total_seconds())) / Decimal(3600)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
         dc.save_qr_participation(participation, hours, full_shift=record.entered_at <= shift.start_time and record.exited_at >= shift.end_time, operator=operator)
     else:
@@ -197,6 +223,59 @@ def mark_scan(operator, token, shift_id, action):
         from blog.services.stats import apply_churn_activity_decay
         apply_churn_activity_decay(user, event=shift.event)
     return record
+
+
+@transaction.atomic
+def commit_scan(operator, token, scan_ticket, changes):
+    """Закрытие окна: один атомарный пакет с подтверждённым временем сканирования."""
+    user = _scanned_user(operator, token)
+    if not scan_ticket:
+        raise ValidationError('Повторно отсканируйте QR-код.')
+    _, at = _scan_ticket(operator, user, scan_ticket)
+    if not isinstance(changes, list) or len(changes) > dc.get_const('qr_scan_max_changes', default=100):
+        raise ValidationError('Некорректный список отметок.')
+    dc.users_qs().select_for_update().get(pk=user.pk)
+    for item in changes:
+        if not isinstance(item, dict) or item.get('kind') not in ('in', 'out', 'lunch', 'badge'):
+            raise ValidationError('Неизвестная отметка.')
+        try:
+            shift_id = int(item['shift_id'])
+        except (ValueError, TypeError, KeyError):
+            raise ValidationError('Некорректная смена.')
+        shift = dc.event_shifts_qs().filter(pk=shift_id, participations__user=user).select_related('event__event_group').first()
+        if not shift:
+            raise ValidationError('Смена не найдена среди участий человека.')
+        if not can_mark_shift(operator, shift):
+            raise PermissionDenied('Нет права отмечать эту смену.')
+        kind = item['kind']
+        if kind in ('in', 'out'):
+            mark_scan(operator, token, shift_id, kind, at=at)
+            continue
+        if kind == 'lunch' and dc.shift_meals_qs().filter(user=user, shift=shift).exists():
+            continue
+        if kind == 'badge' and dc.event_badges_qs().filter(user=user, event_group_id=shift.event.event_group_id).exists():
+            continue
+        if shift.event.event_status == 'finished':
+            raise ValidationError('Позиция завершена.')
+        if kind == 'lunch':
+            dc.issue_shift_meal(user, shift, operator, at)
+        elif shift.event.event_group_id:
+            dc.issue_event_badge(user, shift.event.event_group, operator, at)
+        else:
+            raise ValidationError('У позиции не указано мероприятие для выдачи значка.')
+
+
+@transaction.atomic
+def enroll_scan_context(operator, token, shift_id, *, scan_ticket=None):
+    user = _scanned_user(operator, token)
+    ticket, _ = _scan_ticket(operator, user, scan_ticket)
+    notice = enroll_scanned_user(operator, token, shift_id, defer_entry=True)
+    context = scan_context(operator, token, scan_ticket=ticket)
+    shift = dc.event_shifts_qs().get(pk=shift_id)
+    if shift.start_time <= timezone.now() + timedelta(minutes=context['checkin_lead_minutes']):
+        context['suggested_entry_shift'] = shift.pk
+    context['scan_notice'] = notice
+    return context
 
 
 @transaction.atomic

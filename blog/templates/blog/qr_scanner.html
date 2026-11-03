@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-header"><h1>Сканер QR</h1>
 {% if is_manager %}<a class="btn secondary" href="{% url 'qr_scanner_grant' %}" data-modal data-modal-title="Доступ к сканеру">Выдать доступ</a>{% endif %}</div>
-<div class="card qr-scanner" data-qr-scanner>
+<div class="card qr-scanner" data-qr-scanner data-operator-id="{{ user.pk }}">
     {% csrf_token %}
     <video data-qr-video playsinline muted hidden></video>
     <div class="qr-scanner-actions">

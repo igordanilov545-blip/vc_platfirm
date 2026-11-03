@@ -90,9 +90,13 @@ class VolunteerProfileTests(TestCase):
         for viewer in (self.user, f.make_manager()):
             self.client.force_login(viewer)
             response = self.client.get(reverse('profile_detail', args=[self.user.pk]))
-            self.assertContains(response, 'Ответ волонтёра')
-            self.assertContains(response, 'XXXL')
-            self.assertContains(response, 'Телеграм')
+            if viewer.pk == self.user.pk:
+                self.assertNotContains(response, 'Ответ волонтёра')
+                self.assertNotContains(response, 'XXXL')
+            else:
+                self.assertContains(response, 'Ответ волонтёра')
+                self.assertContains(response, 'XXXL')
+                self.assertContains(response, 'Телеграм')
             self.assertNotContains(response, 'Факультет:')
         response = self.client.get(reverse('public_experience', args=[self.user.experience_token]))
         self.assertNotContains(response, 'Ответ волонтёра')

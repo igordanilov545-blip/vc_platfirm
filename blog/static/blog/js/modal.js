@@ -13,13 +13,20 @@
         document.body.style.overflow = 'hidden';
     }
 
-    function closeModal() {
+    function closeModal(force) {
+        if (force !== true) {
+            var beforeClose = new CustomEvent('modal:before-close', {cancelable: true});
+            modalBackdrop.dispatchEvent(beforeClose);
+            if (beforeClose.defaultPrevented) return false;
+        }
         modalBackdrop.hidden = true;
         modalBody.innerHTML = '';
         document.body.style.overflow = '';
         // Time-picker списки рендерятся напрямую в <body> (position:fixed, чтобы не
         // обрезаться overflow модалки) — их нужно убрать вручную, иначе останутся сиротами.
         document.querySelectorAll('.timepicker-list').forEach(function (el) { el.remove(); });
+        modalBackdrop.dispatchEvent(new CustomEvent('modal:closed'));
+        return true;
     }
 
     // ======================================================================

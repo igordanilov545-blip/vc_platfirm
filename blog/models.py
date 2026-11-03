@@ -1101,6 +1101,30 @@ class ShiftAttendance(models.Model):
         ]
 
 
+class ShiftMeal(models.Model):
+    """Один выданный обед на человека и смену."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shift_meals')
+    shift = models.ForeignKey(EventShift, on_delete=models.CASCADE, related_name='meal_issues')
+    issued_at = models.DateTimeField(default=timezone.now)
+    issued_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
+
+    class Meta:
+        db_table = 'shift_meals'
+        constraints = [models.UniqueConstraint(fields=['user', 'shift'], name='one_meal_per_user_shift')]
+
+
+class EventBadge(models.Model):
+    """Один значок на мероприятие, независимо от позиций и смен человека."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='event_badges')
+    event_group = models.ForeignKey(EventGroup, on_delete=models.CASCADE, related_name='badge_issues')
+    issued_at = models.DateTimeField(default=timezone.now)
+    issued_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='+')
+
+    class Meta:
+        db_table = 'event_badges'
+        constraints = [models.UniqueConstraint(fields=['user', 'event_group'], name='one_badge_per_user_group')]
+
+
 class ChurnHistory(models.Model):
     """Снимок churn_score на момент завершения сезона."""
     id = models.AutoField(primary_key=True)

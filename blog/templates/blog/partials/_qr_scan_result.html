@@ -1,10 +1,11 @@
-<section class="qr-person-card" data-qr-result>
+<section class="qr-person-card" data-qr-result data-scan-ticket="{{ scan_ticket }}" data-scan-time="{{ scanned_at|date:'c' }}"{% if suggested_entry_shift %} data-suggested-entry="{{ suggested_entry_shift }}"{% endif %}>
     <header class="qr-person-header">
         <span class="qr-person-avatar" aria-hidden="true">{{ scanned_user.first_name|default:''|first }}{{ scanned_user.last_name|default:''|first }}</span>
         <div>
             <span class="event-dash-label">Участник</span>
             <h2><a href="{% url 'profile_detail' scanned_user.pk %}" class="qr-profile-link">{{ scanned_user.full_name }} <span aria-hidden="true">↗</span></a></h2>
             <span class="event-dash-muted">Профиль участника · время по Москве</span>
+            <p class="qr-shirt-size">Размер футболки: <strong>{{ scanned_user.tshirt_size|default:'не указан' }}</strong></p>
         </div>
     </header>
     {% if scan_notice %}<p class="qr-scan-notice" role="status">{{ scan_notice }}</p>{% endif %}
@@ -22,7 +23,7 @@
     <div class="qr-shifts-heading"><h3>Смены участника</h3><span class="event-dash-muted">{{ shift_rows|length }}</span></div>
     <div class="table-scroll">
         <table class="qr-shifts-table" data-qr-shifts-table>
-            <thead><tr><th scope="col">Смена</th><th scope="col">Вход</th><th scope="col">Выход</th></tr></thead>
+            <thead><tr><th scope="col">Смена</th><th scope="col">Вход</th><th scope="col">Выход</th><th scope="col">Обед</th></tr></thead>
             <tbody>
             {% for row in shift_rows %}
                 <tr{% if forloop.first %} class="qr-nearest-shift"{% endif %}>
@@ -38,14 +39,23 @@
                         {% if row.attendance %}<time class="qr-mark-time" title="{{ row.attendance.entered_at|date:'d.m.Y H:i:s' }} МСК">{{ row.attendance.entered_at|date:'H:i' }}</time>{% endif %}
                     </td>
                     <td class="qr-mark-cell">
-                        <input type="checkbox" data-qr-mark="out" data-shift-id="{{ row.shift.pk }}" aria-label="Отметить выход: {{ row.shift.event.title }}, {{ row.shift.start_time|date:'d.m.Y H:i' }}" {% if not row.attendance or not row.can_mark %}disabled{% endif %}>
+                        <input type="checkbox" data-qr-mark="out" data-shift-id="{{ row.shift.pk }}" aria-label="Отметить выход: {{ row.shift.event.title }}, {{ row.shift.start_time|date:'d.m.Y H:i' }}" {% if row.attendance.exited_at %}checked disabled{% elif not row.attendance or not row.can_mark %}disabled{% endif %}>
+                        {% if row.attendance.exited_at %}<time class="qr-mark-time">{{ row.attendance.exited_at|date:'H:i' }}</time>{% endif %}
+                    </td>
+                    <td class="qr-mark-cell">
+                        <input type="checkbox" data-qr-mark="lunch" data-shift-id="{{ row.shift.pk }}" aria-label="Выдан обед: {{ row.shift.event.title }}" {% if row.meal %}checked disabled{% elif not row.can_mark %}disabled{% endif %}>
                     </td>
                 </tr>
-            {% empty %}<tr><td colspan="3" class="qr-empty-state">Нет смен, ожидающих отметки</td></tr>{% endfor %}
+            {% empty %}<tr><td colspan="4" class="qr-empty-state">Нет доступных смен</td></tr>{% endfor %}
             </tbody>
         </table>
     </div>
-    <p class="qr-mark-help event-dash-muted">Галочка фиксирует время входа или выхода. Часы считаются после выхода.</p>
+    {% if badge_rows %}
+    <div class="table-scroll"><table class="qr-shifts-table"><thead><tr><th>Мероприятие</th><th>Значок</th></tr></thead><tbody>
+    {% for row in badge_rows %}<tr><td>{{ row.group.title }}<span class="qr-shift-meta">Один значок на всё мероприятие</span></td><td class="qr-mark-cell"><input type="checkbox" data-qr-mark="badge" data-shift-id="{{ row.shift.pk }}" aria-label="Выдан значок: {{ row.group.title }}" {% if row.badge %}checked disabled{% elif not row.can_mark %}disabled{% endif %}></td></tr>{% endfor %}
+    </tbody></table></div>
+    {% endif %}
+    <p class="qr-mark-help event-dash-muted">Галочки сохранятся при закрытии окна. До этого выбор можно изменить. Время отметок: {{ scanned_at|date:'H:i:s' }} МСК. Обед — на каждую смену, значок — один на мероприятие.</p>
     <details class="qr-enrollment">
         <summary>＋ Записать на смену</summary>
         {% if enrollment_shifts %}
@@ -55,10 +65,11 @@
                 <option value="">Выберите смену</option>
                 {% for shift in enrollment_shifts %}<option value="{{ shift.pk }}">{{ shift.event.event_group.title }} · {{ shift.event.title }} · {{ shift.start_time|date:'d.m.Y H:i' }} — {{ shift.end_time|date:'H:i' }}</option>{% endfor %}
             </select>
-            <p class="event-dash-muted qr-mark-help">Вход отметится сразу, если смена уже идёт или начинается в ближайшие {{ checkin_lead_minutes|floatformat:'-1' }} мин.</p>
+            <p class="event-dash-muted qr-mark-help">Вход будет выбран, если смена уже идёт или начинается в ближайшие {{ checkin_lead_minutes|floatformat:'-1' }} мин. Он сохранится при закрытии окна.</p>
             <button type="submit" class="btn">Записать на смену</button>
         </form>
         {% else %}<p class="event-dash-muted">Нет доступных смен с открытым набором.</p>{% endif %}
     </details>
     <p data-qr-mark-status class="qr-mark-error" role="alert"></p>
+    <p data-qr-draft-status class="field-hint" role="status"></p>
 </section>

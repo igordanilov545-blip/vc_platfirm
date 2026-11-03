@@ -28,6 +28,22 @@ class ReportPeriodHubTests(TestCase):
         r = self.client.get(reverse('report_period'), {'view': 'dashboard', 'partial': '1'})
         self.assertEqual(r.status_code, 200)
 
+    def test_dashboard_panel_with_approved_application_uses_moscow_date(self):
+        """Непустая статистика набора не роняет загрузку панели отчёта."""
+        from datetime import datetime, timezone as dt_timezone
+        from blog.services.reports import recruitment_efficiency
+        assigned = datetime(2026, 11, 2, 22, 30, tzinfo=dt_timezone.utc)
+        self.shift.day = datetime(2026, 11, 3).date()
+        self.shift.save(update_fields=['day'])
+        f.make_application(self.event, status='approved', shifts=[self.shift], assigned_at=assigned)
+        result = recruitment_efficiency(event_ids=[self.event.pk])
+        self.assertEqual(result['avg_recruit_days'], 0)
+        r = self.client.get(reverse('report_period'), {
+            'view': 'dashboard', 'partial': '1',
+            'date_from': '2026-11-01', 'date_to': '2026-11-30',
+        })
+        self.assertEqual(r.status_code, 200)
+
     def test_tables_panel_each_table(self):
         for table in ['volunteers', 'events', 'teamleaders', 'managers', 'applications']:
             r = self.client.get(reverse('report_period'), {'view': 'tables', 'partial': '1', 'table': table})

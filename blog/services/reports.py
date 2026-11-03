@@ -15,6 +15,7 @@ import math
 from datetime import date, timedelta
 
 from django.db.models import Avg, Count, Max, Min, Q, Sum
+from django.utils import timezone
 
 # Доступ к строкам БД — только через контроллер (agent-workflow.md §5): контроллер отдаёт
 # базовые queryset'ы (*_qs), а вся агрегация/бизнес-логика остаётся здесь, в сервисе

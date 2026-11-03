@@ -130,7 +130,12 @@ else:
             'NAME': BASE_DIR / 'db.sqlite3',
             # Сканер и бот пишут одновременно с аналитикой: резервируем запись до
             # чтений внутри atomic, чтобы не срывать повышение read-lock → write-lock.
-            'OPTIONS': {'timeout': 20, 'transaction_mode': 'IMMEDIATE'},
+            'OPTIONS': {
+                'timeout': 20,
+                'transaction_mode': 'IMMEDIATE',
+                # Чтение страниц не блокируется записью сканера, бота и аналитики.
+                'init_command': 'PRAGMA journal_mode=WAL;',
+            },
         }
     }
 

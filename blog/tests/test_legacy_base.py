@@ -1,6 +1,8 @@
 """Легаси База: анкета, все колонки, идемпотентность и приватность комментариев."""
 from datetime import date, datetime
 from io import BytesIO
+from zipfile import ZipFile
+from xml.etree import ElementTree as ET
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase
 from django.urls import reverse
@@ -35,12 +37,42 @@ def workbook(headers=None, values=None, sheet=' б А з А '):
     return output.getvalue()
 
 
+def without_sheet_dimensions(content):
+    """XLSX, у которого экспортёр не записал необязательный XML dimension."""
+    output = BytesIO()
+    with ZipFile(BytesIO(content)) as original, ZipFile(output, 'w') as changed:
+        for entry in original.infolist():
+            data = original.read(entry.filename)
+            if entry.filename == 'xl/worksheets/sheet1.xml':
+                sheet = ET.fromstring(data)
+                dimension = sheet.find('{http://schemas.openxmlformats.org/spreadsheetml/2006/main}dimension')
+                if dimension is not None:
+                    sheet.remove(dimension)
+                data = ET.tostring(sheet, encoding='utf-8')
+            changed.writestr(entry, data)
+    return output.getvalue()
+
+
 class LegacyBaseTests(TestCase):
     def setUp(self):
         self.manager = f.make_manager()
 
     def plan(self, headers=None, values=None):
         return read_legacy_workbook(workbook(headers, values))
+
+    def test_workbook_without_dimensions_reads_all_profile_and_event_cells(self):
+        normal = self.plan()
+        unsized = read_legacy_workbook(without_sheet_dimensions(workbook()))
+        self.assertEqual(unsized, normal)
+
+    def test_unsized_sheet_keeps_column_limit_for_header_and_data(self):
+        for wide_header in (True, False):
+            with self.subTest(wide_header=wide_header):
+                headers = HEADERS + ['Лишняя'] * (513 - len(HEADERS)) if wide_header else HEADERS
+                values = VALUES + ['Значение'] * (513 - len(VALUES))
+                content = without_sheet_dimensions(workbook(headers, values))
+                with self.assertRaisesMessage(ValidationError, '512'):
+                    read_legacy_workbook(content)
 
     def test_parser_normalizes_profile_and_preserves_all_event_columns(self):
         plan = self.plan()

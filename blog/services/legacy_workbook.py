@@ -84,9 +84,18 @@ def read_legacy_workbook(content, *, max_rows=10000):
         if len(names) != 1:
             raise ValidationError('Нужен один лист «База» (регистр и пробелы не учитываются).')
         ws = wb[names[0]]
-        if ws.max_column > 512:
+        if ws.max_column is not None and ws.max_column > 512:
             raise ValidationError('В листе больше 512 колонок. Уберите лишние пустые колонки.')
-        iterator = iter(ws.iter_rows(values_only=True))
+
+        def checked_rows():
+            # Некоторые экспортёры не записывают dimension. Читаем поток без
+            # предварительного второго прохода, лимит проверяем по самим строкам.
+            for values in ws.iter_rows(values_only=True):
+                if len(values) > 512:
+                    raise ValidationError('В листе больше 512 колонок. Уберите лишние пустые колонки.')
+                yield values
+
+        iterator = iter(checked_rows())
         header = None
         for row_number in range(1, 31):
             values = next(iterator, ())

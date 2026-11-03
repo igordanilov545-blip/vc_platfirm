@@ -4,7 +4,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from blog.models import User, EventGroup
 from . import factories as f
-from .test_legacy_base import workbook
+from .test_legacy_base import workbook, without_sheet_dimensions
 
 
 class LegacyUploadTests(TestCase):
@@ -12,6 +12,15 @@ class LegacyUploadTests(TestCase):
         self.manager = f.make_manager()
         self.client.force_login(self.manager)
         self.url = reverse('legacy_base_upload')
+
+    def test_file_without_dimension_opens_preview_without_database_changes(self):
+        before = User.objects.count()
+        upload = SimpleUploadedFile('base.xlsx', without_sheet_dimensions(workbook()))
+        response = self.client.post(self.url, {'workbook': upload})
+        self.assertContains(response, 'Предпросмотр')
+        self.assertContains(response, '7.2')
+        self.assertEqual(User.objects.count(), before)
+        self.assertFalse(EventGroup.objects.exists())
 
     def test_preview_date_confirmation_and_single_commit(self):
         count = User.objects.count()

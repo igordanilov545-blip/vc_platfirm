@@ -38,6 +38,12 @@ urlpatterns = [
 
     path('events/', views.event_list, name='event_list'),
     path('events/groups/new/', views.event_group_create, name='event_group_create'),
+    path('events/groups/<int:group_id>/sheet/', views.event_sheet, name='event_sheet'),
+    path('events/groups/<int:group_id>/sheet/link/', views.event_sheet_link, name='event_sheet_link'),
+    path('events/groups/<int:group_id>/sheet/sync/', views.event_sheet_sync, name='event_sheet_sync'),
+    path('events/groups/<int:group_id>/sheet/export/', views.event_sheet_export, name='event_sheet_export'),
+    path('settings/google-sheets/', views.google_sheets_settings, name='google_sheets_settings'),
+    path('events/sheet-leaders/<int:assignment_id>/bind/', views.sheet_team_leader_bind, name='sheet_team_leader_bind'),
     path('events/groups/<int:group_id>/', views.event_group_detail, name='event_group_detail'),
     path('events/groups/<int:group_id>/edit/', views.event_group_edit, name='event_group_edit'),
     path('events/new/', views.event_create, name='event_create'),

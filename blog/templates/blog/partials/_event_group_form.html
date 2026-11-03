@@ -1,4 +1,4 @@
-<form method="post" data-modal-form>
+<form method="post" enctype="multipart/form-data" data-modal-form>
     {% csrf_token %}
     {{ form.non_field_errors }}
     <div class="field">
@@ -14,6 +14,15 @@
             </div>
         </div>
         {{ form.managers }}{{ form.managers.errors }}
+    </div>
+    <div class="field">
+        {{ form.workbook.label_tag }}{{ form.workbook }}{{ form.workbook.errors }}
+        <span class="event-dash-muted">Позиции, смены и ответственные будут созданы из вкладки «Смены».</span>
+    </div>
+    <div class="field">
+        <div class="fap-label-row">{{ form.google_url.label_tag }}{% include 'blog/partials/_sheet_help.html' %}</div>
+        {{ form.google_url }}{{ form.google_url.errors }}
+        <span class="event-dash-muted">Выберите один источник: файл или ссылку. Можно добавить таблицу позже.</span>
     </div>
     <button type="submit" class="btn">Сохранить</button>
 </form>

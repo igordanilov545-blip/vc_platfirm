@@ -62,10 +62,14 @@ def event_list(request):
 def event_group_create(request):
     """Создать мероприятие без вмешательства в жизненный цикл позиций."""
     from blog.forms.events import EventGroupForm
-    form = EventGroupForm(request.POST or None, initial={'managers': [request.user.pk]}, assigned_by=request.user)
+    form = EventGroupForm(request.POST or None, request.FILES or None, initial={'managers': [request.user.pk]}, assigned_by=request.user)
     if request.method == 'POST' and form.is_valid():
-        group = form.save()
-        return modal_form_response(request, None, None, success_redirect=reverse('event_group_detail', args=[group.pk]))
+        try:
+            group = form.save()
+        except ValidationError as error:
+            form.add_error(None, error)
+        else:
+            return modal_form_response(request, None, None, success_redirect=reverse('event_group_detail', args=[group.pk]))
     return modal_form_response(
         request, 'blog/event_group_form.html', {'form': form, 'title': 'Новое мероприятие'},
         partial_template='blog/partials/_event_group_form.html',
@@ -77,10 +81,14 @@ def event_group_edit(request, group_id):
     """Редактировать название и менеджеров мероприятия, сохраняя позиции."""
     from blog.forms.events import EventGroupForm
     group = get_object_or_404(dc.event_groups_qs(), pk=group_id)
-    form = EventGroupForm(request.POST or None, instance=group, assigned_by=request.user)
+    form = EventGroupForm(request.POST or None, request.FILES or None, instance=group, assigned_by=request.user)
     if request.method == 'POST' and form.is_valid():
-        form.save()
-        return modal_form_response(request, None, None, success_redirect=reverse('event_group_detail', args=[group.pk]))
+        try:
+            form.save()
+        except ValidationError as error:
+            form.add_error(None, error)
+        else:
+            return modal_form_response(request, None, None, success_redirect=reverse('event_group_detail', args=[group.pk]))
     return modal_form_response(
         request, 'blog/event_group_form.html', {'form': form, 'title': 'Редактировать мероприятие'},
         partial_template='blog/partials/_event_group_form.html',

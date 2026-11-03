@@ -5,6 +5,7 @@
 доменных модулей. Карта «домен → формы» — в README.md.
 """
 from .auth import LoginForm, RegisterForm  # noqa: F401
+from .event_sheets import EventSheetImportForm, GoogleSheetsConnectionForm, SheetTeamLeaderBindingForm  # noqa: F401
 from .qr_attendance import ScannerGrantForm  # noqa: F401
 from .references import (  # noqa: F401
     QuickLocationForm, LocationForm, QuickOrganizationForm, OrganizationForm,
@@ -14,7 +15,7 @@ from .references import (  # noqa: F401
     ConstForm, SeasonForm, LetterTemplateForm, LetterFontForm,
 )
 from .events import (  # noqa: F401
-    TeamLeadChoiceField, ManagerChoiceField, EventForm, EventShiftForm,
+    TeamLeadChoiceField, ManagerChoiceField, EventGroupForm, EventForm, EventShiftForm,
     EventCommentForm, EventFeedbackForm,
 )
 from .applications import (  # noqa: F401

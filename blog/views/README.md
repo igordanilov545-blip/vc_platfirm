@@ -8,6 +8,7 @@
 
 | Работаешь с… | Файл | Что внутри |
 |---|---|---|
+| **Планом FaP и Google Таблицами** | [`event_sheets.py`](event_sheets.py) | Страница плана, загрузка/привязка, явный обмен, XLSX, подключение Google и привязка ТЛ; бизнес-логика — services/event_sheets.py |
 | **Вход / регистрация / Telegram-вход / Mini App** | [`auth.py`](auth.py) | `login_view`, `register_view`, `logout_view`, `telegram_login_callback`, `tg_link_login`, `webapp_entry`, `webapp_auth`, `verify_telegram_start` |
 | **Мероприятиями** (карточка, CRUD, публикация, рассылка, закрытие, смены) | [`events.py`](events.py) | `event_list`, `event_detail`, `event_create/edit/delete`, `event_publish`, `event_broadcast`, `event_close/reopen`, `event_shift_add/edit/delete`, `shift_toggle_*`, `event_feedback_add`, `event_comment_add`, публичные витрины |
 | **Заявками** (подача, обработка, ручное добавление, отмена, импорт Excel) | [`applications.py`](applications.py) | `application_create`, `application_manual_create`, `application_edit`, `application_cancel`, `application_process[_all]`, `application_shift_process`, `shift_applications_approve_all`, `import_preview/commit`, `pending_applications` |

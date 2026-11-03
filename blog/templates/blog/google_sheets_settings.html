@@ -1,0 +1,18 @@
+{% extends 'blog/base.html' %}
+{% block title %}Подключение Google Таблиц{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Подключение Google Таблиц</h1><a href="{% url 'event_list' %}" class="btn secondary">К мероприятиям</a></div>
+<div class="card">
+    <p>Один сервисный аккаунт можно использовать для всех мероприятий. Чтение публичного XLSX доступно без ключа; для чтения через API и отправки изменений нужен ключ и доступ к файлу.</p>
+    <ol>
+        <li>Откройте <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> и выберите или создайте проект.</li>
+        <li>В разделе «API и сервисы → Библиотека» включите <strong>Google Sheets API</strong>.</li>
+        <li>Откройте «IAM и администрирование → Сервисные аккаунты», создайте аккаунт. Дополнительные роли проекта для доступа к таблице не нужны.</li>
+        <li>В аккаунте откройте «Ключи → Добавить ключ → Создать ключ → JSON». Загрузите полученный файл ниже.</li>
+        <li>Скопируйте email подключённого аккаунта и в нужной Google Таблице через «Настройки доступа» добавьте его как <strong>редактора</strong>.</li>
+        <li>В мероприятии нажмите «Связать таблицу», вставьте ссылку, затем «Отправить в Google» для первого сохранения плана и служебных ID. После этого используйте кнопки обмена.</li>
+    </ol>
+    {% if google_connection %}<p>Подключён аккаунт: <strong>{{ google_connection.client_email }}</strong></p>{% endif %}
+    <form method="post" enctype="multipart/form-data">{% csrf_token %}{{ form.as_p }}<button type="submit" class="btn">Сохранить подключение</button></form>
+</div>
+{% endblock %}

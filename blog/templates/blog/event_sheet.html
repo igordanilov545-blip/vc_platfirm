@@ -1,0 +1,44 @@
+{% extends 'blog/base.html' %}
+{% block title %}{{ event_group.title }} — Таблица смен{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div><a href="{% url 'event_group_detail' event_group.pk %}">{{ event_group.title }}</a><h1>Таблица смен</h1></div>
+    <div class="fap-actions">
+        <a class="btn" href="{% url 'event_sheet_link' event_group.pk %}" data-modal data-modal-title="Связать таблицу">Связать таблицу</a>{% include 'blog/partials/_sheet_help.html' %}
+        <a class="btn secondary" href="{% url 'event_sheet_export' event_group.pk %}">Скачать XLSX</a>
+        <a class="btn secondary" href="{% url 'google_sheets_settings' %}">Настроить Google</a>
+    </div>
+</div>
+{% if sheet_link %}
+<div class="card">
+    <div class="fap-actions"><strong>{{ sheet_link.source_name|default:'Таблица смен' }}</strong>
+        {% if sheet_link.google_url %}<a href="{{ sheet_link.google_url }}" class="btn secondary" target="_blank" rel="noopener noreferrer">Открыть Google Таблицу ↗</a>{% endif %}
+    </div>
+    {% if sheet_link.synced_at %}<p class="event-dash-muted">Последний обмен: {{ sheet_link.synced_at|date:'d.m.Y H:i' }} МСК</p>{% endif %}
+    {% if sheet_link.spreadsheet_id %}
+    <div class="fap-actions">
+        <form method="post" action="{% url 'event_sheet_sync' event_group.pk %}">{% csrf_token %}<input type="hidden" name="direction" value="pull"><button class="btn secondary" type="submit">Получить из Google</button></form>
+        <form method="post" action="{% url 'event_sheet_sync' event_group.pk %}">{% csrf_token %}<input type="hidden" name="direction" value="push"><button class="btn" type="submit">Отправить в Google</button></form>
+    </div>
+    {% if not google_connection %}<p>Для двустороннего обмена <a href="{% url 'google_sheets_settings' %}">подключите Google</a>. Публичная таблица доступна для первого импорта без ключа.</p>{% endif %}
+    {% endif %}
+    {% if sheet_link.warnings %}<details class="fap-warnings"><summary>Проверьте план: {{ sheet_link.warnings|length }} предупреждений</summary><ul>{% for warning in sheet_link.warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
+</div>
+{% else %}<div class="card"><p>Таблица ещё не связана. Загрузите план FaP или добавьте ссылку Google Таблицы.</p></div>{% endif %}
+<div class="card">
+    <h2>Тим-лидеры из таблицы</h2><p class="event-dash-muted">Имена не объединяются автоматически. Выберите соответствующего тим-лидера платформы для назначения на позиции направления.</p>
+    <div class="table-scroll"><table class="responsive-table"><thead><tr><th>Направление / позиция</th><th>Имя в таблице</th><th>Пользователь</th><th></th></tr></thead><tbody>
+    {% for item in sheet_leaders %}<tr>
+        <td data-label="Направление">{{ item.direction.name }}{% if item.position %} · {{ item.position.event.title }}{% endif %}</td>
+        <td data-label="Имя">{{ item.display_name }}</td>
+        <td data-label="Пользователь">{% if item.user %}<a href="{% url 'profile_detail' item.user_id %}">{{ item.user.full_name }}</a>{% else %}<span class="pill neutral">Не привязан</span>{% endif %}</td>
+        <td><a class="btn secondary small" href="{% url 'sheet_team_leader_bind' item.pk %}" data-modal data-modal-title="Привязать тим-лидера">Привязать</a></td>
+    </tr>{% empty %}<tr><td colspan="4">Имен тим-лидеров в таблице пока нет.</td></tr>{% endfor %}
+    </tbody></table></div>
+</div>
+<div class="card"><h2>Ответственные за зоны</h2><p class="event-dash-muted">Отдельные контакты мероприятия. Роли менеджеров платформы не меняются.</p>
+    <div class="table-scroll"><table class="responsive-table"><thead><tr><th>Направление / позиция</th><th>Ответственный</th></tr></thead><tbody>
+    {% for item in zone_responsibles %}<tr><td data-label="Направление">{{ item.direction.name }}{% if item.position %} · {{ item.position.event.title }}{% endif %}</td><td data-label="Ответственный">{{ item.display_name }}</td></tr>{% empty %}<tr><td colspan="2">Ответственные не указаны.</td></tr>{% endfor %}
+    </tbody></table></div>
+</div>
+{% endblock %}

@@ -5,6 +5,10 @@
 urls.py и прочий код не меняются. Карта «домен → что внутри» — в README.md.
 """
 from ._common import healthz  # noqa: F401
+from .event_sheets import (  # noqa: F401
+    event_sheet, event_sheet_link, event_sheet_sync, event_sheet_export,
+    google_sheets_settings, sheet_team_leader_bind,
+)
 from .qr_attendance import (  # noqa: F401
     personal_qr, personal_qr_png, qr_scanner, qr_scan, qr_mark, qr_enroll,
     qr_scanner_grant, qr_scanner_revoke,

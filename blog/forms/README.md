@@ -9,6 +9,7 @@
 | Домен | Файл | Формы |
 |---|---|---|
 | **Вход / регистрация** | [`auth.py`](auth.py) | `LoginForm`, `RegisterForm` |
+| **Планы FaP / Google Таблицы** | [`event_sheets.py`](event_sheets.py) | `EventSheetImportForm`, `GoogleSheetsConnectionForm`, `SheetTeamLeaderBindingForm`; загрузка при создании — `EventGroupForm` в events.py |
 | **Доступ к сканеру QR** | [`qr_attendance.py`](qr_attendance.py) | `ScannerGrantForm` (пользователь + мероприятие), общий `_modal_form.html` |
 | **Справочники** (локации/организации/организаторы/категории/требования/константы/сезоны) | [`references.py`](references.py) | `LocationForm`, `OrganizationForm`, `OrganizerForm`, `CategoryForm`, `RequirementForm`, `RequirementEditForm`, `RequirementExceptionForm`, `ConstForm`, `SeasonForm` + их `Quick*`-версии |
 | **Мероприятия** | [`events.py`](events.py) | `EventForm`, `EventShiftForm`, `EventCommentForm`, `EventFeedbackForm`, поля выбора `TeamLeadChoiceField`/`ManagerChoiceField` |

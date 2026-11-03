@@ -5,6 +5,7 @@
 {% block content %}
 {% if event.event_group_id %}
 <p><a href="{% url 'event_list' %}">Мероприятия</a> / <a href="{% url 'event_group_detail' event.event_group_id %}">{{ event.event_group.title }}</a> / Позиция</p>
+{% if event.event_group.sheet_link.google_url %}<p><a href="{{ event.event_group.sheet_link.google_url }}" target="_blank" rel="noopener noreferrer">Общая Google Таблица мероприятия ↗</a></p>{% endif %}
 {% endif %}
 <div class="page-header">
     <h1>{{ event.title }}</h1>

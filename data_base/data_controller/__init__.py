@@ -23,6 +23,14 @@
 """
 from ._base import get_full_table, create_record_generic, TABLE_MODEL_MAP  # noqa: F401
 from .event_groups import event_groups_qs, save_event_group  # noqa: F401
+from .event_sheets import (  # noqa: F401
+    event_directions_qs, sheet_positions_qs, sheet_days_qs, sheet_shifts_qs,
+    sheet_leaders_qs, zone_responsibles_qs, event_sheet_links_qs, google_sheets_connection,
+    save_google_sheets_connection, save_event_sheet_link, save_sheet_direction,
+    save_sheet_position, save_sheet_day, save_sheet_shift, sync_sheet_staff,
+    bind_sheet_leader_record, delete_sheet_shift_records, delete_sheet_position_records,
+    delete_empty_sheet_days, refresh_sheet_leader_staff, delete_unused_sheet_directions,
+)
 from .qr_attendance import (  # noqa: F401
     user_qr, user_from_qr, scanner_grants_qs, create_scanner_grant, revoke_scanner_grant,
     shift_attendance_qs, create_shift_entry, save_shift_exit, save_qr_participation,

@@ -598,6 +598,13 @@ th.has-reveal, td.has-reveal { position: relative; }
 .qr-mark-error { color: var(--danger); margin: 0; font-size: 13px; }
 .qr-mark-error:empty { display: none; }
 .attendance-pending { color: var(--text-secondary); }
+.fap-actions, .fap-label-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.fap-actions form { margin: 0; }
+.fap-label-row label { margin: 0; }
+.fap-help { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: 0 0 20px; border: 1px solid var(--border-subtle); border-radius: 50%; color: var(--text-secondary); font-size: 12px; font-weight: 600; cursor: help; }
+.fap-help:hover, .fap-help:focus-visible { color: var(--accent); border-color: var(--accent); }
+.fap-warnings { margin-top: 16px; }
+.fap-warnings summary { cursor: pointer; color: var(--text-secondary); }
 .recruit-bar-fill { display: block; height: 100%; border-radius: 999px; background: hsl(calc(var(--pct, 0) * 1.2), 70%, 45%); transition: width .3s ease; }
 .event-dash-days { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-top: 12px; }
 .event-dash-day-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }

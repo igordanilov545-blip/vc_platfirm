@@ -730,6 +730,120 @@ class EventStaff(models.Model):
         ]
 
 
+class EventDirection(models.Model):
+    """Направление FaP внутри мероприятия; не новая бизнес-роль."""
+    event_group = models.ForeignKey(EventGroup, on_delete=models.CASCADE, related_name='directions')
+    source_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    name = models.CharField(max_length=500)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = 'event_directions'
+        ordering = ['sort_order', 'pk']
+
+
+class SheetPosition(models.Model):
+    """Привязка позиции к направлению и стабильному ID таблицы."""
+    event = models.OneToOneField(Event, on_delete=models.CASCADE, related_name='sheet_position')
+    direction = models.ForeignKey(EventDirection, on_delete=models.PROTECT, related_name='positions')
+    source_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    sort_order = models.PositiveIntegerField(default=0)
+    is_team_lead_role = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = 'sheet_positions'
+        ordering = ['sort_order', 'pk']
+
+
+class SheetPositionDay(models.Model):
+    """Исходный план дня, включая нули, пустоты и пока нераспознанные интервалы."""
+    position = models.ForeignKey(SheetPosition, on_delete=models.CASCADE, related_name='days')
+    day = models.DateField()
+    raw_work_time = models.TextField(null=True, blank=True)
+    raw_checkin_out = models.TextField(null=True, blank=True)
+    quantities = models.JSONField(default=list)
+
+    class Meta:
+        db_table = 'sheet_position_days'
+        constraints = [models.UniqueConstraint(fields=['position', 'day'], name='unique_sheet_position_day')]
+        ordering = ['day', 'pk']
+
+
+class SheetShift(models.Model):
+    """Плановые check-in/out отделены от фактических отметок ShiftAttendance."""
+    shift = models.OneToOneField(EventShift, on_delete=models.CASCADE, related_name='sheet_shift')
+    position_day = models.ForeignKey(SheetPositionDay, on_delete=models.CASCADE, related_name='shifts')
+    source_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    label = models.CharField(max_length=100, blank=True)
+    planned_count = models.PositiveIntegerField(null=True, blank=True)
+    checkin = models.DateTimeField(null=True, blank=True)
+    checkout = models.DateTimeField(null=True, blank=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = 'sheet_shifts'
+        ordering = ['sort_order', 'pk']
+
+
+class SheetTeamLeader(models.Model):
+    direction = models.ForeignKey(EventDirection, on_delete=models.CASCADE, related_name='team_leaders')
+    position = models.ForeignKey(SheetPosition, on_delete=models.CASCADE, null=True, blank=True, related_name='team_leaders')
+    display_name = models.CharField(max_length=255)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='sheet_lead_assignments')
+    sort_order = models.PositiveIntegerField(default=0)
+    staff_links = models.ManyToManyField(EventStaff, blank=True, related_name='sheet_sources')
+
+    class Meta:
+        db_table = 'sheet_team_leaders'
+        ordering = ['sort_order', 'pk']
+
+
+class ZoneResponsible(models.Model):
+    """Ответственный за зону из колонки D; не Manager платформы и не ACL."""
+    direction = models.ForeignKey(EventDirection, on_delete=models.CASCADE, related_name='responsibles')
+    position = models.ForeignKey(SheetPosition, on_delete=models.CASCADE, null=True, blank=True, related_name='responsibles')
+    display_name = models.CharField(max_length=255)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='zone_assignments')
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = 'zone_responsibles'
+        ordering = ['sort_order', 'pk']
+
+
+class EventSheetLink(models.Model):
+    event_group = models.OneToOneField(EventGroup, on_delete=models.CASCADE, related_name='sheet_link')
+    spreadsheet_id = models.CharField(max_length=128, blank=True)
+    sheet_id = models.PositiveIntegerField(null=True, blank=True)
+    source_name = models.CharField(max_length=255, blank=True)
+    template = models.BinaryField(blank=True, default=bytes)
+    source_hash = models.CharField(max_length=64, blank=True)
+    baseline = models.JSONField(default=dict)
+    warnings = models.JSONField(default=list)
+    synced_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'event_sheet_links'
+
+    @property
+    def google_url(self):
+        if not self.spreadsheet_id:
+            return ''
+        return f'https://docs.google.com/spreadsheets/d/{self.spreadsheet_id}/edit' + (f'#gid={self.sheet_id}' if self.sheet_id is not None else '')
+
+
+class GoogleSheetsConnection(models.Model):
+    """Один ключ интеграции, зашифрованный отдельным назначением SECRET_KEY."""
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    credentials_encrypted = models.TextField(editable=False)
+    client_email = models.EmailField()
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'google_sheets_connection'
+
+
 class Application(models.Model):
     """Входящие запросы на участие. Могут быть от незарегистрированных пользователей."""
 

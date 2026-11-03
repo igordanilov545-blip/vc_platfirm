@@ -47,6 +47,8 @@ class EventGroupForm(forms.ModelForm):
         queryset=dc.active_manager_users_qs(), required=False,
         label='Менеджеры', widget=forms.SelectMultiple,
     )
+    workbook = forms.FileField(required=False, label='Загрузить таблицу (.xlsx)', widget=forms.ClearableFileInput(attrs={'accept': '.xlsx'}))
+    google_url = forms.URLField(required=False, label='Ссылка на Google Таблицу', widget=forms.URLInput(attrs={'placeholder': 'https://docs.google.com/spreadsheets/d/…/edit'}))
 
     class Meta:
         model = EventGroup
@@ -56,12 +58,23 @@ class EventGroupForm(forms.ModelForm):
     def __init__(self, *args, assigned_by=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.assigned_by = assigned_by
+        self.prepared_sheet = None
+
+    def clean(self):
+        cleaned = super().clean()
+        if not self.errors:
+            from .event_sheets import prepare_form_sheet
+            self.prepared_sheet = prepare_form_sheet(self)
+        return cleaned
 
     @transaction.atomic
     def save(self, commit=True):
         group = super().save(commit=False)
         if commit:
             dc.save_event_group(group, list(self.cleaned_data['managers']), assigned_by=self.assigned_by)
+            if self.prepared_sheet:
+                from blog.services.event_sheets import apply_prepared_sheet
+                apply_prepared_sheet(self.assigned_by, group, self.prepared_sheet)
         return group
 
 

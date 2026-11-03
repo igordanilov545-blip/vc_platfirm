@@ -18,6 +18,40 @@ EXAMPLES = Path(__file__).resolve().parents[1] / 'resources' / 'fap'
 
 
 class FaPWorkbookTests(SimpleTestCase):
+    def test_vip_zone_has_one_shift_per_day_with_subtotal_and_check_bounds(self):
+        from blog.services.fap_workbook import read_xlsx
+        plan = read_xlsx((EXAMPLES / 'marathon.xlsx').read_bytes())
+        days = plan['directions'][0]['positions'][0]['days']
+        shifts = [s for day in days for s in day['shifts']]
+        self.assertEqual([(s['start'], s['end'], s['count']) for s in shifts], [
+            ('2026-09-26T07:00:00+03:00', '2026-09-26T13:00:00+03:00', 12),
+            ('2026-09-27T06:00:00+03:00', '2026-09-27T17:00:00+03:00', 14),
+        ])
+        self.assertTrue(all(s['start'] == s['checkin'] and s['end'] == s['checkout'] for s in shifts))
+
+    def test_zone_capacity_comes_only_from_subtotal_not_inner_rows(self):
+        from blog.services.fap_workbook import read_xlsx
+        book = load_workbook(EXAMPLES / 'marathon.xlsx')
+        sheet = book.active
+        sheet['R3'], sheet['R4'], sheet['R8'] = 999, 999, 20
+        sheet['H3'] = '00:00-23:59'
+        stream = BytesIO()
+        book.save(stream)
+        day = read_xlsx(stream.getvalue())['directions'][0]['positions'][0]['days'][2]
+        self.assertEqual(len(day['shifts']), 1)
+        self.assertEqual(day['shifts'][0]['count'], 20)
+        self.assertEqual(day['shifts'][0]['start'], '2026-09-26T07:00:00+03:00')
+        self.assertEqual(day['shifts'][0]['end'], '2026-09-26T13:00:00+03:00')
+
+    def test_invalid_zone_subtotal_is_not_replaced_by_inner_row_counts(self):
+        from blog.services.fap_workbook import read_xlsx
+        book = load_workbook(EXAMPLES / 'marathon.xlsx')
+        book.active['R8'] = '12?'
+        stream = BytesIO()
+        book.save(stream)
+        with self.assertRaisesMessage(ValidationError, 'R8'):
+            read_xlsx(stream.getvalue())
+
     def test_marathon_short_dates_use_year_from_count_headers_and_keep_all_zone_blocks(self):
         from blog.services.fap_workbook import read_xlsx, write_xlsx
         source = (EXAMPLES / 'marathon.xlsx').read_bytes()
@@ -102,7 +136,7 @@ class FaPWorkbookTests(SimpleTestCase):
         self.assertEqual(content_signature(expected), content_signature(result))
         first = result['directions'][0]
         self.assertEqual(first['positions'][0]['name'], first['name'])
-        self.assertEqual(sorted(s['count'] for s in first['positions'][0]['days'][0]['shifts']), [1, 2, 12])
+        self.assertEqual([s['count'] for s in first['positions'][0]['days'][0]['shifts']], [15])
     def test_other_sheet_xml_is_not_parsed(self):
         from zipfile import ZipFile
         from blog.services.fap_workbook import read_xlsx
@@ -131,7 +165,7 @@ class FaPWorkbookTests(SimpleTestCase):
         position = plan['directions'][0]['positions'][0]
         self.assertEqual(position['days'][0]['shifts'][0]['count'], 9)
         unknown = plan['directions'][3]['positions'][0]['days'][2]['quantities']
-        self.assertEqual(next(q['count'] for q in unknown if q['label'] == 'Без времени'), 1)
+        self.assertEqual(next(q['count'] for q in unknown if q['label'] == 'Без времени'), 5)
         self.assertTrue(plan['warnings'])
 
     def test_only_shifts_sheet_is_exported_and_styles_are_preserved(self):
@@ -239,6 +273,37 @@ class FaPImportTests(TestCase):
     def setUp(self):
         self.manager = f.make_manager()
 
+    def test_same_file_reimport_corrects_previous_multiple_shifts_per_day(self):
+        from copy import deepcopy
+        from uuid import uuid4
+        from blog.models import EventGroup
+        from blog.services.event_sheets import import_plan, import_workbook
+        from blog.services.fap_workbook import read_xlsx, group_directions
+        source = (EXAMPLES / 'marathon.xlsx').read_bytes()
+        legacy = read_xlsx(source)
+        legacy.pop('daily_zone_shifts')
+        day = legacy['directions'][0]['positions'][0]['days'][2]
+        day['shifts'][0]['count'] = 1
+        extra = deepcopy(day['shifts'][0])
+        extra['id'], extra['count'] = str(uuid4()), 2
+        extra['start'] = extra['checkin'] = '2026-09-26T08:00:00+03:00'
+        day['shifts'].append(extra)
+        legacy = group_directions(legacy)
+        group = EventGroup.objects.create(title='Прежний импорт')
+        import_plan(self.manager, group, legacy, source, 'мм.xlsx')
+        event = group.positions.order_by('pk').first()
+        retained_id = event.shifts.order_by('day', 'pk').first().pk
+        self.assertEqual(event.shifts.count(), 3)
+        application = f.make_application(event)
+        with self.assertRaises(ValidationError):
+            import_workbook(self.manager, group, source)
+        self.assertEqual(event.shifts.count(), 3)
+        application.delete()
+        import_workbook(self.manager, group, source)
+        self.assertEqual(group.positions.count(), 24)
+        self.assertEqual(list(event.shifts.order_by('day').values_list('volunteer_needed', flat=True)), [12, 14])
+        self.assertEqual(event.shifts.order_by('day').first().pk, retained_id)
+
     def test_marathon_upload_creates_each_zone_as_a_separate_position(self):
         from blog.models import EventGroup
         from blog.services.event_sheets import import_workbook, export_workbook
@@ -246,6 +311,8 @@ class FaPImportTests(TestCase):
         source = (EXAMPLES / 'marathon.xlsx').read_bytes()
         import_workbook(self.manager, group, source)
         self.assertEqual(group.positions.count(), 24)
+        first = group.positions.order_by('pk').first()
+        self.assertEqual(list(first.shifts.order_by('day').values_list('day', 'volunteer_needed')), [(date(2026, 9, 26), 12), (date(2026, 9, 27), 14)])
         ids = list(group.positions.order_by('pk').values_list('pk', flat=True))
         exported = export_workbook(self.manager, group)
         import_workbook(self.manager, group, exported)
@@ -288,7 +355,7 @@ class FaPImportTests(TestCase):
         group = EventGroup.objects.create(title='FaP')
         import_workbook(self.manager, group, (EXAMPLES / 'one-day.xlsx').read_bytes(), 'пример.xlsx')
         self.assertEqual(group.positions.count(), 4)
-        self.assertEqual(sum(p.shifts.count() for p in group.positions.all()), 8)
+        self.assertEqual(sum(p.shifts.count() for p in group.positions.all()), 4)
         self.assertEqual(ZoneResponsible.objects.filter(direction__event_group=group).count(), 4)
         self.assertEqual(Manager.objects.count(), 1)
         link = group.sheet_link
@@ -327,7 +394,10 @@ class FaPImportTests(TestCase):
             shift.save(update_fields=['start_time', 'end_time'])
         exported = export_workbook(self.manager, group)
         self.assertEqual(len(read_xlsx(exported)['directions']), 6)
-        import_workbook(self.manager, group, exported)
+        # У ручных смен нет плановых check-in/out: импорт не должен молча
+        # подменять их рабочим временем и удалять исходные смены.
+        with self.assertRaises(ValidationError):
+            import_workbook(self.manager, group, exported)
         self.assertEqual(group.positions.count(), 6)
         for event in events:
             event.refresh_from_db()

@@ -44,7 +44,7 @@ def current_plan(group):
     link = dc.event_sheet_links_qs().filter(event_group=group).first()
     baseline = link.baseline if link else {}
     plan = {'dates': list(baseline.get('dates', [])), 'directions': [], 'warnings': [], 'quantity_widths': list(baseline.get('quantity_widths', []))}
-    for key in ('grouped_directions', 'quantity_labels'):
+    for key in ('grouped_directions', 'quantity_labels', 'daily_zone_shifts'):
         if key in baseline:
             plan[key] = deepcopy(baseline[key])
     original_positions = {p['id']: p for d in baseline.get('directions', []) for p in d['positions']}
@@ -201,6 +201,29 @@ def import_plan(operator, group, plan, content, name, **link_values):
         repair_direction_import(operator, group)
         link = dc.event_sheet_links_qs().get(event_group=group)
     source_hash = hashlib.sha256(content).hexdigest()
+    if link and link.source_hash == source_hash and plan.get('daily_zone_shifts') and not link.baseline.get('daily_zone_shifts'):
+        # Повторная загрузка того же исходника исправляет прежнее дробление смен,
+        # сохраняя позиции и первую смену дня. Данные с заявками не объединяем.
+        positions = dc.sheet_positions_qs().filter(event__event_group=group)
+        if positions.filter(event__applications__isnull=False).exists() or positions.filter(event__shifts__participations__isnull=False).exists():
+            raise ValidationError('У прежних смен есть заявки или явка. Автоматическое объединение остановлено, данные сохранены.')
+        if fingerprint(current_plan(group)) != fingerprint(link.baseline):
+            raise ValidationError('После импорта позиции изменены в системе. Автоматическое объединение остановлено, данные сохранены.')
+        previous = {p['row']: (d, p) for d in link.baseline['directions'] for p in d['positions']}
+        plan = deepcopy(plan)
+        for direction in plan['directions']:
+            position = direction['positions'][0]
+            if position['row'] not in previous:
+                raise ValidationError('Не удалось сопоставить блоки исходного файла; данные сохранены.')
+            old_direction, old_position = previous[position['row']]
+            direction['id'], position['id'] = old_direction['id'], old_position['id']
+            old_days = {day['date']: day for day in old_position['days']}
+            for day in position['days']:
+                old_shifts = old_days.get(day['date'], {}).get('shifts', [])
+                if day['shifts'] and old_shifts:
+                    day['shifts'][0]['id'] = old_shifts[0]['id']
+        _apply_plan(group, plan)
+        return dc.save_event_sheet_link(group, baseline=plan, warnings=plan['warnings'], synced_at=timezone.now(), **link_values)
     if link and link.source_hash == source_hash and not link_values:
         return link
     if link and link.baseline:

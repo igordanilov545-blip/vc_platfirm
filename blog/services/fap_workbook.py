@@ -16,7 +16,7 @@ from django.core.exceptions import ValidationError
 from openpyxl import Workbook, load_workbook
 from openpyxl.comments import Comment
 from openpyxl.cell.cell import MergedCell
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import get_column_letter, range_boundaries
 from openpyxl.utils.datetime import from_excel, CALENDAR_WINDOWS_1900
 
 
@@ -325,6 +325,78 @@ def _header_layout(sheet, value, epoch):
     return dates, starts, widths
 
 
+def _zone_total(sheet, values, row, col, seen=frozenset()):
+    """Итоговая ячейка, включая простой SUM без сохранённого Excel-кеша."""
+    cell = sheet.cell(row, col)
+    if cell.coordinate in seen or len(seen) > 30:
+        return None
+    cached = values.cell(row, col).value
+    if cached is not None:
+        try:
+            number = float(cached)
+            return int(number) if number >= 0 and number.is_integer() else None
+        except (ValueError, TypeError):
+            return None
+    expression = str(cell.value).upper().replace('$', '').replace(' ', '')
+    formula = re.fullmatch(r'=SUM\(([A-Z]+\d+):([A-Z]+\d+)\)', expression)
+    if formula:
+        ranges = [f'{formula[1]}:{formula[2]}']
+    elif re.fullmatch(r'=[A-Z]+\d+(?:\+[A-Z]+\d+)+', expression):
+        ranges = expression[1:].split('+')
+    else:
+        return None
+    total = 0
+    for selected in ranges:
+        left, top, right, bottom = range_boundaries(selected)
+        if (right - left + 1) * (bottom - top + 1) > 10000:
+            return None
+        for r in range(top, bottom + 1):
+            for c in range(left, right + 1):
+                if sheet.cell(r, c).value is None:
+                    continue
+                number = _zone_total(sheet, values, r, c, seen | {cell.coordinate})
+                if number is None:
+                    return None
+                total += number
+    return total
+
+
+def _daily_zone_plan(plan):
+    """Одна зона = позиция; один день = смена; люди только из итоговой строки."""
+    original_rows = sum(len(d['positions']) for d in plan['directions'])
+    for direction in plan['directions']:
+        rows = direction['positions']
+        totals = direction.pop('_totals', [None] * len(plan['dates']))
+        if not direction.pop('_has_total', False):
+            raise ValidationError(f'У позиции «{direction["name"]}» отсутствует строка «ИТОГО В ЗОНЕ».')
+        for i, day in enumerate(plan['dates']):
+            checks = [interval for row in rows for interval in _intervals(
+                re.sub(r'(?<=\d);(?=\d{2})', ':', row['days'][i]['checkin_out'] or ''), day, plan['warnings'])]
+            count = totals[i]
+            shifts = []
+            if checks and count is not None:
+                start, end = min(s['start'] for s in checks), max(s['end'] for s in checks)
+                known = [source for row in rows for source in row['days'][i].get('_source_ids', [])]
+                source_id = (known[0] if isinstance(known[0], str) else known[0]['id']) if known else new_id()
+                shifts = [{'id': source_id, 'label': 'A', 'start': start, 'end': end, 'count': count, 'checkin': start, 'checkout': end}]
+                text = f'{datetime.fromisoformat(start):%H:%M}-{datetime.fromisoformat(end):%H:%M}'
+            else:
+                text = None
+                if count:
+                    plan['warnings'].append(f'«{direction["name"]}», {day}: в итоге {count} человек, но нет check-in/out; заполните время для создания смены.')
+                elif checks and count is None:
+                    plan['warnings'].append(f'«{direction["name"]}», {day}: есть check-in/out, но итоговое количество не заполнено; смена не создана.')
+            rows[0]['days'][i] = {'date': day, 'work': text, 'checkin_out': text,
+                'quantities': [{'label': '', 'count': count}, {'label': 'A', 'count': count if shifts else None}, {'label': 'B', 'count': None}], 'shifts': shifts}
+        for field in ('team_leaders', 'responsibles'):
+            direction[field] += [name for row in rows[1:] for name in row[field]]
+        direction['positions'] = [rows[0]]
+    result = group_directions(plan)
+    result['input_rows'] = original_rows
+    result['daily_zone_shifts'] = True
+    return result
+
+
 def read_xlsx(content):
     """Значения merged-ячеек наследуются логически; другие вкладки не используются."""
     try:
@@ -356,6 +428,12 @@ def read_xlsx(content):
         if normalized_name(value(row, 2)).startswith('итоги'):
             break
         if normalized_name(name).startswith('итого'):
+            if direction is not None:
+                direction['_totals'] = [_zone_total(sheet, values, row, col) for col in starts]
+                for col, count in zip(starts, direction['_totals']):
+                    if sheet.cell(row, col).value is not None and count is None:
+                        raise ValidationError(f'Не распознано количество в «ИТОГО В ЗОНЕ», ячейка {get_column_letter(col)}{row}. Укажите целое неотрицательное число или пересчитайте формулу в Excel.')
+                direction['_has_total'] = True
             direction = None
             continue
         if not _text(value(row, 2)) or not name and not any(value(row, c) is not None for c in range(6, sheet.max_column + 1)):
@@ -377,39 +455,16 @@ def read_xlsx(content):
             if key not in direction['_inherited']:
                 position[key] = _names(value(row, c))
         for i, day in enumerate(dates):
-            quantities = []
-            for offset in range(widths[i]):
-                cell = sheet.cell(row, starts[i] + offset)
-                # Горизонтальный merge количества означает одно общее число.
-                raw = None if isinstance(cell, MergedCell) else value(row, starts[i] + offset)
-                count = None
-                if raw is not None and raw != '':
-                    try:
-                        number = float(raw)
-                        if not number.is_integer() or number < 0:
-                            raise ValueError
-                        count = int(number)
-                    except (ValueError, TypeError):
-                        plan['warnings'].append(f'Строка {row}, {day}: количество «{raw}» не распознано.')
-                label = '' if offset == 0 else _text(value(2, starts[i] + offset)) or chr(64 + offset)
-                quantity = {'label': label, 'count': count}
-                if raw not in (None, '') and count is None:
-                    quantity['raw'] = str(raw)
-                quantities.append(quantity)
-            split_counts = [q['count'] for q in quantities[1:] if q['count'] is not None]
-            if split_counts and quantities[0]['count'] is not None and sum(split_counts) != quantities[0]['count']:
-                plan['warnings'].append(f'Строка {row}, {day}: общий итог не совпадает с подсменами; для расчёта используются подсмены, исходные числа сохранены.')
-            work, checks = value(row, 6 + i), value(row, 6 + len(dates) + i)
-            item = {'date': day, 'work': str(work) if work is not None else None,
-                    'checkin_out': str(checks) if checks is not None else None, 'quantities': quantities}
-            item['shifts'] = day_shifts(day, item['work'], item['checkin_out'], quantities, plan['warnings'], metadata.get('days', {}).get(day))
+            checks = value(row, 6 + len(dates) + i)
+            item = {'date': day, 'checkin_out': str(checks) if checks is not None else None,
+                    '_source_ids': metadata.get('days', {}).get(day, [])}
             position['days'].append(item)
         direction['positions'].append(position)
     if not plan['directions']:
         raise ValidationError('На вкладке «Смены» не найдены направления и позиции.')
     for direction in plan['directions']:
         direction.pop('_inherited', None)
-    return group_directions(plan)
+    return _daily_zone_plan(plan)
 
 
 def _copy_style(source, target):

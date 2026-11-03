@@ -25,6 +25,12 @@ WhiteNoise (`ManifestStaticFilesStorage` — **после добавления �
 к позиции; переименовывать их и менять логику при работе с верхним уровнем не нужно.
 Подробности и сводные показатели — в начале `documentation/db.md`.
 
+Загрузка легаси: `services/legacy_workbook.py` (чистый парсер «База»),
+`services/legacy_import.py` (предпросмотр/атомарная запись), `data_controller/legacy_import.py`.
+VOLUNTEER_ID игнорируется, существующие анкеты не обновляются. У легаси-смен без
+времени границы равны, часы 0; `EventShift.time_unknown` скрывает ложное 00:00.
+Комментарии source=legacy_* видны сотрудникам только о других людях.
+
 QR/явка: `blog/services/qr_attendance.py`, доступ к таблицам — через
 `data_controller/qr_attendance.py`. Одобрение создаёт `Participation.status='pending'`
 без часов; фактические вход/выход — в `ShiftAttendance`, часы и агрегаты дробные.

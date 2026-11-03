@@ -25,12 +25,7 @@ STATUS_LABELS = {'new': 'Новая заявка', 'approved': 'Одобрена
 
 def _profile(source, application, today):
     birthday = getattr(source, 'birthday', None)
-    vk = (getattr(source, 'VK_username', '') or '').strip()
-    if vk and not vk.lower().startswith(('http://', 'https://')):
-        vk = vk.lstrip('@/')
-        if vk.lower().startswith(('vk.com/', 'www.vk.com/')):
-            vk = vk.split('/', 1)[1]
-        vk = 'https://vk.com/' + vk
+    vk = getattr(source, 'vk_profile_url', '')
 
     def value(field):
         return getattr(source, field, '') or getattr(application, field, '') or ''
@@ -38,7 +33,7 @@ def _profile(source, application, today):
     return [value('first_name'), value('last_name'),
             _age_on(birthday, today) if birthday and birthday <= today else None,
             birthday, getattr(source, 'email', '') or '', value('phone'),
-            value('telegram_username'), vk, getattr(source, 'instagram_url', '') or '',
+            value('telegram_username'), vk, getattr(source, 'instagram_profile_url', '') or '',
             getattr(source, 'preferred_contacts_display', ''), getattr(source, 'tshirt_size', '')]
 
 
@@ -82,7 +77,7 @@ def build_roster_workbook(operator, *, group=None, position=None):
         title = group.title
     else:
         raise ValueError('Нужно указать мероприятие или позицию.')
-    shifts = list(dc.event_shifts_qs().filter(event__in=positions).select_related('event').order_by('start_time', 'pk'))
+    shifts = list(dc.event_shifts_qs().filter(event__in=positions).select_related('event', 'legacy_source').order_by('start_time', 'pk'))
     shift_by_id = {shift.pk: shift for shift in shifts}
     days = sorted({timezone.localtime(shift.start_time).date() for shift in shifts})
     today = timezone.localdate()
@@ -126,7 +121,11 @@ def build_roster_workbook(operator, *, group=None, position=None):
             if item['attendance']:
                 label += ' · ' + {'pending': 'Не отмечен', 'attended': 'Был', 'absent_excused': 'Не был (уваж.)', 'absent_unexcused': 'Не был'}.get(item['attendance'], item['attendance'])
             end_label = end.strftime('%H:%M') if end.date() == start.date() else end.strftime('%d.%m %H:%M')
-            daily[start.date()].append(f'{shift.event.title} · {start:%H:%M}–{end_label} · {label}')
+            interval = 'время не указано' if shift.time_unknown else f'{start:%H:%M}–{end_label}'
+            legacy = getattr(shift, 'legacy_source', None)
+            if legacy:
+                interval += ' · ' + ' / '.join(legacy.source_header.splitlines())
+            daily[start.date()].append(f'{shift.event.title} · {interval} · {label}')
         _append(ws, row['profile'] + [len(row['assignments'])] + ['\n'.join(daily[day]) or None for day in days])
     _format(ws, people=True)
 

@@ -5,7 +5,8 @@
 urls.py и прочий код не меняются. Карта «домен → что внутри» — в README.md.
 """
 from ._common import healthz  # noqa: F401
-from .role_invitations import role_invitation_list, role_invitation_create, role_invitation_accept, role_invitation_revoke  # noqa: F401
+from .legacy_import import legacy_base_upload  # noqa: F401
+from .role_invitations import role_invitation_list, role_invitation_detail, role_invitation_create, role_invitation_accept, role_invitation_revoke  # noqa: F401
 from .event_sheets import (  # noqa: F401
     event_sheet, event_sheet_link, event_sheet_sync, event_sheet_export,
     google_sheets_settings, sheet_team_leader_bind,

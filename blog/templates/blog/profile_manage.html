@@ -77,7 +77,7 @@
     <p>ФИО: {{ target.last_name }} {{ target.first_name }}{% if target.middle_name %} {{ target.middle_name }}{% endif %}</p>
     <p>Телефон: {{ target.phone|default:"—" }}</p>
     <p>Email: {{ target.email|default:"—" }}</p>
-    <p>VK: {{ target.VK_username|default:"—" }}</p>
+    <p>VK: {% if target.vk_profile_url %}<a href="{{ target.vk_profile_url }}" target="_blank" rel="noopener noreferrer">{{ target.vk_profile_url }}</a>{% else %}—{% endif %}</p>
     <p>Дата рождения: {{ target.birthday|default:"—" }}</p>
     <p>Пол: {{ target.get_gender_display|default:"—" }}</p>
     {% if is_manager %}
@@ -100,11 +100,11 @@
     <h3>🔒 Комментарии к волонтёру</h3>
     <p style="opacity:0.7; font-size:0.85rem;">Сам волонтёр эти комментарии не видит.</p>
     {% for c in comments %}
-        <p>{{ c.created_at }} — {{ c.author.full_name }}{% if c.event %} ({{ c.event.title }}){% endif %}: {{ c.text }}</p>
+        <p>{% if c.source_label %}<strong>{{ c.source_label }}</strong><br>{% endif %}{{ c.created_at }} — {{ c.author.full_name }}{% if c.event %} ({{ c.event.title }}){% endif %}: {{ c.text }}</p>
     {% empty %}
         <p>Комментариев нет.</p>
     {% endfor %}
-    <a href="{% url 'profile_comment_add' target.id %}" class="btn secondary" data-modal data-modal-title="Комментарий: {{ target.full_name }}" data-tour="profile-comment" style="margin-top:1rem;">＋ Добавить комментарий</a>
+    {% if comment_form %}<a href="{% url 'profile_comment_add' target.id %}" class="btn secondary" data-modal data-modal-title="Комментарий: {{ target.full_name }}" data-tour="profile-comment" style="margin-top:1rem;">＋ Добавить комментарий</a>{% endif %}
 </div>
 {% endif %}
 

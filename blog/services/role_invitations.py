@@ -5,6 +5,7 @@ import hashlib
 import secrets
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.http import Http404
 from django.utils import timezone
 from data_base import data_controller as dc
 from .roles import has_manager_access, assign_role
@@ -72,6 +73,15 @@ def invitation_rows(operator):
     for row in rows:
         row.active = row.revoked_at is None and row.expires_at > now
     return rows
+
+
+def invitation_detail(operator, invitation_id):
+    _manager(operator)
+    invitation = dc.role_invitations_qs().select_related('created_by').filter(pk=invitation_id).first()
+    if not invitation:
+        raise Http404('Приглашение не найдено.')
+    uses = list(dc.role_invitation_uses_qs().filter(invitation=invitation).select_related('user').order_by('-used_at', '-pk'))
+    return {'invitation': invitation, 'uses': uses}
 
 
 def revoke_invitation(operator, invitation_id):

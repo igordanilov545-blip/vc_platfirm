@@ -42,7 +42,7 @@ def public_event_detail(request, token):
         dc.events_qs().select_related('location', 'organization'),
         public_token=token, published_at__isnull=False,
     )
-    shifts = list(event.shifts.select_related('location').order_by('day'))
+    shifts = list(event.shifts.select_related('location', 'legacy_source').order_by('day'))
     return render(request, 'blog/public_event_detail.html', {
         'event': event,
         'shifts': shifts,
@@ -244,7 +244,7 @@ def event_detail(request, event_id):
     from data_base import data_controller as dc
     event = get_object_or_404(dc.events_qs().select_related('location', 'organization', 'organizer', 'event_group'), pk=event_id)
     event.close_recruit_if_passed()
-    shifts = list(event.shifts.select_related('location').order_by('day'))
+    shifts = list(event.shifts.select_related('location', 'legacy_source').order_by('day'))
     # Пока мероприятие не началось — смены идут по возрастанию даты (ближайшая сверху).
     # Прошедшие смены уходят в конец списка, а не сортируются по дате среди актуальных —
     # так самая близкая предстоящая/идущая смена всегда наверху.

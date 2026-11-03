@@ -121,6 +121,8 @@ def profile_detail(request, user_id):
     has_extended = has_extended_access_to_profile(request.user, target)
     # Комментарии волонтёр не видит никогда, даже о себе (access-control.md, правило 6).
     can_see_comments = is_mgr or (is_team_leader(request.user) and has_extended and not is_owner)
+    from blog.services.profile_completion import profile_comments
+    visible_comments, legacy_comment_access = profile_comments(request.user, target, context_access=can_see_comments)
 
     from blog.services.experience import build_experience
     experience = build_experience(target)
@@ -135,7 +137,8 @@ def profile_detail(request, user_id):
         'is_owner': is_owner,
         'is_manager': is_mgr,
         'has_extended_access': has_extended,
-        'can_see_comments': can_see_comments,
+        'can_see_comments': can_see_comments or legacy_comment_access,
+        'comments': visible_comments,
         'experience': experience,
         'achievement_earned_count': achievement_earned_count,
         # Ссылка «Скопировать опыт» — публичная страница опыта по токену (раздел 4).
@@ -271,7 +274,6 @@ def profile_detail(request, user_id):
         context['churn_log'] = target.churn_log.select_related('actor', 'event').order_by('-created_at')
 
     if can_see_comments:
-        context['comments'] = target.received_comments.select_related('author', 'event').order_by('-created_at')
         if is_mgr:
             event_queryset = dc.events_qs()
         else:

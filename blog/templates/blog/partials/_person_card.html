@@ -12,7 +12,7 @@
 
     <!-- A. Профиль -->
     <table class="kv">
-        <tr><td class="k">Контакты</td><td>{{ user.phone|default:"—" }} · {{ user.email|default:"—" }} · {% if user.VK_username %}VK: {{ user.VK_username }}{% else %}—{% endif %}</td></tr>
+        <tr><td class="k">Контакты</td><td>{{ user.phone|default:"—" }} · {{ user.email|default:"—" }} · {% if user.vk_profile_url %}<a href="{{ user.vk_profile_url }}" target="_blank" rel="noopener noreferrer">VK: {{ user.vk_profile_url }}</a>{% else %}—{% endif %}</td></tr>
         <tr><td class="k">Дата регистрации</td><td>{{ user.created_at|date:"d.m.Y" }}</td></tr>
         <tr><td class="k">Последнее участие</td><td>{{ user.last_event_at|date:"d.m.Y"|default:"—" }}</td></tr>
         <tr><td class="k">Статус</td><td>{{ user.get_status_display }}</td></tr>

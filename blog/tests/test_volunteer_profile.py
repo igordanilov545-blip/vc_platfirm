@@ -7,7 +7,7 @@ from blog.models import User
 from . import factories as f
 
 
-TEXT_FIELDS = ('instagram_url', 'volunteer_experience', 'motivation', 'familiar_positions', 'performed_tasks')
+TEXT_FIELDS = ('volunteer_experience', 'motivation', 'familiar_positions', 'performed_tasks')
 
 
 class VolunteerProfileTests(TestCase):
@@ -26,6 +26,7 @@ class VolunteerProfileTests(TestCase):
         self.data = {'first_name': self.user.first_name, 'telegram_username': self.user.telegram_username,
                      'phone': self.user.phone, 'preferred_contact_methods': ['telegram', 'vk'],
                      'weekday_daytime_available': 'False', 'wants_team_lead': 'True', 'tshirt_size': 'XXXL',
+                     'instagram_url': 'https://www.instagram.com/volunteer/',
                      **{name: 'Ответ волонтёра' for name in TEXT_FIELDS}}
 
     def test_profile_fields_and_dropdown_choices(self):
@@ -44,6 +45,7 @@ class VolunteerProfileTests(TestCase):
         self.assertIs(self.user.weekday_daytime_available, False)
         self.assertIs(self.user.wants_team_lead, True)
         self.assertEqual(self.user.tshirt_size, 'XXXL')
+        self.assertEqual(self.user.instagram_url, 'volunteer')
         self.assertFalse(self.user.team_leader_roles.exists())
         for name in TEXT_FIELDS:
             self.assertEqual(getattr(self.user, name), 'Ответ волонтёра')

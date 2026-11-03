@@ -11,6 +11,13 @@ def role_invitation_list(request):
 
 
 @manager_required
+def role_invitation_detail(request, invitation_id):
+    return modal_form_response(request, 'blog/role_invitation_detail.html',
+                               invitations.invitation_detail(request.user, invitation_id),
+                               partial_template='blog/partials/_role_invitation_detail.html')
+
+
+@manager_required
 def role_invitation_create(request):
     form = RoleInvitationForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():

@@ -4,7 +4,7 @@
 {% block content %}
 <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;">
     <h1>Настройки</h1>
-    <a href="{% url 'role_invitation_list' %}" class="btn secondary">Ссылки приглашения</a>
+    <div class="event-toolbar"><a href="{% url 'role_invitation_list' %}" class="btn secondary">Ссылки приглашения</a><a href="{% url 'legacy_base_upload' %}" class="btn secondary">Загрузка базы</a></div>
     <button type="button" class="companion-launch" id="companion-launch" style="max-width:320px;">
         <img src="{% static 'blog/companion/goose_0.jpg' %}" alt="Компаньон">
         <span class="companion-launch-text">

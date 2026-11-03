@@ -115,6 +115,22 @@ class ProfileForm(forms.ModelForm):
         value = (self.cleaned_data.get('telegram_username') or '').strip()
         return value.lstrip('@').strip()
 
+    def clean_VK_username(self):
+        from blog.services.social_profiles import social_username
+        value = self.cleaned_data.get('VK_username')
+        handle = social_username(value, 'vk')
+        if value and not handle:
+            raise forms.ValidationError('Укажите имя пользователя ВК или ссылку на vk.com.')
+        return handle
+
+    def clean_instagram_url(self):
+        from blog.services.social_profiles import social_username
+        value = self.cleaned_data.get('instagram_url')
+        handle = social_username(value, 'instagram')
+        if value and not handle:
+            raise forms.ValidationError('Укажите имя пользователя Instagram или ссылку на instagram.com.')
+        return handle
+
     def clean_first_name(self):
         value = (self.cleaned_data.get('first_name') or '').strip()
         if not value:

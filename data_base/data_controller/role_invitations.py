@@ -8,6 +8,10 @@ def role_invitations_qs():
     return RoleInvitation.objects.all()
 
 
+def role_invitation_uses_qs():
+    return RoleInvitationUse.objects.all()
+
+
 def create_role_invitation(*, token_hash, role, created_by, created_at, expires_at):
     invitation = RoleInvitation.objects.create(token_hash=token_hash, role=role, created_by=created_by, created_at=created_at, expires_at=expires_at)
     logger.info('INSERT role_invitations: id=%s role=%s by=%s expires=%s', invitation.pk, role, actor(created_by), expires_at)

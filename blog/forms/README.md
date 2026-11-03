@@ -9,6 +9,7 @@
 | Домен | Файл | Формы |
 |---|---|---|
 | **Приглашения** | [`role_invitations.py`](role_invitations.py) | `RoleInvitationForm`: роль тим-лидера/менеджера и срок действия ссылки в часах |
+| **Загрузка базы** | [`legacy_import.py`](legacy_import.py) | `LegacyBaseUploadForm` (.xlsx) и `LegacyDatesForm`: колонки файла → общие date-picker; заполненные колонки без даты требуют уточнения |
 | **Вход / регистрация** | [`auth.py`](auth.py) | `LoginForm`, `RegisterForm` |
 | **Планы FaP / Google Таблицы** | [`event_sheets.py`](event_sheets.py) | `EventSheetImportForm`, `GoogleSheetsConnectionForm`, `SheetTeamLeaderBindingForm`; загрузка при создании — `EventGroupForm` в events.py |
 | **Доступ к сканеру QR** | [`qr_attendance.py`](qr_attendance.py) | `ScannerGrantForm` (пользователь + мероприятие), общий `_modal_form.html` |
@@ -26,6 +27,11 @@
 анкеты (20 полей); `form.completion` считает валидные ответы bound-формы либо
 сохранённые данные. Общий партиал `_profile_form_field.html` сохраняет чекбоксы,
 справку футболок, ошибки и поведение лимита текста во всех разделах.
+
+Соцсети нормализуются общим `services/social_profiles.py`: VK/Instagram сохраняются
+как username (поля `VK_username`/`instagram_url`), Telegram — без @. Полные ссылки
+возвращают свойства пользователя `vk_profile_url` и `instagram_profile_url`;
+старые сохранённые URL также поддерживаются. Импорт не меняет существующие анкеты.
 
 - Новая форма → в подходящий доменный файл; начни файл с `from ._common import *`
   (даёт `forms`, модели, утилиты времени).

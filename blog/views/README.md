@@ -8,7 +8,8 @@
 
 | Работаешь с… | Файл | Что внутри |
 |---|---|---|
-| **Приглашениями с выдачей роли** | [`role_invitations.py`](role_invitations.py) | Менеджер создаёт/отзывает ссылки; `/join/` возвращает через вход и выдаёт роль; срок и ACL — services/role_invitations.py |
+| **Приглашениями с выдачей роли** | [`role_invitations.py`](role_invitations.py) | Менеджер создаёт/отзывает ссылки; `role_invitation_detail` открывает пользователей/время использования в общей модалке; `/join/` выдаёт роль; срок и ACL — services/role_invitations.py |
+| **Загрузкой старой базы** | [`legacy_import.py`](legacy_import.py) | `legacy_base_upload`: файл → read-only предпросмотр с датами → подтверждение; план в серверной сессии, результат и удаление плана после импорта; запись и ACL в services/legacy_import.py |
 | **Планом FaP и Google Таблицами** | [`event_sheets.py`](event_sheets.py) | Страница плана, загрузка/привязка, явный обмен, XLSX, подключение Google и привязка ТЛ; бизнес-логика — services/event_sheets.py |
 | **Вход / регистрация / Telegram-вход / Mini App** | [`auth.py`](auth.py) | `login_view`, `register_view`, `logout_view`, `telegram_login_callback`, `tg_link_login`, `webapp_entry`, `webapp_auth`, `verify_telegram_start` |
 | **Мероприятиями** (карточка, CRUD, публикация, рассылка, закрытие, смены) | [`events.py`](events.py) | `event_list`, `event_detail`, `event_create/edit/delete`, `event_publish`, `event_broadcast`, `event_close/reopen`, `event_shift_add/edit/delete`, `shift_toggle_*`, `event_feedback_add`, `event_comment_add`, публичные витрины |

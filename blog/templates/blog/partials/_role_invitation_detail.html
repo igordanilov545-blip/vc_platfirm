@@ -1,0 +1,9 @@
+<h2>Приглашение #{{ invitation.pk }} · {{ invitation.get_role_display }}</h2>
+<p class="event-dash-muted">Получили роль по этой ссылке: {{ uses|length }}. Время по Москве (МСК).</p>
+<div class="table-scroll"><table class="responsive-table" data-sortable>
+    <thead><tr><th>Пользователь</th><th>Когда воспользовался, МСК</th></tr></thead>
+    <tbody>{% for use in uses %}<tr>
+        <td data-label="Пользователь"><a href="{% url 'profile_detail' use.user_id %}">{{ use.user.full_name|default:'Профиль' }} #{{ use.user_id }}</a></td>
+        <td data-label="Когда воспользовался">{{ use.used_at|date:'d.m.Y H:i:s' }}</td>
+    </tr>{% empty %}<tr><td colspan="2">Этой ссылкой пока никто не воспользовался.</td></tr>{% endfor %}</tbody>
+</table></div>

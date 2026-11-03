@@ -176,6 +176,16 @@ class User(AbstractBaseUser):
         return joined or self.telegram_username or self.telegram_id
 
     @property
+    def vk_profile_url(self):
+        from blog.services.social_profiles import social_url
+        return social_url(self.VK_username, 'vk')
+
+    @property
+    def instagram_profile_url(self):
+        from blog.services.social_profiles import social_url
+        return social_url(self.instagram_url, 'instagram')
+
+    @property
     def is_active(self):
         return self.status != 'blacklisted'
 
@@ -745,6 +755,10 @@ class EventShift(models.Model):
     def __str__(self):
         return f"{self.event.title} - {self.day}"
 
+    @property
+    def time_unknown(self):
+        return self.start_time == self.end_time
+
     def compute_status(self):
         """Статус смены по датам (независимо от общего статуса мероприятия):
         idёт/предстоит/прошла — используется для подсветки строк в таблицах смен."""
@@ -1205,12 +1219,39 @@ class UserComment(models.Model):
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='authored_comments')
     event = models.ForeignKey(Event, on_delete=models.SET_NULL, null=True, blank=True, related_name='user_comments')
     text = models.TextField()
+    source = models.CharField(max_length=32, blank=True, default='', db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def source_label(self):
+        return {'legacy_coordinator': 'Комментарий координатора (старая база)',
+                'legacy_team_lead': 'Комментарий тим-лидера (старая база)'}.get(self.source, '')
 
     class Meta:
         db_table = 'user_comments'
         verbose_name = 'Комментарий к волонтёру'
         verbose_name_plural = 'Комментарии к волонтёрам'
+
+
+class LegacyImportIdentity(models.Model):
+    """Отпечаток контактов/ФИО для повторного импорта; VOLUNTEER_ID не используется."""
+    key = models.CharField(max_length=64, unique=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='legacy_identities')
+    reported_age = models.PositiveSmallIntegerField(null=True, blank=True)
+    imported_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'legacy_import_identities'
+
+
+class LegacyImportShift(models.Model):
+    """Источник исторической смены; неизвестное время — равные границы, ноль часов."""
+    key = models.CharField(max_length=64, unique=True)
+    shift = models.OneToOneField(EventShift, on_delete=models.CASCADE, related_name='legacy_source')
+    source_header = models.TextField()
+
+    class Meta:
+        db_table = 'legacy_import_shifts'
 
 
 class Incident(models.Model):

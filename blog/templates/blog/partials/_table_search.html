@@ -1,14 +1,24 @@
 {% comment %}
 Переиспользуемое поле поиска по таблице (agent-workflow.md §4). Фильтрацию выполняет
-общий компонент base.html::initTableFilter — прячет строки tbody tr[data-search], у
-которых data-search не содержит запрос. Инлайновый <script> на странице НЕ нужен.
+общий компонент tables.js::initTableFilter: все слова в любом порядке, без регистра,
+ё/е, @ и лишних пробелов. Для постраничных таблиц сначала получает полный список.
+Показывает отсутствие совпадений. Инлайновый <script> на странице НЕ нужен.
 
 Ожидает переменные:
   search_target   — CSS-селектор таблицы, напр. "#users-table" (обязательно)
   search_placeholder — плейсхолдер поля (необязательно)
+  search_roles — добавить фильтр ролей по data-role строки (необязательно)
 Строки таблицы должны нести атрибут data-search="<текст для поиска>".
 {% endcomment %}
-<div class="card">
+<div class="card table-search-bar">
     <input type="search" data-table-filter="{{ search_target }}"
-           placeholder="{{ search_placeholder|default:'Поиск…' }}" style="margin:0;">
+           placeholder="{{ search_placeholder|default:'Поиск…' }}" aria-label="{{ search_placeholder|default:'Поиск по таблице' }}">
+    {% if search_roles %}
+    <select data-table-role-filter="{{ search_target }}" aria-label="Фильтр по роли">
+        <option value="">Все роли</option>
+        <option value="volunteer">Волонтёры</option>
+        <option value="team_lead">Тим-лидеры</option>
+        <option value="manager">Менеджеры</option>
+    </select>
+    {% endif %}
 </div>

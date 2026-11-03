@@ -1,27 +1,16 @@
-<tbody data-rows data-next-page="{% if page_obj.has_next %}{{ page_obj.next_page_number }}{% endif %}">
+<tbody data-rows data-total="{{ page_obj.paginator.count }}" data-next-page="{% if page_obj.has_next %}{{ page_obj.next_page_number }}{% endif %}">
 {% for u in page_obj %}
-    {% comment %}Роль/статус кодируем «обводкой» вокруг имени (без отдельных колонок
-    «Роль»/«Статус»): блэклист (чёрный) главнее роли; иначе менеджер (фиолетовый) →
-    тим-лидер (синий) → волонтёр (серый). data-sort-value для сортировки по «важности».{% endcomment %}
-    <tr data-href="{% url 'profile_detail' u.id %}" data-search="{{ u.full_name }} {{ u.telegram_username }}">
-        <td data-label="Имя">
-            {% if u.status == 'blacklisted' %}
-                <span class="role-badge role-blacklist" title="В блэклисте">{{ u.full_name }}</span>
-            {% elif u.id in manager_ids %}
-                <span class="role-badge role-manager" title="Менеджер">{{ u.full_name }}</span>
-            {% elif u.id in team_leader_ids %}
-                <span class="role-badge role-team-lead" title="Тим-лидер">{{ u.full_name }}</span>
-            {% else %}
-                <span class="role-badge role-volunteer" title="Волонтёр">{{ u.full_name }}</span>
-            {% endif %}
+    <tr data-href="{% url 'profile_detail' u.id %}" data-role="{{ u.table_role }}" data-search="{{ u.last_name|default:'' }} {{ u.first_name|default:'' }} {{ u.middle_name|default:'' }} {{ u.telegram_username|default:'' }}">
+        <td data-label="Фамилия" data-sort-value="{{ u.last_name|default:'' }}">
+            <a href="{% url 'profile_detail' u.id %}" class="role-badge {% if u.status == 'blacklisted' %}role-blacklist{% elif u.table_role == 'manager' %}role-manager{% elif u.table_role == 'team_lead' %}role-team-lead{% else %}role-volunteer{% endif %}">{{ u.last_name|default:"—" }}</a>
         </td>
-        {% comment %}Отдельная колонка «Роль»: блэклист главнее роли, дальше менеджер →
-        тим-лидер → волонтёр. data-sort-value кодирует «важность» для сортировки.{% endcomment %}
-        <td data-label="Роль" data-sort-value="{% if u.status == 'blacklisted' %}3{% elif u.id in manager_ids %}2{% elif u.id in team_leader_ids %}1{% else %}0{% endif %}">
-            {% if u.status == 'blacklisted' %}<span class="pill danger"><span class="dot"></span>Чёрный список</span>
-            {% elif u.id in manager_ids %}<span class="pill info"><span class="dot"></span>Менеджер</span>
-            {% elif u.id in team_leader_ids %}<span class="pill warning"><span class="dot"></span>Тим-лидер</span>
+        <td data-label="Имя" data-sort-value="{{ u.first_name|default:'' }}">{{ u.first_name|default:"—" }}</td>
+        <td data-label="Возраст" data-sort-value="{{ u.table_age|default_if_none:'' }}">{{ u.table_age|default_if_none:"—" }}</td>
+        <td data-label="Роль" data-sort-value="{% if u.table_role == 'manager' %}2{% elif u.table_role == 'team_lead' %}1{% else %}0{% endif %}">
+            {% if u.table_role == 'manager' %}<span class="pill info"><span class="dot"></span>Менеджер</span>
+            {% elif u.table_role == 'team_lead' %}<span class="pill warning"><span class="dot"></span>Тим-лидер</span>
             {% else %}<span class="pill neutral"><span class="dot"></span>Волонтёр</span>{% endif %}
+            {% if u.status == 'blacklisted' %}<span class="pill danger">Чёрный список</span>{% endif %}
         </td>
         <td data-label="Telegram" data-sort-value="{{ u.telegram_username }}">{{ u.telegram_username|default:"—" }}</td>
         <td data-label="Посл. мероприятие" class="mono" data-sort-value="{{ u.last_attended_day|date:'Y-m-d'|default:'' }}">{{ u.last_attended_day|date:"d.m.y"|default:"—" }}</td>

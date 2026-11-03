@@ -116,38 +116,26 @@ def users_picker_data(request):
 
 @manager_required
 def user_list(request):
-    from django.db.models import OuterRef, Subquery
-    from data_base import data_controller as dc
+    from django.http import HttpResponseNotModified, HttpResponseForbidden
+    from django.utils.cache import patch_cache_control, patch_vary_headers
+    from django.utils.http import parse_etags
+    from blog.services.user_table import user_table_context
 
-    # Дата последней заявки (любой статус) и дата последнего мероприятия, на котором
-    # человек реально был и получил часы (Participation.status='attended', hours>0) —
-    # считаем через Subquery по каждому пользователю страницы, а не в Python-цикле,
-    # чтобы не плодить N+1 при infinite-scroll подгрузке новых порций.
-    last_application_sq = (
-        dc.applications_qs().filter(user=OuterRef('pk'))
-        .order_by('-submitted_at', '-created_at')
-        .values('submitted_at')[:1]
-    )
-    last_event_sq = (
-        dc.participations_qs().filter(user=OuterRef('pk'), status='attended', hours__gt=0)
-        .order_by('-event_day__day')
-        .values('event_day__day')[:1]
-    )
-    users = dc.users_qs().order_by('-created_at').annotate(
-        last_application_at=Subquery(last_application_sq),
-        last_attended_day=Subquery(last_event_sq),
-    )
-    paginator = Paginator(users, 40)
-    page = paginator.get_page(request.GET.get('page'))
-
-    manager_ids = set(dc.managers_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
-    team_leader_ids = set(dc.team_leaders_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
-
-    context = {
-        'page_obj': page,
-        'manager_ids': manager_ids,
-        'team_leader_ids': team_leader_ids,
-    }
-    if is_ajax(request):
-        return render(request, 'blog/partials/_user_list_rows.html', context)
-    return render(request, 'blog/user_list.html', context)
+    owner = request.GET.get('table_owner')
+    if owner and owner != str(request.user.pk):
+        return HttpResponseForbidden()
+    full = request.GET.get('all') == '1'
+    context = user_table_context(full=full, page_number=request.GET.get('page'), owner_id=request.user.pk)
+    etag = context['table_etag']
+    requested_tags = [tag.removeprefix('W/') for tag in parse_etags(request.headers.get('If-None-Match', ''))]
+    if full and etag and (etag in requested_tags or '*' in requested_tags):
+        response = HttpResponseNotModified()
+    else:
+        template = 'blog/partials/_user_list_rows.html' if is_ajax(request) else 'blog/user_list.html'
+        response = render(request, template, context)
+    if full:
+        response['ETag'] = etag
+        # Browser keeps the complete table, revalidating permissions/data on every visit.
+        patch_cache_control(response, private=True, no_cache=True)
+    patch_vary_headers(response, ['Cookie', 'X-Requested-With'])
+    return response

@@ -19,7 +19,7 @@
             var nextOrigIndex = 0;
             function getRows() {
                 var rows = Array.prototype.filter.call(tbody.querySelectorAll('tr'), function (tr) {
-                    return tr.querySelector('td');
+                    return tr.querySelector('td') && !tr.hasAttribute('data-table-empty') && !tr.querySelector('td[colspan]');
                 });
                 // Строки, подгруженные позже (infinite scroll), ещё не имеют origIndex —
                 // присваиваем по мере появления, чтобы "обычный" режим сортировки не
@@ -42,15 +42,8 @@
                 });
             }
 
-            headers.forEach(function (th, index) {
-                th.classList.add('sortable-th');
-                th.addEventListener('click', function () {
-                    var current = th.getAttribute('data-sort-dir');
-                    var next = current === 'asc' ? 'desc' : (current === 'desc' ? null : 'asc');
-                    clearIndicators(th);
-                    if (next) th.setAttribute('data-sort-dir', next);
-                    else th.removeAttribute('data-sort-dir');
-
+            function sortRows(th, next) {
+                    var index = th.cellIndex;
                     var rows = getRows();
                     if (!next) {
                         // Обычный режим — восстановить исходный порядок с сервера.
@@ -74,6 +67,20 @@
                         });
                     }
                     rows.forEach(function (r) { tbody.appendChild(r); });
+            }
+            table._applyTableSort = function () {
+                var active = headers.find(function (th) { return th.hasAttribute('data-sort-dir'); });
+                if (active) sortRows(active, active.getAttribute('data-sort-dir'));
+            };
+            headers.forEach(function (th) {
+                th.classList.add('sortable-th');
+                th.addEventListener('click', function () {
+                    var current = th.getAttribute('data-sort-dir');
+                    var next = current === 'asc' ? 'desc' : (current === 'desc' ? null : 'asc');
+                    clearIndicators(th);
+                    if (next) th.setAttribute('data-sort-dir', next);
+                    else th.removeAttribute('data-sort-dir');
+                    sortRows(th, next);
                 });
             });
 
@@ -84,7 +91,7 @@
             var defaultTh = headers.find(function (h) { return h.hasAttribute('data-sort-default'); });
             if (defaultTh) {
                 defaultTh.setAttribute('data-sort-dir', defaultTh.getAttribute('data-sort-default'));
-                defaultTh.dispatchEvent(new Event('click'));
+                table._applyTableSort();
             }
         });
     }
@@ -381,13 +388,9 @@
     initReportTableTools(document);
 
     // ======================================================================
-    // Поиск/фильтрация строк таблицы — единый компонент вместо инлайновых
-    // скриптов на каждой странице-списке. Разметка: поле
-    //   <input type="search" data-table-filter="#users-table">
-    // прячет строки, у которых текст в data-search не содержит запрос. Фильтрация
-    // запускается через debounce (по умолчанию 1500 мс, как принято в проекте;
-    // переопределяется data-filter-debounce). Работает и по строкам, подгруженным
-    // позже infinite-scroll'ом (ищем строки на каждый ввод заново).
+    // Единый поиск: все слова в любом порядке, без регистра, ё/е и лишних пробелов.
+    // Постраничная таблица сначала загружается целиком; каждый ответ повторно
+    // фильтруется по АКТУАЛЬНОМУ запросу, включая смену запроса во время загрузки.
     // ======================================================================
     function initTableFilter(root) {
         root.querySelectorAll('[data-table-filter]').forEach(function (input) {
@@ -399,37 +402,64 @@
             // Списки позиций совмещают поиск с существующим тумблером прошедших смен.
             var passedSelector = input.getAttribute('data-table-hide-passed');
             var hidePassed = passedSelector ? document.querySelector(passedSelector) : null;
+            var roleFilter = Array.from(document.querySelectorAll('[data-table-role-filter]')).find(function (select) {
+                return select.getAttribute('data-table-role-filter') === input.getAttribute('data-table-filter');
+            });
             var delay = parseInt(input.getAttribute('data-filter-debounce'), 10);
-            if (isNaN(delay)) delay = 1500;
+            if (isNaN(delay)) delay = 200;
             var debounceTimer = null;
+            var emptyRow = document.createElement('tr');
+            emptyRow.setAttribute('data-table-empty', '');
+            var emptyCell = document.createElement('td');
+            emptyCell.setAttribute('role', 'status');
+            emptyRow.appendChild(emptyCell);
+            table.querySelector('tbody').appendChild(emptyRow);
+
+            function normalize(value) {
+                return (value || '').toLowerCase().replace(/ё/g, 'е').replace(/@/g, '').replace(/\s+/g, ' ').trim();
+            }
 
             function apply() {
-                var query = input.value.trim().toLowerCase();
+                var tokens = normalize(input.value).split(' ').filter(Boolean);
+                var role = roleFilter ? roleFilter.value : '';
+                var filtered = tokens.length || role || (hidePassed && hidePassed.checked);
+                var pager = table._tablePager;
+                if ((tokens.length || role) && pager && !pager.complete && !pager.failed) pager.ensureAll().catch(function () {});
+                var visible = 0;
                 table.querySelectorAll('tbody tr[data-search]').forEach(function (row) {
-                    var matchesSearch = !query || row.getAttribute('data-search').toLowerCase().indexOf(query) !== -1;
+                    var text = normalize(row.getAttribute('data-search'));
+                    var matchesSearch = tokens.every(function (token) { return text.indexOf(token) !== -1; });
                     var matchesPassed = !hidePassed || !hidePassed.checked || row.getAttribute('data-passed') !== '1';
-                    row.hidden = !(matchesSearch && matchesPassed);
+                    row.hidden = !(matchesSearch && matchesPassed && (!role || row.dataset.role === role));
+                    if (!row.hidden) visible++;
                 });
+                // Серверные сообщения «список пуст» не подменяют результат поиска.
+                table.querySelectorAll('tbody tr:not([data-search]):not([data-table-empty])').forEach(function (row) {
+                    row.hidden = !!filtered;
+                });
+                if (!emptyRow.isConnected) table.querySelector('tbody').appendChild(emptyRow);
+                emptyCell.colSpan = table.querySelectorAll('thead th').length || 1;
+                emptyCell.textContent = pager && !pager.complete && filtered
+                    ? (pager.failed ? 'Не удалось загрузить всю таблицу. Повторите загрузку.' : 'Поиск по всей таблице…')
+                    : 'Совпадений не найдено.';
+                emptyRow.hidden = visible > 0 || (!filtered && table.querySelector('tbody tr:not([data-table-empty])') !== null);
             }
             input.addEventListener('input', function () {
                 clearTimeout(debounceTimer);
                 debounceTimer = setTimeout(apply, delay);
             });
             if (hidePassed) hidePassed.addEventListener('change', apply);
+            if (roleFilter) roleFilter.addEventListener('change', apply);
+            table.addEventListener('table:rowschanged', apply);
             apply();
         });
     }
     initTableFilter(document);
 
     // ======================================================================
-    // Постепенная подгрузка списков вместо пролистывания по стрелочкам:
-    // таблица с data-infinite-scroll="/url/" содержит <tbody data-rows
-    // data-next-page="2"> (partial с сервера при первом рендере уже отдаёт номер
-    // следующей страницы). "Часовой" элемент вставляется сразу после таблицы —
-    // при его появлении в зоне видимости (IntersectionObserver) подгружается
-    // следующая страница через fetch(url?page=N) и новые <tr> переносятся в конец
-    // текущего <tbody>. Останавливается сам, когда сервер перестаёт присылать
-    // data-next-page (последняя страница).
+    // Постепенная/полная загрузка — один компонент. Полный ответ хранится в обычном
+    // приватном HTTP-кэше браузера с ETag. В localStorage — только выбор «всё»,
+    // отдельно для аккаунта и URL; персональные строки туда не копируются.
     // ======================================================================
     function initInfiniteScroll(root) {
         root.querySelectorAll('table[data-infinite-scroll]').forEach(function (table) {
@@ -437,39 +467,113 @@
             table.dataset.infiniteInit = '1';
 
             var baseUrl = table.getAttribute('data-infinite-scroll');
-            var loading = false;
+            var pageController = null;
+            var allPromise = null;
+            var generation = 0;
+            var owner = table.getAttribute('data-table-cache-owner') || '';
+            var cacheKey = 'vc:full-table:v1:' + owner + ':' + baseUrl;
+            var tools = document.createElement('div');
+            tools.className = 'table-load-tools';
+            var loadAll = document.createElement('button');
+            loadAll.type = 'button';
+            loadAll.className = 'btn secondary btn-sm';
+            loadAll.textContent = 'Подгрузить всё';
+            loadAll.setAttribute('data-table-load-all', '');
+            var status = document.createElement('span');
+            status.setAttribute('role', 'status');
+            tools.append(loadAll, status);
+            table.parentNode.insertBefore(tools, table);
 
             var sentinel = document.createElement('div');
             sentinel.className = 'infinite-scroll-sentinel';
             table.parentNode.insertBefore(sentinel, table.nextSibling);
 
             function currentBody() { return table.querySelector('tbody[data-rows]'); }
+            var pager = table._tablePager = {
+                complete: !currentBody().getAttribute('data-next-page'),
+                failed: false,
+                ensureAll: ensureAll,
+            };
+
+            function update() {
+                var body = currentBody();
+                var count = body.querySelectorAll('tr[data-search]').length;
+                var total = body.getAttribute('data-total');
+                loadAll.hidden = pager.complete;
+                loadAll.disabled = !!allPromise;
+                status.textContent = allPromise ? 'Загружаем всю таблицу…' :
+                    (pager.failed ? 'Не удалось загрузить. Нажмите «Подгрузить всё» для повтора.' :
+                    (pager.complete ? 'Загружено: ' + count : 'Загружено: ' + count + (total ? ' из ' + total : '')));
+                table.setAttribute('aria-busy', allPromise ? 'true' : 'false');
+                if (table._applyHiddenColumns) table._applyHiddenColumns();
+                if (table._applyTableSort) table._applyTableSort();
+                table.dispatchEvent(new CustomEvent('table:rowschanged'));
+            }
+
+            function request(parameters, controller) {
+                var url = new URL(baseUrl, location.origin);
+                Object.keys(parameters).forEach(function (key) { url.searchParams.set(key, parameters[key]); });
+                // Different accounts never share an HTTP-cache entry.
+                if (owner) url.searchParams.set('table_owner', owner);
+                return fetch(url.href, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    signal: controller ? controller.signal : undefined,
+                }).then(function (response) {
+                    if (!response.ok || response.redirected) throw new Error('Table request failed');
+                    return response.text();
+                }).then(function (html) {
+                    var temp = document.createElement('table');
+                    temp.innerHTML = html;
+                    var body = temp.querySelector('tbody[data-rows]');
+                    if (!body) throw new Error('Table rows missing');
+                    return body;
+                });
+            }
+
+            function ensureAll() {
+                if (pager.complete) return Promise.resolve();
+                if (allPromise) return allPromise;
+                generation++;
+                if (pageController) { pageController.abort(); pageController = null; }
+                pager.failed = false;
+                allPromise = request({ all: '1' }).then(function (body) {
+                    if (body.getAttribute('data-next-page')) throw new Error('Incomplete table response');
+                    var target = currentBody();
+                    target.replaceChildren.apply(target, Array.from(body.childNodes));
+                    target.setAttribute('data-next-page', '');
+                    target.setAttribute('data-total', body.getAttribute('data-total') || '');
+                    pager.complete = true;
+                    try { localStorage.setItem(cacheKey, '1'); } catch (error) {}
+                }).catch(function (error) {
+                    pager.failed = true;
+                    throw error;
+                }).finally(function () {
+                    allPromise = null;
+                    update();
+                });
+                update();
+                return allPromise;
+            }
+            loadAll.addEventListener('click', function () { ensureAll().catch(function () {}); });
 
             function loadNext() {
                 var body = currentBody();
                 var nextPage = body ? body.getAttribute('data-next-page') : '';
-                if (!nextPage || loading) return;
-                loading = true;
-
-                var url = baseUrl + (baseUrl.indexOf('?') === -1 ? '?' : '&') + 'page=' + nextPage;
-                fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-                    .then(function (r) { return r.text(); })
-                    .then(function (html) {
-                        var temp = document.createElement('table');
-                        temp.innerHTML = html;
-                        var newBody = temp.querySelector('tbody[data-rows]');
-                        var target = currentBody();
-                        if (newBody && target) {
-                            target.setAttribute('data-next-page', newBody.getAttribute('data-next-page') || '');
-                            while (newBody.firstChild) target.appendChild(newBody.firstChild);
-                            // К новым строкам применяем текущее скрытие колонок (Excel-режим).
-                            if (table._applyHiddenColumns) table._applyHiddenColumns();
-                        } else if (target) {
-                            target.removeAttribute('data-next-page');
-                        }
-                        loading = false;
-                    })
-                    .catch(function () { loading = false; });
+                if (!nextPage || pageController || allPromise || pager.failed || pager.complete) return;
+                var requestGeneration = generation;
+                var controller = pageController = new AbortController();
+                request({ page: nextPage }, controller).then(function (newBody) {
+                    if (requestGeneration !== generation) return;
+                    var target = currentBody();
+                    target.setAttribute('data-next-page', newBody.getAttribute('data-next-page') || '');
+                    while (newBody.firstChild) target.appendChild(newBody.firstChild);
+                    pager.complete = !target.getAttribute('data-next-page');
+                }).catch(function (error) {
+                    if (error.name !== 'AbortError' && requestGeneration === generation) pager.failed = true;
+                }).finally(function () {
+                    if (pageController === controller) pageController = null;
+                    if (requestGeneration === generation) update();
+                });
             }
 
             var observer = new IntersectionObserver(function (entries) {
@@ -478,6 +582,10 @@
                 });
             }, { rootMargin: '400px' });
             observer.observe(sentinel);
+            update();
+            try {
+                if (localStorage.getItem(cacheKey) === '1') ensureAll().catch(function () {});
+            } catch (error) {}
         });
     }
     initInfiniteScroll(document);

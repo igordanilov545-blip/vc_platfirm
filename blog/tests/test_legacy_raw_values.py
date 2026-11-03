@@ -17,14 +17,14 @@ class LegacyRawValuesTests(TestCase):
 
     def plan(self):
         values = VALUES.copy()
-        values[3], values[4] = None, ' '
+        values[3], values[4] = None, 'Иванова'
         values[9], values[10], values[11] = 'нет телеграма', 'спросить лично', 'javascript:alert(1)'
         return read_legacy_workbook(workbook(values=values))
 
     def test_unrecognized_social_text_and_missing_names_are_preserved_without_warnings(self):
         plan = self.plan()
         row = plan['rows'][0]['profile']
-        self.assertEqual((row['first_name'], row['last_name']), ('unnamed', 'unnamed'))
+        self.assertEqual((row['first_name'], row['last_name']), ('unnamed', 'Иванова'))
         self.assertEqual((row['telegram_username'], row['VK_username'], row['instagram_url']),
                          ('нет телеграма', 'спросить лично', 'javascript:alert(1)'))
         self.assertFalse(plan['errors'])

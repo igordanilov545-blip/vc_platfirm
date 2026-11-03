@@ -31,8 +31,8 @@ def legacy_base_upload(request):
             else:
                 request.session.pop('legacy_base_preview', None)
                 return render(request, 'blog/legacy_base_upload.html', {'result': result})
-        context.update(preview_context(request.user, plan))
-        context.update({'dates_form': dates, 'preview_id': preview['id']})
+        context.update(preview_context(request.user, plan, date_overrides=dates.date_overrides()))
+        context.update({'dates_form': dates, 'preview_id': preview['id'], 'confirmation_attempted': True})
     elif request.method == 'POST' and upload_form.is_valid():
         try:
             plan = read_legacy_workbook(upload_form.cleaned_data['workbook'].read(),

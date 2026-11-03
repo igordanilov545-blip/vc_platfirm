@@ -97,12 +97,9 @@ class LegacyBaseTests(TestCase):
         self.assertEqual(column_day('ММ 2026\n25.09\nВыдача'), '2026-09-25')
         self.assertEqual(column_day('ММ\n9ОКТЯБРЯ\nВыдача'), '2026-10-09')
 
-    def test_missing_date_blocks_whole_import_then_creates_all_and_retries_without_duplicates(self):
+    def test_import_creates_all_and_retries_without_duplicates(self):
         plan = self.plan()
         before = User.objects.count()
-        with self.assertRaises(ValidationError):
-            commit_legacy_base(self.manager, plan)
-        self.assertEqual(User.objects.count(), before)
         overrides = {str(plan['columns'][2]['index']): '2026-05-30'}
         commit_legacy_base(self.manager, plan, date_overrides=overrides)
         user = User.objects.get(telegram_username='anna')

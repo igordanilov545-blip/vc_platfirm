@@ -759,6 +759,14 @@ class EventShift(models.Model):
     def time_unknown(self):
         return self.start_time == self.end_time
 
+    @property
+    def date_unknown(self):
+        if self.day.isoformat() != '2026-01-01':
+            return False
+        from blog.services.legacy_workbook import column_day
+        source = getattr(self, 'legacy_source', None)
+        return bool(source and column_day(source.source_header) is None)
+
     def compute_status(self):
         """Статус смены по датам (независимо от общего статуса мероприятия):
         idёт/предстоит/прошла — используется для подсветки строк в таблицах смен."""

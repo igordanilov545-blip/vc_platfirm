@@ -1,5 +1,5 @@
 """Предпросмотр, сопоставление и атомарное добавление истории из старой базы."""
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, time
 import hashlib
 import uuid
@@ -8,10 +8,11 @@ from django.db import transaction
 from django.utils import timezone
 from data_base import data_controller as dc
 from blog.services.fap_workbook import MSK, normalized_name
-from blog.services.legacy_workbook import phone_number
+from blog.services.legacy_workbook import phone_number, DEFAULT_LEGACY_DAY
 from blog.services.social_profiles import social_username
 from blog.services.roles import has_manager_access
 from blog.services.stats import recalc_user_aggregates
+from blog.services.formatting import fmt_date
 
 
 def _manager(operator):
@@ -45,6 +46,16 @@ def _contact_keys(profile, row_number=None):
     return [_hash(name + ':' + value) for name, value in _recognized_contacts(profile).items() if value] or [identity_key(profile, row_number)]
 
 
+def prepared_plan(plan):
+    """Применить правило пустого ФИО также к уже открытому старому предпросмотру."""
+    rows = [row for row in plan['rows'] if any(
+        str(row['profile'].get(name) or '').strip().casefold() not in ('', 'unnamed')
+        for name in ('first_name', 'last_name'))]
+    usage = Counter(item['column'] for row in rows for item in row['assignments'])
+    return dict(plan, rows=rows, skipped_rows=plan.get('skipped_rows', 0) + len(plan['rows']) - len(rows),
+                columns=[dict(column, used=usage[column['index']]) for column in plan['columns']])
+
+
 def match_rows(plan):
     """Сопоставить все контакты; разные аккаунты по TG/телефону/почте — ошибка."""
     indexes = {name: defaultdict(set) for name in ('telegram_username', 'phone', 'email')}
@@ -73,6 +84,7 @@ def match_rows(plan):
 
 def preview_context(operator, plan, date_overrides=None):
     _manager(operator)
+    plan = prepared_plan(plan)
     matches, conflicts = match_rows(plan)
     columns = []
     errors = list(plan['errors']) + conflicts
@@ -80,7 +92,9 @@ def preview_context(operator, plan, date_overrides=None):
     for original in plan['columns']:
         column = dict(original)
         column['field_name'] = f'date_{column["index"]}'
-        column['day'] = overrides.get(str(column['index'])) or column['day']
+        chosen = overrides.get(str(column['index']))
+        column['date_placeholder'] = not column['day'] and (not chosen or chosen == DEFAULT_LEGACY_DAY)
+        column['day'] = chosen or column['day'] or DEFAULT_LEGACY_DAY
         if column['day']:
             try:
                 column['day'] = date.fromisoformat(column['day']).isoformat()
@@ -88,9 +102,11 @@ def preview_context(operator, plan, date_overrides=None):
                 errors.append(f'Колонка «{column["header"]}»: неверная дата.')
                 column['day'] = None
         column['needs_date'] = bool(column['used'] and not column['day'])
+        column['display_day'] = fmt_date(date.fromisoformat(column['day'])) if column['day'] else '—'
         columns.append(column)
+    people = [{'row': row, 'existing': matches[row['number']]} for row in plan['rows']]
     return {'plan': plan, 'columns': columns, 'errors': errors, 'warnings': plan['warnings'],
-            'people': [{'row': row, 'existing': matches[row['number']]} for row in plan['rows']],
+            'people': people, 'preview_people': people[:int(dc.get_const('legacy_import_preview_rows', default=50))],
             'can_commit': not errors and not any(column['needs_date'] for column in columns)}
 
 
@@ -109,7 +125,8 @@ def commit_legacy_base(operator, plan, *, date_overrides=None):
         positions[(event.event_group_id, normalized_name(event.title))].append(event)
     source_shifts = {item.key: item.shift for item in dc.legacy_shifts_qs().select_related('shift__event')}
     columns = {column['index']: column for column in context['columns']}
-    result = {'created_users': 0, 'existing_users': 0, 'groups': 0, 'positions': 0, 'shifts': 0, 'participations': 0}
+    result = {'created_users': 0, 'existing_users': 0, 'groups': 0, 'positions': 0, 'shifts': 0, 'participations': 0,
+              'skipped_rows': context['plan']['skipped_rows'], 'processed_rows': len(context['people'])}
     known = {}
     affected = {}
     # Даже пустые колонки представлены мероприятием; никаких выдуманных смен.
@@ -169,7 +186,7 @@ def commit_legacy_base(operator, plan, *, date_overrides=None):
                 shift = dc.create_legacy_shift(event, day, datetime.combine(day, time.min, MSK), source_key, column['header'], operator)
                 source_shifts[source_key] = shift
                 result['shifts'] += 1
-            elif shift.day != date.fromisoformat(column['day']):
+            elif shift.day != date.fromisoformat(column['day']) and not column['date_placeholder']:
                 raise ValidationError(f'У ранее загруженной смены «{column["header"]}» другая дата. Исправьте её на странице позиции.')
             app = dc.ensure_legacy_application(user, event, shift, assignment['description'], operator)
             dc.ensure_legacy_decision(app, shift, operator)

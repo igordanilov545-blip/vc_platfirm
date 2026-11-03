@@ -3,35 +3,39 @@
 {% block content %}
 <div class="page-header"><h1>Загрузка базы</h1><a class="btn secondary" href="{% url 'settings' %}">Настройки</a></div>
 {% if result %}
-<div class="card"><h2>База загружена</h2>
+<div class="card" id="legacy-import-status"><h2>База загружена</h2>
     <p>Новых пользователей: {{ result.created_users }}. Существующих анкет сохранено: {{ result.existing_users }}.</p>
+    <p>Обработано строк: {{ result.processed_rows }}. Пропущено без имени и фамилии: {{ result.skipped_rows }}.</p>
     <p>Добавлено мероприятий: {{ result.groups }}, позиций: {{ result.positions }}, смен: {{ result.shifts }}, участий: {{ result.participations }}.</p>
     <a href="{% url 'event_list' %}" class="btn">Открыть мероприятия</a>
 </div>
 {% elif plan %}
-<div class="card">
+<form method="post" id="legacy-base-confirm" action="{% url 'legacy_base_upload' %}#legacy-import-status" data-disable-on-submit data-submitting-text="Загрузка базы…">
+    {% csrf_token %}<input type="hidden" name="action" value="commit"><input type="hidden" name="preview_id" value="{{ preview_id }}">
+<div class="card" id="legacy-import-status">
     <h2>Предпросмотр · {{ people|length }} строк</h2>
     <p>Пока ничего не записано. Существующие анкеты не изменятся. Непустые ячейки создадут участие «Был» с нулём часов; время можно заполнить на странице смены. Год по умолчанию — 2026.</p>
+    {% if plan.skipped_rows %}<p>Пропущено без имени и фамилии: <strong>{{ plan.skipped_rows }}</strong>.</p>{% endif %}
+    {% if confirmation_attempted and dates_form.errors %}<div class="field-error" role="alert"><h3>Загрузка не началась</h3><ul>{% for error in dates_form.error_summary %}<li><a href="#{{ error.anchor }}">{{ error.message }}</a></li>{% endfor %}</ul></div>{% endif %}
     {% if errors %}<div class="field-error" role="alert"><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
     {% if warnings %}<details><summary>Предупреждения: {{ warnings|length }}</summary><ul>{% for warning in warnings %}<li>{{ warning }}</li>{% endfor %}</ul></details>{% endif %}
-</div>
-<form method="post" data-disable-on-submit>
-    {% csrf_token %}<input type="hidden" name="action" value="commit"><input type="hidden" name="preview_id" value="{{ preview_id }}">
-    <div class="card"><h2>Даты мероприятий</h2>
-        <p>Проверьте даты. Для заполненных колонок без точной даты укажите её вручную — все колонки сохраняются. В пустых колонках дата необязательна.</p>
-        {{ dates_form.non_field_errors }}
-        <div class="table-scroll"><table class="responsive-table"><thead><tr><th>Колонка файла</th><th>Мероприятие</th><th>Заполнено</th><th>Дата</th></tr></thead><tbody>
-        {% for column in columns %}<tr><td data-label="Колонка файла">{{ column.header|linebreaksbr }}</td><td data-label="Мероприятие">{{ column.group }}</td><td data-label="Заполнено">{{ column.used }}</td><td data-label="Дата">{% for field in dates_form %}{% if field.name == column.field_name %}{{ field }}{{ field.errors }}{% endif %}{% endfor %}</td></tr>{% endfor %}
-        </tbody></table></div>
-    </div>
-    <div class="card table-scroll"><table class="responsive-table" data-sortable><thead><tr><th>Строка</th><th>Человек</th><th>Аккаунт</th><th>Позиций / смен</th></tr></thead><tbody>
-        {% for item in people %}<tr><td data-label="Строка">{{ item.row.number }}</td><td data-label="Человек">{{ item.row.profile.first_name }} {{ item.row.profile.last_name }}<br>{{ item.row.profile.telegram_username }} · {{ item.row.profile.phone }}</td><td data-label="Аккаунт">{% if item.existing %}<a href="{% url 'profile_detail' item.existing.pk %}" target="_blank" rel="noopener noreferrer">Существующий #{{ item.existing.pk }}</a> · без изменения анкеты{% else %}Создать{% endif %}</td><td data-label="Позиций / смен">{% for assignment in item.row.assignments %}{{ assignment.position }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td></tr>{% endfor %}
-    </tbody></table></div>
+    <p>Для колонок без даты используется временная дата <strong>01.01.2026</strong>. Её можно изменить в системе после загрузки.</p>
     <button class="btn" type="submit" {% if errors %}disabled{% endif %}>Подтвердить загрузку базы</button>
     <a href="{% url 'legacy_base_upload' %}" class="btn secondary">Выбрать другой файл</a>
+    <p data-submit-status hidden role="status">Идёт загрузка {{ people|length }} строк. Не закрывайте страницу до завершения.</p>
+</div>
+    <div class="card"><h2>Даты мероприятий</h2>
+        <p>Все колонки сохраняются. При необходимости раскройте дату и измените её.</p>
+        <div class="table-scroll"><table class="responsive-table"><thead><tr><th>Колонка файла</th><th>Мероприятие</th><th>Заполнено</th><th>Дата</th></tr></thead><tbody>
+        {% for column in columns %}<tr id="legacy-date-{{ column.index }}"><td data-label="Колонка файла">{{ column.header|linebreaksbr }}</td><td data-label="Мероприятие">{{ column.group }}</td><td data-label="Заполнено">{{ column.used }}</td><td data-label="Дата">{% for field in dates_form %}{% if field.name == column.field_name %}<details {% if field.errors %}open{% endif %}><summary>{{ column.display_day }}{% if column.date_placeholder %} · условная дата{% endif %}</summary>{{ field }}{{ field.errors }}</details>{% endif %}{% endfor %}</td></tr>{% endfor %}
+        </tbody></table></div>
+    </div>
+    <div class="card table-scroll"><p>Показано {{ preview_people|length }} из {{ people|length }} строк. В загрузку войдут все {{ people|length }} строк.</p><table class="responsive-table" data-sortable><thead><tr><th>Строка</th><th>Человек</th><th>Аккаунт</th><th>Позиций / смен</th></tr></thead><tbody>
+        {% for item in preview_people %}<tr><td data-label="Строка">{{ item.row.number }}</td><td data-label="Человек">{{ item.row.profile.first_name }} {{ item.row.profile.last_name }}<br>{{ item.row.profile.telegram_username }} · {{ item.row.profile.phone }}</td><td data-label="Аккаунт">{% if item.existing %}<a href="{% url 'profile_detail' item.existing.pk %}" target="_blank" rel="noopener noreferrer">Существующий #{{ item.existing.pk }}</a> · без изменения анкеты{% else %}Создать{% endif %}</td><td data-label="Позиций / смен">{% for assignment in item.row.assignments %}{{ assignment.position }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td></tr>{% endfor %}
+    </tbody></table></div>
 </form>
 {% else %}
-<div class="card"><p>Выберите XLSX с листом «База». Регистр и пробелы в названиях листа и колонок не учитываются. Перед загрузкой будет показан предпросмотр; колонки без точной даты можно уточнить.</p>
+<div class="card"><p>Выберите XLSX с листом «База». Регистр и пробелы в названиях листа и колонок не учитываются. Перед загрузкой будет показан предпросмотр. Для колонок без даты используется 01.01.2026; строки без имени и фамилии пропускаются.</p>
     {% include 'blog/partials/_modal_form.html' with form=upload_form form_enctype='multipart/form-data' submit_label='Показать предпросмотр' %}
 </div>
 {% endif %}

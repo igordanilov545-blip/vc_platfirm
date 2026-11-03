@@ -27,6 +27,7 @@ FIELD_KEYS = {key(label): name for label, name in FIELDS.items()}
 IGNORED = {key(label) for label in ('Дата заполнения анкеты', 'Наиболее удобный способ связи',
            'В каких забегах планируете принять участие', 'Число смен', 'VOLUNTEER_ID')}
 MONTHS = ('январ', 'феврал', 'март', 'апрел', 'ма', 'июн', 'июл', 'август', 'сентябр', 'октябр', 'ноябр', 'декабр')
+DEFAULT_LEGACY_DAY = '2026-01-01'
 
 
 def phone_key(value):
@@ -123,12 +124,16 @@ def read_legacy_workbook(content, *, max_rows=10000):
                 columns.append({'index': index, 'header': text(value), 'group': column_group(value),
                                 'day': column_day(value), 'used': 0})
         rows, errors, warnings = [], [], []
+        skipped_rows = 0
         for number, values in enumerate(iterator, row_number + 1):
             if number - row_number > max_rows:
                 raise ValidationError(f'В файле больше {max_rows} строк. Разделите его на части.')
             if not any(value is not None and text(value) for value in values):
                 continue
             get = lambda name: values[mapping[name]] if name in mapping and mapping[name] < len(values) else None
+            if all(not text(get(name)) or text(get(name)).casefold() == 'unnamed' for name in ('first_name', 'last_name')):
+                skipped_rows += 1
+                continue
             profile = {name: text(get(name))[:255] for name in ('volunteer_experience', 'motivation', 'familiar_positions', 'performed_tasks')}
             for name in ('first_name', 'last_name'):
                 profile[name] = text(get(name))[:100] or 'unnamed'
@@ -160,6 +165,6 @@ def read_legacy_workbook(content, *, max_rows=10000):
                 age = None
             rows.append({'number': number, 'profile': profile, 'reported_age': age, 'assignments': assignments,
                          'comments': {'legacy_coordinator': text(get('coordinator_comment')), 'legacy_team_lead': text(get('leader_comment'))}})
-        return {'rows': rows, 'columns': columns, 'errors': errors, 'warnings': warnings}
+        return {'rows': rows, 'columns': columns, 'errors': errors, 'warnings': warnings, 'skipped_rows': skipped_rows}
     finally:
         wb.close()

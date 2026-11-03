@@ -231,9 +231,16 @@
     // форма с data-disable-on-submit при отправке дизейблит свою submit-кнопку.
     // ======================================================================
     document.querySelectorAll('form[data-disable-on-submit]').forEach(function (form) {
-        form.addEventListener('submit', function () {
+        form.addEventListener('submit', function (event) {
+            if (event.defaultPrevented) return;
             var btn = form.querySelector('button[type=submit]');
             if (btn) { btn.disabled = true; btn.dataset.submitting = '1'; }
+            if (form.dataset.submittingText) {
+                if (btn) btn.textContent = form.dataset.submittingText;
+                form.setAttribute('aria-busy', 'true');
+                var status = form.querySelector('[data-submit-status]');
+                if (status) status.hidden = false;
+            }
         });
     });
 

@@ -122,6 +122,8 @@ def build_roster_workbook(operator, *, group=None, position=None):
                 label += ' · ' + {'pending': 'Не отмечен', 'attended': 'Был', 'absent_excused': 'Не был (уваж.)', 'absent_unexcused': 'Не был'}.get(item['attendance'], item['attendance'])
             end_label = end.strftime('%H:%M') if end.date() == start.date() else end.strftime('%d.%m %H:%M')
             interval = 'время не указано' if shift.time_unknown else f'{start:%H:%M}–{end_label}'
+            if shift.date_unknown:
+                interval += ' · дата условная'
             legacy = getattr(shift, 'legacy_source', None)
             if legacy:
                 interval += ' · ' + ' / '.join(legacy.source_header.splitlines())

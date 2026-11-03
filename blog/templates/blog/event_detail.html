@@ -229,7 +229,7 @@
             {% with shift_status=shift.compute_status %}
             <tr class="shift-row shift-row--{{ shift_status }}">
                 <td data-label="Дата" class="mono" data-sort-value="{{ shift.day|date:'Y-m-d' }}">{{ shift.day|date:"d.m.y" }}</td>
-                <td data-label="Начало" class="mono" data-sort-value="{{ shift.start_time|date:'U' }}">{% if shift.time_unknown %}не указано{% else %}{{ shift.start_time|time:"H:i" }}{% endif %}{% if shift.legacy_source %}<span class="qr-shift-meta">{{ shift.legacy_source.source_header|linebreaksbr }}</span>{% endif %}</td>
+                <td data-label="Начало" class="mono" data-sort-value="{{ shift.start_time|date:'U' }}">{% if shift.time_unknown %}не указано{% else %}{{ shift.start_time|time:"H:i" }}{% endif %}{% if shift.date_unknown %}<span class="qr-shift-meta">Дата условная: 01.01.2026</span>{% endif %}{% if shift.legacy_source %}<span class="qr-shift-meta">{{ shift.legacy_source.source_header|linebreaksbr }}</span>{% endif %}</td>
                 <td data-label="Окончание" class="mono" data-sort-value="{{ shift.end_time|date:'U' }}">{% if shift.time_unknown %}не указано{% else %}{{ shift.end_time|time:"H:i" }}{% endif %}</td>
                 <td data-label="Локация" data-sort-value="{{ shift.location.name }}">{{ shift.location.name|default:"—" }}</td>
                 {% if can_manage_applications %}

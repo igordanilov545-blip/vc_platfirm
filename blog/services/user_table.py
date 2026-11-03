@@ -1,16 +1,21 @@
 """Read model for the user table, including a revision for private browser caching."""
 import hashlib
 import json
+import re
 
 from django.core.paginator import Paginator
-from django.db.models import OuterRef, Subquery
+from django.db.models import OuterRef, Subquery, Q
 from django.utils import timezone
 
 from data_base import data_controller as dc
 from blog.services.requirements import _age_on
 
 
-def user_table_context(*, full=False, page_number=None, owner_id):
+def user_table_context(*, full=False, page_number=None, owner_id, query='', role=''):
+    query = ' '.join(str(query or '').split())[:255]
+    role = role if role in ('manager', 'team_lead', 'volunteer') else ''
+    manager_ids = set(dc.managers_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
+    team_leader_ids = set(dc.team_leaders_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
     last_event = (
         dc.participations_qs().filter(user=OuterRef('pk'), status='attended', hours__gt=0)
         .order_by('-event_day__day').values('event_day__day')[:1]
@@ -21,12 +26,24 @@ def user_table_context(*, full=False, page_number=None, owner_id):
         'birthday', 'status', 'season_hours', 'total_hours',
         'season_event_count', 'total_event_count',
     ).annotate(last_attended_day=Subquery(last_event)).order_by('-created_at', '-pk')
+    # SQLite LOWER/LIKE does not fold Cyrillic. Django's SQLite REGEXP uses Python's
+    # Unicode-aware re; PostgreSQL supports the same escaped, case-insensitive pattern.
+    for token in query.casefold().replace('ё', 'е').replace('@', '').split():
+        pattern = ''.join('[её]' if char == 'е' else re.escape(char) for char in token)
+        condition = Q()
+        for field in ('first_name', 'last_name', 'middle_name', 'telegram_username'):
+            condition |= Q(**{field + '__iregex': pattern})
+        users = users.filter(condition)
+    if role == 'manager':
+        users = users.filter(pk__in=manager_ids)
+    elif role == 'team_lead':
+        users = users.filter(pk__in=team_leader_ids - manager_ids)
+    elif role == 'volunteer':
+        users = users.exclude(pk__in=manager_ids | team_leader_ids)
     if full:
         users = list(users)
     paginator = Paginator(users, max(len(users), 1) if full else 40)
     page = paginator.get_page(1 if full else page_number)
-    manager_ids = set(dc.managers_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
-    team_leader_ids = set(dc.team_leaders_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
     today = timezone.localdate()
     revision = []
     for user in page:
@@ -42,7 +59,8 @@ def user_table_context(*, full=False, page_number=None, owner_id):
             ])
     # Version changes whenever the row markup changes. Local day also refreshes ages.
     digest = hashlib.sha256(json.dumps(
-        ['user-table-v1', owner_id, today, revision], default=str, ensure_ascii=False,
+        ['user-table-v2', owner_id, today, query, role, revision], default=str, ensure_ascii=False,
     ).encode()).hexdigest() if full else None
     return {'page_obj': page, 'manager_ids': manager_ids, 'team_leader_ids': team_leader_ids,
-            'table_etag': '"' + digest + '"' if digest else None}
+            'table_etag': '"' + digest + '"' if digest else None,
+            'search_query': query, 'search_role': role}

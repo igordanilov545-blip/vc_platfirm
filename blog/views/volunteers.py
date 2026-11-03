@@ -125,7 +125,8 @@ def user_list(request):
     if owner and owner != str(request.user.pk):
         return HttpResponseForbidden()
     full = request.GET.get('all') == '1'
-    context = user_table_context(full=full, page_number=request.GET.get('page'), owner_id=request.user.pk)
+    context = user_table_context(full=full, page_number=request.GET.get('page'), owner_id=request.user.pk,
+                                 query=request.GET.get('q', ''), role=request.GET.get('role', ''))
     etag = context['table_etag']
     requested_tags = [tag.removeprefix('W/') for tag in parse_etags(request.headers.get('If-None-Match', ''))]
     if full and etag and (etag in requested_tags or '*' in requested_tags):

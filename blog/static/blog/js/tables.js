@@ -389,8 +389,8 @@
 
     // ======================================================================
     // Единый поиск: все слова в любом порядке, без регистра, ё/е и лишних пробелов.
-    // Постраничная таблица сначала загружается целиком; каждый ответ повторно
-    // фильтруется по АКТУАЛЬНОМУ запросу, включая смену запроса во время загрузки.
+    // GET-форма data-table-query-form отправляет q/role серверу до пагинации.
+    // Остальные таблицы фильтруются локально; устаревшие ответы не подменяют поиск.
     // ======================================================================
     function initTableFilter(root) {
         root.querySelectorAll('[data-table-filter]').forEach(function (input) {
@@ -408,9 +408,10 @@
             var delay = parseInt(input.getAttribute('data-filter-debounce'), 10);
             if (isNaN(delay)) delay = 200;
             var debounceTimer = null;
-            var emptyRow = document.createElement('tr');
+            var serverForm = input.closest('form[data-table-query-form]');
+            var emptyRow = table.querySelector('[data-table-empty]') || document.createElement('tr');
             emptyRow.setAttribute('data-table-empty', '');
-            var emptyCell = document.createElement('td');
+            var emptyCell = emptyRow.querySelector('td') || document.createElement('td');
             emptyCell.setAttribute('role', 'status');
             emptyRow.appendChild(emptyCell);
             table.querySelector('tbody').appendChild(emptyRow);
@@ -424,13 +425,14 @@
                 var role = roleFilter ? roleFilter.value : '';
                 var filtered = tokens.length || role || (hidePassed && hidePassed.checked);
                 var pager = table._tablePager;
-                if ((tokens.length || role) && pager && !pager.complete && !pager.failed) pager.ensureAll().catch(function () {});
+                if (serverForm && pager) pager.search(input.value, role).catch(function () {});
+                else if ((tokens.length || role) && pager && !pager.complete && !pager.failed) pager.ensureAll().catch(function () {});
                 var visible = 0;
                 table.querySelectorAll('tbody tr[data-search]').forEach(function (row) {
                     var text = normalize(row.getAttribute('data-search'));
                     var matchesSearch = tokens.every(function (token) { return text.indexOf(token) !== -1; });
                     var matchesPassed = !hidePassed || !hidePassed.checked || row.getAttribute('data-passed') !== '1';
-                    row.hidden = !(matchesSearch && matchesPassed && (!role || row.dataset.role === role));
+                    row.hidden = !(matchesSearch && matchesPassed && (!role || row.dataset.role === role)) || !!(serverForm && pager && pager.loading);
                     if (!row.hidden) visible++;
                 });
                 // Серверные сообщения «список пуст» не подменяют результат поиска.
@@ -450,6 +452,12 @@
             });
             if (hidePassed) hidePassed.addEventListener('change', apply);
             if (roleFilter) roleFilter.addEventListener('change', apply);
+            if (serverForm) serverForm.addEventListener('submit', function (event) {
+                if (!table._tablePager) return; // The ordinary GET form remains usable without enhancement.
+                event.preventDefault();
+                clearTimeout(debounceTimer);
+                apply();
+            });
             table.addEventListener('table:rowschanged', apply);
             apply();
         });
@@ -468,20 +476,27 @@
 
             var baseUrl = table.getAttribute('data-infinite-scroll');
             var pageController = null;
+            var fullController = null;
             var allPromise = null;
             var generation = 0;
             var owner = table.getAttribute('data-table-cache-owner') || '';
             var cacheKey = 'vc:full-table:v1:' + owner + ':' + baseUrl;
-            var tools = document.createElement('div');
+            var tools = table.parentNode.querySelector('[data-table-load-tools]') || document.createElement('div');
             tools.className = 'table-load-tools';
-            var loadAll = document.createElement('button');
-            loadAll.type = 'button';
+            var loadAll = tools.querySelector('[data-table-load-all]') || document.createElement('button');
+            if (loadAll.tagName === 'BUTTON') loadAll.type = 'button';
             loadAll.className = 'btn secondary btn-sm';
             loadAll.textContent = 'Подгрузить всё';
             loadAll.setAttribute('data-table-load-all', '');
-            var status = document.createElement('span');
+            var status = tools.querySelector('[data-table-result-count]') || document.createElement('span');
             status.setAttribute('role', 'status');
-            tools.append(loadAll, status);
+            tools.appendChild(status);
+            tools.appendChild(loadAll);
+            var loadMore = tools.querySelector('[data-table-next]') || document.createElement('button');
+            if (loadMore.tagName === 'BUTTON') loadMore.type = 'button';
+            loadMore.className = 'btn secondary btn-sm';
+            loadMore.textContent = 'Показать ещё';
+            tools.appendChild(loadMore);
             table.parentNode.insertBefore(tools, table);
 
             var sentinel = document.createElement('div');
@@ -489,30 +504,56 @@
             table.parentNode.insertBefore(sentinel, table.nextSibling);
 
             function currentBody() { return table.querySelector('tbody[data-rows]'); }
+            function isComplete(body) {
+                return body.hasAttribute('data-total')
+                    ? body.querySelectorAll('tr[data-search]').length >= Number(body.getAttribute('data-total'))
+                    : !body.getAttribute('data-next-page');
+            }
             var pager = table._tablePager = {
-                complete: !currentBody().getAttribute('data-next-page'),
+                complete: isComplete(currentBody()),
                 failed: false,
+                loading: false,
                 ensureAll: ensureAll,
+                search: search,
             };
+            var parameters = { q: currentBody().getAttribute('data-query') || '', role: currentBody().getAttribute('data-role-filter') || '' };
+
+            function search(query, role) {
+                query = query.trim().replace(/\s+/g, ' ').slice(0, 255);
+                if (parameters.q === query && parameters.role === role) {
+                    return (query || role) && !pager.complete && !pager.failed ? ensureAll() : Promise.resolve();
+                }
+                generation++;
+                if (pageController) { pageController.abort(); pageController = null; }
+                if (fullController) { fullController.abort(); fullController = null; }
+                allPromise = null;
+                parameters = { q: query, role: role };
+                pager.complete = false;
+                return ensureAll();
+            }
 
             function update() {
                 var body = currentBody();
                 var count = body.querySelectorAll('tr[data-search]').length;
                 var total = body.getAttribute('data-total');
                 loadAll.hidden = pager.complete;
-                loadAll.disabled = !!allPromise;
-                status.textContent = allPromise ? 'Загружаем всю таблицу…' :
+                loadAll.disabled = pager.loading;
+                loadMore.hidden = !body.getAttribute('data-next-page') || pager.loading;
+                status.textContent = pager.loading ? (parameters.q || parameters.role ? 'Поиск по всей базе…' : 'Загружаем всю таблицу…') :
                     (pager.failed ? 'Не удалось загрузить. Нажмите «Подгрузить всё» для повтора.' :
-                    (pager.complete ? 'Загружено: ' + count : 'Загружено: ' + count + (total ? ' из ' + total : '')));
-                table.setAttribute('aria-busy', allPromise ? 'true' : 'false');
+                    'Найдено: ' + (total || count) + ' · Показано: ' + count + (total ? ' из ' + total : ''));
+                table.setAttribute('aria-busy', pager.loading ? 'true' : 'false');
                 if (table._applyHiddenColumns) table._applyHiddenColumns();
                 if (table._applyTableSort) table._applyTableSort();
                 table.dispatchEvent(new CustomEvent('table:rowschanged'));
             }
 
-            function request(parameters, controller) {
+            function request(paging, controller) {
                 var url = new URL(baseUrl, location.origin);
-                Object.keys(parameters).forEach(function (key) { url.searchParams.set(key, parameters[key]); });
+                Object.keys(parameters).forEach(function (key) {
+                    if (parameters[key]) url.searchParams.set(key, parameters[key]);
+                });
+                Object.keys(paging).forEach(function (key) { url.searchParams.set(key, paging[key]); });
                 // Different accounts never share an HTTP-cache entry.
                 if (owner) url.searchParams.set('table_owner', owner);
                 return fetch(url.href, {
@@ -534,27 +575,43 @@
                 if (pager.complete) return Promise.resolve();
                 if (allPromise) return allPromise;
                 generation++;
+                var requestGeneration = generation;
                 if (pageController) { pageController.abort(); pageController = null; }
                 pager.failed = false;
-                allPromise = request({ all: '1' }).then(function (body) {
-                    if (body.getAttribute('data-next-page')) throw new Error('Incomplete table response');
+                pager.loading = true;
+                var controller = fullController = new AbortController();
+                allPromise = request({ all: '1' }, controller).then(function (body) {
+                    if (requestGeneration !== generation) return;
+                    if (!isComplete(body)) throw new Error('Incomplete table response');
+                    body.querySelectorAll('[data-table-empty]').forEach(function (row) { row.remove(); });
                     var target = currentBody();
-                    target.replaceChildren.apply(target, Array.from(body.childNodes));
+                    var fragment = document.createDocumentFragment();
+                    while (body.firstChild) fragment.appendChild(body.firstChild);
+                    target.replaceChildren(fragment);
                     target.setAttribute('data-next-page', '');
                     target.setAttribute('data-total', body.getAttribute('data-total') || '');
                     pager.complete = true;
-                    try { localStorage.setItem(cacheKey, '1'); } catch (error) {}
+                    if (!parameters.q && !parameters.role) {
+                        try { localStorage.setItem(cacheKey, '1'); } catch (error) {}
+                    }
                 }).catch(function (error) {
-                    pager.failed = true;
+                    if (error.name !== 'AbortError' && requestGeneration === generation) pager.failed = true;
                     throw error;
                 }).finally(function () {
+                    if (requestGeneration !== generation) return;
                     allPromise = null;
+                    fullController = null;
+                    pager.loading = false;
                     update();
                 });
                 update();
                 return allPromise;
             }
-            loadAll.addEventListener('click', function () { ensureAll().catch(function () {}); });
+            loadAll.addEventListener('click', function (event) {
+                event.preventDefault();
+                ensureAll().catch(function () {});
+            });
+            loadMore.addEventListener('click', function (event) { event.preventDefault(); loadNext(); });
 
             function loadNext() {
                 var body = currentBody();
@@ -567,7 +624,7 @@
                     var target = currentBody();
                     target.setAttribute('data-next-page', newBody.getAttribute('data-next-page') || '');
                     while (newBody.firstChild) target.appendChild(newBody.firstChild);
-                    pager.complete = !target.getAttribute('data-next-page');
+                    pager.complete = isComplete(target);
                 }).catch(function (error) {
                     if (error.name !== 'AbortError' && requestGeneration === generation) pager.failed = true;
                 }).finally(function () {

@@ -1,24 +1,28 @@
 {% comment %}
 Переиспользуемое поле поиска по таблице (agent-workflow.md §4). Фильтрацию выполняет
 общий компонент tables.js::initTableFilter: все слова в любом порядке, без регистра,
-ё/е, @ и лишних пробелов. Для постраничных таблиц сначала получает полный список.
+ё/е, @ и лишних пробелов. search_url включает GET-форму серверного поиска;
+остальные таблицы фильтруются локально, при необходимости с полной подгрузкой.
 Показывает отсутствие совпадений. Инлайновый <script> на странице НЕ нужен.
 
 Ожидает переменные:
   search_target   — CSS-селектор таблицы, напр. "#users-table" (обязательно)
   search_placeholder — плейсхолдер поля (необязательно)
   search_roles — добавить фильтр ролей по data-role строки (необязательно)
+  search_url — URL серверного поиска по q/role; форма работает и без JS
 Строки таблицы должны нести атрибут data-search="<текст для поиска>".
 {% endcomment %}
-<div class="card table-search-bar">
+{% if search_url %}<form class="card table-search-bar" method="get" action="{{ search_url }}" data-table-query-form="{{ search_target }}">
+{% else %}<div class="card table-search-bar">{% endif %}
     <input type="search" data-table-filter="{{ search_target }}"
-           placeholder="{{ search_placeholder|default:'Поиск…' }}" aria-label="{{ search_placeholder|default:'Поиск по таблице' }}">
+           placeholder="{{ search_placeholder|default:'Поиск…' }}" aria-label="{{ search_placeholder|default:'Поиск по таблице' }}"{% if search_url %} name="q" value="{{ search_query }}" maxlength="255"{% endif %}>
     {% if search_roles %}
-    <select data-table-role-filter="{{ search_target }}" aria-label="Фильтр по роли">
+    <select data-table-role-filter="{{ search_target }}" aria-label="Фильтр по роли"{% if search_url %} name="role"{% endif %}>
         <option value="">Все роли</option>
-        <option value="volunteer">Волонтёры</option>
-        <option value="team_lead">Тим-лидеры</option>
-        <option value="manager">Менеджеры</option>
+        <option value="volunteer"{% if search_role == 'volunteer' %} selected{% endif %}>Волонтёры</option>
+        <option value="team_lead"{% if search_role == 'team_lead' %} selected{% endif %}>Тим-лидеры</option>
+        <option value="manager"{% if search_role == 'manager' %} selected{% endif %}>Менеджеры</option>
     </select>
     {% endif %}
-</div>
+    {% if search_url %}<button type="submit" class="btn secondary">Найти</button>{% endif %}
+{% if search_url %}</form>{% else %}</div>{% endif %}

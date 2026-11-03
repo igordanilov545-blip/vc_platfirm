@@ -3,10 +3,16 @@
 {% block content %}
 <h1>Пользователи</h1>
 
+{% url 'user_list' as search_url %}
 {% include 'blog/partials/_table_search.html' with search_target="#users-table" search_placeholder="Поиск по фамилии, имени, отчеству, Telegram…" search_roles=True %}
 
 <div class="card" style="padding:0; overflow:hidden;">
     <div class="table-scroll">
+    <div class="table-load-tools" data-table-load-tools>
+        <span role="status" data-table-result-count>Найдено: {{ page_obj.paginator.count }} · Показано: {{ page_obj|length }}</span>
+        <a href="{% querystring all=1 page=None %}" class="btn secondary btn-sm" data-table-load-all{% if page_obj|length == page_obj.paginator.count %} hidden{% endif %}>Подгрузить всё</a>
+        <a href="{% if page_obj.has_next %}{% querystring page=page_obj.next_page_number all=None %}{% else %}#{% endif %}" class="btn secondary btn-sm" data-table-next{% if not page_obj.has_next %} hidden{% endif %}>Показать ещё</a>
+    </div>
     <table class="responsive-table users-table" data-sortable data-hideable-columns data-infinite-scroll="{% url 'user_list' %}" data-table-cache-owner="{{ request.user.pk }}" id="users-table">
         <thead>
             <tr>

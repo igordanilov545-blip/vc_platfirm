@@ -1,4 +1,4 @@
-<tbody data-rows data-total="{{ page_obj.paginator.count }}" data-next-page="{% if page_obj.has_next %}{{ page_obj.next_page_number }}{% endif %}">
+<tbody data-rows data-total="{{ page_obj.paginator.count }}" data-query="{{ search_query }}" data-role-filter="{{ search_role }}" data-next-page="{% if page_obj.has_next %}{{ page_obj.next_page_number }}{% endif %}">
 {% for u in page_obj %}
     <tr data-href="{% url 'profile_detail' u.id %}" data-role="{{ u.table_role }}" data-search="{{ u.last_name|default:'' }} {{ u.first_name|default:'' }} {{ u.middle_name|default:'' }} {{ u.telegram_username|default:'' }}">
         <td data-label="Фамилия" data-sort-value="{{ u.last_name|default:'' }}">
@@ -17,5 +17,7 @@
         <td data-label="Часов (сезон / всё)" class="col-center mono" data-sort-value="{{ u.total_hours }}">{{ u.season_hours }} / {{ u.total_hours }}</td>
         <td data-label="Мероприятия (сезон / всё)" class="col-center mono" data-sort-value="{{ u.total_event_count }}">{{ u.season_event_count }} / {{ u.total_event_count }}</td>
     </tr>
+{% empty %}
+    <tr data-table-empty><td colspan="8" role="status">Совпадений не найдено.</td></tr>
 {% endfor %}
 </tbody>

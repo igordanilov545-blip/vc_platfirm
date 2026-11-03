@@ -7,6 +7,7 @@
 - генерация PDF (POST, кнопка «Сгенерировать»).
 Гайд по плейсхолдерам — только менеджеру (волонтёр о шаблоне знать не должен).{% endcomment %}
 {% block content %}
+{% if False %}
 <div class="card">
     <h2>📄 Справка ВЦ для ПГАС{% if not is_owner %} для «{{ target.full_name }}»{% endif %}</h2>
     <p style="color:var(--text-secondary); font-size:13px;">
@@ -66,4 +67,5 @@
         <p style="color:var(--text-secondary);">Нет мероприятий с участием за выбранный период.</p>
     {% endif %}
 </form>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,8 @@
+{% extends 'blog/base.html' %}
+{% block title %}Приглашения{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Приглашения</h1><a class="btn" href="{% url 'role_invitation_create' %}" data-modal data-modal-title="Создать ссылку приглашения">Создать ссылку</a></div>
+<p class="event-dash-muted">Ссылка выдаёт выбранную роль после входа или регистрации. До окончания срока ей могут воспользоваться несколько пользователей. Полученные права сохраняются.</p>
+<div class="card table-scroll"><table class="responsive-table" data-sortable data-hideable-columns><thead><tr><th>Роль</th><th>Создал</th><th>Действует до, МСК</th><th>Использований</th><th>Статус</th><th></th></tr></thead><tbody>
+{% for item in invitations %}<tr><td data-label="Роль">{{ item.get_role_display }}</td><td data-label="Создал">{{ item.created_by.full_name|default:'—' }}</td><td data-label="Действует до">{{ item.expires_at|date:'d.m.Y H:i' }}</td><td data-label="Использований">{{ item.use_count }}</td><td data-label="Статус">{% if item.revoked_at %}Отозвана{% elif item.active %}Действует{% else %}Истекла{% endif %}</td><td>{% if item.active %}<form method="post" action="{% url 'role_invitation_revoke' item.pk %}">{% csrf_token %}<button class="btn secondary small" type="submit">Отозвать ссылку</button></form>{% endif %}</td></tr>{% empty %}<tr><td colspan="6">Приглашений пока нет.</td></tr>{% endfor %}
+</tbody></table></div>{% endblock %}

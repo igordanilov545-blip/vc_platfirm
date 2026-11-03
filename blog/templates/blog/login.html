@@ -13,7 +13,7 @@
         <button type="submit" class="btn" style="width:100%; justify-content:center;">Войти</button>
     </form>
     <div style="margin-top:12px; text-align:center;">
-        <a href="{% url 'register' %}" class="btn secondary" style="width:100%; justify-content:center;">Зарегистрироваться</a>
+        <a href="{% url 'register' %}{% if next %}?next={{ next|urlencode }}{% endif %}" class="btn secondary" style="width:100%; justify-content:center;">Зарегистрироваться</a>
     </div>
 </div>
 {% endblock %}

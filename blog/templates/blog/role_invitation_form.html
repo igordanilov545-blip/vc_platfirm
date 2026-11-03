@@ -1,0 +1,3 @@
+{% extends 'blog/base.html' %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}<h1>{{ title }}</h1><div class="card">{% include 'blog/partials/_modal_form.html' %}</div>{% endblock %}

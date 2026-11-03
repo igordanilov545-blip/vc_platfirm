@@ -2,7 +2,7 @@
 которому генерируются все справки. Менеджер редактирует оформление прямо в Word и
 загружает файл — оформление сохраняется 1-в-1. Сохранение — action=save_pgas_template
 в settings_view (multipart).{% endcomment %}
-<div class="settings-panel-head">
+{% if False %}<div class="settings-panel-head">
     <h2>Шаблон справки ПГАС</h2>
 </div>
 
@@ -33,4 +33,4 @@
         <code>### END EVENTS ###</code> вокруг блока мероприятий.
     </p>
     <button type="submit" class="btn">Загрузить шаблон</button>
-</form>
+</form>{% endif %}

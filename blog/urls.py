@@ -3,6 +3,10 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path('management/invitations/', views.role_invitation_list, name='role_invitation_list'),
+    path('management/invitations/new/', views.role_invitation_create, name='role_invitation_create'),
+    path('management/invitations/<int:invitation_id>/revoke/', views.role_invitation_revoke, name='role_invitation_revoke'),
+    path('join/<str:token>/', views.role_invitation_accept, name='role_invitation_accept'),
     path('profile/qr/', views.personal_qr, name='personal_qr'),
     path('profile/qr.png', views.personal_qr_png, name='personal_qr_png'),
     path('management/scanner/', views.qr_scanner, name='qr_scanner'),

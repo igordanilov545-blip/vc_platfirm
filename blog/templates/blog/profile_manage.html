@@ -23,7 +23,7 @@
     {% else %}<span class="pill neutral"><span class="dot"></span>Волонтёр</span>{% endif %}
 
     {% if is_manager %}
-        {% if target.verified_by_manager_at %}
+        {% if False %}{% if target.verified_by_manager_at %}
             <span class="pill success"><span class="dot"></span>ПГАС-верификация {{ target.verified_by_manager_at|date:"d.m.Y" }}</span>
             <form method="post" action="{% url 'pgas_unverify_user' target.id %}" class="inline" style="margin:0;" data-confirm="Отозвать верификацию профиля «{{ target.full_name }}» для ПГАС?">
                 {% csrf_token %}
@@ -37,6 +37,7 @@
             </form>
         {% endif %}
 
+        {% endif %}
         {% if target.status == 'blacklisted' %}
             <span class="pill danger"><span class="dot"></span>{{ target.get_status_display }}</span>
             <form method="post" action="{% url 'user_unblacklist' target.id %}" class="inline" style="margin:0;" data-confirm="Вывести «{{ target.full_name }}» из чёрного списка? Churn будет обнулён.">

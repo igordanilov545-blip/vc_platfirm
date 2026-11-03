@@ -7,7 +7,6 @@
 <div class="person-card">
     <h3 class="name">{{ user.full_name }}
         {% if user.telegram_username %}<span class="note">@{{ user.telegram_username }}</span>{% endif %}
-        {% if rep.is_star %}<span class="pill ok">⭐ ПГАС</span>{% endif %}
         {% if user.status == 'blacklisted' %}<span class="pill warn">блэклист</span>{% endif %}
     </h3>
 

@@ -17,7 +17,7 @@ def _post_tg_login_redirect(request, user):
 
 def login_view(request):
     if request.user.is_authenticated:
-        return redirect('dashboard')
+        return redirect(_safe_next(request))
 
     from django.conf import settings
 
@@ -57,7 +57,7 @@ def register_view(request):
     пользователем — не блокируем, создаём новый аккаунт и после входа показываем
     плашку с просьбой подтвердить личность через бота (см. dashboard, messages)."""
     if request.user.is_authenticated:
-        return redirect('dashboard')
+        return redirect(_safe_next(request))
 
     from blog.services.applications import find_matching_user
     import uuid as uuid_lib
@@ -90,9 +90,9 @@ def register_view(request):
                 f'через Telegram-бота: https://t.me/{settings.TG_BOT_USERNAME}',
             )
         messages.success(request, 'Регистрация завершена. Добро пожаловать!')
-        return redirect('dashboard')
+        return redirect(_safe_next(request))
 
-    return render(request, 'blog/register.html', {'form': form})
+    return render(request, 'blog/register.html', {'form': form, 'next': request.GET.get('next', '')})
 
 @csrf_exempt
 def telegram_login_callback(request):

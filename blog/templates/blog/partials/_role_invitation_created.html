@@ -1,0 +1,5 @@
+<p>Ссылка выдаёт права: <strong>{{ invitation.get_role_display }}</strong>.</p>
+<p>Действует до {{ invitation.expires_at|date:'d.m.Y H:i' }} МСК. Полученная роль останется после окончания срока ссылки.</p>
+<label for="created-invitation-url">Скопируйте ссылку перед закрытием окна</label>
+<input id="created-invitation-url" type="text" readonly value="{{ invitation_url }}">
+<div class="fap-actions"><button class="btn" type="button" data-copy-text="{{ invitation_url }}">Скопировать</button><a href="{% url 'role_invitation_list' %}" class="btn secondary">К списку приглашений</a></div>

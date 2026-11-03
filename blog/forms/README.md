@@ -8,6 +8,7 @@
 
 | Домен | Файл | Формы |
 |---|---|---|
+| **Приглашения** | [`role_invitations.py`](role_invitations.py) | `RoleInvitationForm`: роль тим-лидера/менеджера и срок действия ссылки в часах |
 | **Вход / регистрация** | [`auth.py`](auth.py) | `LoginForm`, `RegisterForm` |
 | **Планы FaP / Google Таблицы** | [`event_sheets.py`](event_sheets.py) | `EventSheetImportForm`, `GoogleSheetsConnectionForm`, `SheetTeamLeaderBindingForm`; загрузка при создании — `EventGroupForm` в events.py |
 | **Доступ к сканеру QR** | [`qr_attendance.py`](qr_attendance.py) | `ScannerGrantForm` (пользователь + мероприятие), общий `_modal_form.html` |

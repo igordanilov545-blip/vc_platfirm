@@ -4,7 +4,7 @@ import time
 
 from django.utils import timezone
 
-ANALYTICS_EXCLUDED_PREFIXES = ('/static/', '/analytics/', '/admin/')
+ANALYTICS_EXCLUDED_PREFIXES = ('/static/', '/analytics/', '/admin/', '/join/')
 
 
 class TelegramWebAppFrameMiddleware:

@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from data_base import data_controller as dc
 from blog.services.roles import has_manager_access, is_team_leader
-from .fap_workbook import read_xlsx, write_xlsx, only_shifts_content, MSK
+from .fap_workbook import read_xlsx, write_xlsx, only_shifts_content, group_directions, MSK
 
 
 def _manager(operator):
@@ -32,6 +32,7 @@ def fingerprint(plan):
     clean = deepcopy(plan)
     clean.pop('warnings', None)
     clean.pop('stats', None)
+    clean.pop('input_rows', None)
     for direction in clean['directions']:
         for position in direction['positions']:
             position.pop('row', None)
@@ -43,6 +44,9 @@ def current_plan(group):
     link = dc.event_sheet_links_qs().filter(event_group=group).first()
     baseline = link.baseline if link else {}
     plan = {'dates': list(baseline.get('dates', [])), 'directions': [], 'warnings': [], 'quantity_widths': list(baseline.get('quantity_widths', []))}
+    for key in ('grouped_directions', 'quantity_labels'):
+        if key in baseline:
+            plan[key] = deepcopy(baseline[key])
     original_positions = {p['id']: p for d in baseline.get('directions', []) for p in d['positions']}
     directions = list(dc.event_directions_qs().filter(event_group=group))
     direction_map = {d.pk: {'id': str(d.source_key), 'name': d.name, 'order': d.sort_order, 'team_leaders': [], 'responsibles': [], 'positions': []} for d in directions}
@@ -55,14 +59,20 @@ def current_plan(group):
         for item in records:
             if item.position_id is None:
                 direction_map[item.direction_id][key].append(item.display_name)
-    ungrouped = {'id': _key('direction', group.pk), 'name': 'Без направления', 'order': len(directions), 'team_leaders': [], 'responsibles': [], 'positions': []}
     runtime_positions = list(dc.events_qs().filter(event_group=group).prefetch_related('shifts').order_by('pk'))
     all_dates = set(plan['dates'])
     for event in runtime_positions:
         mapped = mapped_positions.get(event.pk)
         pid = str(mapped.source_key) if mapped else _key('position', event.pk)
         original = original_positions.get(pid, {})
-        direction = direction_map[mapped.direction_id] if mapped else ungrouped
+        if mapped:
+            direction = direction_map[mapped.direction_id]
+        else:
+            # Ручная позиция тоже является самостоятельным направлением FaP.
+            direction = {'id': pid, 'name': event.title, 'order': len(direction_map), 'team_leaders': [], 'responsibles': [], 'positions': []}
+            direction_map[('manual', event.pk)] = direction
+        if mapped and baseline.get('grouped_directions'):
+            direction['name'] = event.title
         position = {'id': pid, 'name': event.title, 'order': mapped.sort_order if mapped else event.pk,
                     'is_team_lead_role': mapped.is_team_lead_role if mapped else False,
                     'team_leaders': [x.display_name for x in leaders if mapped and x.position_id == mapped.pk],
@@ -84,7 +94,7 @@ def current_plan(group):
     plan['dates'] += sorted(all_dates - set(plan['dates']))
     if not plan['dates']:
         plan['dates'] = [timezone.localdate().isoformat()]
-    for direction in [*direction_map.values(), ungrouped]:
+    for direction in direction_map.values():
         if not direction['positions']:
             continue
         direction['positions'].sort(key=lambda p: p['order'])
@@ -122,7 +132,7 @@ def current_plan(group):
         selected = [p for p in parts if p['event_day__day'].isoformat() == day]
         plan['stats'][day] = {'recruited': len(selected), 'checked_in': sum(p['status'] == 'attended' for p in selected)}
     plan['stats']['unique_people'] = len({p['user_id'] for p in parts if p['status'] == 'attended'})
-    return plan
+    return group_directions(plan)
 
 
 def _validate_plan(group, plan):
@@ -187,6 +197,9 @@ def import_plan(operator, group, plan, content, name, **link_values):
     _manager(operator)
     group = dc.event_groups_qs().select_for_update().get(pk=group.pk)
     link = dc.event_sheet_links_qs().filter(event_group=group).first()
+    if link and link.baseline and not link.baseline.get('grouped_directions'):
+        repair_direction_import(operator, group)
+        link = dc.event_sheet_links_qs().get(event_group=group)
     source_hash = hashlib.sha256(content).hexdigest()
     if link and link.source_hash == source_hash and not link_values:
         return link
@@ -205,6 +218,19 @@ def import_plan(operator, group, plan, content, name, **link_values):
     # Нормализуем staff/порядок к фактическим записям; исходное оформление остаётся.
     link = dc.save_event_sheet_link(group, template=only_shifts_content(content), baseline=plan, source_hash=source_hash, source_name=name[:255], warnings=plan['warnings'], synced_at=timezone.now(), **link_values)
     return link
+
+
+@transaction.atomic
+def repair_direction_import(operator, group):
+    """Исправляет прежний импорт без заявок/явки, сохраняя первую позицию направления."""
+    _manager(operator)
+    link = dc.event_sheet_links_qs().filter(event_group=group).first()
+    if not link or not link.baseline or link.baseline.get('grouped_directions'):
+        return link
+    plan = group_directions(link.baseline)
+    dc.consolidate_sheet_directions(group, plan)
+    _apply_plan(group, plan)
+    return dc.save_event_sheet_link(group, baseline=plan, warnings=plan['warnings'])
 
 
 def export_workbook(operator, group):

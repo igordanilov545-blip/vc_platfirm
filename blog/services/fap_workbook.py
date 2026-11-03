@@ -125,7 +125,7 @@ def day_shifts(day, work, checkin_out, quantities, warnings, ids=None):
     """0…M подсмен, включая общий интервал с раздельными количествами A/B/C."""
     intervals = _intervals(work, day, warnings)
     checks = _intervals(checkin_out, day, warnings)
-    split = [item for item in quantities[1:] if item['count'] is not None]
+    split = [item for item in quantities[1:] if item['count'] is not None and item['label'] != 'Без времени']
     if len(intervals) == 1 and len(split) > 1:
         intervals = [{**intervals[0], 'label': item['label']} for item in split]
     result = []
@@ -172,6 +172,63 @@ def _metadata(cell):
         except (ValueError, KeyError, TypeError):
             raise ValidationError('Повреждены служебные идентификаторы FaP.')
     return {}
+
+
+def group_directions(plan):
+    """Направление = позиция платформы; строки E — только исходные строки файла."""
+    grouped = deepcopy(plan)
+    grouped['grouped_directions'] = True
+    grouped['input_rows'] = sum(len(d['positions']) for d in plan['directions'])
+    for direction in grouped['directions']:
+        rows = direction['positions']
+        for field in ('team_leaders', 'responsibles'):
+            direction[field] = list(dict.fromkeys(direction[field] + [name for row in rows for name in row[field]]))
+        position = {'id': direction['id'], 'name': direction['name'], 'order': 0, 'row': rows[0].get('row'),
+                    'is_team_lead_role': False, 'team_leaders': [], 'responsibles': [], 'days': []}
+        for day_index, day in enumerate(grouped['dates']):
+            intervals = {}
+            incomplete = []
+            for row in rows:
+                source = row['days'][day_index]
+                if not source['shifts']:
+                    quantities = source['quantities']
+                    counts = [q['count'] for q in quantities[1:] if q['count'] is not None]
+                    count = sum(counts) if counts else quantities[0]['count']
+                    if count is not None:
+                        incomplete.append(count)
+                else:
+                    incomplete.extend(q['count'] for q in source['quantities'] if q['label'] == 'Без времени' and q['count'] is not None)
+                for shift in source['shifts']:
+                    key = (shift['start'], shift['end'], shift['checkin'], shift['checkout'])
+                    if key not in intervals:
+                        intervals[key] = deepcopy(shift)
+                    else:
+                        before = intervals[key]['count']
+                        intervals[key]['count'] = (before or 0) + (shift['count'] or 0) if before is not None or shift['count'] is not None else None
+            shifts = sorted(intervals.values(), key=lambda s: (s['start'], s['end'], s['checkin'] or '', s['checkout'] or ''))
+            for i, shift in enumerate(shifts):
+                shift['label'] = chr(65 + i)
+            def display(start, end):
+                return '\n'.join(f"{s['label']}: {datetime.fromisoformat(s[start]).strftime('%H:%M')}-{datetime.fromisoformat(s[end]).strftime('%H:%M')}" for s in shifts if s[start] and s[end]) or None
+            quantities = [{'label': '', 'count': sum(s['count'] or 0 for s in shifts) + sum(incomplete) if shifts or incomplete else None}]
+            quantities += [{'label': s['label'], 'count': s['count']} for s in shifts]
+            if incomplete:
+                quantities.append({'label': 'Без времени', 'count': sum(incomplete)})
+            position['days'].append({'date': day, 'work': display('start', 'end'), 'checkin_out': display('checkin', 'checkout'),
+                                     'quantities': quantities, 'shifts': shifts})
+        direction['positions'] = [position]
+    grouped['quantity_widths'], grouped['quantity_labels'] = [], []
+    for i, day in enumerate(grouped['dates']):
+        max_shifts = max((len(d['positions'][0]['days'][i]['shifts']) for d in grouped['directions']), default=0)
+        has_unknown = any(any(q['label'] == 'Без времени' for q in d['positions'][0]['days'][i]['quantities']) for d in grouped['directions'])
+        labels = [''] + [chr(65 + j) for j in range(max(2, max_shifts))] + (['Без времени'] if has_unknown else [])
+        grouped['quantity_widths'].append(len(labels))
+        grouped['quantity_labels'].append(labels)
+        for direction in grouped['directions']:
+            item = direction['positions'][0]['days'][i]
+            values = {q['label']: q['count'] for q in item['quantities']}
+            item['quantities'] = [{'label': label, 'count': values.get(label)} for label in labels]
+    return grouped
 
 
 def read_xlsx(content):
@@ -228,7 +285,7 @@ def read_xlsx(content):
         if 'итого' in name.lower():
             direction = None
             continue
-        if not name or not isinstance(value(row, 1), (int, float)):
+        if not isinstance(value(row, 1), (int, float)) or not name and not any(value(row, c) is not None for c in range(6, sheet.max_column + 1)):
             continue
         metadata = _metadata(sheet.cell(row, 5))
         if direction is None:
@@ -279,7 +336,7 @@ def read_xlsx(content):
         raise ValidationError('На вкладке «Смены» не найдены направления и позиции.')
     for direction in plan['directions']:
         direction.pop('_inherited', None)
-    return plan
+    return group_directions(plan)
 
 
 def _copy_style(source, target):
@@ -328,7 +385,8 @@ def _build_layout(plan, template):
         if widths[i] > 2:
             sheet.merge_cells(start_row=1, start_column=starts[i] + 1, end_row=1, end_column=starts[i] + widths[i] - 1)
         for j in range(widths[i]):
-            sheet.cell(2, starts[i] + j, 'всего' if j == 0 else chr(64 + j))
+            labels = plan.get('quantity_labels', [])
+            sheet.cell(2, starts[i] + j, 'всего' if j == 0 else labels[i][j] if i < len(labels) and j < len(labels[i]) else chr(64 + j))
     row = 3
     for index, direction in enumerate(plan['directions']):
         start = row
@@ -366,6 +424,7 @@ def write_xlsx(plan, template=None):
     template = only_shifts_content(template)
     original_plan = read_xlsx(template)
     same_layout = (plan['dates'] == original_plan['dates'] and
+                   original_plan['input_rows'] == sum(len(d['positions']) for d in plan['directions']) and
                    plan.get('quantity_widths') == original_plan.get('quantity_widths') and
                    [len(d['positions']) for d in plan['directions']] == [len(d['positions']) for d in original_plan['directions']] and
                    all(p.get('row') == q['row'] for d, e in zip(plan['directions'], original_plan['directions']) for p, q in zip(d['positions'], e['positions'])))

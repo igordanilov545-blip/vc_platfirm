@@ -33,6 +33,7 @@
 <div class="card" style="margin-top:1.5rem;">
     <h3 data-tour="dash-incidents">🔔 Что нужно посмотреть</h3>
     {% for incident in incidents %}
+        {% if incident.kind != 'pgas_verification' %}
         <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid var(--border-subtle); padding:10px 0;">
             <div>
                 {% if incident.kind == 'tg_collision' %}<span class="pill danger"><span class="dot"></span>Коллизия Telegram</span>
@@ -48,6 +49,7 @@
                 <button type="submit" class="btn secondary btn-sm" title="Отметить решённым">✓</button>
             </form>
         </div>
+        {% endif %}
     {% empty %}
         <p style="color:var(--text-secondary); margin:0;">Новостей нет.</p>
     {% endfor %}

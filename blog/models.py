@@ -488,6 +488,30 @@ class Season(models.Model):
         return f"Season: {self.start_season} - {self.end_season or '...'}"
 
 
+class RoleInvitation(models.Model):
+    ROLE_CHOICES = [('team_lead', 'Тим-лидер'), ('manager', 'Менеджер')]
+    token_hash = models.CharField(max_length=64, unique=True, editable=False)
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_role_invitations')
+    created_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'role_invitations'
+        ordering = ['-created_at', '-pk']
+
+
+class RoleInvitationUse(models.Model):
+    invitation = models.ForeignKey(RoleInvitation, on_delete=models.CASCADE, related_name='uses')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='role_invitation_uses')
+    used_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'role_invitation_uses'
+        constraints = [models.UniqueConstraint(fields=['invitation', 'user'], name='unique_role_invitation_user')]
+
+
 class EventGroup(models.Model):
     """Мероприятие верхнего уровня: объединяет позиции, не меняя их заявки и смены."""
     title = models.CharField(max_length=255)

@@ -4,6 +4,7 @@ from blog.models import (
     SheetShift, SheetTeamLeader, ZoneResponsible, EventSheetLink, GoogleSheetsConnection,
 )
 from ._base import logger, actor
+from django.core.exceptions import ValidationError
 
 
 def event_directions_qs():
@@ -163,3 +164,33 @@ def delete_unused_sheet_directions(group, keep_keys):
         if not assignment.sheet_sources.exists():
             assignment.delete()
     logger.info('DELETE unused_sheet_directions: group=%s', group.pk)
+
+
+def consolidate_sheet_directions(group, plan):
+    positions = SheetPosition.objects.filter(event__event_group=group)
+    if positions.filter(event__applications__isnull=False).exists() or positions.filter(event__shifts__participations__isnull=False).exists():
+        raise ValidationError('У прежних позиций есть заявки или явка. Автоматическое объединение остановлено, данные сохранены.')
+    for source in plan['directions']:
+        rows = list(positions.filter(direction__source_key=source['id']).select_related('event', 'direction'))
+        if not rows:
+            continue
+        keeper = rows[0]
+        old_event_ids = [row.event_id for row in rows]
+        shift_keys = [s['id'] for day in source['positions'][0]['days'] for s in day['shifts']]
+        kept = list(SheetShift.objects.filter(position_day__position__in=rows, source_key__in=shift_keys).select_related('shift'))
+        for staff in EventStaff.objects.filter(event_id__in=old_event_ids, sheet_sources__isnull=True):
+            EventStaff.objects.get_or_create(event_id=keeper.event_id, user_id=staff.user_id, staff_role=staff.staff_role)
+        for shift in kept:
+            day, _ = SheetPositionDay.objects.get_or_create(position=keeper, day=shift.shift.day)
+            EventShift.objects.filter(pk=shift.shift_id).update(event_id=keeper.event_id)
+            shift.position_day = day
+            shift.save(update_fields=['position_day'])
+        extra = SheetShift.objects.filter(position_day__position__in=rows).exclude(source_key__in=shift_keys)
+        delete_sheet_shift_records(extra)
+        for model in (SheetTeamLeader, ZoneResponsible):
+            model.objects.filter(position__in=rows).update(position=None)
+        Event.objects.filter(pk__in=old_event_ids).exclude(pk=keeper.event_id).delete()
+        keeper.source_key, keeper.sort_order = source['id'], 0
+        keeper.save(update_fields=['source_key', 'sort_order'])
+        Event.objects.filter(pk=keeper.event_id).update(title=source['name'])
+    logger.info('CONSOLIDATE FaP directions: group=%s', group.pk)

@@ -332,7 +332,7 @@
             }
             // Статистика/ПГАС
             s0.push(s('.stat-grid', { photo: GOOSE[0], placement: 'bottom', url: URLS.profile,
-                title: 'Звёздочка ПГАС ⭐', text: 'Набрал часов за сезон — открывается справка для ПГАС. За ней не надо бегать по кабинетам.' }));
+                title: 'Статистика участия', text: 'В профиле видны часы и история участия в сменах.' }));
             // Мелочи
             s0.push(s('#theme-toggle', { photo: GOOSE[2], placement: 'right',
                 mobileTarget: '[data-mtab="more"]',
@@ -367,7 +367,7 @@
                     text: 'Центр управления. Видишь и можешь всё: любое меро, любую заявку, все отчёты. Держишь всё вместе.' }));
                 s0.push(s('[data-tour="dash-incidents"], [data-track="nav:dashboard"]', { placement: 'top', url: URLS.dashboard,
                     mobileTarget: '[data-tour="dash-incidents"]',
-                    title: 'Что горит', text: '«Что нужно посмотреть»: коллизии Telegram, идущие меро, заявки на верификацию ПГАС. Приоритеты расставлены за тебя.' }));
+                    title: 'Что горит', text: '«Что нужно посмотреть»: коллизии Telegram и идущие мероприятия. Приоритеты расставлены за тебя.' }));
                 // Меро: создание и жизненный цикл
                 s0.push(s('[data-tour="events-create"]', { photo: GOOSE[1], placement: 'left', url: URLS.events,
                     title: '+ Создать меро', text: 'Заводишь меро прямо в окне. Нет организации или локации в справочнике? Создаёшь тут же через «＋», не теряя введённое.' }));
@@ -394,7 +394,7 @@
                     mobileTarget: '[data-mtab="more"]',
                     title: '👥 Пользователи', text: 'Все волонтёры: карточки, история, внутренние комментарии. На телефоне — в меню «Ещё». Отсюда — в любой профиль.' }));
                 s0.push(s('[data-tour="profile-verify"], .stat-grid', { photo: GOOSE[3], placement: 'top', url: URLS.profile,
-                    title: 'Верификация ПГАС', text: 'В чужом профиле: проверил, что волонтёр реален и часы честные — «Выдать верификацию». Это ключ к справке ПГАС.' }));
+                    title: 'Профиль участника', text: 'В профиле доступны история участия и контакты в рамках ваших прав.' }));
                 // Отчёты
                 s0.push(s('[data-track="nav:report_period"]', { photo: GOOSE[0], placement: 'right', url: URLS.reports,
                     mobileTarget: '[data-mtab="more"]',
@@ -406,7 +406,7 @@
                 // Настройки (детально — отдельный тур; тут просто заводим на страницу)
                 s0.push(s('.settings-tab, [data-track="nav:report_period"]', { photo: GOOSE[3], placement: 'bottom', url: URLS.settings,
                     mobileTarget: '.settings-tab, [data-mtab="more"]',
-                    title: '⚙️ Настройки', text: 'Тут всё «редко, но метко»: справочники, требования, роли, константы, шаблон ПГАС. На странице настроек гусь проведёт отдельно по каждой вкладке.' }));
+                    title: '⚙️ Настройки', text: 'Справочники, требования, роли, приглашения и константы. На странице настроек гусь проведёт отдельно по каждой вкладке.' }));
             }
 
             return s0.filter(Boolean);

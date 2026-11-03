@@ -4,6 +4,7 @@
 {% block content %}
 <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;">
     <h1>Настройки</h1>
+    <a href="{% url 'role_invitation_list' %}" class="btn secondary">Ссылки приглашения</a>
     <button type="button" class="companion-launch" id="companion-launch" style="max-width:320px;">
         <img src="{% static 'blog/companion/goose_0.jpg' %}" alt="Компаньон">
         <span class="companion-launch-text">
@@ -15,14 +16,14 @@
 
 <div class="card settings-hub-card">
     <div class="report-types settings-tabs" id="settings-tabs">
-        {% for tab in tabs %}
+        {% for tab in tabs %}{% if tab.key != 'pgas_template' %}
         <button type="button" class="report-type settings-tab {% if tab.key == active_tab %}active{% endif %}"
                 data-tab="{{ tab.key }}" data-url="{{ tab.url }}">
             <span class="rt-icon">{{ tab.icon }}</span>
             <span class="rt-title">{{ tab.title }}</span>
             <span class="rt-desc">{{ tab.desc }}</span>
         </button>
-        {% endfor %}
+        {% endif %}{% endfor %}
     </div>
 </div>
 
@@ -163,9 +164,6 @@
             { target: tab('constants'), placement: 'bottom', photo: GOOSE[0], tabKey: 'constants',
               title: '🔢 Константы',
               text: 'Пороги churn, часы отмены и прочие коэффициенты. На реально опасных правках попросят капчу с пояснением — трение ровно там, где спасает от случайной ошибки.' },
-            { target: tab('pgas_template'), placement: 'bottom', photo: GOOSE[0], tabKey: 'pgas_template',
-              title: '📄 Шаблон справки ПГАС',
-              text: 'Текст справки ВЦ и плейсхолдеры (ФИО, часы, даты). Меняешь шаблон — меняется каждая выдаваемая справка.' },
         ];
 
         var OUTRO = {

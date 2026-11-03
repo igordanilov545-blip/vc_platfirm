@@ -127,7 +127,8 @@ def _safe_next(request, default='dashboard'):
     путь того же сайта (защита от open-redirect), иначе — дефолтный маршрут."""
     from django.utils.http import url_has_allowed_host_and_scheme
 
-    next_url = request.POST.get('next') or request.GET.get('next')
+    invitation_next = request.session.pop('role_invitation_next', '')
+    next_url = request.POST.get('next') or request.GET.get('next') or invitation_next
     if next_url and url_has_allowed_host_and_scheme(
         next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
     ):

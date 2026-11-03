@@ -25,7 +25,7 @@ STATUS_LABELS = {'new': 'Новая заявка', 'approved': 'Одобрена
 
 def _profile(source, application, today):
     birthday = getattr(source, 'birthday', None)
-    vk = getattr(source, 'vk_profile_url', '')
+    vk = getattr(source, 'vk_profile_url', '') or getattr(source, 'VK_username', '') or ''
 
     def value(field):
         return getattr(source, field, '') or getattr(application, field, '') or ''
@@ -33,7 +33,7 @@ def _profile(source, application, today):
     return [value('first_name'), value('last_name'),
             _age_on(birthday, today) if birthday and birthday <= today else None,
             birthday, getattr(source, 'email', '') or '', value('phone'),
-            value('telegram_username'), vk, getattr(source, 'instagram_profile_url', '') or '',
+            value('telegram_username'), vk, getattr(source, 'instagram_profile_url', '') or getattr(source, 'instagram_url', '') or '',
             getattr(source, 'preferred_contacts_display', ''), getattr(source, 'tshirt_size', '')]
 
 

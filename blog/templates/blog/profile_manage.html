@@ -77,7 +77,7 @@
     <p>ФИО: {{ target.last_name }} {{ target.first_name }}{% if target.middle_name %} {{ target.middle_name }}{% endif %}</p>
     <p>Телефон: {{ target.phone|default:"—" }}</p>
     <p>Email: {{ target.email|default:"—" }}</p>
-    <p>VK: {% if target.vk_profile_url %}<a href="{{ target.vk_profile_url }}" target="_blank" rel="noopener noreferrer">{{ target.vk_profile_url }}</a>{% else %}—{% endif %}</p>
+    <p>VK: {% if target.vk_profile_url %}<a href="{{ target.vk_profile_url }}" target="_blank" rel="noopener noreferrer">{{ target.vk_profile_url }}</a>{% else %}{{ target.VK_username|default:'—' }}{% endif %}</p>
     <p>Дата рождения: {{ target.birthday|default:"—" }}</p>
     <p>Пол: {{ target.get_gender_display|default:"—" }}</p>
     {% if is_manager %}

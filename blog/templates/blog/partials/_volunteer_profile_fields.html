@@ -1,4 +1,4 @@
-<p>Ссылка на вашу страницу в Инстаграме: {% if target.instagram_profile_url %}<a href="{{ target.instagram_profile_url }}" target="_blank" rel="noopener noreferrer">{{ target.instagram_profile_url }}</a>{% else %}—{% endif %}</p>
+<p>Ссылка на вашу страницу в Инстаграме: {% if target.instagram_profile_url %}<a href="{{ target.instagram_profile_url }}" target="_blank" rel="noopener noreferrer">{{ target.instagram_profile_url }}</a>{% else %}{{ target.instagram_url|default:'—' }}{% endif %}</p>
 <p>Наиболее удобный способ связи: {{ target.preferred_contacts_display|default:'—' }}</p>
 <p>Вы могли бы помогать нам в дневное время в будни? {{ target.get_weekday_daytime_available_display|default:'—' }}</p>
 <p>Опыт волонтёрства: {{ target.volunteer_experience|default:'—'|linebreaksbr }}</p>

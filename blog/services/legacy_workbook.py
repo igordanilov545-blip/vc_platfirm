@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from openpyxl import load_workbook
 from blog.services.fap_workbook import normalized_name, _date
-from blog.services.social_profiles import social_username
+from blog.services.social_profiles import social_value
 
 
 def key(value):
@@ -35,7 +35,13 @@ def phone_key(value):
 
 
 def text(value):
-    return str(int(value)) if isinstance(value, float) and value.is_integer() else str(value or '').strip()
+    return str(int(value)) if isinstance(value, float) and value.is_integer() else str(value if value is not None else '').strip()
+
+
+def phone_number(value):
+    raw = text(value)
+    digits = phone_key(value)
+    return '+' + digits if digits and any(digit != '0' for digit in digits) and len(digits) <= 19 and re.fullmatch(r'[\d+\s().-]+', raw) else ''
 
 
 def yes_no(value):
@@ -125,25 +131,17 @@ def read_legacy_workbook(content, *, max_rows=10000):
             get = lambda name: values[mapping[name]] if name in mapping and mapping[name] < len(values) else None
             profile = {name: text(get(name))[:255] for name in ('volunteer_experience', 'motivation', 'familiar_positions', 'performed_tasks')}
             for name in ('first_name', 'last_name'):
-                profile[name] = text(get(name))[:100]
-            if not profile['first_name']:
-                errors.append(f'Строка {number}: не заполнено имя.')
+                profile[name] = text(get(name))[:100] or 'unnamed'
             profile['birthday'] = _date(get('birthday'), epoch=wb.epoch)
-            if get('birthday') and not profile['birthday']:
-                warnings.append(f'Строка {number}: дата рождения не распознана; поле оставлено пустым.')
             for field, platform in (('telegram_username', 'telegram'), ('VK_username', 'vk'), ('instagram_url', 'instagram')):
-                profile[field] = social_username(get(field), platform)
-                if get(field) and not profile[field]:
-                    label = next(label for label, name in FIELDS.items() if name == field)
-                    warnings.append(f'Строка {number}: не распознано поле «{label}».')
-            digits = phone_key(get('phone'))
-            profile['phone'] = '+' + digits if digits and len(digits) <= 19 else ''
+                maximum = 255 if platform == 'instagram' else 100
+                profile[field] = social_value(get(field), platform)[:maximum]
+            profile['phone'] = phone_number(get('phone')) or text(get('phone'))[:20]
             profile['email'] = text(get('email'))
             try:
                 if profile['email']:
                     validate_email(profile['email'])
             except ValidationError:
-                warnings.append(f'Строка {number}: почта не распознана; поле оставлено пустым.')
                 profile['email'] = ''
             profile.update({name: yes_no(get(name)) for name in ('weekday_daytime_available', 'wants_team_lead')})
             size = text(get('tshirt_size')).upper()

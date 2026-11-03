@@ -30,3 +30,8 @@ def social_username(value, platform):
 def social_url(value, platform):
     handle = social_username(value, platform)
     return PREFIXES[platform] + handle + ('/' if platform == 'instagram' else '') if handle else ''
+
+
+def social_value(value, platform):
+    """Нормализовать понятный ник, иначе сохранить исходный свободный текст."""
+    return social_username(value, platform) or str(value if value is not None else '').strip()

@@ -306,6 +306,37 @@
         });
     }
 
+    function initProfileCompletion(root) {
+        root.querySelectorAll('[data-profile-form]').forEach(function (form) {
+            if (form.dataset.completionInit) return;
+            var meter = document.getElementById('profile-completion');
+            if (!meter) return;
+            form.dataset.completionInit = '1';
+            var fields = Array.from(form.querySelectorAll('[data-profile-completion-field]'));
+            function update() {
+                var filled = fields.filter(function (wrapper) {
+                    var inputs = Array.from(wrapper.querySelectorAll('input[name], select[name], textarea[name]'));
+                    if (inputs.some(function (input) { return input.type === 'checkbox'; })) {
+                        return inputs.some(function (input) { return input.checked; });
+                    }
+                    return inputs.some(function (input) { return input.value.trim() !== '' && input.checkValidity(); });
+                }).length;
+                var percent = fields.length ? Math.round(100 * filled / fields.length) : 0;
+                meter.querySelector('[data-profile-percent]').textContent = percent + '%';
+                meter.querySelector('[data-profile-count]').textContent = 'Заполнено ' + filled + ' из ' + fields.length + ' полей';
+                meter.querySelector('[role=progressbar]').setAttribute('aria-valuenow', percent);
+                var bar = meter.querySelector('.recruit-bar-fill');
+                bar.style.width = percent + '%';
+                bar.style.setProperty('--pct', percent);
+            }
+            form.addEventListener('input', update);
+            form.addEventListener('change', update);
+            form.addEventListener('reset', function () { setTimeout(update, 0); });
+            // Сервер уже проверил bound-форму: ошибки при первом показе учитываются им.
+        });
+    }
+    initProfileCompletion(document);
+
     // ======================================================================
     // Одиночный date-picker (brandbook §6.3): текстовое поле-триггер (data-datepicker)
     // раскрывает popover с одним месяцем; выбор даты закрывает popover сразу.

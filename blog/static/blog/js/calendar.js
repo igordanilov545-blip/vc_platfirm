@@ -27,8 +27,10 @@
             var defaultYearsAgo = parseInt(input.getAttribute('data-dp-default-years-ago'), 10) || 0;
             var fallback = new Date();
             if (defaultYearsAgo) fallback.setFullYear(fallback.getFullYear() - defaultYearsAgo);
-            var selected = dpParseISO(input.value) || fallback;
-            var viewMonth = new Date(selected.getFullYear(), selected.getMonth(), 1);
+            var keepEmpty = input.hasAttribute('data-dp-keep-empty');
+            var selected = dpParseISO(input.value) || (keepEmpty ? null : fallback);
+            var viewDate = selected || fallback;
+            var viewMonth = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
 
             var wrap = document.createElement('div');
             wrap.className = 'datepicker-wrap';
@@ -54,10 +56,25 @@
             var hidden = document.createElement('input');
             hidden.type = 'hidden';
             hidden.name = input.name;
-            hidden.value = dpToISO(selected);
+            hidden.value = selected ? dpToISO(selected) : '';
             input.removeAttribute('name');
             input.remove();
             wrap.appendChild(hidden);
+            var clearButton;
+            if (keepEmpty) {
+                clearButton = document.createElement('button');
+                clearButton.type = 'button';
+                clearButton.className = 'btn secondary small';
+                clearButton.textContent = 'Очистить дату';
+                clearButton.addEventListener('click', function () {
+                    selected = null;
+                    hidden.value = '';
+                    hidden.dataset.isoValue = '';
+                    hidden.dispatchEvent(new Event('change', { bubbles: true }));
+                    renderMonth();
+                });
+                wrap.appendChild(clearButton);
+            }
 
             function renderMonth() {
                 var year = viewMonth.getFullYear(), month = viewMonth.getMonth();
@@ -88,13 +105,14 @@
                 for (var day = 1; day <= daysInMonth; day++) {
                     var d = new Date(year, month, day);
                     var classes = ['day'];
-                    if (dpSameDay(d, selected)) classes.push('selected');
+                    if (selected && dpSameDay(d, selected)) classes.push('selected');
                     if (dpSameDay(d, today)) classes.push('today');
                     html += '<div class="' + classes.join(' ') + '" data-dp-date="' + dpToISO(d) + '">' + day + '</div>';
                 }
                 html += '</div>';
                 cal.innerHTML = html;
-                label.querySelector('.mono').textContent = dpFmt(selected);
+                label.querySelector('.mono').textContent = selected ? dpFmt(selected) : 'Дата не указана';
+                if (clearButton) clearButton.disabled = !selected;
 
                 cal.querySelectorAll('[data-dp-nav]').forEach(function (btn) {
                     btn.addEventListener('click', function () {

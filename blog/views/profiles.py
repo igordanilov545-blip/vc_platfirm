@@ -168,9 +168,9 @@ def profile_detail(request, user_id):
         context['pgas_missing'] = pgas['missing']
         context['pgas_only_verification_missing'] = only_verification_missing(target)
 
-    if has_extended and not is_owner:
-        from blog.services.pgas_certificate import compute_course_and_graduation
-        context['course_info'] = compute_course_and_graduation(target)
+    if is_owner:
+        from blog.services.profile_completion import profile_completion
+        context['profile_completion'] = profile_completion(target)
 
     # Публичный блок ТЛ/менеджера (reports.md: кол-во меро как ТЛ, дата назначения).
     tl_role = target.team_leader_roles.filter(revoked_at__isnull=True).first()

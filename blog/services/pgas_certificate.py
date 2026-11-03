@@ -14,22 +14,6 @@ from blog.services.roles import account_is_complete, account_missing_fields
 
 logger = get_web_logger(__name__)
 
-# Длительность обучения по образовательной программе, лет. Жёсткий словарь без
-# UI-управления (по требованию — всё по умолчанию 4 года, точечные исключения
-# добавляются сюда вручную по мере необходимости).
-PROGRAM_YEARS = {}
-DEFAULT_PROGRAM_YEARS = 4
-
-
-def program_duration_years(education_program: str) -> int:
-    return PROGRAM_YEARS.get((education_program or '').strip(), DEFAULT_PROGRAM_YEARS)
-
-
-def compute_course_and_graduation(user: User) -> dict:
-    """Совместимость старых шаблонов: учебные данные удалены из анкеты и БД."""
-    return {'course': None, 'graduation_year': None}
-
-
 def pgas_certificate_eligibility(user: User) -> dict:
     """Возвращает {'eligible': bool, 'missing': list[str]} — что не хватает для
     получения справки. `missing` — человекочитаемые причины, в порядке проверки."""
@@ -271,7 +255,6 @@ def _gender_value(placeholder_forms, gender: str) -> str:
 def build_replacements(user: User, *, period_label: str, issue_date) -> dict:
     """Плейсхолдеры «шапки» (поля волонтёра + гендерные + дата/период) → значения.
     Единый источник для рендера. Блоковые плейсхолдеры мероприятия — отдельно."""
-    course_info = compute_course_and_graduation(user)
     if not user.gender:
         logger.warning('Пол не указан для справки ПГАС (user=%s) — берём мужскую форму', user.id)
 
@@ -279,8 +262,8 @@ def build_replacements(user: User, *, period_label: str, issue_date) -> dict:
         '{full_name}': user.full_name,
         '{faculty}': '',
         '{education_program}': '',
-        '{course}': str(course_info['course']) if course_info['course'] else '',
-        '{graduation_year}': str(course_info['graduation_year']) if course_info['graduation_year'] else '',
+        '{course}': '',
+        '{graduation_year}': '',
         '{admission_year}': '',
         '{date}': issue_date.strftime('%d.%m.%Y'),
         '{period}': period_label,

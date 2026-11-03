@@ -6,6 +6,7 @@
 Общие импорты (django.forms, модели) — из ._common.
 """
 from ._common import *  # noqa: F401,F403
+from blog.services.profile_completion import PROFILE_SECTIONS, profile_completion
 
 
 class QuickVolunteerForm(forms.Form):
@@ -59,23 +60,17 @@ class ProfileForm(forms.ModelForm):
 
     class Meta:
         model = User
-        fields = [
-            'first_name', 'last_name', 'middle_name', 'system_username',
-            'telegram_username', 'phone', 'email', 'birthday', 'gender', 'about', 'VK_username',
-            'instagram_url', 'preferred_contact_methods', 'weekday_daytime_available',
-            'volunteer_experience', 'motivation', 'familiar_positions', 'performed_tasks',
-            'wants_team_lead', 'tshirt_size',
-        ]
+        fields = [name for _, _, names in PROFILE_SECTIONS for name in names]
         widgets = {
             'birthday': forms.DateInput(
-                # data-dp-default-years-ago="18" — если дата ещё не указана, календарь
-                # сразу открывается и предзаполняется «сегодня минус 18 лет» (средний
-                # возраст волонтёра), а не сегодняшним днём, откуда до нужного года
-                # пришлось бы листать вручную.
-                attrs={'type': 'text', 'data-datepicker': '', 'data-dp-default-years-ago': '18', 'autocomplete': 'off'},
+                attrs={'type': 'text', 'data-datepicker': '', 'data-dp-keep-empty': '', 'autocomplete': 'off'},
                 format='%Y-%m-%d',
             ),
             'about': forms.Textarea(attrs={'rows': 3}),
+            'volunteer_experience': forms.Textarea(attrs={'rows': 3}),
+            'motivation': forms.Textarea(attrs={'rows': 3}),
+            'familiar_positions': forms.Textarea(attrs={'rows': 3}),
+            'performed_tasks': forms.Textarea(attrs={'rows': 3}),
         }
         labels = {
             'system_username': 'Юзернейм для системы',
@@ -99,6 +94,18 @@ class ProfileForm(forms.ModelForm):
         self.fields['telegram_username'].required = True
         for field in self.fields.values():
             field.widget.attrs['data-counter-mode'] = 'limit'
+
+    @property
+    def sections(self):
+        return [{'key': key, 'title': title, 'fields': [self[name] for name in names]}
+                for key, title, names in PROFILE_SECTIONS]
+
+    @property
+    def completion(self):
+        if self.is_bound:
+            self.errors  # Вычисляем cleaned_data: ошибочные ответы не считаются заполненными.
+            return profile_completion(self.cleaned_data)
+        return profile_completion(self.instance)
 
     def clean_preferred_contact_methods(self):
         return list(dict.fromkeys(self.cleaned_data['preferred_contact_methods']))

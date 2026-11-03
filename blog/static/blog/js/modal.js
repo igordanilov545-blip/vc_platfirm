@@ -73,7 +73,7 @@
          'initDateRangePair', 'initTimepickers', 'initInfiniteScroll',
          'bindRoleForms', 'initAttendanceHoursInputs', 'initLetterEditor',
          'initPasswordToggle', 'initToasts', 'initExperienceCopy',
-         'initAchievementPopup', 'initQrScanner'].forEach(function (fn) {
+         'initAchievementPopup', 'initQrScanner', 'initProfileCompletion'].forEach(function (fn) {
             if (typeof window[fn] === 'function') window[fn](root);
         });
     }

@@ -26,6 +26,8 @@
     <div class="stat-tile"><div class="value">{{ target.external_experiences.count }}</div><div class="label">Внешние мероприятия</div></div>
 </div>
 
+{% include 'blog/partials/_profile_completion.html' with progress=profile_completion %}
+
 <div class="card">
     <h3>Анкета волонтёра</h3>
     {% include 'blog/partials/_volunteer_profile_fields.html' %}

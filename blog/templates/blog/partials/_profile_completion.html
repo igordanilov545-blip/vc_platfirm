@@ -1,0 +1,7 @@
+<section class="card profile-completion" id="profile-completion" data-profile-progress>
+    <div class="profile-completion-heading"><h3>Заполненность профиля</h3><strong data-profile-percent>{{ progress.percent }}%</strong></div>
+    <div class="recruit-bar" role="progressbar" aria-label="Заполненность профиля" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ progress.percent }}">
+        <span class="recruit-bar-fill" style="width:{{ progress.percent }}%; --pct:{{ progress.percent }};"></span>
+    </div>
+    <p class="field-hint" data-profile-count>Заполнено {{ progress.filled }} из {{ progress.total }} полей</p>
+</section>

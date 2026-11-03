@@ -2,6 +2,7 @@
 from io import BytesIO
 import re
 from decimal import Decimal, ROUND_HALF_UP
+from datetime import timedelta
 
 import qrcode
 from qrcode.util import QRData, MODE_8BIT_BYTE
@@ -83,7 +84,7 @@ def _available_shifts(user):
 def scan_context(operator, token):
     """Мини-карточка без контактов: ФИО, незаконченные отметки и порядок смен."""
     user = _scanned_user(operator, token)
-    records = {row.shift_id: row for row in dc.shift_attendance_qs().filter(user=user)}
+    records = {row.shift_id: row for row in dc.shift_attendance_qs().filter(user=user).select_related('shift__event__event_group')}
     now = timezone.now()
     shifts = sorted(_available_shifts(user), key=lambda shift: (shift.end_time < now, shift.start_time, shift.pk))
     rows = []
@@ -94,7 +95,62 @@ def scan_context(operator, token):
         rows.append({'shift': shift, 'attendance': record,
                      'action': 'out' if record else 'in',
                      'can_mark': shift.event.event_status != 'finished' and can_mark_shift(operator, shift)})
-    return {'scanned_user': user, 'shift_rows': rows, 'nearest_shift': rows[0]['shift'] if rows else None}
+    return {'scanned_user': user, 'shift_rows': rows, 'nearest_shift': rows[0]['shift'] if rows else None,
+            'last_attendance': max(records.values(), key=lambda row: (row.exited_at or row.entered_at, row.pk), default=None),
+            'enrollment_shifts': _enrollment_shifts(operator, user),
+            'checkin_lead_minutes': dc.get_const('qr_enroll_checkin_lead_minutes', default=60)}
+
+
+def _enrollment_shifts(operator, user):
+    """Открытый набор: только ещё не закончившиеся смены в области прав оператора."""
+    shifts = dc.event_shifts_qs().filter(recruit_status='open', end_time__gt=timezone.now()).exclude(
+        event__event_status='finished',
+    ).exclude(participations__user=user).select_related('event__event_group').order_by('start_time', 'pk')
+    if not has_manager_access(operator) and dc.get_const('qr_scanner_scoped_access', default=0):
+        groups = dc.scanner_grants_qs().filter(user=operator, revoked_at=None).values('event_group_id')
+        scope = Q(event__event_group_id__in=groups)
+        if is_team_leader(operator):
+            positions = dc.event_staff_qs().filter(user=operator, staff_role='team_lead').values('event_id')
+            scope |= Q(event_id__in=positions)
+        shifts = shifts.filter(scope)
+    return shifts
+
+
+@transaction.atomic
+def enroll_scanned_user(operator, token, shift_id):
+    """Ручное одобрение одной смены; при скором начале сразу фиксируется вход."""
+    from blog.services.applications import create_manual_application, application_shifts, ensure_shift_decisions, process_shift_decision
+    from blog.services.requirements import check_application_requirements
+
+    user = _scanned_user(operator, token)
+    # Сериализуем параллельные записи одного человека, в том числе создание заявки.
+    user = dc.users_qs().select_for_update().get(pk=user.pk)
+    shift = dc.event_shifts_qs().filter(pk=shift_id).select_related('event__event_group').first()
+    if not shift:
+        raise ValidationError('Смена не найдена.')
+    if not can_mark_shift(operator, shift):
+        raise PermissionDenied('Нет права записывать на эту смену.')
+    if dc.participations_qs().filter(user=user, event_day=shift).exists():
+        return 'Участник уже записан на смену.'
+    if not _enrollment_shifts(operator, user).filter(pk=shift.pk).exists():
+        raise ValidationError('Набор закрыт, смена закончилась или позиция завершена.')
+    requirements = check_application_requirements(shift.event, user)
+    if requirements['auto_reject']:
+        raise ValidationError('; '.join(requirements['reasons']))
+    application, created = create_manual_application(shift.event, user, operator, shifts=[shift])
+    if not created:
+        # Сначала материализуем прежние решения: общий approved не должен
+        # автоматически одобрять новую смену при расширении выбора.
+        ensure_shift_decisions(application)
+        selected = application_shifts(application)
+        if all(item.pk != shift.pk for item in selected):
+            dc.set_application_shifts(application, selected + [shift])
+    process_shift_decision(application, shift, 'approved', operator)
+    lead_minutes = dc.get_const('qr_enroll_checkin_lead_minutes', default=60)
+    if shift.start_time <= timezone.now() + timedelta(minutes=lead_minutes):
+        mark_scan(operator, token, shift.pk, 'in')
+        return 'Записан на смену. Вход отмечен.'
+    return 'Записан на смену. Явка пока не отмечена.'
 
 
 @transaction.atomic

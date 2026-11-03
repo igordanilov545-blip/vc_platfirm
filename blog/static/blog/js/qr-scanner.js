@@ -47,18 +47,39 @@ function initQrScanner(root) {
             return html;
         }
         function bindMarks() {
-            modalBody.querySelectorAll('[data-qr-mark]').forEach(function (button) {
-                button.addEventListener('click', async function () {
-                    modalBody.querySelectorAll('[data-qr-mark]').forEach(function (other) { other.disabled = true; });
-                    try {
-                        modalBody.innerHTML = await post(VC_URLS.qrMark, {token: token, shift_id: button.dataset.shiftId, action: button.dataset.qrMark});
+            var card = modalBody.querySelector('[data-qr-result]');
+            var cardToken = token;
+            async function updateCard(url, values, checkbox) {
+                var controls = Array.from(card.querySelectorAll('input, select, button'));
+                var disabled = controls.map(function (control) { return control.disabled; });
+                controls.forEach(function (control) { control.disabled = true; });
+                card.setAttribute('aria-busy', 'true');
+                var message = card.querySelector('[data-qr-mark-status]');
+                message.textContent = '';
+                try {
+                    values.token = cardToken;
+                    var html = await post(url, values);
+                    if (card.isConnected && token === cardToken) {
+                        modalBody.innerHTML = html;
                         bindMarks();
-                    } catch (error) {
-                        var message = modalBody.querySelector('[data-qr-mark-status]');
-                        if (message) message.textContent = error.message;
-                        modalBody.querySelectorAll('[data-qr-mark]').forEach(function (other) { other.disabled = false; });
                     }
+                } catch (error) {
+                    if (checkbox) checkbox.checked = false;
+                    message.textContent = error.message;
+                    controls.forEach(function (control, index) { control.disabled = disabled[index]; });
+                } finally { card.removeAttribute('aria-busy'); }
+            }
+            card.querySelectorAll('[data-qr-mark]').forEach(function (checkbox) {
+                checkbox.addEventListener('change', function () {
+                    if (!checkbox.checked) return;
+                    updateCard(VC_URLS.qrMark, {shift_id: checkbox.dataset.shiftId, action: checkbox.dataset.qrMark}, checkbox);
                 });
+            });
+            var form = card.querySelector('[data-qr-enroll]');
+            if (form) form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                if (!form.reportValidity()) return;
+                updateCard(VC_URLS.qrEnroll, {shift_id: form.elements.shift_id.value});
             });
         }
         async function found(value) {

@@ -6,7 +6,7 @@ urls.py и прочий код не меняются. Карта «домен �
 """
 from ._common import healthz  # noqa: F401
 from .qr_attendance import (  # noqa: F401
-    personal_qr, personal_qr_png, qr_scanner, qr_scan, qr_mark,
+    personal_qr, personal_qr_png, qr_scanner, qr_scan, qr_mark, qr_enroll,
     qr_scanner_grant, qr_scanner_revoke,
 )
 from .quick_create import (  # noqa: F401

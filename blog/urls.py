@@ -8,6 +8,7 @@ urlpatterns = [
     path('management/scanner/', views.qr_scanner, name='qr_scanner'),
     path('management/scanner/scan/', views.qr_scan, name='qr_scan'),
     path('management/scanner/mark/', views.qr_mark, name='qr_mark'),
+    path('management/scanner/enroll/', views.qr_enroll, name='qr_enroll'),
     path('management/scanner/grant/', views.qr_scanner_grant, name='qr_scanner_grant'),
     path('management/scanner/grants/<int:grant_id>/revoke/', views.qr_scanner_revoke, name='qr_scanner_revoke'),
     path('login/', views.login_view, name='login'),

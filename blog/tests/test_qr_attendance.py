@@ -183,6 +183,147 @@ class QRCheckInTests(TestCase):
         self.assertEqual(qr.scan_context(self.manager, self.token)['shift_rows'], [])
 
 
+class QRCardAndEnrollmentTests(TestCase):
+    def setUp(self):
+        self.manager = f.make_manager()
+        self.volunteer = f.make_user()
+        self.group = EventGroup.objects.create(title='Фестиваль')
+        self.position = f.make_event(event_group=self.group)
+        self.token = qr.personal_token(self.volunteer)
+        self.client.force_login(self.manager)
+
+    def shift_at(self, start, **kwargs):
+        return f.make_shift(self.position, day=timezone.localdate(start), start_time=start,
+                            end_time=start + timedelta(hours=2), **kwargs)
+
+    def test_card_has_profile_link_table_and_latest_mark_after_exit(self):
+        shift = self.shift_at(timezone.now() + timedelta(minutes=15))
+        f.make_participation(self.volunteer, shift, status='pending', hours=0)
+        qr.mark_scan(self.manager, self.token, shift.pk, 'in')
+        qr.mark_scan(self.manager, self.token, shift.pk, 'out')
+        response = self.client.post(reverse('qr_scan'), {'token': self.token})
+        self.assertContains(response, reverse('profile_detail', args=[self.volunteer.pk]))
+        self.assertContains(response, 'Последняя отмеченная смена')
+        self.assertContains(response, 'data-qr-shifts-table')
+        self.assertEqual(response.context['last_attendance'].shift_id, shift.pk)
+
+    def test_existing_entry_is_checked_and_exit_uses_checkbox(self):
+        shift = self.shift_at(timezone.now() + timedelta(minutes=10))
+        f.make_participation(self.volunteer, shift, status='pending', hours=0)
+        qr.mark_scan(self.manager, self.token, shift.pk, 'in')
+        response = self.client.post(reverse('qr_scan'), {'token': self.token})
+        self.assertContains(response, 'type="checkbox"')
+        self.assertContains(response, 'data-qr-mark="out"')
+        self.assertContains(response, 'checked disabled')
+
+    def test_card_opens_for_registered_user_with_incomplete_name(self):
+        self.volunteer.first_name = None
+        self.volunteer.last_name = None
+        self.volunteer.save(update_fields=['first_name', 'last_name'])
+        response = self.client.post(reverse('qr_scan'), {'token': self.token})
+        self.assertContains(response, 'data-qr-result')
+
+    def test_enroll_tomorrow_is_approved_but_has_no_entry(self):
+        from blog.models import Application, ApplicationShiftDecision
+        shift = self.shift_at(timezone.now() + timedelta(days=1))
+        qr.enroll_scanned_user(self.manager, self.token, shift.pk)
+        part = Participation.objects.get(user=self.volunteer, event_day=shift)
+        self.assertEqual((part.status, part.hours), ('pending', 0))
+        self.assertFalse(ShiftAttendance.objects.filter(user=self.volunteer, shift=shift).exists())
+        self.assertTrue(ApplicationShiftDecision.objects.filter(application__user=self.volunteer, shift=shift, status='approved').exists())
+        qr.enroll_scanned_user(self.manager, self.token, shift.pk)
+        self.assertEqual(Application.objects.filter(user=self.volunteer, event=self.position).count(), 1)
+        self.assertEqual(Participation.objects.filter(user=self.volunteer, event_day=shift).count(), 1)
+
+    def test_enroll_ongoing_or_within_one_hour_records_entry_once(self):
+        now = timezone.now()
+        for offset in (-30, 30, 60):
+            with self.subTest(offset=offset):
+                shift = self.shift_at(now + timedelta(minutes=offset))
+                with patch('django.utils.timezone.now', return_value=now):
+                    qr.enroll_scanned_user(self.manager, self.token, shift.pk)
+                entry = ShiftAttendance.objects.get(user=self.volunteer, shift=shift)
+                self.assertEqual(entry.entered_at, now)
+                qr.enroll_scanned_user(self.manager, self.token, shift.pk)
+                entry.refresh_from_db()
+                self.assertEqual(entry.entered_at, now)
+
+    def test_enrolling_another_shift_preserves_existing_application_selections(self):
+        from blog.models import Application, ApplicationShiftDecision
+        first = self.shift_at(timezone.now() + timedelta(days=1))
+        second = self.shift_at(timezone.now() + timedelta(days=2))
+        app = f.make_application(self.position, user=self.volunteer, shifts=[first], status='new')
+        qr.enroll_scanned_user(self.manager, self.token, second.pk)
+        self.assertEqual(Application.objects.filter(user=self.volunteer).count(), 1)
+        self.assertEqual(set(app.selected_shifts.values_list('pk', flat=True)), {first.pk, second.pk})
+        self.assertEqual(ApplicationShiftDecision.objects.get(application=app, shift=first).status, 'new')
+        self.assertEqual(ApplicationShiftDecision.objects.get(application=app, shift=second).status, 'approved')
+
+    def test_picker_lists_only_open_not_ended_not_already_enrolled_shifts(self):
+        open_shift = self.shift_at(timezone.now() + timedelta(days=1))
+        self.shift_at(timezone.now() + timedelta(days=1), recruit_status='closed')
+        self.shift_at(timezone.now() - timedelta(days=1))
+        enrolled = self.shift_at(timezone.now() + timedelta(days=2))
+        f.make_participation(self.volunteer, enrolled, status='pending')
+        context = qr.scan_context(self.manager, self.token)
+        self.assertEqual([shift.pk for shift in context['enrollment_shifts']], [open_shift.pk])
+
+    def test_enrollment_rejects_closed_shift_and_non_scanner_user(self):
+        shift = self.shift_at(timezone.now() + timedelta(days=1), recruit_status='closed')
+        with self.assertRaises(ValidationError):
+            qr.enroll_scanned_user(self.manager, self.token, shift.pk)
+        self.client.force_login(f.make_user())
+        response = self.client.post(reverse('qr_enroll'), {'token': self.token, 'shift_id': shift.pk})
+        self.assertEqual(response.status_code, 403)
+
+    def test_enrollment_endpoint_returns_refreshed_card_and_notice(self):
+        shift = self.shift_at(timezone.now() + timedelta(days=1))
+        response = self.client.post(reverse('qr_enroll'), {'token': self.token, 'shift_id': shift.pk})
+        self.assertContains(response, 'data-qr-result')
+        self.assertContains(response, 'Записан на смену')
+        self.assertEqual(response.context['nearest_shift'].pk, shift.pk)
+
+    def test_enrollment_scope_is_enforced_for_picker_and_direct_request(self):
+        operator = f.make_user()
+        qr.grant_scanner(self.manager, operator, self.group)
+        own = self.shift_at(timezone.now() + timedelta(days=1))
+        other = f.make_shift(f.make_event(event_group=EventGroup.objects.create(title='Другое')))
+        Const.objects.update_or_create(name='qr_scanner_scoped_access', defaults={'value': 1})
+        self.assertEqual([s.pk for s in qr.scan_context(operator, self.token)['enrollment_shifts']], [own.pk])
+        with self.assertRaises(PermissionDenied):
+            qr.enroll_scanned_user(operator, self.token, other.pk)
+        qr.enroll_scanned_user(operator, self.token, own.pk)
+        self.assertTrue(Participation.objects.filter(user=self.volunteer, event_day=own).exists())
+
+    def test_enrollment_checks_requirements_before_approving_existing_application(self):
+        from blog.models import EventRequirementMap, UserRequirementException
+        requirement = f.make_requirement(title='Допуск')
+        EventRequirementMap.objects.create(event=self.position, requirement=requirement)
+        UserRequirementException.objects.create(user=self.volunteer, requirement=requirement)
+        shift = self.shift_at(timezone.now() + timedelta(days=1))
+        app = f.make_application(self.position, user=self.volunteer, shifts=[shift])
+        with self.assertRaises(ValidationError):
+            qr.enroll_scanned_user(self.manager, self.token, shift.pk)
+        app.refresh_from_db()
+        self.assertEqual(app.status, 'new')
+        self.assertFalse(Participation.objects.filter(user=self.volunteer).exists())
+
+    def test_checkin_lead_time_is_configurable_and_later_shift_stays_pending(self):
+        Const.objects.create(name='qr_enroll_checkin_lead_minutes', value=30)
+        shift = self.shift_at(timezone.now() + timedelta(minutes=45))
+        qr.enroll_scanned_user(self.manager, self.token, shift.pk)
+        self.assertEqual(Participation.objects.get(user=self.volunteer, event_day=shift).status, 'pending')
+        self.assertFalse(ShiftAttendance.objects.filter(user=self.volunteer).exists())
+
+    def test_enrollment_requires_session_and_csrf(self):
+        shift = self.shift_at(timezone.now() + timedelta(days=1))
+        client = Client(enforce_csrf_checks=True)
+        self.assertEqual(client.post(reverse('qr_enroll'), {'token': self.token, 'shift_id': shift.pk}).status_code, 403)
+        client.force_login(self.manager)
+        self.assertEqual(client.post(reverse('qr_enroll'), {'token': self.token, 'shift_id': shift.pk}).status_code, 403)
+        self.assertEqual(self.client.get(reverse('qr_enroll')).status_code, 405)
+
+
 class MoscowTimeTests(TestCase):
     def test_incidents_do_not_include_yesterday_in_moscow(self):
         from blog.services.incidents import sync_ongoing_event_incidents

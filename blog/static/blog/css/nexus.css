@@ -559,7 +559,44 @@ th.has-reveal, td.has-reveal { position: relative; }
 .qr-scanner video[hidden] { display: none; }
 .qr-scanner-actions, .qr-grant-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 .qr-grant-row { justify-content: space-between; margin-bottom: 12px; }
-.qr-nearest-shift { border-color: var(--accent); }
+.qr-person-card { display: grid; gap: 18px; }
+.qr-person-header { display: flex; align-items: center; gap: 14px; padding-bottom: 18px; border-bottom: 1px solid var(--border-subtle); }
+.qr-person-header > div { min-width: 0; }
+.qr-person-header h2 { margin: 3px 0 5px; font-size: 20px; line-height: 1.3; overflow-wrap: anywhere; }
+.qr-person-header .event-dash-muted { font-size: 12px; }
+.qr-person-avatar { display: grid; place-items: center; flex: 0 0 52px; height: 52px; border-radius: 16px; background: var(--accent); color: #fff; font-size: 19px; font-weight: 700; text-transform: uppercase; }
+.qr-profile-link { color: var(--text-primary); text-decoration: none; }
+.qr-profile-link:hover, .qr-profile-link:focus-visible { color: var(--accent); text-decoration: underline; }
+.qr-profile-link > span { color: var(--accent); font-size: 16px; }
+.qr-last-mark { padding: 14px 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-card-hover); }
+.qr-last-times { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
+.qr-last-times strong { font-weight: 500; color: var(--text-primary); }
+.qr-shifts-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.qr-shifts-heading h3 { margin: 0; font-size: 15px; }
+.qr-shifts-heading > span { font-size: 12px; }
+.qr-person-card .table-scroll { margin: -6px 0 0; }
+.qr-person-card .qr-shifts-table { width: 100%; table-layout: fixed; }
+.qr-shifts-table th:first-child { width: 64%; }
+.qr-shifts-table th:not(:first-child) { text-align: center; }
+.qr-shifts-table td { vertical-align: middle; padding: 12px 8px; overflow-wrap: anywhere; }
+.qr-shift-meta { display: block; margin-top: 4px; font-size: 12px; line-height: 1.45; color: var(--text-secondary); }
+.qr-nearest-shift { background: var(--bg-card-hover); }
+.qr-nearest-shift td:first-child { box-shadow: inset 3px 0 var(--accent); padding-left: 12px; }
+.qr-nearest-label { display: block; margin-bottom: 5px; font-size: 11px; font-weight: 600; color: var(--accent); }
+.qr-mark-cell { text-align: center; }
+.qr-mark-cell input[type="checkbox"] { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.qr-mark-cell input:disabled { cursor: default; }
+.qr-mark-time { display: block; margin-top: 4px; font-size: 11px; color: var(--text-secondary); }
+.qr-mark-help { margin: -6px 0 0; font-size: 12px; line-height: 1.5; }
+.qr-empty-state { text-align: center; color: var(--text-secondary); }
+.qr-enrollment { border-top: 1px solid var(--border-subtle); padding-top: 16px; }
+.qr-enrollment summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.qr-enrollment form { display: grid; gap: 12px; padding-top: 16px; }
+.qr-enrollment select { min-width: 0; width: 100%; }
+.qr-enrollment button { justify-self: start; }
+.qr-scan-notice { margin: 0; padding: 10px 14px; border-left: 3px solid var(--success); background: var(--bg-card-hover); border-radius: var(--radius-sm); }
+.qr-mark-error { color: var(--danger); margin: 0; font-size: 13px; }
+.qr-mark-error:empty { display: none; }
 .attendance-pending { color: var(--text-secondary); }
 .recruit-bar-fill { display: block; height: 100%; border-radius: 999px; background: hsl(calc(var(--pct, 0) * 1.2), 70%, 45%); transition: width .3s ease; }
 .event-dash-days { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-top: 12px; }

@@ -59,6 +59,22 @@ def qr_mark(request):
     return render(request, 'blog/partials/_qr_scan_result.html', context)
 
 
+@login_required
+@require_POST
+@never_cache
+def qr_enroll(request):
+    """Записать владельца QR через общий пайплайн ручного добавления волонтёра."""
+    try:
+        token = request.POST.get('token', '')
+        notice = qr.enroll_scanned_user(request.user, token, int(request.POST.get('shift_id', '')))
+        context = qr.scan_context(request.user, token)
+        context['scan_notice'] = notice
+    except (ValueError, ValidationError) as error:
+        message = error.messages[0] if isinstance(error, ValidationError) else 'Некорректная смена.'
+        return HttpResponse(message, status=400)
+    return render(request, 'blog/partials/_qr_scan_result.html', context)
+
+
 @manager_required
 def qr_scanner_grant(request):
     """Менеджер выдаёт доступ на мероприятие через существующую AJAX-форму."""

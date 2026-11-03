@@ -21,8 +21,8 @@ def profile_edit(request):
     form = ProfileForm(request.POST or None, instance=request.user)
     if request.method == 'POST' and form.is_valid():
         form.save()
-        # Если пользователь изменил верифицированные менеджером поля (ФИО/ОП/
-        # факультет/год/TG) — снимаем верификацию ПГАС: справку на новых данных не
+        # Если пользователь изменил верифицированные менеджером поля (ФИО/TG),
+        # снимаем верификацию ПГАС: справку на новых данных не
         # выдаём, менеджер должен подтвердить заново (см. pgas_certificate).
         from blog.services.pgas_certificate import revoke_verification_if_changed
         if revoke_verification_if_changed(request.user):

@@ -107,6 +107,13 @@
             var max = parseInt(field.getAttribute('maxlength'), 10);
             var update = function () {
                 var len = field.value.length;
+                if (field.dataset.counterMode === 'limit') {
+                    counter.hidden = len < max;
+                    counter.textContent = len >= max ? 'Достигнут лимит: ' + max + ' символов.' : '';
+                    counter.classList.toggle('warn', len >= max);
+                    counter.setAttribute('role', 'status');
+                    return;
+                }
                 counter.textContent = len + ' / ' + max;
                 counter.classList.toggle('warn', len / max > 0.9);
             };

@@ -42,13 +42,29 @@ class ProfileForm(forms.ModelForm):
     first_name = forms.CharField(label='Имя', max_length=100, required=True)
     last_name = forms.CharField(label='Фамилия', max_length=100, required=False)
     middle_name = forms.CharField(label='Отчество', max_length=100, required=False)
+    preferred_contact_methods = forms.MultipleChoiceField(
+        label='Наиболее удобный способ связи', choices=User.CONTACT_METHOD_CHOICES,
+        widget=forms.CheckboxSelectMultiple, required=True,
+        error_messages={'required': 'Выберите хотя бы один способ связи.'},
+    )
+    weekday_daytime_available = forms.TypedChoiceField(
+        label='Вы могли бы помогать нам в дневное время в будни?',
+        choices=[('', '—'), ('True', 'Да'), ('False', 'Нет')],
+        coerce=lambda value: value == 'True', empty_value=None, required=False,
+    )
+    wants_team_lead = forms.TypedChoiceField(
+        label='Желание стать тим-лидером', choices=[('', '—'), ('True', 'Да'), ('False', 'Нет')],
+        coerce=lambda value: value == 'True', empty_value=None, required=False,
+    )
 
     class Meta:
         model = User
         fields = [
             'first_name', 'last_name', 'middle_name', 'system_username',
             'telegram_username', 'phone', 'email', 'birthday', 'gender', 'about', 'VK_username',
-            'faculty', 'education_program', 'admission_year',
+            'instagram_url', 'preferred_contact_methods', 'weekday_daytime_available',
+            'volunteer_experience', 'motivation', 'familiar_positions', 'performed_tasks',
+            'wants_team_lead', 'tshirt_size',
         ]
         widgets = {
             'birthday': forms.DateInput(
@@ -60,7 +76,6 @@ class ProfileForm(forms.ModelForm):
                 format='%Y-%m-%d',
             ),
             'about': forms.Textarea(attrs={'rows': 3}),
-            'admission_year': forms.NumberInput(attrs={'min': 2000, 'max': 2100}),
         }
         labels = {
             'system_username': 'Юзернейм для системы',
@@ -71,9 +86,6 @@ class ProfileForm(forms.ModelForm):
             'gender': 'Пол',
             'about': 'О себе',
             'VK_username': 'Ссылка на ВК',
-            'faculty': 'Факультет',
-            'education_program': 'Образовательная программа (ОП)',
-            'admission_year': 'Год поступления',
         }
         help_texts = {
             'telegram_username': 'Ваш ник в Telegram (можно с @ или без).',
@@ -85,6 +97,11 @@ class ProfileForm(forms.ModelForm):
         # (звёздочка) и на уровне валидации.
         self.fields['phone'].required = True
         self.fields['telegram_username'].required = True
+        for field in self.fields.values():
+            field.widget.attrs['data-counter-mode'] = 'limit'
+
+    def clean_preferred_contact_methods(self):
+        return list(dict.fromkeys(self.cleaned_data['preferred_contact_methods']))
 
     def clean_telegram_username(self):
         # Нормализуем: убираем ведущий @ и пробелы, чтобы в БД лежал чистый username.

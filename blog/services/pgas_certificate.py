@@ -26,16 +26,8 @@ def program_duration_years(education_program: str) -> int:
 
 
 def compute_course_and_graduation(user: User) -> dict:
-    """Возвращает {'course': int|None, 'graduation_year': int|None} по
-    admission_year/education_program. `course` — текущий курс обучения (не выше
-    длительности программы); None, если admission_year не заполнен."""
-    if not user.admission_year:
-        return {'course': None, 'graduation_year': None}
-    years = program_duration_years(user.education_program)
-    current_year = timezone.now().year
-    course = max(1, current_year - user.admission_year + 1)
-    graduation_year = user.admission_year + years
-    return {'course': min(course, years), 'graduation_year': graduation_year}
+    """Совместимость старых шаблонов: учебные данные удалены из анкеты и БД."""
+    return {'course': None, 'graduation_year': None}
 
 
 def pgas_certificate_eligibility(user: User) -> dict:
@@ -43,12 +35,6 @@ def pgas_certificate_eligibility(user: User) -> dict:
     получения справки. `missing` — человекочитаемые причины, в порядке проверки."""
     missing = list(account_missing_fields(user)) if not account_is_complete(user) else []
 
-    if not (user.faculty or '').strip():
-        missing.append('факультет')
-    if not (user.education_program or '').strip():
-        missing.append('образовательная программа (ОП)')
-    if not user.admission_year:
-        missing.append('год поступления')
     if user.verified_by_manager_at is None:
         missing.append('верификация менеджером ВЦ')
 
@@ -67,13 +53,11 @@ def only_verification_missing(user: User) -> bool:
 # ---------------------------------------------------------------------------
 
 # Поля, которые менеджер удостоверяет при верификации для справки ПГАС. Меняем в
-# одном месте (единый источник правды): факультет/ОП/год поступления → курс —
-# это то, что печатается в справке; ФИО — на кого выдана; telegram_username —
-# канал связи. Изменил любое — верификация недействительна (человек мог
-# перевестись на другую ОП, сменить фамилию и т.п.).
+# одном месте: ФИО — на кого выдана; telegram_username — канал связи.
+# Учебные поля удалены из БД и больше не участвуют в верификации.
 VERIFIED_FIELDS = (
     'first_name', 'last_name', 'middle_name',
-    'faculty', 'education_program', 'admission_year', 'telegram_username',
+    'telegram_username',
 )
 
 
@@ -229,9 +213,8 @@ EVENTS_BLOCK_END = '### END EVENTS ###'
 import os
 DEFAULT_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), 'pgas_default_template.docx')
 
-# Плейсхолдеры полей волонтёра — общие (вне блока мероприятий). {course}/{graduation_year}
-# считаются из admission_year (compute_course_and_graduation). Документированы в
-# гайде на странице выдачи (partials/_pgas_placeholder_guide.html).
+# Плейсхолдеры полей волонтёра — общие (вне блока мероприятий). Учебные поля
+# удалены из БД; их старые плейсхолдеры остаются совместимыми и выводятся пустыми.
 FIELD_PLACEHOLDERS_HELP = [
     ('{full_name}', 'ФИО волонтёра'),
     ('{faculty}', 'Факультет'),
@@ -294,11 +277,11 @@ def build_replacements(user: User, *, period_label: str, issue_date) -> dict:
 
     repl = {
         '{full_name}': user.full_name,
-        '{faculty}': (user.faculty or '').strip(),
-        '{education_program}': (user.education_program or '').strip(),
+        '{faculty}': '',
+        '{education_program}': '',
         '{course}': str(course_info['course']) if course_info['course'] else '',
         '{graduation_year}': str(course_info['graduation_year']) if course_info['graduation_year'] else '',
-        '{admission_year}': str(user.admission_year) if user.admission_year else '',
+        '{admission_year}': '',
         '{date}': issue_date.strftime('%d.%m.%Y'),
         '{period}': period_label,
     }

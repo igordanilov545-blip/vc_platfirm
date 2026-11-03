@@ -80,10 +80,7 @@
     <p>VK: {{ target.VK_username|default:"—" }}</p>
     <p>Дата рождения: {{ target.birthday|default:"—" }}</p>
     <p>Пол: {{ target.get_gender_display|default:"—" }}</p>
-    <p>Факультет: {{ target.faculty|default:"—" }}</p>
-    <p>Образовательная программа: {{ target.education_program|default:"—" }}</p>
-    <p>Курс: {% if course_info.course %}{{ course_info.course }}{% else %}—{% endif %}
-       {% if course_info.graduation_year %}(выпуск: {{ course_info.graduation_year }}){% endif %}</p>
+    {% include 'blog/partials/_volunteer_profile_fields.html' %}
     {% if is_manager %}
     <p style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border-subtle);">
         Churn score: <span class="mono">{{ target.churn_score|floatformat:2 }}</span>

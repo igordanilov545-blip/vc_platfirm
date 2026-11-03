@@ -2,9 +2,22 @@ import uuid
 import secrets
 
 from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
+
+
+CONTACT_METHOD_CHOICES = [
+    ('any', 'Не принципиально'), ('telegram', 'Телеграм'), ('vk', 'ВК'),
+    ('phone', 'Звонок'), ('max', 'Макс'), ('email', 'Почта'),
+    ('sms', 'СМС'), ('whatsapp', 'Ватсап'), ('viber', 'Вайбер'),
+]
+
+
+def validate_contact_methods(value):
+    if not isinstance(value, list) or any(not isinstance(item, str) or item not in dict(CONTACT_METHOD_CHOICES) for item in value):
+        raise ValidationError('Выберите способы связи из списка.')
 
 
 def new_qr_token():
@@ -55,6 +68,9 @@ class User(AbstractBaseUser):
         ('guest', 'Гость (первое касание)'),
         ('registered', 'Зарегистрирован'),
     ]
+    CONTACT_METHOD_CHOICES = CONTACT_METHOD_CHOICES
+    TSHIRT_SIZE_CHOICES = [(size, size) for size in ('XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL')]
+    YES_NO_CHOICES = [(True, 'Да'), (False, 'Нет')]
 
     id = models.AutoField(primary_key=True)
     system_username = models.CharField(max_length=50, blank=True, null=True, db_index=True)
@@ -69,6 +85,20 @@ class User(AbstractBaseUser):
     birthday = models.DateField(blank=True, null=True)
     about = models.TextField(blank=True, null=True)
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True, null=True)
+    instagram_url = models.CharField(max_length=255, blank=True, default='', verbose_name='Ссылка на вашу страницу в Инстаграме')
+    preferred_contact_methods = models.JSONField(default=list, blank=True, validators=[validate_contact_methods], verbose_name='Наиболее удобный способ связи')
+    weekday_daytime_available = models.BooleanField(null=True, blank=True, choices=YES_NO_CHOICES, verbose_name='Вы могли бы помогать нам в дневное время в будни?')
+    volunteer_experience = models.CharField(max_length=255, blank=True, default='', verbose_name='Опыт волонтёрства')
+    motivation = models.CharField(max_length=255, blank=True, default='', verbose_name='Мотивация быть волонтёром')
+    familiar_positions = models.CharField(max_length=255, blank=True, default='', verbose_name='Знакомые позиции')
+    performed_tasks = models.CharField(max_length=255, blank=True, default='', verbose_name='Выполняемые задачи')
+    wants_team_lead = models.BooleanField(null=True, blank=True, choices=YES_NO_CHOICES, verbose_name='Желание стать тим-лидером')
+    tshirt_size = models.CharField(max_length=4, blank=True, default='', choices=TSHIRT_SIZE_CHOICES, verbose_name='Размер футболки')
+
+    @property
+    def preferred_contacts_display(self):
+        labels = dict(self.CONTACT_METHOD_CHOICES)
+        return ', '.join(labels[item] for item in self.preferred_contact_methods if item in labels)
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active')
     comment = models.TextField(blank=True, null=True)
@@ -110,12 +140,6 @@ class User(AbstractBaseUser):
     # Токен для публичной ссылки «Скопировать опыт» — открывает read-only блок
     # волонтёрского опыта без входа (раздел «Мой опыт»). Не угадывается перебором id.
     experience_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
-
-    # Данные для справки ВЦ о работе для ПГАС (заочно требует подтверждения факультета/
-    # ОП/курса вуза). Курс не хранится отдельным полем — считается от admission_year.
-    faculty = models.CharField(max_length=150, blank=True, null=True, verbose_name='Факультет')
-    education_program = models.CharField(max_length=150, blank=True, null=True, verbose_name='Образовательная программа')
-    admission_year = models.IntegerField(blank=True, null=True, verbose_name='Год поступления')
 
     # Верификация вручную менеджером ВЦ (НЕ то же самое, что telegram_verified —
     # там подтверждение владения Telegram через бота; здесь менеджер лично

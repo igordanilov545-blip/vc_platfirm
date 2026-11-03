@@ -659,6 +659,10 @@ th.has-reveal, td.has-reveal { position: relative; }
 /* Формы */
 form.inline { display: inline; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 1rem; }
+.profile-contact-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.profile-contact-option { display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer; }
+.profile-contact-option input[type="checkbox"] { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.profile-size-guide { padding-left: 20px; line-height: 1.7; }
 label { font-weight: 500; font-size: .88rem; color: var(--text-primary); display: block; margin-bottom: .2rem; }
 input, select, textarea {
   width: 100%;

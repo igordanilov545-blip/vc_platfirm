@@ -1,0 +1,9 @@
+<p>Ссылка на вашу страницу в Инстаграме: {{ target.instagram_url|default:'—' }}</p>
+<p>Наиболее удобный способ связи: {{ target.preferred_contacts_display|default:'—' }}</p>
+<p>Вы могли бы помогать нам в дневное время в будни? {{ target.get_weekday_daytime_available_display|default:'—' }}</p>
+<p>Опыт волонтёрства: {{ target.volunteer_experience|default:'—'|linebreaksbr }}</p>
+<p>Мотивация быть волонтёром: {{ target.motivation|default:'—'|linebreaksbr }}</p>
+<p>Знакомые позиции: {{ target.familiar_positions|default:'—'|linebreaksbr }}</p>
+<p>Выполняемые задачи: {{ target.performed_tasks|default:'—'|linebreaksbr }}</p>
+<p>Желание стать тим-лидером: {{ target.get_wants_team_lead_display|default:'—' }}</p>
+<p>Размер футболки: {{ target.tshirt_size|default:'—' }}</p>

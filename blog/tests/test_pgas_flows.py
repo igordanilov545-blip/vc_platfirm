@@ -16,12 +16,9 @@ from . import factories as f
 
 def _make_eligible(user):
     """Заполняет все поля, требуемые pgas_certificate_eligibility."""
-    user.faculty = 'ФКН'
-    user.education_program = 'ПИ'
-    user.admission_year = 2022
     from django.utils import timezone
     user.verified_by_manager_at = timezone.now()
-    user.save(update_fields=['faculty', 'education_program', 'admission_year', 'verified_by_manager_at'])
+    user.save(update_fields=['verified_by_manager_at'])
     return user
 
 
@@ -117,14 +114,14 @@ class PgasTemplateDownloadTests(TestCase):
 
 class PgasRequestVerificationTests(TestCase):
     def test_only_verification_missing_creates_incident(self):
-        user = f.make_user(faculty='ФКН', education_program='ПИ', admission_year=2022)
+        user = f.make_user()
         self.client.force_login(user)
         r = self.client.post(reverse('pgas_request_verification'))
         self.assertEqual(r.status_code, 302)
         self.assertTrue(Incident.objects.filter(kind='pgas_verification', related_user=user).exists())
 
     def test_incomplete_profile_rejected(self):
-        user = f.make_user()  # факультет/ОП/год не заполнены
+        user = f.make_user(phone='')
         self.client.force_login(user)
         r = self.client.post(reverse('pgas_request_verification'))
         self.assertEqual(r.status_code, 302)

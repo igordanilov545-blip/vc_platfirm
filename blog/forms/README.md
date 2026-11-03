@@ -15,7 +15,7 @@
 | **Справочники** (локации/организации/организаторы/категории/требования/константы/сезоны) | [`references.py`](references.py) | `LocationForm`, `OrganizationForm`, `OrganizerForm`, `CategoryForm`, `RequirementForm`, `RequirementEditForm`, `RequirementExceptionForm`, `ConstForm`, `SeasonForm` + их `Quick*`-версии |
 | **Мероприятия** | [`events.py`](events.py) | `EventForm`, `EventShiftForm`, `EventCommentForm`, `EventFeedbackForm`, поля выбора `TeamLeadChoiceField`/`ManagerChoiceField` |
 | **Заявки / явка** | [`applications.py`](applications.py) | `ApplicationForm`, `ApplicationCancelForm`, `ParticipationForm`, `ExcelImportForm`, виджет `ShiftMultipleSelect` |
-| **Профиль** | [`profiles.py`](profiles.py) | `ProfileForm` (+ alias `ProfileCompletionForm`), `ExternalExperienceForm`, `UserCommentForm`, `QuickVolunteerForm` |
+| **Профиль** | [`profiles.py`](profiles.py) | `ProfileForm` (+ alias `ProfileCompletionForm`): анкета, способы связи чекбоксами (минимум один), да/нет, размер XS–XXXL, текст до 255; `ExternalExperienceForm`, `UserCommentForm`, `QuickVolunteerForm` |
 | **Роли / капча** | [`roles.py`](roles.py) | `RoleUsersForm`, `CaptchaForm`, поле `MultipleHiddenIntegerField` |
 | **Общие импорты** | [`_common.py`](_common.py) | `forms`, утилиты времени, все модели (для `from ._common import *`) |
 

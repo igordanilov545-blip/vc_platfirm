@@ -26,6 +26,11 @@
     <div class="stat-tile"><div class="value">{{ target.external_experiences.count }}</div><div class="label">Внешние мероприятия</div></div>
 </div>
 
+<div class="card">
+    <h3>Анкета волонтёра</h3>
+    {% include 'blog/partials/_volunteer_profile_fields.html' %}
+</div>
+
 {% comment %}Активные заявки — заявки на ещё не прошедшие мероприятия и их статусы.
 Если заявок нет — приглашение на страницу мероприятий.{% endcomment %}
 {% if show_active_applications %}

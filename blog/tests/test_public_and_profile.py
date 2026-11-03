@@ -78,7 +78,7 @@ class ProfileEditTests(TestCase):
             'first_name': 'Новое', 'last_name': self.user.last_name or '',
             'middle_name': '', 'telegram_username': self.user.telegram_username,
             'phone': self.user.phone, 'email': '', 'birthday': '', 'about': '', 'vk_link': '',
-            'system_username': self.user.system_username or '',
+            'system_username': self.user.system_username or '', 'preferred_contact_methods': ['telegram'],
         })
         self.assertIn(r.status_code, (200, 302))
         self.user.refresh_from_db()
@@ -161,7 +161,7 @@ class TechAdminProfileManagementTests(TestCase):
             'first_name': 'Новое', 'last_name': self.target.last_name or '',
             'middle_name': '', 'telegram_username': self.target.telegram_username,
             'phone': self.target.phone, 'email': '', 'birthday': '', 'about': '',
-            'VK_username': '', 'system_username': self.target.system_username or '',
+            'VK_username': '', 'system_username': self.target.system_username or '', 'preferred_contact_methods': ['telegram'],
         })
         self.assertIn(r.status_code, (200, 302))
         self.target.refresh_from_db()

@@ -1,27 +1,26 @@
 {% load static custom_tags %}<!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-page="{{ request.resolver_match.url_name }}" data-appearance="{{ active_appearance.key }}" data-color-theme="{{ selected_color_theme }}"{% if selected_color_theme != 'system' %} data-theme="{{ selected_color_theme }}"{% endif %} data-appearance-owner="{% if user.is_authenticated %}{{ user.pk }}{% endif %}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Волонтёрский центр{% endblock %}</title>
+    <script src="{% versioned_static 'blog/js/appearance-bootstrap.js' %}"></script>
     <link rel="stylesheet" href="{% versioned_static 'blog/css/nexus.css' %}">
+    <link rel="stylesheet" href="{% versioned_static 'blog/css/appearance-settings.css' %}">
+    {% if active_appearance.stylesheet %}<link rel="stylesheet" href="{% versioned_static active_appearance.stylesheet %}">{% endif %}
     {% block extra_head %}{% endblock %}
-    <script>
-        // Тема применяется до отрисовки, чтобы избежать "мигания" не той темой.
-        // Остаётся инлайн (должно сработать ДО загрузки внешних скриптов/стилей).
-        (function () {
-            var theme = localStorage.getItem('theme');
-            if (theme) {
-                document.documentElement.setAttribute('data-theme', theme);
-            }
-        })();
-    </script>
     {# Утилиты дат — единый источник истины для всех календарей; в <head>, т.к. нужны рано. #}
     <script src="{% versioned_static 'blog/js/calendar-utils.js' %}"></script>
 </head>
 <body class="{% if request.COOKIES.sidebar_collapsed == '1' %}sidebar-collapsed{% endif %}"{% if analytics_page_view_id %} data-page-view-id="{{ analytics_page_view_id }}"{% endif %}>
+{% if active_appearance.decoration %}{% include active_appearance.decoration %}{% endif %}
+{% if user.is_authenticated %}
+<form hidden id="appearance-transport" action="{% url 'appearance_update' %}" method="post">{% csrf_token %}</form>
+{% endif %}
+<div class="appearance-notice" role="status" id="appearance-notice" hidden></div>
 {% if user.is_authenticated %}
 <aside class="sidebar">
+    {% if active_appearance.key == 'minecraft' %}<a class="world-wordmark" href="{% url 'dashboard' %}">RUNC<span>Вместе строим события</span></a>{% endif %}
     <a href="{% url 'profile_detail' user.id %}" class="sidebar-account">
         <div class="avatar-placeholder">{{ user.full_name|slice:":1"|upper }}</div>
         <div class="username">{{ user.full_name }}</div>
@@ -29,26 +28,26 @@
     </a>
 
     <div class="nav-section-title">Основное</div>
-    <a href="{% url 'dashboard' %}" data-track="nav:dashboard" class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" title="Главная"><span class="icon">🏠</span><span class="nav-label"> Главная</span></a>
-    <a href="{% url 'event_list' %}" data-track="nav:event_list" class="nav-link {% if request.resolver_match.url_name == 'event_list' %}active{% endif %}" title="Мероприятия"><span class="icon">📅</span><span class="nav-label"> Мероприятия</span></a>
+    <a href="{% url 'dashboard' %}" data-track="nav:dashboard" class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" title="Главная"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='home' fallback='🏠' %}</span><span class="nav-label"> Главная</span></a>
+    <a href="{% url 'event_list' %}" data-track="nav:event_list" class="nav-link {% if request.resolver_match.url_name == 'event_list' %}active{% endif %}" title="Мероприятия"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='calendar' fallback='📅' %}</span><span class="nav-label"> Мероприятия</span></a>
 
     {% if is_manager or can_scan_qr %}
     <div class="nav-section-title">Управление</div>
     {% if is_manager %}
-    <a href="{% url 'pending_applications' %}" data-track="nav:pending_applications" class="nav-link {% if request.resolver_match.url_name in 'pending_applications,import_preview,import_commit' %}active{% endif %}" title="Заявки"><span class="icon">🕓</span><span class="nav-label"> Заявки</span></a>
-    <a href="{% url 'user_list' %}" data-track="nav:user_list" class="nav-link {% if request.resolver_match.url_name == 'user_list' %}active{% endif %}" title="Пользователи"><span class="icon">👥</span><span class="nav-label"> Пользователи</span></a>
+    <a href="{% url 'pending_applications' %}" data-track="nav:pending_applications" class="nav-link {% if request.resolver_match.url_name in 'pending_applications,import_preview,import_commit' %}active{% endif %}" title="Заявки"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='clock' fallback='🕓' %}</span><span class="nav-label"> Заявки</span></a>
+    <a href="{% url 'user_list' %}" data-track="nav:user_list" class="nav-link {% if request.resolver_match.url_name == 'user_list' %}active{% endif %}" title="Пользователи"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='users' fallback='👥' %}</span><span class="nav-label"> Пользователи</span></a>
     {% comment %}Локации/организаторы/организации/требования вынесены в Настройки
     (хаб-вкладки, кнопка «⚙️ Настройки» в подвале сайдбара) — отдельных пунктов тут нет.{% endcomment %}
-    <a href="{% url 'report_period' %}" data-track="nav:report_period" class="nav-link {% if request.resolver_match.url_name == 'report_period' %}active{% endif %}" title="Отчёты"><span class="icon">📊</span><span class="nav-label"> Отчёты</span></a>
+    <a href="{% url 'report_period' %}" data-track="nav:report_period" class="nav-link {% if request.resolver_match.url_name == 'report_period' %}active{% endif %}" title="Отчёты"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='chart' fallback='📊' %}</span><span class="nav-label"> Отчёты</span></a>
     {% comment %}Добро.ру теперь вкладка внутри хаба «Отчёты» — ссылка ведёт прямо на неё.{% endcomment %}
-    <a href="{% url 'report_period' %}?view=dobro" data-track="nav:dobro_page" class="nav-link" title="Добро.ру"><span class="icon">❤️</span><span class="nav-label"> Добро.ру</span></a>
+    <a href="{% url 'report_period' %}?view=dobro" data-track="nav:dobro_page" class="nav-link" title="Добро.ру"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='heart' fallback='❤️' %}</span><span class="nav-label"> Добро.ру</span></a>
     {% endif %}
-    {% if can_scan_qr %}<a href="{% url 'qr_scanner' %}" class="nav-link {% if request.resolver_match.url_name == 'qr_scanner' %}active{% endif %}" title="Сканер QR"><span class="icon">▦</span><span class="nav-label"> Сканер QR</span></a>{% endif %}
+    {% if can_scan_qr %}<a href="{% url 'qr_scanner' %}" class="nav-link {% if request.resolver_match.url_name == 'qr_scanner' %}active{% endif %}" title="Сканер QR"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='qr' fallback='▦' %}</span><span class="nav-label"> Сканер QR</span></a>{% endif %}
     {% endif %}
 
     {% if is_tech_admin %}
     <div class="nav-section-title">Техническая диагностика</div>
-    <a href="{% url 'analytics_dashboard' %}" data-track="nav:analytics_dashboard" class="nav-link {% if request.resolver_match.url_name == 'analytics_dashboard' %}active{% endif %}" title="Аналитика"><span class="icon">📈</span><span class="nav-label"> Аналитика</span></a>
+    <a href="{% url 'analytics_dashboard' %}" data-track="nav:analytics_dashboard" class="nav-link {% if request.resolver_match.url_name == 'analytics_dashboard' %}active{% endif %}" title="Аналитика"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='chart' fallback='📈' %}</span><span class="nav-label"> Аналитика</span></a>
     {% endif %}
 
     <div class="sidebar-footer">
@@ -58,9 +57,9 @@
         <button type="button" class="sidebar-toggle" id="sidebar-toggle" title="Свернуть панель">
             <span class="icon" id="sidebar-toggle-icon">⬅️</span><span class="nav-label" id="sidebar-toggle-label"> Свернуть</span>
         </button>
-        <a href="{% url 'settings' %}" class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" title="Настройки"><span class="icon">⚙️</span><span class="nav-label"> Настройки</span></a>
-        <button type="button" class="nav-link companion-guide-btn" id="companion-guide-btn" title="Показать гайд по платформе"><span class="icon">🦆</span><span class="nav-label"> Гайд по платформе</span></button>
-        <a href="{% url 'logout' %}" class="nav-link" title="Выйти"><span class="icon">🚪</span><span class="nav-label"> Выйти</span></a>
+        <a href="{% url 'settings' %}?tab=appearance" class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" title="Настройки"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='settings' fallback='⚙️' %}</span><span class="nav-label"> Настройки</span></a>
+        <button type="button" class="nav-link companion-guide-btn" id="companion-guide-btn" title="Показать гайд по платформе"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='guide' fallback='🦆' %}</span><span class="nav-label"> Гайд по платформе</span></button>
+        <a href="{% url 'logout' %}" class="nav-link" title="Выйти"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='exit' fallback='🚪' %}</span><span class="nav-label"> Выйти</span></a>
     </div>
 </aside>
 {% endif %}
@@ -143,28 +142,28 @@
 {% if user.is_authenticated %}
 <nav class="bottom-tabbar">
     <a href="{% url 'dashboard' %}" data-mtab="dashboard" class="tab-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
-        <span class="tab-icon">🏠</span>Главная
+        <span class="tab-icon">{% include 'blog/partials/_appearance_icon.html' with name='home' fallback='🏠' %}</span>Главная
     </a>
     <a href="{% url 'event_list' %}" data-mtab="events" class="tab-item {% if request.resolver_match.url_name == 'event_list' %}active{% endif %}">
-        <span class="tab-icon">📅</span>Меропр.
+        <span class="tab-icon">{% include 'blog/partials/_appearance_icon.html' with name='calendar' fallback='📅' %}</span>Меропр.
     </a>
     {% comment %}Подача заявки живёт на странице «Мероприятия» (кнопка сверху справа) —
     FAB ведёт туда, отдельной страницы подачи больше нет.{% endcomment %}
     <a href="{% url 'event_list' %}" data-mtab="apply" class="fab-tab" title="Подать заявку">+</a>
     {% if is_manager %}
     <a href="{% url 'pending_applications' %}" data-mtab="applications" class="tab-item {% if request.resolver_match.url_name == 'pending_applications' %}active{% endif %}">
-        <span class="tab-icon">🕓</span>Заявки
+        <span class="tab-icon">{% include 'blog/partials/_appearance_icon.html' with name='clock' fallback='🕓' %}</span>Заявки
     </a>
     {% else %}
     <a href="{% url 'profile_detail' user.id %}" data-mtab="profile" class="tab-item {% if request.resolver_match.url_name == 'profile_detail' %}active{% endif %}">
-        <span class="tab-icon">👤</span>Профиль
+        <span class="tab-icon">{% include 'blog/partials/_appearance_icon.html' with name='user' fallback='👤' %}</span>Профиль
     </a>
     {% endif %}
     {% comment %}«Ещё» — доступ к остальным разделам, которые не влезают в 5 слотов таббара:
     у волонтёра — Настройки/тема/гид/выход; у менеджера ещё Пользователи/Отчёты/Добро.ру;
     у тех-админа — Аналитика. Без этого пункта на телефоне часть функций недостижима.{% endcomment %}
     <button type="button" class="tab-item" id="more-tab-btn" data-mtab="more" aria-haspopup="true" aria-expanded="false" aria-controls="more-sheet">
-        <span class="tab-icon">☰</span>Ещё
+        <span class="tab-icon">{% include 'blog/partials/_appearance_icon.html' with name='menu' fallback='☰' %}</span>Ещё
     </button>
 </nav>
 
@@ -175,44 +174,44 @@
         <div class="more-sheet-handle"></div>
 
         <a href="{% url 'profile_detail' user.id %}" class="more-item {% if request.resolver_match.url_name == 'profile_detail' %}active{% endif %}">
-            <span class="more-icon">👤</span><span>Профиль и статистика</span>
+            <span class="more-icon">{% include 'blog/partials/_appearance_icon.html' with name='user' fallback='👤' %}</span><span>Профиль и статистика</span>
         </a>
 
         {% if is_manager or can_scan_qr %}
         <div class="more-section-title">Управление</div>
         {% if is_manager %}
         <a href="{% url 'user_list' %}" class="more-item {% if request.resolver_match.url_name == 'user_list' %}active{% endif %}">
-            <span class="more-icon">👥</span><span>Пользователи</span>
+            <span class="more-icon">{% include 'blog/partials/_appearance_icon.html' with name='users' fallback='👥' %}</span><span>Пользователи</span>
         </a>
         <a href="{% url 'report_period' %}" class="more-item {% if request.resolver_match.url_name == 'report_period' %}active{% endif %}">
-            <span class="more-icon">📊</span><span>Отчёты</span>
+            <span class="more-icon">{% include 'blog/partials/_appearance_icon.html' with name='chart' fallback='📊' %}</span><span>Отчёты</span>
         </a>
         <a href="{% url 'report_period' %}?view=dobro" class="more-item">
-            <span class="more-icon">❤️</span><span>Добро.ру</span>
+            <span class="more-icon">{% include 'blog/partials/_appearance_icon.html' with name='heart' fallback='❤️' %}</span><span>Добро.ру</span>
         </a>
         {% endif %}
-        {% if can_scan_qr %}<a href="{% url 'qr_scanner' %}" class="more-item"><span class="more-icon">▦</span><span>Сканер QR</span></a>{% endif %}
+        {% if can_scan_qr %}<a href="{% url 'qr_scanner' %}" class="more-item"><span class="more-icon">{% include 'blog/partials/_appearance_icon.html' with name='qr' fallback='▦' %}</span><span>Сканер QR</span></a>{% endif %}
         {% endif %}
 
         {% if is_tech_admin %}
         <div class="more-section-title">Диагностика</div>
         <a href="{% url 'analytics_dashboard' %}" class="more-item {% if request.resolver_match.url_name == 'analytics_dashboard' %}active{% endif %}">
-            <span class="more-icon">📈</span><span>Аналитика</span>
+            <span class="more-icon">{% include 'blog/partials/_appearance_icon.html' with name='chart' fallback='📈' %}</span><span>Аналитика</span>
         </a>
         {% endif %}
 
         <div class="more-section-title">Ещё</div>
-        <a href="{% url 'settings' %}" class="more-item {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
-            <span class="more-icon">⚙️</span><span>Настройки</span>
+        <a href="{% url 'settings' %}?tab=appearance" class="more-item {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
+            <span class="more-icon">{% include 'blog/partials/_appearance_icon.html' with name='settings' fallback='⚙️' %}</span><span>Настройки</span>
         </a>
         <button type="button" class="more-item" id="more-theme-toggle">
             <span class="more-icon" id="more-theme-icon">🌙</span><span id="more-theme-label">Тёмная тема</span>
         </button>
         <button type="button" class="more-item companion-guide-btn" id="more-guide-btn">
-            <span class="more-icon">🦆</span><span>Гайд по платформе</span>
+            <span class="more-icon">{% include 'blog/partials/_appearance_icon.html' with name='guide' fallback='🦆' %}</span><span>Гайд по платформе</span>
         </button>
         <a href="{% url 'logout' %}" class="more-item more-item-danger">
-            <span class="more-icon">🚪</span><span>Выйти</span>
+            <span class="more-icon">{% include 'blog/partials/_appearance_icon.html' with name='exit' fallback='🚪' %}</span><span>Выйти</span>
         </a>
     </div>
 </div>
@@ -238,6 +237,7 @@
         },
     };
 </script>
+<script src="{% versioned_static 'blog/js/appearance.js' %}"></script>
 <script src="{% versioned_static 'blog/js/ui.js' %}"></script>
 <script src="{% versioned_static 'blog/js/modal.js' %}"></script>
 <script src="{% versioned_static 'blog/js/qr-scanner.js' %}"></script>

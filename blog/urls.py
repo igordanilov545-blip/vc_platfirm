@@ -141,6 +141,7 @@ urlpatterns = [
     path('organizers/<int:organizer_id>/', views.organizer_detail, name='organizer_detail'),
     path('organizers/<int:organizer_id>/edit/', views.organizer_edit, name='organizer_edit'),
     path('settings/', views.settings_view, name='settings'),
+    path('settings/appearance/', views.appearance_update, name='appearance_update'),
     path('settings/const/<int:const_id>/edit/', views.const_edit, name='const_edit'),
 
     path('requirements/', views.requirement_list, name='requirement_list'),

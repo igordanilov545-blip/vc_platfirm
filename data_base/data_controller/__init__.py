@@ -22,6 +22,7 @@
   - `_base`        — логгер, generic-функции (get_full_table / create_record_generic)
 """
 from ._base import get_full_table, create_record_generic, TABLE_MODEL_MAP  # noqa: F401
+from .appearance import save_user_appearance  # noqa: F401
 from .event_groups import event_groups_qs, save_event_group  # noqa: F401
 from .role_invitations import role_invitations_qs, role_invitation_uses_qs, create_role_invitation, record_role_invitation_use, revoke_role_invitation  # noqa: F401
 from .legacy_import import (  # noqa: F401
@@ -225,7 +226,7 @@ __all__ = [
     'user_achievements_qs', 'get_user_achievements',
     'has_user_achievement', 'grant_achievement', 'recompute_achievement_stat',
     'get_achievement_stats_map', 'count_stats_denominator',
-    'get_full_table', 'create_record_generic',
+    'get_full_table', 'create_record_generic', 'save_user_appearance',
     'invalidate_user_auth_tokens', 'create_auth_token', 'get_auth_token',
     'invalidate_user_verify_tokens', 'create_verify_token', 'get_verify_token',
     'get_user_by_telegram_id_excluding', 'logout_user_web_sessions',

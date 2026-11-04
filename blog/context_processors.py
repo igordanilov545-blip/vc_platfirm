@@ -1,6 +1,12 @@
 from blog.services.roles import has_manager_access, is_team_leader, is_tech_admin, role_label
 
 
+def appearance(request):
+    """Общий контекст оформления без дополнительных запросов к пользователю."""
+    from blog.services.appearance import appearance_context
+    return appearance_context(getattr(request, 'user', None))
+
+
 def role_flags(request):
     user = getattr(request, 'user', None)
     authenticated = bool(user and user.is_authenticated)

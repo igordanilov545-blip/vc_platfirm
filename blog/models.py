@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 from django.utils import timezone
+from blog.appearance import APPEARANCE_CHOICES, COLOR_THEME_CHOICES
 
 
 CONTACT_METHOD_CHOICES = [
@@ -130,6 +131,9 @@ class User(AbstractBaseUser):
     # Подписка ТЛ/менеджера на уведомления о новых заявках (db.md, правило 7c).
     # При false карточка новой заявки не приходит, но заявка остаётся видна в разделах меро/«Все заявки».
     notify_applications = models.BooleanField(default=True)
+
+    appearance = models.CharField(max_length=32, choices=APPEARANCE_CHOICES, default='nexus')
+    color_theme = models.CharField(max_length=10, choices=COLOR_THEME_CHOICES, default='system')
 
     # Флаг «Telegram подтверждён»: пользователь из личного кабинета нажал «Подтвердить
     # телеграм», открыл бота по deep-link и подтвердил «да, это мой аккаунт». Это

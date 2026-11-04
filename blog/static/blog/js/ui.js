@@ -34,37 +34,6 @@
         });
     }
 
-    // Переключатель светлой/тёмной темы — состояние в localStorage.
-    // Два триггера: кнопка в сайдбаре (десктоп) и пункт в листе «Ещё» (мобайл) —
-    // делят одно состояние, поэтому подписи обновляются у обоих.
-    var themeToggle = document.getElementById('theme-toggle');
-    var moreThemeToggle = document.getElementById('more-theme-toggle');
-    if (themeToggle || moreThemeToggle) {
-        var systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        var currentTheme = localStorage.getItem('theme') || (systemPrefersDark ? 'dark' : 'light');
-        var setText = function (id, text) {
-            var el = document.getElementById(id);
-            if (el) el.textContent = text;
-        };
-        var updateThemeLabel = function () {
-            var dark = currentTheme === 'dark';
-            setText('theme-icon', dark ? '☀️' : '🌙');
-            setText('theme-label', dark ? ' Светлая тема' : ' Тёмная тема');
-            setText('more-theme-icon', dark ? '☀️' : '🌙');
-            setText('more-theme-label', dark ? 'Светлая тема' : 'Тёмная тема');
-        };
-        document.documentElement.setAttribute('data-theme', currentTheme);
-        updateThemeLabel();
-        var toggleTheme = function () {
-            currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            document.documentElement.setAttribute('data-theme', currentTheme);
-            localStorage.setItem('theme', currentTheme);
-            updateThemeLabel();
-        };
-        if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
-        if (moreThemeToggle) moreThemeToggle.addEventListener('click', toggleTheme);
-    }
-
     // Мобильный лист «Ещё»: открытие/закрытие. Закрывается по клику вне листа,
     // по Esc и по выбору пункта-действия (кнопки внутри — тема/гид).
     (function () {

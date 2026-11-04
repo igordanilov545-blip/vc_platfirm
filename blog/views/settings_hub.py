@@ -142,8 +142,34 @@ def _build_role_sections(request, preselect=None):
         }
     return role_sections
 
-@manager_required
+@login_required
 def settings_view(request):
+    """Личные настройки открыты всем; административный хаб сохраняет manager_required."""
+    tab = request.GET.get('tab')
+    if request.method == 'GET' and (tab == 'appearance' or (not tab and not roles_service.has_manager_access(request.user))):
+        return render(request, 'blog/appearance_settings.html')
+    return _management_settings_view(request)
+
+
+@login_required
+@require_POST
+def appearance_update(request):
+    """Меняем оформление только владельца сессии (appearance-system.md)."""
+    from blog.services.appearance import update_appearance
+    try:
+        update_appearance(request.user, request.POST)
+    except ValidationError as exc:
+        if is_ajax(request):
+            return JsonResponse({'error': exc.messages[0]}, status=400)
+        return render(request, 'blog/appearance_settings.html', {'appearance_error': exc.messages[0]}, status=400)
+    if is_ajax(request):
+        return JsonResponse({'appearance': request.user.appearance, 'color_theme': request.user.color_theme})
+    messages.success(request, 'Оформление сохранено для вашего аккаунта.')
+    return redirect(reverse('settings') + '?tab=appearance')
+
+
+@manager_required
+def _management_settings_view(request):
     """Хаб настроек. GET без ?partial=1 отдаёт шелл (хедер-кнопки + пустой блок панели,
     который JS сразу подгружает AJAX'ом). GET с ?partial=1&tab=… отдаёт partial нативной
     панели (константы/сезоны/тим-лидеры/менеджеры). POST обрабатывает действия этих

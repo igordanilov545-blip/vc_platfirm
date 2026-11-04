@@ -15,6 +15,7 @@
 </div>
 
 <div class="card settings-hub-card">
+    <a class="btn secondary" href="{% url 'settings' %}?tab=appearance">Оформление и тема →</a>
     <div class="report-types settings-tabs" id="settings-tabs">
         {% for tab in tabs %}{% if tab.key != 'pgas_template' %}
         <button type="button" class="report-type settings-tab {% if tab.key == active_tab %}active{% endif %}"

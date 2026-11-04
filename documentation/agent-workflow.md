@@ -135,6 +135,7 @@
 
 | Тип элемента | Единый источник | Как подключить |
 |---|---|---|
+| **Личное оформление / цветовая тема** | `blog/appearance.py`, `appearance-bootstrap.js`, `appearance.js`, `appearance-settings.css`; [контракт](appearance-system.md) | Выбор в `/settings/?tab=appearance`, хранение в аккаунте, общий POST с CSRF. Следующее оформление — запись реестра и CSS, существующие компоненты не клонируются. |
 | Форма создания/редактирования (модалка + страница) | [`partials/_modal_form.html`](../blog/templates/blog/partials/_modal_form.html) | `{% include %}` + вьюха через `views.modal_form_response` |
 | План FaP / связь с Google Таблицей | те же modal_form_response, `_modal_form.html`; `_event_sheet_import.html`, `_sheet_help.html` | multipart-файл либо URL; справка «?» через нативный tooltip. Не создавать отдельный механизм модалок. Сетевой обмен всегда вне транзакции БД. |
 | Модалка/bottom-sheet (открытие форм по AJAX) | `base.html` (`#modal-backdrop`, `loadModal`) | ссылка с `data-modal data-modal-title="…"` |

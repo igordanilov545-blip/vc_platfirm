@@ -36,7 +36,10 @@
 | [reports.md](reports.md) · [reports_template.md](reports_template.md) | Отчётность и шаблоны отчётов. |
 | [legacy-migration.md](legacy-migration.md) | Миграция с легаси-системы. |
 | [implementation-plan.md](implementation-plan.md) | План реализации по этапам. |
-| [brandbook/](brandbook/) | Брендбук и UI-компоненты. |
+| [brandbook_main/](brandbook_main/) | Исходное оформление Nexus и UI-компоненты. |
+| [brandbook_minecraft/](brandbook_minecraft/) | Брендбук и HTML-примеры оформления Minecraft. |
+| [appearance-system.md](appearance-system.md) | Архитектура оформлений, настройки аккаунта и подключение новых вариантов. |
+| [minecraft-assets.md](minecraft-assets.md) | Краткая таблица недостающей графики и точные имена файлов. |
 
 > `dev_credentials.md` — локальные тестовые учётки, не коммитится (в `.gitignore`).
 >

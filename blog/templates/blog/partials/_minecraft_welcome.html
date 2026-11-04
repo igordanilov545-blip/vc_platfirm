@@ -1,0 +1,12 @@
+{% load static %}
+<section class="mc-welcome card">
+    {% if minecraft_hero_light_asset %}<img class="mc-welcome-image mc-asset-light" src="{% static minecraft_hero_light_asset %}" alt="">{% endif %}
+    {% if minecraft_hero_dark_asset %}<img class="mc-welcome-image mc-asset-dark" src="{% static minecraft_hero_dark_asset %}" alt="">{% endif %}
+    <div class="mc-welcome-copy">
+        <p class="appearance-eyebrow">Вместе строим события</p>
+        <h2>Большие события<br>начинаются с тебя.</h2>
+        <p>Новая смена, знакомые лица и помощь, которая меняет многое.</p>
+        <a class="btn" href="{% url 'event_list' %}">Найти мероприятие <span aria-hidden="true">→</span></a>
+    </div>
+    <div class="mc-welcome-scene" aria-hidden="true"><span></span><i></i><b></b></div>
+</section>

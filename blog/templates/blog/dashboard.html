@@ -3,9 +3,11 @@
 {% block content %}
 <h1>Здравствуйте, {{ user.full_name }}</h1>
 <span class="pill info"><span class="dot"></span>{{ role_label }}</span>
+{% if active_appearance.key == 'minecraft' %}{% include 'blog/partials/_minecraft_welcome.html' %}{% endif %}
 
 <div class="stat-grid" style="margin-top:1rem;">
     <div class="stat-tile">
+        {% if active_appearance.key == 'minecraft' %}<span class="mc-card-moss" aria-hidden="true"></span>{% endif %}
         <div class="value">{{ user.total_hours }}</div>
         <div class="label">Часов всего</div>
     </div>

@@ -1,0 +1,31 @@
+<form action="{% url 'appearance_update' %}" method="post" class="appearance-form" data-appearance-form>
+    {% csrf_token %}
+    {% if appearance_error %}<p class="appearance-error" role="alert">{{ appearance_error }}</p>{% endif %}
+    <fieldset class="appearance-fieldset"><legend>Ваше оформление</legend>
+        <div class="appearance-options">
+        {% for option in appearance_options %}
+        <label class="appearance-option">
+            <input type="radio" name="appearance" value="{{ option.key }}" {% if active_appearance.key == option.key %}checked{% endif %} required>
+            <span class="appearance-preview appearance-preview--{{ option.key }}" aria-hidden="true">
+                <span class="preview-nav"><i></i><i></i><i></i></span>
+                <span class="preview-page"><b></b><span class="preview-banner"></span><span class="preview-tiles"><i></i><i></i><i></i></span><span class="preview-lines"></span></span>
+                <span class="preview-moon"></span>
+            </span>
+            <span class="appearance-option-copy"><strong>{{ option.title }}</strong><span>{{ option.description }}</span></span>
+            <span class="appearance-check" aria-hidden="true">✓</span>
+        </label>
+        {% endfor %}
+        </div>
+    </fieldset>
+    <div class="card appearance-theme-card">
+        <fieldset class="appearance-fieldset"><legend>Свет и настроение</legend>
+            <p class="appearance-intro">Оба оформления доступны в светлой и тёмной теме.</p>
+            <div class="appearance-themes">
+            {% for value, title in color_theme_options %}
+                <label class="appearance-theme-option"><input type="radio" name="color_theme" value="{{ value }}" {% if selected_color_theme == value %}checked{% endif %}><span>{{ title }}</span></label>
+            {% endfor %}
+            </div>
+        </fieldset>
+    </div>
+    <p class="appearance-save-status" data-appearance-status role="status" aria-live="polite"></p>
+</form>

@@ -1,4 +1,22 @@
 /* Единая форма предпочтений для всех оформлений. Миниатюры собраны CSS. */
+.settings-heading { position:relative; display:flex; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:24px; padding-right:60px; }
+.settings-heading h1 { margin-right:auto; }
+.settings-heading>.appearance-launcher { position:absolute; right:0; top:0; flex:none; }
+.appearance-launcher.btn { width:44px; height:44px; padding:10px; }
+.personal-settings-card p { max-width:620px; color:var(--text-secondary); }
+.appearance-save-status { min-height:24px; margin:16px 0 0; font-size:13px; color:var(--text-secondary); }
+.appearance-save-status[data-error] { color:var(--danger); }
+.appearance-form[data-saving] { cursor:progress; }
+.modal-dialog:has([data-appearance-form]) { width:760px; }
+.modal-dialog .appearance-preview { height:145px; min-height:145px; }
+.modal-dialog .preview-banner { height:40px; }
+.modal-dialog .preview-tiles { margin-top:8px; }
+.modal-dialog .preview-tiles i { height:24px; }
+.modal-dialog .preview-lines { height:15px; margin-top:8px; }
+.modal-dialog .appearance-options { gap:14px; }
+.modal-dialog .appearance-option-copy { padding:12px 5px 8px; }
+.modal-dialog .appearance-option-copy strong { font-size:18px; }
+.modal-dialog .appearance-theme-card { margin-top:20px; }
 .appearance-heading { display:flex; justify-content:space-between; align-items:center; gap:20px; flex-wrap:wrap; margin-bottom:32px; }
 .appearance-eyebrow { color:var(--accent); text-transform:uppercase; font-size:11px; font-weight:700; letter-spacing:2px; margin:0 0 10px; }
 .appearance-intro { color:var(--text-secondary); margin:10px 0 0; }
@@ -38,9 +56,22 @@
 .appearance-theme-option { display:flex; align-items:center; gap:9px; padding:12px 16px; border:1px solid var(--border-subtle); border-radius:var(--radius-sm); cursor:pointer; min-height:46px; }
 .appearance-theme-option:has(input:checked) { color:var(--accent); background:var(--accent-soft); border-color:var(--accent); }
 .appearance-theme-option input { accent-color:var(--accent); margin:0; }
-.appearance-save { display:flex; align-items:center; gap:20px; flex-wrap:wrap; margin-top:24px; }
-.appearance-save p { color:var(--text-secondary); font-size:13px; }
 .appearance-error { padding:16px; background:var(--danger-soft); color:var(--danger); }
 .appearance-notice { position:fixed; bottom:90px; left:50%; transform:translateX(-50%); z-index:1100; max-width:calc(100% - 32px); padding:16px 22px; background:var(--bg-card); color:var(--danger); border:1px solid var(--danger); box-shadow:var(--shadow-card); pointer-events:none; }
 .appearance-notice[hidden] { display:none; }
 @media(max-width:600px) { .appearance-options { grid-template-columns:1fr; gap:18px; } .appearance-preview { min-height:185px; } .appearance-heading { margin-bottom:24px; } .appearance-theme-option { flex:1 1 auto; } }
+@media(max-width:600px) {
+  .modal-dialog .appearance-option { display:grid; grid-template-columns:90px minmax(0,1fr); gap:12px; align-items:center; }
+  .modal-dialog .appearance-preview { width:90px; height:90px; min-height:90px; padding:7px; gap:5px; }
+  .modal-dialog .preview-nav { padding:8px 3px; }
+  .modal-dialog .preview-nav i { height:4px; margin-bottom:7px; }
+  .modal-dialog .preview-page { padding:4px; }
+  .modal-dialog .preview-page>b { height:4px; margin-bottom:6px; }
+  .modal-dialog .preview-banner { height:24px; border-width:2px; }
+  .modal-dialog .preview-tiles { gap:3px; margin-top:5px; }
+  .modal-dialog .preview-tiles i { height:12px; border-width:2px; }
+  .modal-dialog .appearance-option-copy { min-width:0; padding:10px 2px 2px; }
+  .modal-dialog .appearance-option-copy strong { font-size:16px; padding-right:20px; }
+  .modal-dialog .appearance-option-copy>span { font-size:12px; }
+  .modal-dialog .appearance-option>input { top:10px; right:10px; }
+}

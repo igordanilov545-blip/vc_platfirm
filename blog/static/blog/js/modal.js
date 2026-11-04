@@ -88,6 +88,8 @@
     function bindModalForm(formUrl) {
         var form = modalBody.querySelector('[data-modal-form], form');
         if (!form) return;
+        // Оформление сохраняется по change в appearance.js; общий submit ему не нужен.
+        if (form.matches('[data-appearance-form]')) return;
         form.addEventListener('submit', function (event) {
             event.preventDefault();
             var submitBtn = form.querySelector('button[type=submit]');

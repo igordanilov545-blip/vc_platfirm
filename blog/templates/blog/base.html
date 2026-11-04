@@ -15,7 +15,7 @@
 <body class="{% if request.COOKIES.sidebar_collapsed == '1' %}sidebar-collapsed{% endif %}"{% if analytics_page_view_id %} data-page-view-id="{{ analytics_page_view_id }}"{% endif %}>
 {% if active_appearance.decoration %}{% include active_appearance.decoration %}{% endif %}
 {% if user.is_authenticated %}
-<form hidden id="appearance-transport" action="{% url 'appearance_update' %}" method="post">{% csrf_token %}</form>
+<form hidden id="appearance-transport" data-dialog-url="{% url 'settings' %}?tab=appearance" action="{% url 'appearance_update' %}" method="post">{% csrf_token %}</form>
 {% endif %}
 <div class="appearance-notice" role="status" id="appearance-notice" hidden></div>
 {% if user.is_authenticated %}
@@ -57,7 +57,7 @@
         <button type="button" class="sidebar-toggle" id="sidebar-toggle" title="Свернуть панель">
             <span class="icon" id="sidebar-toggle-icon">⬅️</span><span class="nav-label" id="sidebar-toggle-label"> Свернуть</span>
         </button>
-        <a href="{% url 'settings' %}?tab=appearance" class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" title="Настройки"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='settings' fallback='⚙️' %}</span><span class="nav-label"> Настройки</span></a>
+        <a href="{% url 'settings' %}" class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" title="Настройки"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='settings' fallback='⚙️' %}</span><span class="nav-label"> Настройки</span></a>
         <button type="button" class="nav-link companion-guide-btn" id="companion-guide-btn" title="Показать гайд по платформе"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='guide' fallback='🦆' %}</span><span class="nav-label"> Гайд по платформе</span></button>
         <a href="{% url 'logout' %}" class="nav-link" title="Выйти"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='exit' fallback='🚪' %}</span><span class="nav-label"> Выйти</span></a>
     </div>
@@ -201,7 +201,7 @@
         {% endif %}
 
         <div class="more-section-title">Ещё</div>
-        <a href="{% url 'settings' %}?tab=appearance" class="more-item {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
+        <a href="{% url 'settings' %}" class="more-item {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
             <span class="more-icon">{% include 'blog/partials/_appearance_icon.html' with name='settings' fallback='⚙️' %}</span><span>Настройки</span>
         </a>
         <button type="button" class="more-item" id="more-theme-toggle">

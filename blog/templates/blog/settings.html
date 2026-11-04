@@ -2,7 +2,7 @@
 {% load static %}
 {% block title %}Настройки{% endblock %}
 {% block content %}
-<div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+<div class="settings-heading">
     <h1>Настройки</h1>
     <div class="event-toolbar"><a href="{% url 'role_invitation_list' %}" class="btn secondary">Ссылки приглашения</a><a href="{% url 'legacy_base_upload' %}" class="btn secondary">Загрузка базы</a></div>
     <button type="button" class="companion-launch" id="companion-launch" style="max-width:320px;">
@@ -12,10 +12,10 @@
             <span class="companion-launch-desc">Гусь проведёт по разделам за руку</span>
         </span>
     </button>
+    {% include 'blog/partials/_appearance_launcher.html' %}
 </div>
 
 <div class="card settings-hub-card">
-    <a class="btn secondary" href="{% url 'settings' %}?tab=appearance">Оформление и тема →</a>
     <div class="report-types settings-tabs" id="settings-tabs">
         {% for tab in tabs %}{% if tab.key != 'pgas_template' %}
         <button type="button" class="report-type settings-tab {% if tab.key == active_tab %}active{% endif %}"

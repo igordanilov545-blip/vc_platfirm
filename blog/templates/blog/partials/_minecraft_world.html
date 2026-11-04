@@ -8,5 +8,7 @@
 <div class="mc-foreground" aria-hidden="true">
     {% if minecraft_foreground_light_asset %}<img class="mc-asset-light" src="{% static minecraft_foreground_light_asset %}" alt="">{% endif %}
     {% if minecraft_foreground_dark_asset %}<img class="mc-asset-dark" src="{% static minecraft_foreground_dark_asset %}" alt="">{% endif %}
+    {% if minecraft_foreground_dark_asset %}<img class="mc-asset-dark mc-foreground-glow" src="{% static 'blog/appearances/minecraft/foreground-dark-glow.webp' %}" alt="">{% endif %}
     <div class="mc-pillar"></div><div class="mc-moss"></div><div class="mc-lantern"><i></i></div>
 </div>
+<div class="mc-hanging-lantern" aria-hidden="true"><img src="{% static 'blog/appearances/minecraft/lantern.webp' %}" alt=""><img class="mc-lantern-glow" src="{% static 'blog/appearances/minecraft/lantern-glow.webp' %}" alt=""></div>

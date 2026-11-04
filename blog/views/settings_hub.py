@@ -146,8 +146,12 @@ def _build_role_sections(request, preselect=None):
 def settings_view(request):
     """Личные настройки открыты всем; административный хаб сохраняет manager_required."""
     tab = request.GET.get('tab')
-    if request.method == 'GET' and (tab == 'appearance' or (not tab and not roles_service.has_manager_access(request.user))):
-        return render(request, 'blog/appearance_settings.html')
+    if request.method == 'GET' and tab == 'appearance':
+        if is_ajax(request):
+            return render(request, 'blog/partials/_appearance_controls.html')
+        return redirect(reverse('settings') + '?appearance=open')
+    if request.method == 'GET' and not tab and not roles_service.has_manager_access(request.user):
+        return render(request, 'blog/settings_personal.html')
     return _management_settings_view(request)
 
 
@@ -165,7 +169,7 @@ def appearance_update(request):
     if is_ajax(request):
         return JsonResponse({'appearance': request.user.appearance, 'color_theme': request.user.color_theme})
     messages.success(request, 'Оформление сохранено для вашего аккаунта.')
-    return redirect(reverse('settings') + '?tab=appearance')
+    return redirect(reverse('settings') + '?appearance=open')
 
 
 @manager_required

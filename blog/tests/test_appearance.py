@@ -14,12 +14,13 @@ class AppearanceTests(TestCase):
     def test_default_and_volunteer_settings(self):
         response = self.client.get(reverse('settings'))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'name="appearance"')
+        self.assertContains(response, 'class="btn secondary appearance-launcher"')
+        self.assertNotContains(response, 'name="appearance"')
         self.assertContains(response, 'data-appearance="nexus"')
 
     def test_selection_persists_for_account_and_other_device(self):
         response = self.client.post(self.url, {'appearance': 'minecraft', 'color_theme': 'dark'})
-        self.assertRedirects(response, reverse('settings') + '?tab=appearance')
+        self.assertRedirects(response, reverse('settings') + '?appearance=open')
         self.user.refresh_from_db()
         self.other.refresh_from_db()
         self.assertEqual((self.user.appearance, self.user.color_theme), ('minecraft', 'dark'))
@@ -63,7 +64,23 @@ class AppearanceTests(TestCase):
         manager = make_manager()
         self.client.force_login(manager)
         self.assertEqual(self.client.get(reverse('settings')).status_code, 200)
-        self.assertEqual(self.client.get(reverse('settings') + '?tab=appearance').status_code, 200)
+        self.assertEqual(self.client.get(reverse('settings') + '?tab=appearance', HTTP_X_REQUESTED_WITH='XMLHttpRequest').status_code, 200)
+
+    def test_appearance_window_uses_shared_modal_without_confirmation(self):
+        response = self.client.get(reverse('settings') + '?tab=appearance', HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-appearance-form')
+        self.assertContains(response, 'name="appearance"')
+        self.assertNotContains(response, '<html')
+        self.assertNotContains(response, 'type="submit"')
+        self.assertNotContains(response, 'Сохранить оформление')
+        self.assertRedirects(self.client.get(reverse('settings') + '?tab=appearance'), reverse('settings') + '?appearance=open')
+
+    def test_ajax_response_contains_complete_saved_state(self):
+        response = self.client.post(self.url, {'appearance': 'minecraft'}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(response.json(), {'appearance': 'minecraft', 'color_theme': 'system'})
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.appearance, 'minecraft')
 
     def test_both_themes_and_return_to_original(self):
         for appearance, theme in [('minecraft', 'light'), ('minecraft', 'dark'), ('nexus', 'system')]:

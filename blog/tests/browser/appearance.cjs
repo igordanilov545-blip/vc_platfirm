@@ -29,10 +29,26 @@ fs.mkdirSync(output, {recursive: true});
       await context.addCookies([{name:config.cookieName,value:session.cookie,url:config.origin}]);
     }
     async function choose(appearance, theme) {
-      await page.goto(config.origin + '/settings/?tab=appearance');
-      await page.locator(`input[name="appearance"][value="${appearance}"]`).check();
-      await page.locator(`input[name="color_theme"][value="${theme}"]`).check();
-      await Promise.all([page.waitForNavigation(),page.locator('.appearance-save button').click()]);
+      await page.goto(config.origin + '/settings/');
+      // В общей in-memory SQLite ждём завершения фоновой загрузки вкладки хаба
+      // до следующей записи; в рабочей SQLite используется WAL и timeout.
+      await page.waitForLoadState('networkidle');
+      const pageOwner = await page.locator('html').getAttribute('data-appearance-owner');
+      await page.locator('.appearance-launcher').click();
+      await page.locator('#modal-body [data-appearance-form]').waitFor();
+      await page.waitForLoadState('networkidle');
+      assert(await page.locator('#modal-body button[type="submit"]').count() === 0, 'Unexpected confirmation button');
+      if (await page.locator('html').getAttribute('data-appearance') !== appearance) {
+        await Promise.all([page.waitForNavigation(),page.locator(`#modal-body input[name="appearance"][value="${appearance}"]`).check()]);
+        assert(await page.locator('html').getAttribute('data-appearance-owner') === pageOwner, 'Account lost while updating appearance');
+        await page.locator('#modal-body [data-appearance-form]').waitFor();
+        await page.waitForLoadState('networkidle');
+      }
+      const radio = page.locator(`#modal-body input[name="color_theme"][value="${theme}"]`);
+      if (!await radio.isChecked()) {
+        await Promise.all([page.waitForResponse(r=>r.url().endsWith('/settings/appearance/')&&r.request().method()==='POST'),radio.check()]);
+        await page.waitForFunction(()=>!document.querySelector('[data-appearance-form][data-saving]'));
+      }
       assert(await page.locator('html').getAttribute('data-appearance') === appearance, 'Appearance did not persist');
       assert(await page.locator('html').getAttribute('data-color-theme') === theme, 'Theme did not persist');
     }
@@ -47,6 +63,11 @@ fs.mkdirSync(output, {recursive: true});
         for (const route of ['/', '/events/', config.sessions[0].profile, '/settings/?tab=appearance']) {
           const response = await page.goto(config.origin + route);
           assert(response.ok(), `HTTP ${response.status()} ${route} ${theme} ${width}`);
+          if (route.includes('?tab=')) {
+            await page.locator('#modal-body [data-appearance-form]').waitFor();
+            const fits = await page.locator('#modal-body').evaluate(el => el.scrollWidth <= el.clientWidth + 1);
+            assert(fits, `Appearance window overflows ${theme} ${width}`);
+          }
           const state = await page.evaluate(() => ({
             width:innerWidth, scroll:document.documentElement.scrollWidth,
             broken:[...document.images].filter(i=>i.getAttribute('src')&&i.complete&&!i.naturalWidth).map(i=>i.src),
@@ -58,17 +79,25 @@ fs.mkdirSync(output, {recursive: true});
           assert(state.scroll <= state.width + 1, `Overflow ${route} ${theme} ${width}: ${state.scroll}`);
           assert(!state.broken.length, 'Broken images: ' + state.broken);
           assert(state.theme === theme, 'Theme changed on navigation');
+          assert(await page.locator('.mc-world-image.mc-asset-' + theme).isVisible(), 'World asset missing');
+          const frame = await page.locator('.stat-tile,.card').first().evaluate(el => {
+            const style = getComputedStyle(el,'::before');
+            return {source:style.borderImageSource,repeat:style.borderImageRepeat,slice:style.borderImageSlice};
+          });
+          assert(frame.source.includes('/9slice')&&frame.repeat==='repeat'&&frame.slice==='128','Frame is not modular: '+JSON.stringify(frame));
           assert(new Set(state.ids).size === state.ids.length, 'Duplicate IDs ' + route);
           checks++;
           if ((width===1440||width===390)&&route==='/')
-            await page.screenshot({path:path.join(output,`dashboard-${theme}-${width}.png`),fullPage:true});
+            await page.screenshot({path:path.join(output,`dashboard-${theme}-${width}.png`),fullPage:true,animations:'disabled'});
           if (width===1440&&route.includes('?tab='))
-            await page.screenshot({path:path.join(output,`settings-${theme}.png`),fullPage:true});
+            await page.screenshot({path:path.join(output,`settings-${theme}.png`),fullPage:true,animations:'disabled'});
+          if (width===390&&route.includes('?tab='))
+            await page.screenshot({path:path.join(output,`settings-${theme}-390.png`),fullPage:true,animations:'disabled'});
         }
       }
     }
     await page.setViewportSize({width:1440,height:1000});
-    await page.goto(config.origin + '/settings/?tab=appearance');
+    await page.goto(config.origin + '/settings/');
     await page.locator('#theme-toggle').click();
     await page.waitForFunction(() => !document.getElementById('theme-toggle').disabled);
     await page.reload();
@@ -90,6 +119,39 @@ fs.mkdirSync(output, {recursive: true});
     assert(await page.locator('html').getAttribute('data-theme') === 'light','System light');
     await page.emulateMedia({colorScheme:'dark'});
     await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+    await page.route('**/settings/appearance/', route => route.abort());
+    await page.locator('#modal-body input[name="color_theme"][value="light"]').click();
+    await page.locator('[data-appearance-status][data-error]').waitFor();
+    assert(await page.locator('#modal-body input[name="color_theme"][value="system"]').isChecked(), 'Modal theme did not roll back');
+    await page.locator('#modal-body input[name="appearance"][value="nexus"]').click();
+    await page.waitForFunction(() => !document.querySelector('[data-appearance-form][data-saving]'));
+    assert(await page.locator('#modal-body input[name="appearance"][value="minecraft"]').isChecked(), 'Modal appearance did not roll back');
+    await page.unroute('**/settings/appearance/');
+    // Не только наличие атласа: меняем длину и высоту живой панели, толщина
+    // углов остаётся постоянной для всех шести вариантов материала.
+    await page.setViewportSize({width:1800,height:1100});
+    await page.goto(config.origin + '/');
+    const variants = await page.evaluate(() => {
+      const panel = document.createElement('section');
+      panel.className = 'card';
+      panel.textContent = 'Проверка рамки';
+      document.getElementById('page-main').appendChild(panel);
+      const results = [];
+      for (const material of ['limestone','masonry','timber','obsidian','mossy','ember']) {
+        panel.dataset.mcMaterial = material;
+        const widths = [];
+        for (const [width,height] of [[280,240],[480,520],[900,240]]) {
+          panel.style.width = width + 'px'; panel.style.height = height + 'px';
+          const style = getComputedStyle(panel,'::before');
+          widths.push(style.borderLeftWidth);
+          results.push(style.borderImageSource.includes('/'+material+'/9slice') && style.borderImageRepeat==='repeat');
+        }
+        results.push(new Set(widths).size === 1);
+      }
+      panel.remove();
+      return results.every(Boolean);
+    });
+    assert(variants, 'Frame corners or repeated edges depend on panel size');
     await page.setViewportSize({width:1440,height:1000});
     await login(config.sessions[1]);
     await page.goto(config.origin + '/settings/?tab=appearance');

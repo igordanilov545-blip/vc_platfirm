@@ -39,7 +39,7 @@
 | [brandbook_main/](brandbook_main/) | Исходное оформление Nexus и UI-компоненты. |
 | [brandbook_minecraft/](brandbook_minecraft/) | Брендбук и HTML-примеры оформления Minecraft. |
 | [appearance-system.md](appearance-system.md) | Архитектура оформлений, настройки аккаунта и подключение новых вариантов. |
-| [minecraft-assets.md](minecraft-assets.md) | Краткая таблица недостающей графики и точные имена файлов. |
+| [minecraft-assets.md](minecraft-assets.md) | Подключённая графика Minecraft, модульные рамки и точные имена файлов. |
 
 > `dev_credentials.md` — локальные тестовые учётки, не коммитится (в `.gitignore`).
 >

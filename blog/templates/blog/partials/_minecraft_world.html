@@ -4,6 +4,7 @@
     {% if minecraft_world_light_asset %}<img class="mc-world-image mc-asset-light" src="{% static minecraft_world_light_asset %}" alt="">{% endif %}
     {% if minecraft_world_dark_asset %}<img class="mc-world-image mc-asset-dark" src="{% static minecraft_world_dark_asset %}" alt="">{% endif %}
     <div class="mc-horizon"></div><div class="mc-sun"></div>
+    <div class="mc-clouds"><img class="mc-cloud mc-cloud--near" src="{% static 'blog/appearances/minecraft/scene/cloud-near.png' %}" alt=""><img class="mc-cloud mc-cloud--far" src="{% static 'blog/appearances/minecraft/scene/cloud-far.png' %}" alt=""></div>
 </div>
 <div class="mc-foreground" aria-hidden="true">
     {% if minecraft_foreground_light_asset %}<img class="mc-asset-light" src="{% static minecraft_foreground_light_asset %}" alt="">{% endif %}

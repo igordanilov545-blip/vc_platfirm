@@ -1,4 +1,5 @@
 {% extends 'blog/base.html' %}
+{% load static %}
 {% block title %}Пользователи{% endblock %}
 {% block content %}
 <h1>Пользователи</h1>
@@ -6,6 +7,7 @@
 {% url 'user_list' as search_url %}
 {% include 'blog/partials/_table_search.html' with search_target="#users-table" search_placeholder="Поиск по фамилии, имени, отчеству, Telegram…" search_roles=True %}
 
+<div class="mc-ornament-anchor" data-mc-ornament="bird">
 <div class="card" style="padding:0; overflow:hidden;">
     <div class="table-scroll">
     <div class="table-load-tools" data-table-load-tools>
@@ -29,5 +31,7 @@
         {% include 'blog/partials/_user_list_rows.html' %}
     </table>
     </div>
+</div>
+{% if active_appearance.key == 'minecraft' %}<img class="mc-table-bird" src="{% static 'blog/appearances/minecraft/scene/table-bird.png' %}" alt="" aria-hidden="true">{% endif %}
 </div>
 {% endblock %}

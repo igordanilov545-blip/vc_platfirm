@@ -36,7 +36,7 @@ class AppearanceBrowserTests(StaticLiveServerTestCase):
         """Выбор вручную, перезагрузка, темы, общий браузер, мобильное меню и модалка."""
         volunteer = make_user(first_name='Анна', last_name='Волкова', total_hours=128,
                               season_hours=24, total_event_count=18)
-        manager = make_manager(first_name='Михаил', last_name='Орлов', total_hours=256)
+        manager = make_manager(first_name='Менеджер', last_name='Тестовый', total_hours=256)
         event = make_event(title='Городской полумарафон')
         shift = make_shift(event)
         for index in range(4):
@@ -54,6 +54,7 @@ class AppearanceBrowserTests(StaticLiveServerTestCase):
             input=json.dumps({'origin': self.live_server_url, 'sessions': sessions,
                               'cookieName': settings.SESSION_COOKIE_NAME,
                               'pending': reverse('pending_applications'),
+                              'users': reverse('user_list'),
                               'managedProfile': reverse('profile_detail', args=[volunteer.pk])}),
             text=True, encoding='utf-8', capture_output=True, timeout=180,
         )

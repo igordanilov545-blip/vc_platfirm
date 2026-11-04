@@ -207,22 +207,19 @@
 .mc-foreground { left:calc(var(--sidebar-width) - 18px); width:calc(var(--mc-gutter) + 50px); height:72vh; }
 .mc-foreground>img { left:0; width:100%; max-height:72vh; }
 .mc-foreground-glow { mix-blend-mode:screen; }
-.mc-hanging-lantern { position:fixed; left:calc(var(--sidebar-width) - 13px); top:34vh; width:96px; z-index:13; pointer-events:none; }
-.mc-hanging-lantern::before { content:""; position:absolute; left:1px; top:8px; width:9px; height:65%; background:var(--mc-timber); box-shadow:inset 2px 0 var(--mc-wood-hi); }
-.mc-hanging-lantern img { position:relative; width:100%; }
+.mc-hanging-lantern { position:fixed; left:calc(var(--sidebar-width) - 16px); top:34vh; width:96px; z-index:13; pointer-events:none; }
+.mc-hanging-lantern img { position:relative; width:100%; transform:scaleX(-1); }
 :root[data-theme="light"] .mc-hanging-lantern .mc-asset-light,:root[data-theme="dark"] .mc-hanging-lantern .mc-asset-dark { display:block; }
 :root[data-appearance="minecraft"] .modal-dialog,:root[data-appearance="minecraft"] .quick-add-dialog { border:2px solid var(--mc-rim-hi); box-shadow:0 12px 50px #0005; }
 :root[data-appearance="minecraft"] .appearance-theme-card { padding:18px; }
 :root[data-appearance="minecraft"] body.sidebar-collapsed .mc-foreground { left:calc(var(--sidebar-width-collapsed) - 18px); }
-:root[data-appearance="minecraft"] body.sidebar-collapsed .mc-hanging-lantern { left:calc(var(--sidebar-width-collapsed) - 13px); }
+:root[data-appearance="minecraft"] body.sidebar-collapsed .mc-hanging-lantern { left:calc(var(--sidebar-width-collapsed) - 16px); }
 :root[data-appearance="minecraft"] .avatar-placeholder { width:68px; height:68px; border:1px solid var(--mc-rim-hi); background:var(--accent-soft); box-shadow:none; }
 .mc-avatar { width:100%; height:100%; object-fit:contain; padding:3px; transition:transform .18s; }
 .mc-ambient { position:fixed; left:calc(var(--sidebar-width) + 35px); top:20vh; width:40px; pointer-events:none; z-index:6; }
 .mc-ambient img { width:100%; animation:mc-drift 9s ease-in-out infinite; }
 .mc-ambient .mc-asset-dark { width:45px; animation:mc-motes 7s ease-in-out infinite; }
 .mc-stat-icon { width:28px; height:28px; object-fit:contain; margin-bottom:8px; }
-.mc-card-accent { position:absolute; top:-22px; right:10px; width:42px; height:42px; pointer-events:none; }
-.mc-card-accent img { width:100%; height:100%; object-fit:contain; }
 :root[data-appearance="minecraft"] .btn,:root[data-appearance="minecraft"] .nav-link { transition:background-color .15s,transform .15s,box-shadow .15s; }
 :root[data-appearance="minecraft"] .sidebar-account:hover .mc-avatar { transform:translateY(-2px) rotate(-3deg); }
 @keyframes mc-drift { 0%,100% { transform:translate(0,0) rotate(-5deg); } 50% { transform:translate(8px,-12px) rotate(5deg); } }
@@ -244,3 +241,57 @@
  .mc-avatar { transition:none; }
  :root[data-appearance="minecraft"] .sidebar-account:hover .mc-avatar { transform:none; }
 }
+
+/* Компоновка реагирует на реальную ширину полотна, включая браузерный масштаб. */
+:root[data-appearance="minecraft"] #page-main { container:mc-content / inline-size; }
+:root[data-appearance="minecraft"] .profile-header { display:grid; grid-template-columns:minmax(0,1fr) 210px; grid-template-areas:"title progress" "actions progress"; gap:12px 22px; align-items:start; margin-bottom:20px; }
+:root[data-appearance="minecraft"] .profile-header>h1 { grid-area:title; min-width:0; overflow-wrap:anywhere; margin:0; }
+:root[data-appearance="minecraft"] .profile-actions { grid-area:actions; min-width:0; align-items:stretch; gap:6px; }
+:root[data-appearance="minecraft"] .profile-actions .btn.secondary { min-height:44px; padding:9px 12px; border:1px solid var(--border-subtle); border-bottom-width:1px; border-radius:4px; background:color-mix(in srgb,var(--bg-card) 75%,transparent); box-shadow:none; font-size:13px; font-weight:600; line-height:1.3; }
+:root[data-appearance="minecraft"] .profile-actions .btn.secondary:hover { color:var(--accent); border-color:var(--accent); background:var(--accent-soft); transform:none; }
+:root[data-appearance="minecraft"] .profile-actions .btn.secondary:active { box-shadow:inset 0 1px 3px #0002; }
+:root[data-appearance="minecraft"] .profile-actions [data-tour="profile-edit"] { color:var(--accent); background:var(--accent-soft); }
+:root[data-appearance="minecraft"] .profile-actions .mc-icon { width:17px; height:17px; flex-shrink:0; }
+:root[data-appearance="minecraft"] .profile-header .profile-completion { grid-area:progress; align-self:start; width:210px; min-width:0; margin:0; padding:12px; border-radius:4px; background:color-mix(in srgb,var(--bg-card) 65%,transparent); }
+:root[data-appearance="minecraft"] .profile-header .profile-completion h3 { font-size:12px; font-weight:600; line-height:1.3; }
+:root[data-appearance="minecraft"] .profile-header .profile-completion .recruit-bar { width:100%; height:6px; }
+:root[data-appearance="minecraft"][data-page="profile_detail"] .stat-tile { --rim-pad:6px; padding:14px 16px; box-shadow:none; }
+:root[data-appearance="minecraft"][data-page="profile_detail"] .card { --rim-pad:7px; }
+:root[data-appearance="minecraft"][data-page="profile_detail"] .stat-grid { grid-template-columns:repeat(5,minmax(0,1fr)); }
+:root[data-appearance="minecraft"][data-page="profile_detail"] .stat-tile .value { font-size:clamp(22px,4cqi,30px); }
+:root[data-appearance="minecraft"][data-page="profile_detail"] .stat-tile .label { font-size:12px; margin-top:6px; }
+@container mc-content (max-width:900px) {
+  :root[data-appearance="minecraft"][data-page="profile_detail"] .stat-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  :root[data-appearance="minecraft"] .profile-header { grid-template-columns:minmax(0,1fr); grid-template-areas:"title" "actions" "progress"; gap:14px; }
+  :root[data-appearance="minecraft"] .profile-header .profile-completion { width:100%; display:grid; grid-template-columns:minmax(0,1fr) minmax(100px,180px); align-items:center; gap:4px 18px; }
+  :root[data-appearance="minecraft"] .profile-header .profile-completion-heading { margin:0; }
+  :root[data-appearance="minecraft"] .profile-header .profile-completion .field-hint { grid-column:1/-1; }
+}
+@container mc-content (max-width:550px) {
+  :root[data-appearance="minecraft"][data-page="profile_detail"] .stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  :root[data-appearance="minecraft"] .profile-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  :root[data-appearance="minecraft"] .profile-actions .btn { width:100%; min-width:0; text-align:center; justify-content:center; }
+  :root[data-appearance="minecraft"] .profile-actions [data-tour="profile-edit"] { grid-column:1/-1; }
+  :root[data-appearance="minecraft"] .profile-header .profile-completion { grid-template-columns:minmax(0,1fr); }
+}
+
+/* Небольшой декор — только снаружи последних таблиц двух выбранных страниц. */
+.mc-ornament-anchor { position:relative; display:flow-root; margin-bottom:42px; }
+:root[data-appearance="minecraft"] .mc-ornament-anchor>.card { margin-bottom:0; }
+.mc-ornament-anchor[data-mc-ornament="bird"] { margin-top:34px; }
+.mc-table-bird { position:absolute; bottom:calc(100% - 2px); right:28px; width:46px; height:36px; object-fit:contain; pointer-events:none; transform-origin:center bottom; animation:mc-bird-peek 15s ease-in-out infinite; }
+.mc-table-vines { position:absolute; top:calc(100% - 3px); left:28px; width:72px; pointer-events:none; }
+.mc-table-vines img { width:100%; height:auto; }
+:root[data-theme="dark"] .mc-table-bird { filter:brightness(.8); }
+.mc-clouds { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+.mc-cloud { --cloud-start:calc(-20vw - 280px); --cloud-end:calc(80vw + 280px); position:absolute; top:0; left:20%; width:210px; opacity:.65; animation:mc-cloud-pass 95s linear -35s infinite; }
+.mc-cloud--far { --cloud-start:calc(-65vw - 280px); --cloud-end:calc(35vw + 280px); top:18px; left:65%; width:270px; opacity:.38; animation-duration:125s; animation-delay:-88s; }
+:root[data-theme="dark"] .mc-cloud { filter:brightness(.48) hue-rotate(15deg); opacity:.4; }
+@keyframes mc-cloud-pass { from { transform:translateX(var(--cloud-start)); } to { transform:translateX(var(--cloud-end)); } }
+@keyframes mc-bird-peek { 0%,82%,100% { transform:rotate(0); } 88% { transform:rotate(-3deg); } 94% { transform:rotate(2deg); } }
+@media(prefers-reduced-motion:reduce) {
+  .mc-cloud,.mc-table-bird { animation:none; }
+  .mc-cloud { left:38%; }
+  .mc-cloud--far { left:5%; }
+}
+@media print { .mc-clouds,.mc-table-bird,.mc-table-vines { display:none; } }

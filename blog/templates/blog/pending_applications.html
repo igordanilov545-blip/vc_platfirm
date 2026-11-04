@@ -1,4 +1,5 @@
 {% extends 'blog/base.html' %}
+{% load static %}
 {% block title %}Заявки{% endblock %}
 {% block content %}
 <div class="page-header">
@@ -21,6 +22,7 @@
 
 {% include 'blog/partials/_table_search.html' with search_target="#apps-table" search_placeholder="Поиск по мероприятию, ФИО, телефону, telegram…" %}
 
+<div class="mc-ornament-anchor" data-mc-ornament="vines">
 <div class="card" style="padding:0; overflow:hidden;">
     <table class="responsive-table" data-sortable data-hideable-columns id="apps-table">
         <thead><tr><th data-sort-key="event">Мероприятие</th><th data-sort-key="name">ФИО</th><th data-sort-key="tg">Telegram</th><th data-sort-key="phone">Телефон</th><th data-sort-key="date" data-sort-default="desc">Подано</th><th></th></tr></thead>
@@ -52,5 +54,7 @@
         {% endfor %}
         </tbody>
     </table>
+</div>
+{% if active_appearance.key == 'minecraft' %}<div class="mc-table-vines" aria-hidden="true"><img class="mc-asset-light" src="{% static 'blog/appearances/minecraft/scene/table-vines-day.png' %}" alt=""><img class="mc-asset-dark" src="{% static 'blog/appearances/minecraft/scene/table-vines-night.png' %}" alt=""></div>{% endif %}
 </div>
 {% endblock %}

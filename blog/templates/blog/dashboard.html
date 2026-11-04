@@ -8,7 +8,6 @@
 
 <div class="stat-grid" style="margin-top:1rem;">
     <div class="stat-tile">
-        {% if active_appearance.key == 'minecraft' %}<span class="mc-card-accent" aria-hidden="true"><img class="mc-asset-light" src="{% static 'blog/appearances/minecraft/scene/flowers.png' %}" alt=""><img class="mc-asset-dark" src="{% static 'blog/appearances/minecraft/scene/crystals.png' %}" alt=""></span>{% endif %}
         {% if active_appearance.key == 'minecraft' %}<img class="mc-stat-icon" src="{% static 'blog/appearances/minecraft/scene/badge-heart.png' %}" alt="">{% endif %}
         <div class="value">{{ user.total_hours }}</div>
         <div class="label">Часов всего</div>

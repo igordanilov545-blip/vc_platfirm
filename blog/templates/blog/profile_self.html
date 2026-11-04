@@ -3,16 +3,16 @@
 {% block content %}
 {% comment %}Страница профиля ГЛАЗАМИ ВЛАДЕЛЬЦА (сам смотрит себя). Управленческий вид
 (менеджер/ТЛ на чужом профиле) — отдельный файл profile_manage.html.{% endcomment %}
-<div class="page-header">
+<div class="page-header profile-header">
     <h1>{{ target.full_name }}</h1>
-    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <div class="profile-actions">
         <a href="{% url 'personal_qr' %}" class="btn secondary" data-modal data-modal-title="Мой QR-код">Мой QR-код</a>
         {% if can_scan_qr %}<a href="{% url 'qr_scanner' %}" class="btn secondary">Сканер QR</a>{% endif %}
         <a href="{% url 'profile_achievements' target.id %}" class="btn secondary" data-tour="profile-achievements">{% include 'blog/partials/_appearance_icon.html' with name='award' fallback='🏅' %} Мои достижения{% if achievement_earned_count %} <span class="pill success" style="margin-left:4px;">{{ achievement_earned_count }}</span>{% endif %}</a>
         <a href="{% url 'profile_stats' target.id %}" class="btn secondary">{% include 'blog/partials/_appearance_icon.html' with name='chart' fallback='📊' %} Моя статистика</a>
-        <a href="{% url 'profile_edit' %}" class="btn secondary" data-tour="profile-edit">✎ Редактировать профиль</a>
-        {% include 'blog/partials/_profile_completion.html' with progress=profile_completion %}
+        <a href="{% url 'profile_edit' %}" class="btn secondary" data-tour="profile-edit">{% include 'blog/partials/_appearance_icon.html' with name='pencil' fallback='✎' %} Редактировать профиль</a>
     </div>
+    {% include 'blog/partials/_profile_completion.html' with progress=profile_completion %}
 </div>
 
 <div class="pill-row" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
@@ -57,7 +57,7 @@
     </table>
     {% else %}
     <p style="color:var(--text-secondary);">Активных заявок нет, но ты всегда можешь это исправить.</p>
-    <a href="{% url 'event_list' %}" class="btn">📅 К мероприятиям</a>
+    <a href="{% url 'event_list' %}" class="btn">{% include 'blog/partials/_appearance_icon.html' with name='calendar' fallback='📅' %} К мероприятиям</a>
     {% endif %}
 </div>
 {% endif %}

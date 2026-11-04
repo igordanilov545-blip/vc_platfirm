@@ -14,13 +14,18 @@
 |---|---|---|
 | `scene/lantern-day.png` | `ui_extras_strict/badge-star.png` | Фонарь с деревянной опорой |
 | `scene/lantern-night.png` | `ui_extras_strict/badge-handshake.png` | Фонарь с обсидиановой опорой |
-| `scene/flowers.png` | `ui_extras_strict/title-plaque-limestone-banners.png` | Дневной акцент |
-| `scene/crystals.png` | `ui_extras_strict/title-plaque-moss-lantern.png` | Ночной акцент |
+| `scene/flowers.png` | `ui_extras_strict/title-plaque-limestone-banners.png` | Резерв; из KPI удалён |
+| `scene/crystals.png` | `ui_extras_strict/title-plaque-moss-lantern.png` | Резерв; из KPI удалён |
 | `scene/butterfly.png` | `ambient/ambient-sparkle-06.png` | Дневное окружение |
 | `scene/fireflies.png` | `ambient/bird-blue-flying.png` | Ночное окружение |
 | `scene/badge-heart.png` | `decor_strict/lantern-stone-moss-01.png` | Часы помощи |
 | `scene/badge-calendar.png` | `decor_strict/moss-corner-wood-01.png` | Текущий сезон |
 | `scene/badge-handshake.png` | `decor_strict/lantern-obsidian-01.png` | Участие в мероприятиях |
+| `scene/cloud-near.png` | `ui_extras_strict/ui-extra-36.png` | Ближние плывущие облака |
+| `scene/cloud-far.png` | `ui_extras_strict/ui-extra-39.png` | Дальний слой облаков |
+| `scene/table-bird.png` | `ambient/ambient-sparkle-03.png` | Только верх таблицы пользователей |
+| `scene/table-vines-day.png` | `ui_extras_strict/ribbon-red.png` | Только низ таблицы заявок, день |
+| `scene/table-vines-night.png` | `ui_extras_strict/ribbon-green.png` | Только низ таблицы заявок, ночь |
 
 Новая графика для исправлений не требуется. Непроверенные элементы не подключаются
 по одному имени файла.

@@ -145,6 +145,7 @@ h3 { font: var(--text-h2); margin: 0 0 8px; }
   gap: 12px; flex-wrap: wrap; margin-bottom: 1rem;
 }
 .page-header h1 { margin: 0; }
+.profile-actions { display:flex; gap:8px; flex-wrap:wrap; }
 @media (max-width: 480px) {
   .page-header .btn { width: 100%; justify-content: center; }
 }

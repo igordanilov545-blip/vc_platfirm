@@ -58,6 +58,7 @@ fs.mkdirSync(output, {recursive: true});
     assert(await page.locator('html').getAttribute('data-theme') === 'light','Legacy browser theme leaked into account');
     for (const theme of ['light','dark']) {
       await choose('minecraft', theme);
+      assert(await page.locator('.stat-tile .mc-card-accent').count() === 0,'Floating KPI decoration remains');
       for (const width of [1440,768,390,320]) {
         await page.setViewportSize({width,height:1000});
         for (const route of ['/', '/events/', config.sessions[0].profile, '/settings/?tab=appearance']) {
@@ -129,7 +130,7 @@ fs.mkdirSync(output, {recursive: true});
     assert(await page.locator('#modal-body input[name="appearance"][value="minecraft"]').isChecked(), 'Modal appearance did not roll back');
     await page.unroute('**/settings/appearance/');
     // Не только наличие атласа: меняем длину и высоту живой панели, толщина
-    // углов остаётся постоянной для всех шести вариантов материала.
+    // углов остаётся постоянной для всех восьми вариантов материала.
     await page.setViewportSize({width:1800,height:1100});
     await page.goto(config.origin + '/');
     const variants = await page.evaluate(() => {
@@ -163,6 +164,41 @@ fs.mkdirSync(output, {recursive: true});
     for (const theme of ['dark','light']) {
       await choose('minecraft',theme);
       assert(await page.locator('.mc-avatar').getAttribute('src') === identity,'Avatar changes with theme');
+      await page.goto(config.origin + config.sessions[1].profile);
+      for(const physicalWidth of [1920,1440]) {
+        for(const zoom of [.9,1,1.25]) {
+          await page.setViewportSize({width:Math.round(physicalWidth/zoom),height:Math.round(1000/zoom)});
+          const layout=await page.evaluate(()=>{
+            const main=document.getElementById('page-main').getBoundingClientRect();
+            const header=document.querySelector('.profile-header').getBoundingClientRect();
+            const actions=document.querySelector('.profile-actions').getBoundingClientRect();
+            const progress=document.querySelector('#profile-completion').getBoundingClientRect();
+            const stats=document.querySelector('.stat-grid').getBoundingClientRect();
+            const buttons=[...document.querySelectorAll('.profile-actions .btn')].map(el=>el.getBoundingClientRect());
+            const separate=progress.right<=actions.left+1||progress.left>=actions.right-1||progress.top>=actions.bottom-1||progress.bottom<=actions.top+1;
+            return {fits:document.documentElement.scrollWidth<=innerWidth+1, separate, compact:stats.top-header.bottom<95, buttons:buttons.every(r=>r.left>=main.left&&r.right<=main.right&&r.height>=43), border:parseFloat(getComputedStyle(document.querySelector('.stat-tile')).borderLeftWidth)};
+          });
+          assert(layout.fits&&layout.separate&&layout.compact&&layout.buttons&&layout.border<=6,'Own profile breaks at '+theme+' '+physicalWidth+' '+zoom+': '+JSON.stringify(layout));
+          checks++;
+          if(physicalWidth===1920&&zoom>=1) await page.screenshot({path:path.join(output,'own-profile-'+theme+'-'+Math.round(zoom*100)+'.png'),fullPage:true,animations:'disabled'});
+        }
+      }
+      await page.setViewportSize({width:1440,height:1000});
+      for(const [route,kind] of [[config.users,'bird'],[config.pending,'vines']]) {
+        await page.goto(config.origin+route);
+        await page.waitForLoadState('networkidle');
+        const safe=await page.evaluate(kind=>{
+          const anchor=document.querySelector('[data-mc-ornament="'+kind+'"]');
+          const table=anchor.querySelector('table').getBoundingClientRect();
+          const card=anchor.querySelector('.card').getBoundingClientRect();
+          const decoration=anchor.querySelector(kind==='bird'?'.mc-table-bird':'.mc-table-vines');
+          const r=decoration.getBoundingClientRect();
+          return document.querySelectorAll('.mc-table-bird,.mc-table-vines').length===1&&getComputedStyle(decoration).pointerEvents==='none'&&(kind==='bird'?r.bottom<=table.top&&r.bottom>=card.top:r.top>=table.bottom&&r.top<=card.bottom+1&&r.top>=card.bottom-5);
+        },kind);
+        assert(safe,'Table decoration overlaps data: '+kind+' '+theme);
+        checks++;
+        await page.screenshot({path:path.join(output,'ornament-'+kind+'-'+theme+'.png'),fullPage:true,animations:'disabled'});
+      }
       for (const route of [config.pending,config.managedProfile]) {
         await page.goto(config.origin + route);
         await page.waitForLoadState('networkidle');
@@ -206,13 +242,17 @@ fs.mkdirSync(output, {recursive: true});
     await page.goto(config.origin+'/');
     const anchored=await page.evaluate(()=>{
       const a=document.querySelector('.sidebar').getBoundingClientRect(),b=document.querySelector('.mc-hanging-lantern').getBoundingClientRect();
-      return b.left<a.right && b.right>a.right;
+      const img=[...document.querySelectorAll('.mc-hanging-lantern img')].find(el=>getComputedStyle(el).display!=='none');
+      return b.left<a.right && b.right>a.right && getComputedStyle(img).transform.startsWith('matrix(-1');
     });
     assert(anchored,'Lantern is detached from sidebar');
     assert(await page.locator('.sidebar .icon').evaluateAll(els=>els.every(el=>el.querySelector('svg'))),'Unconverted sidebar icon');
     await page.emulateMedia({reducedMotion:'reduce'});
     assert(await page.locator('.mc-ambient img').first().evaluate(el=>getComputedStyle(el).animationName)==='none','Reduced motion ignored');
+    assert(await page.locator('.mc-cloud').evaluateAll(els=>els.length===2&&els.every(el=>getComputedStyle(el).animationName==='none')),'Cloud reduced motion ignored');
     await page.emulateMedia({reducedMotion:'no-preference'});
+    const cloudTransform=await page.locator('.mc-cloud').first().evaluate(el=>getComputedStyle(el).transform);
+    await page.waitForFunction(before=>getComputedStyle(document.querySelector('.mc-cloud')).transform!==before,cloudTransform,{timeout:3000});
     await page.goto(config.origin + '/events/');
     await page.locator('[data-modal]').first().click();
     await page.locator('#modal-backdrop').waitFor({state:'visible'});

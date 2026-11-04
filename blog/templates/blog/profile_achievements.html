@@ -6,7 +6,7 @@
 build_profile_achievements: achievement_groups = [{group, items:[card,…]}].{% endcomment %}
 <div class="page-header">
     <div>
-        <h1>🏅 {% if is_owner %}Мои достижения{% else %}Достижения: {{ target.full_name }}{% endif %}</h1>
+        <h1>{% include 'blog/partials/_appearance_icon.html' with name='award' fallback='🏅' %} {% if is_owner %}Мои достижения{% else %}Достижения: {{ target.full_name }}{% endif %}</h1>
         <p style="color:var(--text-secondary); margin:4px 0 0;">Получено {{ earned_count }} из {{ total_count }}</p>
     </div>
     <a href="{% url 'profile_detail' target.id %}" class="btn secondary">← В профиль</a>

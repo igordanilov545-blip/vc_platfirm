@@ -22,7 +22,7 @@
         var updateToggleLabel = function () {
             var icon = document.getElementById('sidebar-toggle-icon');
             var label = document.getElementById('sidebar-toggle-label');
-            icon.textContent = collapsed ? '➡️' : '⬅️';
+            window.setAppearanceIcon(icon, collapsed ? 'chevron-right' : 'chevron-left', collapsed ? '➡️' : '⬅️');
             label.textContent = collapsed ? ' Развернуть' : ' Свернуть';
         };
         updateToggleLabel();

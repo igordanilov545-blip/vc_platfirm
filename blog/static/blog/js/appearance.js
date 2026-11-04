@@ -4,6 +4,14 @@
     var media = window.matchMedia('(prefers-color-scheme: dark)');
     var buttons = ['theme-toggle', 'more-theme-toggle'];
     var pending = false;
+    window.setAppearanceIcon = function (element, name, fallback) {
+        if (!element) return;
+        if (root.dataset.appearance !== 'minecraft') { element.textContent = fallback; return; }
+        var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('class', 'mc-icon'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true');
+        var use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+        use.setAttribute('href', '#mc-icon-' + name); svg.appendChild(use); element.replaceChildren(svg);
+    };
 
     function syncAppearance() {
         document.querySelectorAll('[data-appearance-form] input[name="appearance"]').forEach(function (input) {
@@ -18,7 +26,7 @@
         root.style.colorScheme = root.dataset.theme;
         ['theme-icon', 'more-theme-icon'].forEach(function (id) {
             var icon = document.getElementById(id);
-            if (icon) icon.textContent = dark ? '☀️' : '🌙';
+            window.setAppearanceIcon(icon, dark ? 'sun' : 'moon', dark ? '☀️' : '🌙');
         });
         ['theme-label', 'more-theme-label'].forEach(function (id) {
             var label = document.getElementById(id);

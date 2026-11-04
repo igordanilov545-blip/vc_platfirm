@@ -1,5 +1,6 @@
 """Личные предпочтения и визуальный контекст; контракт — appearance-system.md."""
 from functools import lru_cache
+import hashlib
 from django.contrib.staticfiles import finders
 from django.core.exceptions import ValidationError
 
@@ -33,6 +34,10 @@ def appearance_context(user):
     }
     if selected.key == 'minecraft':
         context.update(_minecraft_assets())
+        # Случайное распределение без смены лица при переходах и переключении темы.
+        avatars = ('boy', 'bunny', 'cat', 'dog', 'dolphin', 'fox', 'girl', 'old-man', 'old-woman', 'parrot')
+        index = int.from_bytes(hashlib.sha256(f'minecraft-avatar-v1:{user.pk}'.encode()).digest()[:4], 'big') % len(avatars)
+        context['minecraft_avatar_asset'] = f'blog/appearances/minecraft/avatars/{avatars[index]}-avatar.png'
     return context
 
 

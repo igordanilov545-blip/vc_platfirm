@@ -1,4 +1,5 @@
 {% extends 'blog/base.html' %}
+{% load static %}
 {% block title %}Главная{% endblock %}
 {% block content %}
 <h1>Здравствуйте, {{ user.full_name }}</h1>
@@ -7,15 +8,18 @@
 
 <div class="stat-grid" style="margin-top:1rem;">
     <div class="stat-tile">
-        {% if active_appearance.key == 'minecraft' %}<span class="mc-card-moss" aria-hidden="true"></span>{% endif %}
+        {% if active_appearance.key == 'minecraft' %}<span class="mc-card-accent" aria-hidden="true"><img class="mc-asset-light" src="{% static 'blog/appearances/minecraft/scene/flowers.png' %}" alt=""><img class="mc-asset-dark" src="{% static 'blog/appearances/minecraft/scene/crystals.png' %}" alt=""></span>{% endif %}
+        {% if active_appearance.key == 'minecraft' %}<img class="mc-stat-icon" src="{% static 'blog/appearances/minecraft/scene/badge-heart.png' %}" alt="">{% endif %}
         <div class="value">{{ user.total_hours }}</div>
         <div class="label">Часов всего</div>
     </div>
     <div class="stat-tile">
+        {% if active_appearance.key == 'minecraft' %}<img class="mc-stat-icon" src="{% static 'blog/appearances/minecraft/scene/badge-calendar.png' %}" alt="">{% endif %}
         <div class="value">{{ user.season_hours }}</div>
         <div class="label">Часов за сезон</div>
     </div>
     <div class="stat-tile">
+        {% if active_appearance.key == 'minecraft' %}<img class="mc-stat-icon" src="{% static 'blog/appearances/minecraft/scene/badge-handshake.png' %}" alt="">{% endif %}
         <div class="value">{{ user.total_event_count }}</div>
         <div class="label">Мероприятий всего</div>
     </div>
@@ -33,7 +37,7 @@
 
 {% if is_manager %}
 <div class="card" style="margin-top:1.5rem;">
-    <h3 data-tour="dash-incidents">🔔 Что нужно посмотреть</h3>
+    <h3 data-tour="dash-incidents">{% include 'blog/partials/_appearance_icon.html' with name='bell' fallback='🔔' %} Что нужно посмотреть</h3>
     {% for incident in incidents %}
         {% if incident.kind != 'pgas_verification' %}
         <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid var(--border-subtle); padding:10px 0;">
@@ -58,7 +62,7 @@
 </div>
 {% endif %}
 
-<div class="card" style="margin-top:1.5rem;">
+<div class="card" data-mc-surface="personal" style="margin-top:1.5rem;">
     <h3 data-tour="dash-quick-actions">Быстрые действия</h3>
     <a href="{% url 'event_list' %}" class="btn">Мероприятия</a>
     <a href="{% url 'application_create' %}" class="btn secondary" data-modal data-modal-title="Подать заявку на мероприятие">Подать заявку</a>

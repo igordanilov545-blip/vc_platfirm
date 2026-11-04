@@ -22,7 +22,7 @@
 <aside class="sidebar">
     {% if active_appearance.key == 'minecraft' %}<a class="world-wordmark" href="{% url 'dashboard' %}">RUNC<span>Вместе строим события</span></a>{% endif %}
     <a href="{% url 'profile_detail' user.id %}" class="sidebar-account">
-        <div class="avatar-placeholder">{{ user.full_name|slice:":1"|upper }}</div>
+        <div class="avatar-placeholder">{% if minecraft_avatar_asset %}<img class="mc-avatar" src="{% static minecraft_avatar_asset %}" alt="Аватар {{ user.full_name }}">{% else %}{{ user.full_name|slice:":1"|upper }}{% endif %}</div>
         <div class="username">{{ user.full_name }}</div>
         <div class="role">{{ role_label }}</div>
     </a>
@@ -52,10 +52,10 @@
 
     <div class="sidebar-footer">
         <button type="button" class="theme-toggle" id="theme-toggle" title="Тема">
-            <span class="icon" id="theme-icon">🌙</span><span class="theme-label" id="theme-label"> Тёмная тема</span>
+            <span class="icon" id="theme-icon">{% include 'blog/partials/_appearance_icon.html' with name='moon' fallback='🌙' %}</span><span class="theme-label" id="theme-label"> Тёмная тема</span>
         </button>
         <button type="button" class="sidebar-toggle" id="sidebar-toggle" title="Свернуть панель">
-            <span class="icon" id="sidebar-toggle-icon">⬅️</span><span class="nav-label" id="sidebar-toggle-label"> Свернуть</span>
+            <span class="icon" id="sidebar-toggle-icon">{% include 'blog/partials/_appearance_icon.html' with name='chevron-left' fallback='⬅️' %}</span><span class="nav-label" id="sidebar-toggle-label"> Свернуть</span>
         </button>
         <a href="{% url 'settings' %}" class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" title="Настройки"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='settings' fallback='⚙️' %}</span><span class="nav-label"> Настройки</span></a>
         <button type="button" class="nav-link companion-guide-btn" id="companion-guide-btn" title="Показать гайд по платформе"><span class="icon">{% include 'blog/partials/_appearance_icon.html' with name='guide' fallback='🦆' %}</span><span class="nav-label"> Гайд по платформе</span></button>
@@ -205,7 +205,7 @@
             <span class="more-icon">{% include 'blog/partials/_appearance_icon.html' with name='settings' fallback='⚙️' %}</span><span>Настройки</span>
         </a>
         <button type="button" class="more-item" id="more-theme-toggle">
-            <span class="more-icon" id="more-theme-icon">🌙</span><span id="more-theme-label">Тёмная тема</span>
+            <span class="more-icon" id="more-theme-icon">{% include 'blog/partials/_appearance_icon.html' with name='moon' fallback='🌙' %}</span><span id="more-theme-label">Тёмная тема</span>
         </button>
         <button type="button" class="more-item companion-guide-btn" id="more-guide-btn">
             <span class="more-icon">{% include 'blog/partials/_appearance_icon.html' with name='guide' fallback='🦆' %}</span><span>Гайд по платформе</span>

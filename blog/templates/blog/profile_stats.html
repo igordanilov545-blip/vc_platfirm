@@ -6,7 +6,7 @@
 чтобы её можно было «фоточкой» выложить в канал. Данные — build_period_stats.{% endcomment %}
 <div class="page-header">
     <div>
-        <h1>📊 {% if is_owner %}Моя статистика{% else %}Статистика: {{ target.full_name }}{% endif %}</h1>
+        <h1>{% include 'blog/partials/_appearance_icon.html' with name='chart' fallback='📊' %} {% if is_owner %}Моя статистика{% else %}Статистика: {{ target.full_name }}{% endif %}</h1>
         <p style="color:var(--text-secondary); margin:4px 0 0;">Итоги по периодам — можно поделиться</p>
     </div>
     <a href="{% url 'profile_detail' target.id %}" class="btn secondary">← В профиль</a>

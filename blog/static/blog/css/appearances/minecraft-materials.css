@@ -1,0 +1,166 @@
+/* Фиксированные углы и повторение сторон из визуально проверенной плоской поставки. */
+
+:root[data-appearance="minecraft"] {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/flat-limestone/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/flat-limestone/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/flat-limestone/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/flat-limestone/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/flat-limestone/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/flat-limestone/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/flat-limestone/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/flat-limestone/edge-right.png');
+}
+
+:root[data-appearance="minecraft"][data-theme="dark"] {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-right.png');
+}
+
+:root[data-appearance="minecraft"] .stat-tile {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/flat-masonry/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/flat-masonry/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/flat-masonry/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/flat-masonry/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/flat-masonry/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/flat-masonry/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/flat-masonry/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/flat-masonry/edge-right.png');
+}
+
+:root[data-appearance="minecraft"][data-theme="light"] .stat-tile:first-child {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/mossy-flat/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/mossy-flat/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/mossy-flat/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/mossy-flat/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/mossy-flat/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/mossy-flat/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/mossy-flat/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/mossy-flat/edge-right.png');
+}
+
+:root[data-appearance="minecraft"][data-theme="dark"] .stat-tile {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-right.png');
+}
+
+:root[data-appearance="minecraft"][data-theme="light"] [data-mc-surface="personal"] {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/flat-timber/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/flat-timber/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/flat-timber/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/flat-timber/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/flat-timber/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/flat-timber/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/flat-timber/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/flat-timber/edge-right.png');
+}
+
+:root[data-appearance="minecraft"][data-theme] [data-mc-material="limestone"] {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/flat-limestone/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/flat-limestone/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/flat-limestone/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/flat-limestone/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/flat-limestone/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/flat-limestone/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/flat-limestone/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/flat-limestone/edge-right.png');
+}
+
+:root[data-appearance="minecraft"][data-theme] [data-mc-material="masonry"] {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/flat-masonry/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/flat-masonry/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/flat-masonry/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/flat-masonry/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/flat-masonry/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/flat-masonry/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/flat-masonry/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/flat-masonry/edge-right.png');
+}
+
+:root[data-appearance="minecraft"][data-theme] [data-mc-material="timber"] {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/flat-timber/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/flat-timber/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/flat-timber/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/flat-timber/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/flat-timber/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/flat-timber/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/flat-timber/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/flat-timber/edge-right.png');
+}
+
+:root[data-appearance="minecraft"][data-theme] [data-mc-material="obsidian"] {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-right.png');
+}
+
+:root[data-appearance="minecraft"][data-theme] [data-mc-material="mossy"] {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/mossy-flat/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/mossy-flat/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/mossy-flat/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/mossy-flat/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/mossy-flat/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/mossy-flat/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/mossy-flat/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/mossy-flat/edge-right.png');
+}
+
+:root[data-appearance="minecraft"][data-theme] [data-mc-material="ember"] {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/ember-flat/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/ember-flat/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/ember-flat/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/ember-flat/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/ember-flat/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/ember-flat/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/ember-flat/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/ember-flat/edge-right.png');
+}
+
+:root[data-appearance="minecraft"][data-theme] [data-mc-material="golden"] {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/golden-flat/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/golden-flat/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/golden-flat/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/golden-flat/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/golden-flat/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/golden-flat/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/golden-flat/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/golden-flat/edge-right.png');
+}
+
+:root[data-appearance="minecraft"][data-theme] [data-mc-material="starlight"] {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/starlight-flat/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/starlight-flat/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/starlight-flat/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/starlight-flat/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/starlight-flat/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/starlight-flat/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/starlight-flat/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/starlight-flat/edge-right.png');
+}
+
+:root[data-appearance="minecraft"][data-theme="dark"] [data-mc-surface="personal"] {
+  --mc-corner-tl:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-tl.png');
+  --mc-corner-tr:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-tr.png');
+  --mc-corner-bl:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-bl.png');
+  --mc-corner-br:url('../../appearances/minecraft/frames_flat/flat-obsidian/corner-br.png');
+  --mc-edge-top:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-top.png');
+  --mc-edge-bottom:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-bottom.png');
+  --mc-edge-left:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-left.png');
+  --mc-edge-right:url('../../appearances/minecraft/frames_flat/flat-obsidian/edge-right.png');
+}

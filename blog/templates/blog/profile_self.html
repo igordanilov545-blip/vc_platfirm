@@ -8,8 +8,8 @@
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <a href="{% url 'personal_qr' %}" class="btn secondary" data-modal data-modal-title="Мой QR-код">Мой QR-код</a>
         {% if can_scan_qr %}<a href="{% url 'qr_scanner' %}" class="btn secondary">Сканер QR</a>{% endif %}
-        <a href="{% url 'profile_achievements' target.id %}" class="btn secondary" data-tour="profile-achievements">🏅 Мои достижения{% if achievement_earned_count %} <span class="pill success" style="margin-left:4px;">{{ achievement_earned_count }}</span>{% endif %}</a>
-        <a href="{% url 'profile_stats' target.id %}" class="btn secondary">📊 Моя статистика</a>
+        <a href="{% url 'profile_achievements' target.id %}" class="btn secondary" data-tour="profile-achievements">{% include 'blog/partials/_appearance_icon.html' with name='award' fallback='🏅' %} Мои достижения{% if achievement_earned_count %} <span class="pill success" style="margin-left:4px;">{{ achievement_earned_count }}</span>{% endif %}</a>
+        <a href="{% url 'profile_stats' target.id %}" class="btn secondary">{% include 'blog/partials/_appearance_icon.html' with name='chart' fallback='📊' %} Моя статистика</a>
         <a href="{% url 'profile_edit' %}" class="btn secondary" data-tour="profile-edit">✎ Редактировать профиль</a>
         {% include 'blog/partials/_profile_completion.html' with progress=profile_completion %}
     </div>
@@ -31,7 +31,7 @@
 Если заявок нет — приглашение на страницу мероприятий.{% endcomment %}
 {% if show_active_applications %}
 <div class="card">
-    <h3>📨 Активные заявки</h3>
+    <h3>{% include 'blog/partials/_appearance_icon.html' with name='clock' fallback='📨' %} Активные заявки</h3>
     {% if active_applications %}
     <table class="responsive-table" data-sortable>
         <thead>
@@ -90,13 +90,13 @@
 {% endif %}
 
 {% if False %}<div class="card">
-    <h3>📄 Справка ВЦ для ПГАС</h3>
+    <h3>{% include 'blog/partials/_appearance_icon.html' with name='guide' fallback='📄' %} Справка ВЦ для ПГАС</h3>
     <p style="color:var(--text-secondary); font-size:13px; margin-top:-8px;">
         Подтверждение от Волонтёрского центра о работе за текущий сезон. Учитываются часы
         за сезон ({{ target.season_hours }} ч).
     </p>
     {% if pgas_eligible %}
-        <a href="{% url 'pgas_certificate_issue' target.id %}" class="btn">📄 Получить справку на ПГАС</a>
+        <a href="{% url 'pgas_certificate_issue' target.id %}" class="btn">{% include 'blog/partials/_appearance_icon.html' with name='guide' fallback='📄' %} Получить справку на ПГАС</a>
     {% else %}
         <p>Чтобы получить справку, не хватает: <b>{{ pgas_missing|join:", " }}</b>.</p>
         {% if pgas_only_verification_missing %}

@@ -1,8 +1,8 @@
+@import url('minecraft-materials.css');
 /* Minecraft / RUNC. Геометрия и материалы адаптированы из materials.css и layouts.css
    брендбука. Все правила ограничены оформлением; компоненты остаются общими. */
 :root[data-appearance="minecraft"] {
   --mc-gutter:clamp(110px,9vw,160px);
-  --mc-frame:url('../../appearances/minecraft/frames/limestone/9slice.png');
   --font-ui:"Segoe UI",Arial,sans-serif;
   --radius-sm:2px; --radius-lg:3px; --radius-pill:3px;
   --bg-page:#e9dabd; --bg-card:#f5eddb; --bg-card-hover:#e9ddc3; --bg-input:#fdf5e4;
@@ -23,7 +23,6 @@
   --mc-inner-cut:polygon(0 3px,5px 3px,5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) calc(100% - 5px),calc(100% - 5px) 100%,0 100%);
 }
 :root[data-appearance="minecraft"][data-theme="dark"] {
-  --mc-frame:url('../../appearances/minecraft/frames/obsidian/9slice.png');
   --bg-page:#211c29; --bg-card:#2b2533; --bg-card-hover:#39313f; --bg-input:#211c2a;
   --text-primary:#f1e9f7; --text-secondary:#c3b5c9; --text-tertiary:#ac9ab4;
   --border-subtle:#57465f; --accent:#b6cd89; --accent-hover:#cedea9;
@@ -69,7 +68,7 @@
 :root[data-appearance="minecraft"] .sidebar .nav-link:hover:not(.active) { color:#fff9e9; background:#d6b6791c; }
 :root[data-appearance="minecraft"] .sidebar-footer { border-color:#dab4743b; }
 :root[data-appearance="minecraft"] .theme-toggle,:root[data-appearance="minecraft"] .sidebar-toggle { background:#20180f30; border:1px solid #dab47430; }
-:root[data-appearance="minecraft"] .page-wrapper { position:relative; margin-right:38px; padding:38px 0 36px 30px; min-width:0; }
+:root[data-appearance="minecraft"] .page-wrapper { position:relative; margin-right:38px; padding:38px 0 36px 30px; min-width:0; transition:none; }
 :root[data-appearance="minecraft"] #page-main {
   position:relative; isolation:isolate; min-height:calc(100vh - 76px); padding:50px 38px 42px; max-width:1500px;
 }
@@ -86,37 +85,31 @@
 }
 :root[data-appearance="minecraft"] h1 { font-size:clamp(26px,2.4vw,38px); line-height:1.15; font-weight:850; letter-spacing:-1px; margin-bottom:14px; }
 :root[data-appearance="minecraft"] h2,:root[data-appearance="minecraft"] h3 { font-weight:750; letter-spacing:-.35px; }
-:root[data-appearance="minecraft"] .card,:root[data-appearance="minecraft"] .stat-tile {
-  --rim-pad:23px; position:relative; isolation:isolate; background:none; border-radius:0;
-  box-shadow:none; padding:calc(var(--rim-pad) + 16px); margin-bottom:24px; min-width:0;
-  filter:drop-shadow(0 4px 1px #33291826);
+/* Реальная граница оставляет место рамке даже у старых таблиц с padding:0. */
+:root[data-appearance="minecraft"] :is(.card,.stat-tile) {
+ --rim-pad:11px; --mc-edge-width:calc(var(--rim-pad) * .48); position:relative; isolation:isolate; min-width:0;
+ border:var(--rim-pad) solid transparent; border-radius:0; padding:18px; margin-bottom:22px; filter:none;
+ background-image:var(--mc-corner-tl),var(--mc-corner-tr),var(--mc-corner-bl),var(--mc-corner-br),var(--mc-edge-top),var(--mc-edge-bottom),var(--mc-edge-left),var(--mc-edge-right),linear-gradient(110deg,var(--mc-face-hi),var(--mc-face));
+ background-position:left top,right top,left bottom,right bottom,center top,center bottom,left center,right center,center;
+ background-size:var(--rim-pad) var(--rim-pad),var(--rim-pad) var(--rim-pad),var(--rim-pad) var(--rim-pad),var(--rim-pad) var(--rim-pad),auto var(--mc-edge-width),auto var(--mc-edge-width),var(--mc-edge-width) auto,var(--mc-edge-width) auto,100% 100%;
+ background-repeat:no-repeat,no-repeat,no-repeat,no-repeat,repeat-x,repeat-x,repeat-y,repeat-y,no-repeat;
+ background-origin:border-box; background-clip:border-box; box-shadow:0 2px 6px #21170f12;
 }
-:root[data-appearance="minecraft"] :is(.card,.stat-tile)::before {
-  content:""; position:absolute; inset:0; z-index:-2; pointer-events:none;
-  border:var(--rim-pad) solid transparent;
-  border-image-source:var(--mc-frame); border-image-slice:128;
-  border-image-width:1; border-image-repeat:repeat;
-}
-:root[data-appearance="minecraft"] :is(.card,.stat-tile)::after {
-  content:""; position:absolute; inset:var(--rim-pad); z-index:-1; pointer-events:none; clip-path:var(--mc-inner-cut);
-  background:radial-gradient(ellipse at 16% 0,var(--mc-face-hi),transparent 55%),linear-gradient(110deg,var(--mc-face),var(--mc-face-low));
-  box-shadow:inset 3px 4px 5px #40311e33,inset -2px -2px 0 #fff9e933;
-  border:1px solid var(--mc-depth); border-bottom-color:var(--mc-edge);
-}
-:root[data-appearance="minecraft"] .stat-grid { gap:18px; margin-bottom:22px; }
-:root[data-appearance="minecraft"] .stat-tile { --rim-pad:25px; --mc-frame:url('../../appearances/minecraft/frames/masonry/9slice.png'); margin-bottom:0; }
-:root[data-appearance="minecraft"] .stat-tile .value { font-family:var(--font-ui); font-size:36px; font-weight:850; font-variant-numeric:tabular-nums; letter-spacing:-1px; line-height:1.2; }
+:root[data-appearance="minecraft"] :is(.card,.stat-tile)::before,:root[data-appearance="minecraft"] :is(.card,.stat-tile)::after { content:none; }
+:root[data-appearance="minecraft"] .stat-grid { gap:16px; margin-bottom:22px; }
+:root[data-appearance="minecraft"] .stat-tile { --rim-pad:13px; margin-bottom:0; padding:20px; }
+:root[data-appearance="minecraft"] .stat-tile .value { font-family:var(--font-ui); font-size:36px; font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:-1px; line-height:1.2; }
 :root[data-appearance="minecraft"] .stat-tile .label { margin-top:8px; color:var(--text-secondary); }
-:root[data-appearance="minecraft"] .stat-tile:first-child { --mc-rim:#8d957b; --mc-rim-hi:#bac3a0; --mc-joint:#687259; }
-.mc-card-moss { position:absolute; top:-7px; right:16px; width:66px; height:40px; pointer-events:none; background:url('../../appearances/minecraft/moss-corner.webp') center/contain no-repeat; filter:drop-shadow(1px 3px 1px #25341655); }
-:root[data-appearance="minecraft"] .stat-tile:first-child { --mc-frame:url('../../appearances/minecraft/frames/mossy/9slice.png'); }
-:root[data-appearance="minecraft"][data-page="profile_detail"] .card:nth-of-type(3n+1) { --rim-pad:25px; --mc-frame:url('../../appearances/minecraft/frames/timber/9slice.png'); }
-:root[data-appearance="minecraft"][data-theme="dark"][data-page="profile_detail"] .card:nth-of-type(3n+1) { --mc-rim:#51404b; --mc-rim-hi:#87716f; --mc-rim-low:#31252f; --mc-depth:#1d1520; }
-:root[data-appearance="minecraft"][data-theme="dark"] .stat-tile { --mc-frame:url('../../appearances/minecraft/frames/ember/9slice.png'); --mc-edge:#ba9a65; }
+.mc-card-moss { display:none; }
+:root[data-appearance="minecraft"] :is(.table-search-bar,.mc-utility-panel,.card:has(>input[type="search"])) { border:1px solid var(--border-subtle); padding:12px 16px; background:var(--bg-card); box-shadow:none; }
+:root[data-appearance="minecraft"] .card :is(table,.table-scroll) { max-width:100%; }
+:root[data-appearance="minecraft"] .card>table { width:100%; margin:0; }
+:root[data-appearance="minecraft"] .card:has(> .responsive-table) { overflow-x:auto !important; }
+:root[data-appearance="minecraft"] .responsive-table td:last-child:has(form.inline) { white-space:nowrap; }
 :root[data-appearance="minecraft"] .btn {
   min-height:44px; justify-content:center; border-radius:1px; font-weight:700;
   background:linear-gradient(#6b873d,#3f5c29); color:#fff9e9;
-  border:1px solid #344d23; border-top-color:#96aa62; border-bottom:4px solid #273f1c;
+  border:1px solid #344d23; border-top-color:#96aa62; border-bottom:2px solid #273f1c;
   box-shadow:inset 1px 1px 0 #bfce8c66,2px 3px 0 #30241922; padding:10px 18px;
 }
 :root[data-appearance="minecraft"] .btn:hover { background:linear-gradient(#7e994b,#496a30); color:#fff9e9; transform:translateY(-1px); }
@@ -162,7 +155,7 @@
 .mc-welcome-scene span { position:absolute; bottom:0; right:22%; height:58%; width:22px; background:linear-gradient(90deg,#4c3727,#86643c); }
 .mc-welcome-scene i { position:absolute; right:7%; top:23%; width:45%; height:38%; background:linear-gradient(135deg,#9ab579,#4b6b3c); clip-path:polygon(15% 0,80% 0,80% 16%,100% 16%,100% 75%,85% 75%,85% 100%,25% 100%,25% 86%,0 86%,0 25%,15% 25%); box-shadow:inset -15px -18px #284e3544; }
 .mc-welcome-scene b { position:absolute; bottom:-5%; right:0; width:64%; height:22%; background:repeating-linear-gradient(0deg,transparent 0 24px,#404b3544 24px 27px),linear-gradient(135deg,#abb598,#647658); clip-path:polygon(0 25%,30% 25%,30% 0,80% 0,80% 17%,100% 17%,100% 100%,0 100%); }
-.mc-welcome-image { position:absolute; inset:var(--rim-pad); width:calc(100% - 2 * var(--rim-pad)); height:calc(100% - 2 * var(--rim-pad)); object-fit:cover; object-position:right; z-index:1; mask-image:linear-gradient(90deg,transparent 20%,#000 70%); }
+.mc-welcome-image { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:right; z-index:1; mask-image:linear-gradient(90deg,transparent 20%,#000 70%); }
 :root[data-theme="light"] .mc-welcome:has(.mc-asset-light) .mc-welcome-copy,:root[data-theme="dark"] .mc-welcome:has(.mc-asset-dark) .mc-welcome-copy { background:linear-gradient(90deg,var(--mc-face) 75%,transparent); }
 :root[data-theme="light"] .mc-welcome:has(.mc-asset-light) .mc-welcome-scene,:root[data-theme="dark"] .mc-welcome:has(.mc-asset-dark) .mc-welcome-scene { display:none; }
 :root[data-appearance="minecraft"][data-theme="dark"] .mc-welcome-scene { background:linear-gradient(90deg,var(--mc-face),transparent),linear-gradient(165deg,#4a3a5e,#25212e); }
@@ -208,35 +201,46 @@
   :root[data-appearance="minecraft"] .page-wrapper { margin:0; padding:0; }
 }
 
-/* Полноразмерные картины и составные рамки из принятой поставки.
-   Повторяется только кромка атласа; углы и толщина не зависят от длины панели. */
+/* Опора фонаря соединяется с боковой панелью; декор не заходит на управление. */
 :root[data-appearance="minecraft"] .page-wrapper { padding-left:var(--mc-gutter); }
 .mc-world:has(.mc-world-image) :is(.mc-horizon,.mc-sun) { display:none; }
 .mc-foreground { left:calc(var(--sidebar-width) - 18px); width:calc(var(--mc-gutter) + 50px); height:72vh; }
 .mc-foreground>img { left:0; width:100%; max-height:72vh; }
 .mc-foreground-glow { mix-blend-mode:screen; }
-.mc-hanging-lantern { position:fixed; left:calc(var(--sidebar-width) - 8px); top:34vh; width:85px; z-index:13; pointer-events:none; }
-.mc-hanging-lantern img { display:block; width:100%; }
-.mc-hanging-lantern .mc-lantern-glow { position:absolute; inset:0; mix-blend-mode:screen; }
-:root[data-appearance="minecraft"] .modal-dialog,:root[data-appearance="minecraft"] .quick-add-dialog { border:18px solid transparent; border-image:var(--mc-frame) 128 / 1 / 0 repeat; }
-:root[data-appearance="minecraft"] .appearance-theme-card { padding:calc(var(--rim-pad) + 16px); }
+.mc-hanging-lantern { position:fixed; left:calc(var(--sidebar-width) - 13px); top:34vh; width:96px; z-index:13; pointer-events:none; }
+.mc-hanging-lantern::before { content:""; position:absolute; left:1px; top:8px; width:9px; height:65%; background:var(--mc-timber); box-shadow:inset 2px 0 var(--mc-wood-hi); }
+.mc-hanging-lantern img { position:relative; width:100%; }
+:root[data-theme="light"] .mc-hanging-lantern .mc-asset-light,:root[data-theme="dark"] .mc-hanging-lantern .mc-asset-dark { display:block; }
+:root[data-appearance="minecraft"] .modal-dialog,:root[data-appearance="minecraft"] .quick-add-dialog { border:2px solid var(--mc-rim-hi); box-shadow:0 12px 50px #0005; }
+:root[data-appearance="minecraft"] .appearance-theme-card { padding:18px; }
 :root[data-appearance="minecraft"] body.sidebar-collapsed .mc-foreground { left:calc(var(--sidebar-width-collapsed) - 18px); }
-:root[data-appearance="minecraft"] body.sidebar-collapsed .mc-hanging-lantern { left:calc(var(--sidebar-width-collapsed) - 8px); }
-:root[data-appearance="minecraft"][data-theme] [data-mc-material="limestone"] { --mc-frame:url('../../appearances/minecraft/frames/limestone/9slice.png'); }
-:root[data-appearance="minecraft"][data-theme] [data-mc-material="masonry"] { --mc-frame:url('../../appearances/minecraft/frames/masonry/9slice.png'); }
-:root[data-appearance="minecraft"][data-theme] [data-mc-material="timber"] { --mc-frame:url('../../appearances/minecraft/frames/timber/9slice.png'); }
-:root[data-appearance="minecraft"][data-theme] [data-mc-material="obsidian"] { --mc-frame:url('../../appearances/minecraft/frames/obsidian/9slice.png'); }
-:root[data-appearance="minecraft"][data-theme] [data-mc-material="mossy"] { --mc-frame:url('../../appearances/minecraft/frames/mossy/9slice.png'); }
-:root[data-appearance="minecraft"][data-theme] [data-mc-material="ember"] { --mc-frame:url('../../appearances/minecraft/frames/ember/9slice.png'); }
+:root[data-appearance="minecraft"] body.sidebar-collapsed .mc-hanging-lantern { left:calc(var(--sidebar-width-collapsed) - 13px); }
+:root[data-appearance="minecraft"] .avatar-placeholder { width:68px; height:68px; border:1px solid var(--mc-rim-hi); background:var(--accent-soft); box-shadow:none; }
+.mc-avatar { width:100%; height:100%; object-fit:contain; padding:3px; transition:transform .18s; }
+.mc-ambient { position:fixed; left:calc(var(--sidebar-width) + 35px); top:20vh; width:40px; pointer-events:none; z-index:6; }
+.mc-ambient img { width:100%; animation:mc-drift 9s ease-in-out infinite; }
+.mc-ambient .mc-asset-dark { width:45px; animation:mc-motes 7s ease-in-out infinite; }
+.mc-stat-icon { width:28px; height:28px; object-fit:contain; margin-bottom:8px; }
+.mc-card-accent { position:absolute; top:-22px; right:10px; width:42px; height:42px; pointer-events:none; }
+.mc-card-accent img { width:100%; height:100%; object-fit:contain; }
+:root[data-appearance="minecraft"] .btn,:root[data-appearance="minecraft"] .nav-link { transition:background-color .15s,transform .15s,box-shadow .15s; }
+:root[data-appearance="minecraft"] .sidebar-account:hover .mc-avatar { transform:translateY(-2px) rotate(-3deg); }
+@keyframes mc-drift { 0%,100% { transform:translate(0,0) rotate(-5deg); } 50% { transform:translate(8px,-12px) rotate(5deg); } }
+@keyframes mc-motes { 0%,100% { opacity:.4; transform:translateY(0); } 50% { opacity:.8; transform:translateY(-8px); } }
 @media(max-width:1279px) {
-  :root[data-appearance="minecraft"] .page-wrapper { padding-left:16px; }
-  .mc-foreground,.mc-hanging-lantern { display:none; }
+ :root[data-appearance="minecraft"] .page-wrapper { padding-left:16px; }
+ .mc-foreground,.mc-hanging-lantern,.mc-ambient { display:none; }
 }
 @media(max-width:720px) {
-  :root[data-appearance="minecraft"] .page-wrapper { padding-left:8px; }
-  :root[data-appearance="minecraft"] .card { --rim-pad:16px; padding:30px; }
-  :root[data-appearance="minecraft"] .stat-tile { --rim-pad:16px; padding:26px; }
-  :root[data-appearance="minecraft"] .stat-tile .value { font-size:clamp(20px,6vw,28px); }
-  :root[data-appearance="minecraft"] .appearance-theme-card { padding:30px; }
-  :root[data-appearance="minecraft"] .modal-dialog { border-width:12px; }
+ :root[data-appearance="minecraft"] .page-wrapper { padding-left:8px; }
+ :root[data-appearance="minecraft"] .card { --rim-pad:9px; padding:16px; }
+ :root[data-appearance="minecraft"] .stat-tile { --rim-pad:10px; padding:14px; }
+ :root[data-appearance="minecraft"] .stat-tile .value { font-size:clamp(20px,6vw,28px); }
+ :root[data-appearance="minecraft"] .appearance-theme-card { padding:16px; }
+ :root[data-appearance="minecraft"] .modal-dialog { border-width:2px; }
+}
+@media(prefers-reduced-motion:reduce) {
+ .mc-ambient img { animation:none; }
+ .mc-avatar { transition:none; }
+ :root[data-appearance="minecraft"] .sidebar-account:hover .mc-avatar { transform:none; }
 }

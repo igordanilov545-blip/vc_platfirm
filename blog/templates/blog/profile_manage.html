@@ -6,8 +6,8 @@
 <div class="page-header">
     <h1>{{ target.full_name }}</h1>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <a href="{% url 'profile_achievements' target.id %}" class="btn secondary">🏅 Достижения{% if achievement_earned_count %} <span class="pill success" style="margin-left:4px;">{{ achievement_earned_count }}</span>{% endif %}</a>
-        <a href="{% url 'profile_stats' target.id %}" class="btn secondary">📊 Статистика</a>
+        <a href="{% url 'profile_achievements' target.id %}" class="btn secondary">{% include 'blog/partials/_appearance_icon.html' with name='award' fallback='🏅' %} Достижения{% if achievement_earned_count %} <span class="pill success" style="margin-left:4px;">{{ achievement_earned_count }}</span>{% endif %}</a>
+        <a href="{% url 'profile_stats' target.id %}" class="btn secondary">{% include 'blog/partials/_appearance_icon.html' with name='chart' fallback='📊' %} Статистика</a>
         {% if is_tech_admin %}
             <a href="{% url 'profile_admin_edit' target.id %}" class="btn secondary">✏️ Редактировать профиль</a>
             <a href="{% url 'profile_admin_delete' target.id %}" class="btn danger" data-modal data-modal-title="Удаление профиля: {{ target.full_name }}">🗑️ Удалить профиль</a>
@@ -46,9 +46,9 @@
             </form>
         {% elif target.status == 'inactive' %}
             <span class="pill warning"><span class="dot"></span>{{ target.get_status_display }}</span>
-            <a href="{% url 'user_blacklist' target.id %}" class="btn danger btn-sm" data-modal data-modal-title="Блокировка: {{ target.full_name }}" data-tour="profile-blacklist">🚫 В чёрный список</a>
+            <a href="{% url 'user_blacklist' target.id %}" class="btn danger btn-sm" data-modal data-modal-title="Блокировка: {{ target.full_name }}" data-tour="profile-blacklist">{% include 'blog/partials/_appearance_icon.html' with name='lock' fallback='🚫' %} В чёрный список</a>
         {% else %}
-            <a href="{% url 'user_blacklist' target.id %}" class="btn danger btn-sm" data-modal data-modal-title="Блокировка: {{ target.full_name }}" data-tour="profile-blacklist">🚫 В чёрный список</a>
+            <a href="{% url 'user_blacklist' target.id %}" class="btn danger btn-sm" data-modal data-modal-title="Блокировка: {{ target.full_name }}" data-tour="profile-blacklist">{% include 'blog/partials/_appearance_icon.html' with name='lock' fallback='🚫' %} В чёрный список</a>
         {% endif %}
     {% endif %}
 </div>
@@ -73,7 +73,7 @@
 {% comment %}Блок «Инфо»: ФИО, контакты И чарн (объединены, отдельного блока «Внутреннее» нет).{% endcomment %}
 {% if has_extended_access %}
 <div class="card">
-    <h3>ℹ️ Инфо</h3>
+    <h3>{% include 'blog/partials/_appearance_icon.html' with name='user' fallback='ℹ️' %} Инфо</h3>
     <p>ФИО: {{ target.last_name }} {{ target.first_name }}{% if target.middle_name %} {{ target.middle_name }}{% endif %}</p>
     <p>Телефон: {{ target.phone|default:"—" }}</p>
     <p>Email: {{ target.email|default:"—" }}</p>
@@ -97,7 +97,7 @@
 {% comment %}Комментарии к волонтёру — форма добавления спрятана в кнопку-модалку.{% endcomment %}
 {% if can_see_comments %}
 <div class="card">
-    <h3>🔒 Комментарии к волонтёру</h3>
+    <h3>{% include 'blog/partials/_appearance_icon.html' with name='lock' fallback='🔒' %} Комментарии к волонтёру</h3>
     <p style="opacity:0.7; font-size:0.85rem;">Сам волонтёр эти комментарии не видит.</p>
     {% for c in comments %}
         <p>{% if c.source_label %}<strong>{{ c.source_label }}</strong><br>{% endif %}{{ c.created_at }} — {{ c.author.full_name }}{% if c.event %} ({{ c.event.title }}){% endif %}: {{ c.text }}</p>
@@ -190,7 +190,7 @@
 сезону, блокировка/вывод из ЧС. Виден только менеджеру.{% endcomment %}
 {% if is_manager %}
 <div class="card" style="padding:0; overflow:hidden;">
-    <h3 style="padding:20px 20px 0;">🔒 История чарна</h3>
+    <h3 style="padding:20px 20px 0;">{% include 'blog/partials/_appearance_icon.html' with name='lock' fallback='🔒' %} История чарна</h3>
     <table class="responsive-table" data-collapse-rows="8">
         <thead><tr><th>Дата</th><th>Причина</th><th>Изменение</th><th>Стало</th><th>Кто/контекст</th></tr></thead>
         <tbody>

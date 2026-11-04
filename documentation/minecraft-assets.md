@@ -1,5 +1,30 @@
 # Ассеты Minecraft
 
+## Дополненная поставка и визуальная сверка
+
+Рабочие рамки теперь собраны из отдельных `corner-*.png` / `edge-*.png` папки
+`frames_flat`: известняк, кладка, дерево, обсидиан, мох, уголь, золото и звёздный
+вариант. Большие исходные рамы сохранены для совместимости, в обычных панелях
+не используются. Десять аватаров из `avatars` скопированы без изменений.
+
+Часть новых имён не совпадает с содержимым. Оригиналы не переименованы; рабочие копии
+в `scene/` получают имена по визуально проверенному объекту:
+
+| Рабочий файл | Источник в minecraft_assets | Использование |
+|---|---|---|
+| `scene/lantern-day.png` | `ui_extras_strict/badge-star.png` | Фонарь с деревянной опорой |
+| `scene/lantern-night.png` | `ui_extras_strict/badge-handshake.png` | Фонарь с обсидиановой опорой |
+| `scene/flowers.png` | `ui_extras_strict/title-plaque-limestone-banners.png` | Дневной акцент |
+| `scene/crystals.png` | `ui_extras_strict/title-plaque-moss-lantern.png` | Ночной акцент |
+| `scene/butterfly.png` | `ambient/ambient-sparkle-06.png` | Дневное окружение |
+| `scene/fireflies.png` | `ambient/bird-blue-flying.png` | Ночное окружение |
+| `scene/badge-heart.png` | `decor_strict/lantern-stone-moss-01.png` | Часы помощи |
+| `scene/badge-calendar.png` | `decor_strict/moss-corner-wood-01.png` | Текущий сезон |
+| `scene/badge-handshake.png` | `decor_strict/lantern-obsidian-01.png` | Участие в мероприятиях |
+
+Новая графика для исправлений не требуется. Непроверенные элементы не подключаются
+по одному имени файла.
+
 Поставка из `brandbook_minecraft/minecraft_assets` подключена в
 `blog/static/blog/appearances/minecraft/`. Все необходимые для текущего интерфейса
 ассеты получены; дополнительных изображений сейчас не требуется.

@@ -5,6 +5,16 @@ from blog.tests.factories import make_manager, make_user
 
 
 class AppearanceTests(TestCase):
+    def test_minecraft_avatar_is_account_specific_and_stable_across_themes(self):
+        from blog.services.appearance import appearance_context
+        self.user.appearance = 'minecraft'
+        first = appearance_context(self.user)['minecraft_avatar_asset']
+        self.user.color_theme = 'dark'
+        self.assertEqual(first, appearance_context(self.user)['minecraft_avatar_asset'])
+        self.assertIn('/avatars/', first)
+        self.user.appearance = 'nexus'
+        self.assertNotIn('minecraft_avatar_asset', appearance_context(self.user))
+
     def setUp(self):
         self.user = make_user()
         self.other = make_user()

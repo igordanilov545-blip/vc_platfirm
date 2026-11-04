@@ -80,11 +80,12 @@ fs.mkdirSync(output, {recursive: true});
           assert(!state.broken.length, 'Broken images: ' + state.broken);
           assert(state.theme === theme, 'Theme changed on navigation');
           assert(await page.locator('.mc-world-image.mc-asset-' + theme).isVisible(), 'World asset missing');
-          const frame = await page.locator('.stat-tile,.card').first().evaluate(el => {
-            const style = getComputedStyle(el,'::before');
-            return {source:style.borderImageSource,repeat:style.borderImageRepeat,slice:style.borderImageSlice};
+          const frame = await page.locator('.stat-tile,.card:has(table),.personal-settings-card').first().evaluate(el => {
+            const style = getComputedStyle(el);
+            return {source:style.backgroundImage,repeat:style.backgroundRepeat,width:parseFloat(style.borderLeftWidth)};
           });
-          assert(frame.source.includes('/9slice')&&frame.repeat==='repeat'&&frame.slice==='128','Frame is not modular: '+JSON.stringify(frame));
+          assert(frame.source.includes('/frames_flat/')&&frame.repeat.includes('repeat-x')&&frame.repeat.includes('repeat-y')&&frame.width>0,'Frame is not modular: '+JSON.stringify(frame));
+          assert(await page.locator('.mc-avatar').count() === 1, 'Account avatar missing');
           assert(new Set(state.ids).size === state.ids.length, 'Duplicate IDs ' + route);
           checks++;
           if ((width===1440||width===390)&&route==='/')
@@ -137,14 +138,15 @@ fs.mkdirSync(output, {recursive: true});
       panel.textContent = 'Проверка рамки';
       document.getElementById('page-main').appendChild(panel);
       const results = [];
-      for (const material of ['limestone','masonry','timber','obsidian','mossy','ember']) {
+      for (const material of ['limestone','masonry','timber','obsidian','mossy','ember','golden','starlight']) {
         panel.dataset.mcMaterial = material;
         const widths = [];
         for (const [width,height] of [[280,240],[480,520],[900,240]]) {
           panel.style.width = width + 'px'; panel.style.height = height + 'px';
-          const style = getComputedStyle(panel,'::before');
+          const style = getComputedStyle(panel);
           widths.push(style.borderLeftWidth);
-          results.push(style.borderImageSource.includes('/'+material+'/9slice') && style.borderImageRepeat==='repeat');
+          const directory = {limestone:'flat-limestone',masonry:'flat-masonry',timber:'flat-timber',obsidian:'flat-obsidian',mossy:'mossy-flat',ember:'ember-flat',golden:'golden-flat',starlight:'starlight-flat'}[material];
+          results.push(style.backgroundImage.includes('/'+directory+'/corner-tl') && style.backgroundRepeat.includes('repeat-x') && style.backgroundRepeat.includes('repeat-y'));
         }
         results.push(new Set(widths).size === 1);
       }
@@ -157,6 +159,60 @@ fs.mkdirSync(output, {recursive: true});
     await page.goto(config.origin + '/settings/?tab=appearance');
     assert(await page.locator('html').getAttribute('data-appearance') === 'nexus','Account isolation failed');
     await choose('minecraft','dark');
+    const identity = await page.locator('.mc-avatar').getAttribute('src');
+    for (const theme of ['dark','light']) {
+      await choose('minecraft',theme);
+      assert(await page.locator('.mc-avatar').getAttribute('src') === identity,'Avatar changes with theme');
+      for (const route of [config.pending,config.managedProfile]) {
+        await page.goto(config.origin + route);
+        await page.waitForLoadState('networkidle');
+        const cards = page.locator('.card:has(> table)');
+        assert(await cards.count() > 0,'Missing populated table fixture');
+        for (const card of await cards.all()) {
+          const intact = await card.evaluate(el => {
+            const table=el.querySelector('table'),r=el.getBoundingClientRect(),t=table.getBoundingClientRect(),s=getComputedStyle(el);
+            return t.left>=r.left+parseFloat(s.borderLeftWidth)-1 && t.right<=r.right-parseFloat(s.borderRightWidth)+1 && t.bottom<=r.bottom-parseFloat(s.borderBottomWidth)+1;
+          });
+          assert(intact,'Table overlaps its frame: '+route+' '+theme);
+          const row=card.locator('tbody tr:visible').first();
+          const before=await card.evaluate(el=>getComputedStyle(el).backgroundImage);
+          await row.hover();
+          const frameVisible=await card.evaluate(el=>{
+            const r=el.getBoundingClientRect(),s=getComputedStyle(el),row=el.querySelector('tbody tr').getBoundingClientRect();
+            const hit=document.elementFromPoint(r.left+parseFloat(s.borderLeftWidth)/2,row.y+row.height/2);
+            return hit===el;
+          });
+          assert(frameVisible,'Hovered row covers frame: '+route+' '+theme);
+          assert(await card.evaluate(el=>getComputedStyle(el).backgroundImage) === before,'Hover changes frame');
+        }
+        if(theme==='dark') assert(!await page.locator('.card').evaluateAll(els=>els.some(el=>getComputedStyle(el).backgroundImage.includes('/flat-timber/'))),'Daytime wood remains in dark profile');
+        await page.evaluate(()=>window.scrollTo(0,0));
+        checks++;
+        await page.screenshot({path:path.join(output,(route===config.pending?'pending':'managed-profile')+'-'+theme+'.png'),fullPage:true,animations:'disabled'});
+        for(const width of [768,390,320]) {
+          await page.setViewportSize({width,height:1000});
+          const fits=await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1);
+          if(!fits) {
+            await page.screenshot({path:path.join(output,'overflow.png'),fullPage:true,animations:'disabled'});
+            const outside=await page.evaluate(()=>[...document.querySelectorAll('#page-main *')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.right>innerWidth+1;}).slice(0,8).map(el=>({tag:el.tagName,class:el.className,width:el.getBoundingClientRect().width,right:el.getBoundingClientRect().right})));
+            throw new Error('Manager table expands page: '+route+' '+theme+' '+width+' '+JSON.stringify(outside));
+          }
+          checks++;
+          await page.screenshot({path:path.join(output,(route===config.pending?'pending':'managed-profile')+'-'+theme+'-'+width+'.png'),fullPage:true,animations:'disabled'});
+        }
+        await page.setViewportSize({width:1440,height:1000});
+      }
+    }
+    await page.goto(config.origin+'/');
+    const anchored=await page.evaluate(()=>{
+      const a=document.querySelector('.sidebar').getBoundingClientRect(),b=document.querySelector('.mc-hanging-lantern').getBoundingClientRect();
+      return b.left<a.right && b.right>a.right;
+    });
+    assert(anchored,'Lantern is detached from sidebar');
+    assert(await page.locator('.sidebar .icon').evaluateAll(els=>els.every(el=>el.querySelector('svg'))),'Unconverted sidebar icon');
+    await page.emulateMedia({reducedMotion:'reduce'});
+    assert(await page.locator('.mc-ambient img').first().evaluate(el=>getComputedStyle(el).animationName)==='none','Reduced motion ignored');
+    await page.emulateMedia({reducedMotion:'no-preference'});
     await page.goto(config.origin + '/events/');
     await page.locator('[data-modal]').first().click();
     await page.locator('#modal-backdrop').waitFor({state:'visible'});

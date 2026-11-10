@@ -34,6 +34,10 @@ def fingerprint(plan):
     clean.pop('stats', None)
     clean.pop('input_rows', None)
     for direction in clean['directions']:
+        # Исходные строки ФиП и код группы — подсказки миграции базы, а не план:
+        # в current_plan() их нет, и они не должны вызывать ложный «конфликт».
+        direction.pop('source_rows', None)
+        direction.pop('code', None)
         for position in direction['positions']:
             position.pop('row', None)
     return hashlib.sha256(json.dumps(clean, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()

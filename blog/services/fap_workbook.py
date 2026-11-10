@@ -134,7 +134,8 @@ def _date(value, reference=None, epoch=CALENDAR_WINDOWS_1900):
 
 def _names(value):
     ignored = {normalized_name(name) for name in ('тим лидеры', 'тим-лидеры', 'тим-лидер', 'менеджеры', 'менеджер бс', 'ответственные за зону')}
-    return [name.strip() for name in _text(value).splitlines() if name.strip() and normalized_name(name.strip()) not in ignored]
+    names = (name.strip().strip(',;').strip() for name in _text(value).splitlines())
+    return [name for name in names if name and normalized_name(name) not in ignored]
 
 
 def _intervals(value, day, warnings):
@@ -276,16 +277,35 @@ def group_directions(plan):
     return grouped
 
 
-def _header_layout(sheet, value, epoch):
+def _staff_columns(sheet):
+    """Колонки тим-лидеров, ответственных и позиции ищутся по заголовку строки 1.
+
+    В исходных шаблонах это C/D/E, но в реальных ФиП встречаются дополнительные
+    колонки (например, «Наставник» перед «Позицией»), сдвигающие дни вправо.
+    Без заголовков остаются прежние координаты — старые файлы читаются как раньше."""
+    columns = {'team_leaders': 3, 'responsibles': 4, 'position': 5}
+    for col in range(1, min(sheet.max_column, 12) + 1):
+        header = normalized_name(sheet.cell(1, col).value)
+        if 'позиция' in header:
+            columns['position'] = col
+            break
+        if header.startswith('тим') and 'лидер' in header:
+            columns['team_leaders'] = col
+        elif 'менеджер' in header or 'ответствен' in header:
+            columns['responsibles'] = col
+    return columns
+
+
+def _header_layout(sheet, value, epoch, first_day_col=6):
     """Дни работы, check-in/out и количества — независимые блоки заголовка."""
     def header(col):
         return re.sub(r'[-/–—]', '', normalized_name(sheet.cell(1, col).value))
 
-    check_start = next((col for col in range(7, sheet.max_column + 1)
+    check_start = next((col for col in range(first_day_col + 1, sheet.max_column + 1)
                         if 'checkin' in header(col) and 'checkout' in header(col)), None)
     if check_start is None:
         raise ValidationError('В первой строке не найден блок Check-in / Check-out.')
-    days_count = check_start - 6
+    days_count = check_start - first_day_col
     count_start = check_start + days_count
     starts = [col for col in range(count_start, sheet.max_column + 1)
               if 'кол' in header(col) and 'смен' in header(col)]
@@ -307,18 +327,18 @@ def _header_layout(sheet, value, epoch):
         widths.append(end - start + 1)
     dates = []
     for i, start in enumerate(starts):
-        headers = [value(2, 6 + i), value(2, check_start + i)]
+        headers = [value(2, first_day_col + i), value(2, check_start + i)]
         headers += [value(row, col) for row in (1, 2) for col in range(start, start + widths[i])]
         complete = [_date(item, epoch=epoch) for item in headers]
         complete = [day for day in complete if day]
         if not complete:
-            raise ValidationError(f'Не удалось определить год дня в колонке {get_column_letter(6 + i)}. Укажите полную дату в заголовке работы, check-in/out или количества.')
+            raise ValidationError(f'Не удалось определить год дня в колонке {get_column_letter(first_day_col + i)}. Укажите полную дату в заголовке работы, check-in/out или количества.')
         day = complete[0]
         recognized = [_date(item, reference=day, epoch=epoch) for item in headers]
         if any(item and item != day for item in recognized):
-            raise ValidationError(f'Даты рабочего дня, check-in/out и количества не совпадают в колонке {get_column_letter(6 + i)}.')
+            raise ValidationError(f'Даты рабочего дня, check-in/out и количества не совпадают в колонке {get_column_letter(first_day_col + i)}.')
         if not recognized[0]:
-            raise ValidationError(f'Не распознана дата рабочего дня в колонке {get_column_letter(6 + i)}.')
+            raise ValidationError(f'Не распознана дата рабочего дня в колонке {get_column_letter(first_day_col + i)}.')
         dates.append(day)
     if len(set(dates)) != len(dates):
         raise ValidationError('Рабочие дни должны иметь разные даты.')
@@ -420,11 +440,14 @@ def read_xlsx(content):
         anchor = merged.get((row, col), (row, col, row))
         return values.cell(anchor[0], anchor[1]).value
 
-    dates, starts, widths = _header_layout(sheet, value, workbook.epoch)
+    columns = _staff_columns(sheet)
+    position_col, first_day = columns['position'], columns['position'] + 1
+    dates, starts, widths = _header_layout(sheet, value, workbook.epoch, first_day)
     plan = {'dates': dates, 'directions': [], 'warnings': [], 'quantity_widths': widths}
     direction = None
+    function_number = None
     for row in range(3, sheet.max_row + 1):
-        name = _text(value(row, 5))
+        name = _text(value(row, position_col))
         if normalized_name(value(row, 2)).startswith('итоги'):
             break
         if normalized_name(name).startswith('итого'):
@@ -436,35 +459,163 @@ def read_xlsx(content):
                 direction['_has_total'] = True
             direction = None
             continue
-        if not _text(value(row, 2)) or not name and not any(value(row, c) is not None for c in range(6, sheet.max_column + 1)):
+        if not _text(value(row, 2)) or not name and not any(value(row, c) is not None for c in range(first_day, sheet.max_column + 1)):
             continue
-        metadata = _metadata(sheet.cell(row, 5))
+        number = _function_number(value(row, 1))
+        if number is not None:
+            function_number = number
+        metadata = _metadata(sheet.cell(row, position_col))
         if direction is None:
-            end_row = next((r for r in range(row + 1, sheet.max_row + 1) if normalized_name(value(r, 5)).startswith('итого')), row)
+            end_row = next((r for r in range(row + 1, sheet.max_row + 1) if normalized_name(value(r, position_col)).startswith('итого')), row)
+            if plan['directions'] and normalized_name(plan['directions'][-1]['name']) != normalized_name(value(row, 2)) and number is None:
+                function_number = None
             direction = {'id': metadata.get('direction', new_id()), 'name': _text(value(row, 2)),
-                         'order': len(plan['directions']), 'team_leaders': [], 'responsibles': [], 'positions': [], '_inherited': set()}
-            for c, key in ((3, 'team_leaders'), (4, 'responsibles')):
+                         'order': len(plan['directions']), 'team_leaders': [], 'responsibles': [], 'positions': [],
+                         '_inherited': set(), '_function': function_number}
+            for c, key in ((columns['team_leaders'], 'team_leaders'), (columns['responsibles'], 'responsibles')):
                 if merged.get((row, c), (row, c, row))[2] >= end_row - 1 and end_row > row:
                     direction[key] = _names(value(row, c))
                     direction['_inherited'].add(key)
             plan['directions'].append(direction)
         position = {'id': metadata.get('position', new_id()), 'name': name, 'order': len(direction['positions']),
-                    'row': row, 'is_team_lead_role': bool(re.match(r'^тим[\s-]*лидер', name, re.I)),
-                    'team_leaders': [], 'responsibles': [], 'days': []}
-        for c, key in ((3, 'team_leaders'), (4, 'responsibles')):
+                    'row': row, 'is_team_lead_role': is_team_lead_text(name),
+                    'team_leaders': [], 'responsibles': [], 'days': [],
+                    '_leader_text': '' if 'team_leaders' in direction['_inherited'] else normalized_name('\n'.join(_names(value(row, columns['team_leaders'])))),
+                    '_direction_meta': metadata.get('direction')}
+        for c, key in ((columns['team_leaders'], 'team_leaders'), (columns['responsibles'], 'responsibles')):
             if key not in direction['_inherited']:
                 position[key] = _names(value(row, c))
         for i, day in enumerate(dates):
-            checks = value(row, 6 + len(dates) + i)
+            checks = value(row, first_day + len(dates) + i)
             item = {'date': day, 'checkin_out': str(checks) if checks is not None else None,
-                    '_source_ids': metadata.get('days', {}).get(day, [])}
+                    '_source_ids': metadata.get('days', {}).get(day, []),
+                    '_count': _row_count([value(row, col) for col in range(starts[i], starts[i] + widths[i])])}
             position['days'].append(item)
         direction['positions'].append(position)
     if not plan['directions']:
         raise ValidationError('На вкладке «Смены» не найдены направления и позиции.')
     for direction in plan['directions']:
         direction.pop('_inherited', None)
-    return _daily_zone_plan(plan)
+    return _daily_zone_plan(_split_leader_groups(plan))
+
+
+TEAM_LEAD_RE = re.compile(r'тим[\s\-‐‑–—]*лид[еёe]р', re.I)
+# «Тим-лидер пункта освежения» → подпись позиции «Пункт освежения».
+GENITIVE_HEADS = {'зоны': 'зона', 'пункта': 'пункт', 'точки': 'точка', 'организации': 'организация',
+                  'выдачи': 'выдача', 'старта': 'старт', 'финиша': 'финиш', 'парковки': 'парковка',
+                  'службы': 'служба', 'группы': 'группа', 'штаба': 'штаб', 'стойки': 'стойка'}
+
+
+def is_team_lead_text(text):
+    """«Тим-лидер», «тим лидер», «Тимлидер», «тим-лидёр» — без учёта регистра.
+
+    «Помощник тим-лидера» — волонтёр: это отдельная позиция в группе тим-лидера."""
+    value = _text(text)
+    return bool(TEAM_LEAD_RE.search(value)) and not re.search(r'помощник', value, re.I)
+
+
+def _function_number(value):
+    """Номер функции из колонки A: 7, 7.0 или «7.» — только целая часть."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return int(value) if float(value).is_integer() and value > 0 else None
+    match = re.fullmatch(r'\s*(\d+)\.?\s*', _text(value))
+    return int(match[1]) if match else None
+
+
+def _row_count(cells):
+    """Количество строки позиции в дне: «всего» либо сумма подсмен, иначе None."""
+    numbers = []
+    for cell in cells:
+        if isinstance(cell, (int, float)) and not isinstance(cell, bool):
+            numbers.append(cell)
+        elif re.fullmatch(r'\s*\d+(?:[.,]0+)?\s*', _text(cell)):
+            numbers.append(float(_text(cell).replace(',', '.')))
+        else:
+            numbers.append(None)
+    if numbers and numbers[0] is not None:
+        return int(numbers[0])
+    rest = [n for n in numbers[1:] if n is not None]
+    return int(sum(rest)) if rest else None
+
+
+def _leader_label(rows, leaders, function_name=''):
+    """Подпись группы тим-лидера для названия позиции: строка «Тим-лидер …» без
+    префикса роли (если она не повторяет саму функцию), иначе первая строка
+    волонтёров, иначе имена тим-лидеров."""
+    label = _leader_row_label(rows)
+    if label and normalized_name(label)[:20] not in normalized_name(function_name):
+        return label
+    volunteer = next((row['name'] for row in rows if row['name'] and not row['is_team_lead_role']), '')
+    return volunteer or label or ', '.join(leaders)
+
+
+def _leader_row_label(rows):
+    for row in rows:
+        if row['is_team_lead_role']:
+            label = TEAM_LEAD_RE.split(row['name'], maxsplit=1)[-1]
+            label = re.sub(r'^\s*(?:ы|ов|а)?\s*(?:волонт[её]р(?:ов|ам)?)?\s*', '', label, flags=re.I).strip(' -–—:,')
+            if label:
+                first, _, rest = label.partition(' ')
+                first = GENITIVE_HEADS.get(first.casefold(), first)
+                label = (first + (' ' + rest if rest else '')).strip()
+                return label[:1].upper() + label[1:]
+    return ''
+
+
+def _split_leader_groups(plan):
+    """Позиция платформы = набор одного тим-лидера внутри блока «ИТОГО В ЗОНЕ».
+
+    Тим-лидеры видят свой набор, менеджер — разрез «по точкам». Новая группа
+    начинается со строки, где в колонке тим-лидеров появляется другой текст;
+    строки без своего тим-лидера продолжают текущую группу. Блок без смены
+    тим-лидеров остаётся одной позицией с количеством из «ИТОГО В ЗОНЕ»."""
+    result = []
+    for direction in plan['directions']:
+        groups = []
+        for row in direction['positions']:
+            if not groups or row['_leader_text'] and row['_leader_text'] != groups[-1]['leader']:
+                groups.append({'leader': row['_leader_text'], 'rows': []})
+            groups[-1]['rows'].append(row)
+        if len(groups) == 1:
+            direction['_rows'] = direction['positions']
+            result.append(direction)
+            continue
+        for group in groups:
+            rows = group['rows']
+            leaders = list(dict.fromkeys(name for row in rows for name in row['team_leaders']))
+            totals = []
+            for i in range(len(plan['dates'])):
+                counts = [row['days'][i]['_count'] for row in rows if row['days'][i]['_count'] is not None]
+                totals.append(sum(counts) if counts else None)
+            part = {'id': rows[0]['_direction_meta'] or new_id(), 'name': direction['name'],
+                    'order': 0, 'team_leaders': [], 'responsibles': list(direction['responsibles']),
+                    'positions': rows, '_rows': rows, '_function': direction['_function'],
+                    '_totals': totals, '_has_total': direction.get('_has_total', False), '_leaders': leaders}
+            if direction['team_leaders'] and not leaders:
+                part['team_leaders'] = list(direction['team_leaders'])
+            result.append(part)
+    counts = {}
+    for direction in result:
+        key = normalized_name(direction['name'])
+        counts[key] = counts.get(key, 0) + 1
+    ordinals = {}
+    for order, direction in enumerate(result):
+        direction['order'] = order
+        key = normalized_name(direction['name'])
+        ordinals[key] = ordinals.get(key, 0) + 1
+        rows = direction.pop('_rows')
+        leaders = direction.pop('_leaders', None) or direction['team_leaders'] or [n for r in rows for n in r['team_leaders']]
+        direction['source_rows'] = [row['name'] for row in rows if row['name']]
+        number = direction.pop('_function')
+        direction['code'] = (f'{number}.{ordinals[key]}' if counts[key] > 1 else str(number)) if number else ''
+        if counts[key] > 1:
+            label = _leader_label(rows, leaders, direction['name']) or str(ordinals[key])
+            direction['name'] = f'{direction["name"]} — {label}'[:255]
+        for row in rows:
+            row.pop('_leader_text', None)
+            row.pop('_direction_meta', None)
+    plan['directions'] = result
+    return plan
 
 
 def _copy_style(source, target):

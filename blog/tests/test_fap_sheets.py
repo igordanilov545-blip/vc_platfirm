@@ -59,7 +59,11 @@ class FaPWorkbookTests(SimpleTestCase):
         self.assertEqual(plan['dates'], ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27'])
         self.assertEqual(len(plan['directions']), 24)
         first, second = plan['directions'][:2]
-        self.assertEqual(first['name'], second['name'])
+        # Два блока одной функции — разные позиции; общий префикс функции, а
+        # подпись группы различает их для тим-лидеров и менеджера.
+        function = 'Организация сервисов для отдельных клиентских групп — '
+        self.assertTrue(first['name'].startswith(function) and second['name'].startswith(function))
+        self.assertNotEqual(first['name'], second['name'])
         self.assertNotEqual(first['id'], second['id'])
         self.assertEqual(first['positions'][0]['days'][2]['quantities'][0]['count'], 12)
         self.assertEqual(second['positions'][0]['days'][2]['quantities'][0]['count'], 9)
@@ -217,7 +221,10 @@ class FaPWorkbookTests(SimpleTestCase):
         self.assertEqual([r['count'] for r in result], [1, 2, 3])
         self.assertEqual([r['label'] for r in result], ['A', 'B', 'C'])
 
-    def test_partial_vertical_staff_merges_are_inherited_only_by_their_positions(self):
+    def test_each_team_leader_set_inside_zone_is_a_separate_position(self):
+        """Решение пользователя (2026-11-11): позиция = набор одного тим-лидера внутри
+        блока «ИТОГО В ЗОНЕ». Тим-лидер видит только свой набор, менеджер — разрез
+        «по точкам». Количество группы — сумма её строк, а не общий итог зоны."""
         from blog.services.fap_workbook import read_xlsx
         book = load_workbook(EXAMPLES / 'one-day.xlsx')
         sheet = book['Смены']
@@ -228,9 +235,39 @@ class FaPWorkbookTests(SimpleTestCase):
         sheet['C5'] = 'Второй лидер'
         stream = BytesIO()
         book.save(stream)
-        direction = read_xlsx(stream.getvalue())['directions'][0]
-        self.assertEqual(direction['team_leaders'], ['Первый лидер', 'Второй лидер'])
-        self.assertEqual(len(direction['positions']), 1)
+        plan = read_xlsx(stream.getvalue())
+        first, second = plan['directions'][:2]
+        self.assertEqual(first['team_leaders'], ['Первый лидер'])
+        self.assertEqual(second['team_leaders'], ['Второй лидер'])
+        self.assertNotEqual(first['name'], second['name'])
+        self.assertEqual(len(plan['directions']), 5)
+
+    def test_real_marathon_with_mentor_column_splits_distance_by_team_leaders(self):
+        """Реальный ФиП ММ 2026: лишняя колонка «Наставник» сдвигает дни; «Дистанция»
+        — один блок итогов, но 12 тим-лидерских наборов. Код группы совпадает с
+        нумерацией в старой базе (10.1 ПО1 … 10.11 ПП5)."""
+        from blog.services.fap_workbook import read_xlsx
+        plan = read_xlsx((EXAMPLES / 'marathon-2026-mentors.xlsx').read_bytes())
+        self.assertEqual(plan['dates'], ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27'])
+        by_code = {d['code']: d for d in plan['directions'] if d['code']}
+        distance = [d for d in plan['directions'] if d['code'].startswith('10.')]
+        self.assertEqual(len(distance), 12)
+        first = by_code['10.1']
+        self.assertEqual(first['name'], 'Волонтёры дистанции — Пункт освежения (ПО1)')
+        self.assertIn('Волонтер пункта освежения (ПО1)', first['source_rows'])
+        self.assertEqual(first['positions'][0]['days'][3]['shifts'][0]['count'], 77)
+        self.assertEqual(by_code['10.4']['name'], 'Волонтёры дистанции — Пункт питания на дистанции (ПП2)')
+        zone = by_code['7.2']
+        self.assertEqual(zone['name'], 'Организация выдачи пакетов участников — Зона выдачи номеров и пакетов участника')
+        self.assertEqual(zone['positions'][0]['days'][0]['shifts'][0]['count'], 157)
+        self.assertEqual(zone['team_leaders'][:2], ['Анна Баринова', 'Марина Бабич'])
+
+    def test_team_lead_text_detection_ignores_case_spacing_and_yo(self):
+        from blog.services.fap_workbook import is_team_lead_text
+        for text in ('Тим-лидер зоны', 'тим лидер', 'ТИМЛИДЕР ПО1', 'Тим‑лидёр', '7.2 - Тим-лидер волонтёров'):
+            self.assertTrue(is_team_lead_text(text), text)
+        for text in ('Помощник тим-лидера организации', 'Ассистент выдачи', 'Волонтёр-тимбилдинг'):
+            self.assertFalse(is_team_lead_text(text), text)
 
     def test_google_grid_and_batch_keep_stable_ids_and_values(self):
         from blog.services.fap_workbook import read_xlsx, write_xlsx

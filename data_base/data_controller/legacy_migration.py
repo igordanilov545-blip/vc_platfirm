@@ -5,8 +5,8 @@ from django.utils import timezone
 
 from blog.models import (
     Application, ApplicationShiftDecision, EventShift, EventStaff, FapDocument, LegacyBase,
-    LegacyBaseColumn, LegacyBasePerson, LegacyLoadedCell, LegacyValueMapping, Participation,
-    PositionTemplate, ProfileConflict,
+    LegacyBaseColumn, LegacyBasePerson, LegacyLoadedCell, LegacyValueMapping, MigrationJob, Participation,
+    PositionTemplate, ProfileConflict, User, UserComment,
 )
 from ._base import logger, actor
 
@@ -88,6 +88,26 @@ def create_fap_document(group, *, file_name, content, content_hash, operator):
                                           file_name=file_name[:255], content=content, content_hash=content_hash,
                                           uploaded_by=operator)
     logger.info('INSERT fap_documents: document=%s group=%s version=%s by=%s', document.pk, group.pk, document.version, actor(operator))
+    return document
+
+
+def create_library_fap(*, file_name, title, content, content_hash, plan, operator):
+    document = FapDocument.objects.create(event_group=None, version=0, file_name=file_name[:255], title=title[:255],
+                                          content=content, content_hash=content_hash, plan=plan, uploaded_by=operator)
+    logger.info('INSERT fap_documents library: document=%s by=%s', document.pk, actor(operator))
+    return document
+
+
+def attach_fap_document(document, group, warnings, operator):
+    """Привязать документ к мероприятию: следующая версия в мероприятии, применён."""
+    if document.event_group_id != group.pk:
+        last = FapDocument.objects.filter(event_group=group).order_by('-version').first()
+        document.event_group = group
+        document.version = (last.version + 1) if last else 1
+    document.applied_at = timezone.now()
+    document.warnings = list(warnings)
+    document.save(update_fields=['event_group', 'version', 'applied_at', 'warnings'])
+    logger.info('UPDATE fap_documents attached: document=%s group=%s version=%s by=%s', document.pk, group.pk, document.version, actor(operator))
     return document
 
 
@@ -205,3 +225,49 @@ def update_user_profile_fields(user, fields, operator, reason):
     user.save(update_fields=list(fields))
     logger.info('UPDATE users via %s: user=%s fields=%s by=%s', reason, user.pk, sorted(fields), actor(operator))
     return user
+
+
+# --- Фоновые задачи миграции --------------------------------------------------
+
+def migration_jobs_qs():
+    return MigrationJob.objects.all()
+
+
+def create_migration_job(*, kind, operator, base=None, event_group=None, column_ids=None, total=0):
+    job = MigrationJob.objects.create(kind=kind, base=base, event_group=event_group, column_ids=list(column_ids or []),
+                                      total=total, created_by=operator)
+    logger.info('INSERT migration_jobs: job=%s kind=%s by=%s', job.pk, kind, actor(operator))
+    return job
+
+
+def save_migration_job(job, **fields):
+    """Прогресс/статус задачи; updated_at — сердцебиение (зависшая задача видна)."""
+    for name, value in fields.items():
+        setattr(job, name, value)
+    job.save(update_fields=list(fields) + ['updated_at'])
+    if 'status' in fields:
+        logger.info('UPDATE migration_jobs: job=%s status=%s done=%s/%s', job.pk, job.status, job.done, job.total)
+    return job
+
+
+def delete_users_created_by_job(user_ids, operator):
+    """Отмена загрузки людей: удалить только аккаунты, созданные этой задачей
+    (служебные legacy:*, без входа) — каскадом уходят их связи и комментарии."""
+    users = User.objects.filter(pk__in=user_ids, telegram_id__startswith='legacy:', login__isnull=True)
+    count = users.count()
+    users.delete()
+    logger.info('DELETE users created by cancelled migration job: count=%s by=%s', count, actor(operator))
+    return count
+
+
+def delete_legacy_base_rows(base, row_numbers, operator):
+    count, _ = LegacyBasePerson.objects.filter(base=base, row_number__in=row_numbers).delete()
+    logger.info('DELETE legacy_base_people: base=%s count=%s by=%s', base.pk, count, actor(operator))
+    return count
+
+
+def delete_job_profile_notes(user_ids, since, source, operator):
+    """Расхождения и заметки сотрудникам, созданные отменённой задачей."""
+    conflicts, _ = ProfileConflict.objects.filter(user_id__in=user_ids, created_at__gte=since, source=source).delete()
+    notes, _ = UserComment.objects.filter(target_user_id__in=user_ids, created_at__gte=since, source='legacy_changes').delete()
+    logger.info('DELETE job profile notes: conflicts=%s notes=%s by=%s', conflicts, notes, actor(operator))

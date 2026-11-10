@@ -1,0 +1,18 @@
+{% comment %}
+Фоновая загрузка миграции (blog/services/migration_jobs.py): процент обновляет
+legacy-migration.js → initMigrationJobs; отмена — встроенное подтверждение «Да, отменить».
+{% endcomment %}
+<div class="migration-job" role="status" data-migration-job data-status-url="{% url 'legacy_migration_job' item.job.pk %}"{% if reload %} data-reload-on-finish{% endif %}>
+    <div class="migration-job-head">
+        <span data-job-label>{{ item.status.label }}</span>
+        {% if item.status.status == 'running' %}<button type="button" class="btn secondary btn-sm" data-job-cancel>Отменить загрузку</button>{% endif %}
+    </div>
+    <div class="migration-job-track"><div class="migration-job-bar" data-job-bar style="width:{{ item.status.percent }}%"></div></div>
+    <p class="migration-job-message" data-job-message{% if not item.status.message %} hidden{% endif %}>{{ item.status.message }}</p>
+    <form method="post" action="{% url 'legacy_migration_job' item.job.pk %}" class="migration-job-confirm" data-job-confirm hidden>
+        {% csrf_token %}<input type="hidden" name="action" value="cancel"><input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <span>Отменить загрузку? Всё, что успела создать эта загрузка, будет удалено.</span>
+        <button type="submit" class="btn danger btn-sm">Да, отменить</button>
+        <button type="button" class="btn secondary btn-sm" data-job-confirm-no>Нет</button>
+    </form>
+</div>

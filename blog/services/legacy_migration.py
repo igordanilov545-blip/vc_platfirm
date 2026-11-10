@@ -10,6 +10,7 @@
 - баз несколько, один человек — один аккаунт (отпечатки контактов).
 """
 from collections import Counter, defaultdict
+from copy import deepcopy
 from datetime import date, datetime, time
 from decimal import Decimal, ROUND_HALF_UP
 from difflib import SequenceMatcher
@@ -24,7 +25,7 @@ from blog.services import event_sheets
 from blog.services.fap_workbook import MSK, is_team_lead_text, read_xlsx, normalized_name, _leader_row_label
 from blog.services.legacy_import import _contact_keys, identity_key, match_rows
 from blog.services.legacy_workbook import read_legacy_workbook, split_code, value_key
-from blog.services.position_pool import assign_function, classify
+from blog.services.position_pool import assign_function, classify, remember_positions
 from blog.services.profile_conflicts import sync_profile_from_base
 from blog.services.roles import has_manager_access
 from blog.services.stats import recalc_user_aggregates
@@ -69,19 +70,21 @@ def upload_base(operator, content, file_name, year):
     return base
 
 
-@transaction.atomic
-def load_people(operator, base):
-    """Анкеты и комментарии строк базы. Повтор — без дублей и без новых правок."""
-    _manager(operator)
-    plan = base.parsed
+def pending_people_rows(base):
+    """Строки базы, ещё не связанные с аккаунтами (повтор/догрузка начинается с них)."""
     loaded = set(dc.legacy_base_people_qs().filter(base=base).values_list('row_number', flat=True))
-    rows = [row for row in plan['rows'] if row['number'] not in loaded]
+    return [row for row in base.parsed['rows'] if row['number'] not in loaded]
+
+
+def new_people_result():
+    return {'created': 0, 'existing': 0, 'conflicts': 0, 'updated': 0, 'created_ids': [], 'rows': []}
+
+
+def load_people_rows(operator, base, rows, known, result):
+    """Порция строк базы → аккаунты. known — контакты → User между порциями."""
     matches, errors = match_rows({'rows': rows})
     if errors:
         raise ValidationError(errors[0])
-    result = {'created': 0, 'existing': 0, 'conflicts': 0, 'updated': 0}
-    known = {}
-    source = f'База {base.year}'
     for row in rows:
         profile = row['profile']
         contacts = _contact_keys(profile, row['number'])
@@ -101,6 +104,7 @@ def load_people(operator, base):
             fields['registration_status'] = 'registered'
             dc.complete_legacy_user(user, fields, operator)
             result['created'] += 1
+            result['created_ids'].append(user.pk)
         else:
             outcome = sync_profile_from_base(operator, user, profile, base)
             result['existing'] += 1
@@ -110,14 +114,26 @@ def load_people(operator, base):
             known[contact] = user
         dc.create_legacy_identity(identity_key(profile, row['number']), user, row['reported_age'], operator)
         dc.record_legacy_base_person(base, row['number'], user)
+        result['rows'].append(row['number'])
         for kind, comment in row['comments'].items():
             if comment:
                 dc.ensure_legacy_comment(user, kind, comment, operator)
+    return result
+
+
+def finish_people(operator, base, result):
     if not base.people_loaded_at:
         dc.mark_base_people_loaded(base, operator)
-    result['skipped'] = plan.get('skipped_rows', 0)
-    result['source'] = source
+    result['skipped'] = base.parsed.get('skipped_rows', 0)
     return result
+
+
+@transaction.atomic
+def load_people(operator, base):
+    """Анкеты и комментарии строк базы за один раз (фоновая задача — порциями)."""
+    _manager(operator)
+    result = load_people_rows(operator, base, pending_people_rows(base), {}, new_people_result())
+    return finish_people(operator, base, result)
 
 
 # --- Этап 2: колонки → мероприятие --------------------------------------------
@@ -176,15 +192,48 @@ def _carry_ids_by_name(group, plan):
     return plan
 
 
-@transaction.atomic
-def attach_fap(operator, group, content, file_name):
-    """Новая версия ФиП: файл хранится всегда, позиции/смены — через импорт ФиП."""
+def fap_title(file_name):
+    """«Ночной 2026 - Функции и позиции .xlsx» → «Ночной 2026»."""
+    import re
+    stem = re.sub(r'\.xlsx$', '', file_name or '', flags=re.I).strip(' _')
+    return re.split(r'\s+-\s+функции', stem, flags=re.I)[0].strip(' _-') or stem
+
+
+def upload_fap_files(operator, files, default_year=None):
+    """Положить файлы ФиП в библиотеку. Каждый файл проверяется отдельно:
+    ошибка одного не мешает остальным; возвращает [(имя, документ|None, ошибка)]."""
     _manager(operator)
-    plan = read_xlsx(content)
-    document = dc.create_fap_document(group, file_name=file_name, content=content, content_hash=_hash(content), operator=operator)
-    plan = _carry_ids_by_name(group, plan)
-    event_sheets.import_plan(operator, group, plan, content, file_name)
-    dc.mark_fap_applied(document, plan['warnings'], operator)
+    results = []
+    for name, content in files:
+        year = guess_year(name, default_year or _now().year)
+        try:
+            plan = read_xlsx(content, default_year=year)
+        except ValidationError as error:
+            results.append((name, None, ' '.join(error.messages)))
+            continue
+        content_hash = _hash(content)
+        existing = dc.fap_documents_qs().filter(content_hash=content_hash).defer('content').first()
+        if existing:
+            results.append((name, existing, 'Этот файл уже загружен.'))
+            continue
+        document = dc.create_library_fap(file_name=name, title=fap_title(name), content=content,
+                                         content_hash=content_hash, plan=plan, operator=operator)
+        results.append((name, document, ''))
+    return results
+
+
+@transaction.atomic
+def apply_fap(operator, document, group):
+    """Привязать документ библиотеки к мероприятию и создать позиции/смены."""
+    _manager(operator)
+    document = dc.fap_documents_qs().select_for_update().get(pk=document.pk)
+    if document.event_group_id and document.event_group_id != group.pk:
+        raise ValidationError(f'ФиП «{document.title}» уже относится к мероприятию «{document.event_group.title}».')
+    if document.event_group_id == group.pk and document.applied_at:
+        return document
+    plan = _carry_ids_by_name(group, deepcopy(document.plan))
+    event_sheets.import_plan(operator, group, plan, bytes(document.content), document.file_name)
+    dc.attach_fap_document(document, group, plan['warnings'], operator)
     names = {}
     link = dc.event_sheet_links_qs().filter(event_group=group).first()
     for direction in (link.baseline.get('directions', []) if link else []):
@@ -192,7 +241,82 @@ def attach_fap(operator, group, content, file_name):
     for sheet in dc.sheet_positions_qs().filter(event__event_group=group).select_related('event', 'direction'):
         source = names.get(str(sheet.source_key), {})
         assign_function(sheet.event, sheet.direction.name, *source.get('source_rows', []))
+    remember_positions(document.plan, operator)
     return document
+
+
+def _group_year(group):
+    day = dc.legacy_base_columns_qs().filter(event_group=group, day__isnull=False).values_list('day', flat=True).first()
+    if day:
+        return day.year
+    base_year = dc.legacy_base_columns_qs().filter(event_group=group).values_list('base__year', flat=True).first()
+    return base_year or _now().year
+
+
+@transaction.atomic
+def attach_fap(operator, group, content, file_name):
+    """Загрузить ФиП сразу в мероприятие (новая версия): файл хранится всегда."""
+    _manager(operator)
+    year = guess_year(file_name, _group_year(group))
+    plan = read_xlsx(content, default_year=year)
+    document = dc.create_library_fap(file_name=file_name, title=fap_title(file_name), content=content,
+                                     content_hash=_hash(content), plan=plan, operator=operator)
+    return apply_fap(operator, document, group)
+
+
+def fap_choices():
+    """Варианты «ФиП · день» для таблицы сопоставления колонок базы."""
+    choices = []
+    for document in dc.fap_documents_qs().defer('content').select_related('event_group').order_by('title', '-version'):
+        days = document.plan.get('dates', [])
+        label = document.title + (f' (v{document.version} · {document.event_group.title})' if document.event_group_id else '')
+        choices.append({'document': document, 'label': label,
+                        'days': [{'value': f'{document.pk}|{day}', 'day': date.fromisoformat(day)} for day in days]})
+    return choices
+
+
+def suggest_fap(column, choices):
+    """Подсказка ФиП по дате колонки: единственный файл с этим днём."""
+    if not column.day:
+        return ''
+    found = [day['value'] for choice in choices for day in choice['days'] if day['day'] == column.day]
+    return found[0] if len(found) == 1 else ''
+
+
+@transaction.atomic
+def map_columns_to_fap(operator, base, choices):
+    """choices: {column_id: 'doc_id|YYYY-MM-DD' или ''}. Колонка получает мероприятие
+    ФиП (создаётся по названию файла) и дату дня ФиП; ФиП применяется один раз."""
+    _manager(operator)
+    columns = {str(c.pk): c for c in dc.legacy_base_columns_qs().filter(base=base)}
+    documents = {}
+    for column_id, value in choices.items():
+        column = columns.get(str(column_id))
+        if column is None:
+            continue
+        if not value:
+            if column.fap_document_id and not column.loaded_at:
+                dc.save_legacy_column(column, operator, fap_document=None)
+            continue
+        document_id, raw_day = value.split('|', 1)
+        document = documents.get(document_id) or dc.fap_documents_qs().defer('content').select_related('event_group').get(pk=document_id)
+        documents[document_id] = document
+        day = date.fromisoformat(raw_day)
+        if day.isoformat() not in document.plan.get('dates', []):
+            raise ValidationError(f'В ФиП «{document.title}» нет дня {day:%d.%m.%Y}.')
+        group = document.event_group or column.event_group
+        if column.event_group_id and group and column.event_group_id != group.pk:
+            raise ValidationError(f'Колонка «{column.header}» уже в мероприятии «{column.event_group.title}», '
+                                  f'а ФиП «{document.title}» — в «{group.title}».')
+        if column.loaded_at and (column.day != day or column.event_group_id != (group.pk if group else None)):
+            raise ValidationError(f'Колонка «{column.header}» уже загружена — сначала откатите её.')
+        if group is None:
+            group = dc.create_legacy_group(document.title[:255], operator)
+        if document.event_group_id != group.pk or not document.applied_at:
+            apply_fap(operator, document, group)
+            document.event_group, document.event_group_id = group, group.pk
+        dc.save_legacy_column(column, operator, event_group=group, day=day, fap_document=document)
+    return True
 
 
 # --- Этап 4: сопоставление ------------------------------------------------------
@@ -268,6 +392,8 @@ def mapping_table(group):
             item['selected'] = str(suggestion['position'].pk) if suggestion['position'] else ''
             item['selected_role'] = suggestion['role']
         rows.append(item)
+    # Сверху то, что требует решения: без выбора → с подсказкой → сохранённое.
+    rows.sort(key=lambda row: 2 if row['mapping'] else (1 if row['selected'] else 0))
     return rows
 
 
@@ -311,7 +437,20 @@ STATE_LABELS = {
 }
 
 
+STATE_HINTS = {
+    'skipped': 'Колонка отмечена «Пропустить» и в загрузку не входит. «Вернуть» — на странице базы или мероприятия.',
+    'empty': 'В колонке нет заполненных ячеек — загружать нечего.',
+    'no_event': 'Колонка не относится ни к одному мероприятию. На странице базы выберите для неё ФиП и день или добавьте её в мероприятие.',
+    'no_date': 'Дата колонки не указана в её заголовке. Укажите дату в поле «Дата» (ДД.ММ.ГГГГ) или выберите день ФиП.',
+    'no_people': 'Люди этой базы ещё не загружены — запустите «Загрузить людей» на странице базы.',
+    'ready': 'Все значения сопоставлены — нажмите «Загрузить».',
+    'changed': 'После загрузки сопоставление изменилось — нажмите «Перезагрузить», участия перенесутся.',
+    'loaded': 'Колонка загружена. «Откатить» удалит созданное ею.',
+}
+
+
 def column_state(column, mappings=None):
+    missing_raw = []
     if column.skipped:
         code = 'skipped'
     elif not column.value_counts:
@@ -325,6 +464,7 @@ def column_state(column, mappings=None):
             mappings = {m.value_key: m for m in dc.legacy_value_mappings_qs().filter(event_group_id=column.event_group_id)}
         keys = [value_key(raw) for raw in column.value_counts]
         missing = [k for k in keys if k not in mappings or not mappings[k].skip and mappings[k].position_id is None]
+        missing_raw = [raw for raw in column.value_counts if value_key(raw) in set(missing)]
         if missing:
             code = 'unmapped'
         elif not column.base.people_loaded_at:
@@ -335,7 +475,14 @@ def column_state(column, mappings=None):
         else:
             code = 'ready'
     tone = {'loaded': 'success', 'ready': 'info', 'skipped': '', 'empty': ''}.get(code, 'warning')
-    return {'code': code, 'label': STATE_LABELS[code], 'done': code in ('loaded', 'skipped', 'empty'), 'tone': tone}
+    if code == 'unmapped':
+        shown = '; '.join(f'«{raw}»' for raw in missing_raw[:6]) + (f' и ещё {len(missing_raw) - 6}' if len(missing_raw) > 6 else '')
+        hint = (f'Нет позиции или «Пропустить» у {len(missing_raw)} значений: {shown}. '
+                'Выберите их в таблице «Сопоставление значений» на странице мероприятия и сохраните.')
+    else:
+        hint = STATE_HINTS[code]
+    return {'code': code, 'label': STATE_LABELS[code], 'done': code in ('loaded', 'skipped', 'empty'), 'tone': tone,
+            'hint': hint, 'missing': missing_raw}
 
 
 def _light_bases():
@@ -368,15 +515,26 @@ def hub_overview():
         items = by_group[group.pk]
         groups.append({'group': group, 'total': len(items), 'loaded': sum(i['state']['code'] == 'loaded' for i in items),
                        'pending': [i for i in items if not i['state']['done']], 'documents': documents.get(group.pk, [])})
-    return {'bases': bases, 'groups': groups}
+    library = []
+    for document in dc.fap_documents_qs().defer('content').select_related('event_group').order_by('-uploaded_at'):
+        dates = [date.fromisoformat(day) for day in document.plan.get('dates', [])]
+        library.append({'document': document, 'dates': dates, 'positions': len(document.plan.get('directions', [])),
+                        'warnings': document.plan.get('warnings', [])})
+    return {'bases': bases, 'groups': groups, 'library': library}
 
 
 def base_overview(base):
-    items = [{'column': c, 'state': column_state(c)} for c in
-             dc.legacy_base_columns_qs().filter(base=base).select_related('event_group', 'base').defer('base__content', 'base__parsed').order_by('index')]
+    choices = fap_choices()
+    items = []
+    for c in (dc.legacy_base_columns_qs().filter(base=base).select_related('event_group', 'base', 'fap_document')
+              .defer('base__content', 'base__parsed', 'fap_document__content').order_by('index')):
+        selected = f'{c.fap_document_id}|{c.day.isoformat()}' if c.fap_document_id and c.day else ''
+        suggested = '' if selected or c.event_group_id or c.skipped else suggest_fap(c, choices)
+        items.append({'column': c, 'state': column_state(c), 'fap_selected': selected or suggested,
+                      'fap_suggested': bool(suggested), 'people': sum(c.value_counts.values())})
     groups = dc.event_groups_qs().filter(pk__in={i['column'].event_group_id for i in items if i['column'].event_group_id}).order_by('title')
     free = [i for i in items if not i['column'].event_group_id and not i['column'].skipped]
-    return {'base': base, 'columns': items, 'free_columns': free, 'groups': groups,
+    return {'base': base, 'columns': items, 'free_columns': free, 'groups': groups, 'fap_choices': choices,
             'all_groups': dc.event_groups_qs().order_by('-created_at')[:200],
             'people_count': dc.legacy_base_people_qs().filter(base=base).count()}
 
@@ -472,60 +630,86 @@ def _undo_cell(cell, operator, affected):
     return True
 
 
-@transaction.atomic
-def load_columns(operator, columns):
-    """Загрузить готовые колонки; повтор переносит пересопоставленные значения."""
-    _manager(operator)
-    result = {'participations': 0, 'moved': 0, 'conflicts': [], 'team_leads': 0}
-    affected = {}
-    for column in columns:
-        column = dc.legacy_base_columns_qs().select_related('base', 'event_group').get(pk=column.pk)
-        state = column_state(column)
-        if state['code'] not in ('ready', 'loaded', 'changed'):
-            raise ValidationError(f'Колонка «{column.header}»: {state["label"]}.')
-        mappings = {m.value_key: m for m in dc.legacy_value_mappings_qs().filter(event_group=column.event_group).select_related('position')}
-        people = dict(dc.legacy_base_people_qs().filter(base=column.base).values_list('row_number', 'user_id'))
-        users = {u.pk: u for u in dc.users_qs().filter(pk__in=people.values())}
-        cells = {c.user_id: c for c in dc.legacy_loaded_cells_qs().filter(column=column).select_related('participation', 'application', 'staff', 'user', 'shift')}
-        handled = set()
-        for row in column.base.parsed['rows']:
-            item = next((a for a in row['assignments'] if a['column'] == column.index), None)
-            user = users.get(people.get(row['number']))
-            if item is None or user is None or user.pk in handled:
+def new_columns_result():
+    return {'participations': 0, 'moved': 0, 'conflicts': [], 'team_leads': 0}
+
+
+def prepare_column(column):
+    """Проверить готовность и собрать строки базы с ячейкой этой колонки."""
+    column = dc.legacy_base_columns_qs().select_related('base', 'event_group').get(pk=column.pk)
+    state = column_state(column)
+    if state['code'] not in ('ready', 'loaded', 'changed'):
+        raise ValidationError(f'Колонка «{column.header}»: {state["label"]}. {state["hint"]}')
+    rows = [(row, item) for row in column.base.parsed['rows']
+            for item in row['assignments'] if item['column'] == column.index]
+    return {'column': column, 'rows': rows, 'handled': set()}
+
+
+def load_column_rows(operator, context, rows, result, affected):
+    """Порция ячеек колонки: создать/перенести участия по сопоставлению."""
+    column = context['column']
+    mappings = {m.value_key: m for m in dc.legacy_value_mappings_qs().filter(event_group=column.event_group).select_related('position')}
+    numbers = [row['number'] for row, _ in rows]
+    people = dict(dc.legacy_base_people_qs().filter(base=column.base, row_number__in=numbers).values_list('row_number', 'user_id'))
+    users = {u.pk: u for u in dc.users_qs().filter(pk__in=people.values())}
+    cells = {c.user_id: c for c in dc.legacy_loaded_cells_qs().filter(column=column, user_id__in=people.values())
+             .select_related('participation', 'application', 'staff', 'user', 'shift')}
+    for row, item in rows:
+        user = users.get(people.get(row['number']))
+        if user is None or user.pk in context['handled']:
+            continue
+        context['handled'].add(user.pk)
+        key = value_key(item['description'])
+        mapping = mappings[key]
+        cell = cells.get(user.pk)
+        if cell and not mapping.skip and cell.position_id == mapping.position_id:
+            if mapping.role == 'team_lead' and not cell.staff:
+                _grant_team_lead(operator, cell.position, user, result)
+            continue
+        if cell:
+            if not _undo_cell(cell, operator, affected):
+                result['conflicts'].append({'user': user, 'column': column, 'participation': cell.participation})
                 continue
-            handled.add(user.pk)
-            key = value_key(item['description'])
-            mapping = mappings[key]
-            cell = cells.get(user.pk)
-            if cell and not mapping.skip and cell.position_id == mapping.position_id:
-                if mapping.role == 'team_lead' and not cell.staff:
-                    _grant_team_lead(operator, cell.position, user, result)
-                continue
-            if cell:
-                if not _undo_cell(cell, operator, affected):
-                    result['conflicts'].append({'user': user, 'column': column, 'participation': cell.participation})
-                    continue
-                result['moved'] += 0 if mapping.skip else 1
-            if mapping.skip:
-                continue
-            position = mapping.position
-            shift = _resolve_shift(position, column, operator)
-            application = dc.ensure_legacy_application(user, position, shift, item['description'], operator)
-            dc.ensure_legacy_decision(application, shift, operator)
-            participation, created = dc.ensure_legacy_participation(user, shift, operator)
-            if created:
-                hours = _hours(shift)
-                if hours:
-                    dc.set_participation_hours(participation, hours, operator)
-                result['participations'] += 1
-            staff = _grant_team_lead(operator, position, user, result) if mapping.role == 'team_lead' else None
-            dc.record_loaded_cell(column, user, key, position=position, shift=shift,
-                                  application=application,
-                                  participation=participation if created else None, staff=staff, operator=operator)
-            affected[user.pk] = user
-        dc.save_legacy_column(column, operator, loaded_at=_now())
+            result['moved'] += 0 if mapping.skip else 1
+        if mapping.skip:
+            continue
+        position = mapping.position
+        shift = _resolve_shift(position, column, operator)
+        application = dc.ensure_legacy_application(user, position, shift, item['description'], operator)
+        dc.ensure_legacy_decision(application, shift, operator)
+        participation, created = dc.ensure_legacy_participation(user, shift, operator)
+        if created:
+            hours = _hours(shift)
+            if hours:
+                dc.set_participation_hours(participation, hours, operator)
+            result['participations'] += 1
+        staff = _grant_team_lead(operator, position, user, result) if mapping.role == 'team_lead' else None
+        dc.record_loaded_cell(column, user, key, position=position, shift=shift, application=application,
+                              participation=participation if created else None, staff=staff, operator=operator)
+        affected[user.pk] = user
+    return result
+
+
+def finish_column(operator, context):
+    dc.save_legacy_column(context['column'], operator, loaded_at=_now())
+
+
+def recalc_affected(affected):
     for user in affected.values():
         recalc_user_aggregates(user)
+    affected.clear()
+
+
+@transaction.atomic
+def load_columns(operator, columns):
+    """Загрузить готовые колонки за один раз (фоновая задача — порциями)."""
+    _manager(operator)
+    result, affected = new_columns_result(), {}
+    for column in columns:
+        context = prepare_column(column)
+        load_column_rows(operator, context, context['rows'], result, affected)
+        finish_column(operator, context)
+    recalc_affected(affected)
     return result
 
 

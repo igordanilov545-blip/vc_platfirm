@@ -6,6 +6,7 @@ urlpatterns = [
     path('settings/migration/', views.legacy_migration, name='legacy_migration'),
     path('settings/migration/bases/<int:base_id>/', views.legacy_migration_base, name='legacy_migration_base'),
     path('settings/migration/events/<int:group_id>/', views.legacy_migration_group, name='legacy_migration_group'),
+    path('settings/migration/jobs/<int:job_id>/', views.legacy_migration_job, name='legacy_migration_job'),
     path('profile/actualize/', views.profile_actualize, name='profile_actualize'),
     path('management/invitations/', views.role_invitation_list, name='role_invitation_list'),
     path('management/invitations/new/', views.role_invitation_create, name='role_invitation_create'),

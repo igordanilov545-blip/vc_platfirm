@@ -15,7 +15,9 @@ from io import BytesIO
 from pathlib import Path
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.test import TestCase
+from unittest.mock import patch
+
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from openpyxl import Workbook
 
@@ -263,6 +265,7 @@ class WithoutFapTests(MigrationTestCase):
         self.assertEqual(set(Participation.objects.filter(event_day__in=shifts).values_list('hours', flat=True)), {Decimal('0')})
 
 
+@override_settings(MIGRATION_JOBS_INLINE=True)
 class MigrationViewsTests(MigrationTestCase):
     def test_hub_lists_unloaded_columns_with_reason_and_is_manager_only(self):
         base = self.upload()
@@ -345,3 +348,134 @@ class ProfileConflictFlowTests(TestCase):
         self.assertContains(response, 'почт')
         conflict.refresh_from_db()
         self.assertIsNone(conflict.resolved_at)
+
+
+FAP_DIR = FAP.parent
+
+
+@override_settings(MIGRATION_JOBS_INLINE=True)
+class BackgroundJobTests(MigrationTestCase):
+    """Загрузка людей и колонок идёт фоновой задачей с процентом и отменой
+    (запрос пользователя 2026-11-11): можно уходить на другие страницы."""
+
+    def test_people_job_reports_progress_and_status_endpoint(self):
+        from blog.models import MigrationJob
+        from blog.services import migration_jobs
+        base = self.upload()
+        job = migration_jobs.start_people(self.manager, base)
+        job.refresh_from_db()
+        self.assertEqual((job.status, job.done, job.total), ('done', 2, 2))
+        self.assertEqual(User.objects.filter(first_name__in=['Анна', 'Борис']).count(), 2)
+        self.client.force_login(self.manager)
+        data = self.client.get(reverse('legacy_migration_job', args=[job.pk])).json()
+        self.assertEqual((data['status'], data['percent']), ('done', 100))
+        self.assertIn('Новых людей: 2', data['message'])
+        self.assertEqual(MigrationJob.objects.count(), 1)
+
+    def test_cancelled_people_job_removes_what_it_created(self):
+        from blog.services import migration_jobs
+        existing = f.make_user(telegram_id='901', telegram_username='boris', first_name='Боря', phone='+79992223344')
+        base = self.upload()
+        checks = iter([False, True, True])
+        with patch.object(migration_jobs, 'PEOPLE_CHUNK', 1), \
+                patch.object(migration_jobs, '_cancelled', lambda job: next(checks)):
+            job = migration_jobs.start_people(self.manager, base)
+        job.refresh_from_db()
+        self.assertEqual(job.status, 'cancelled')
+        self.assertFalse(User.objects.filter(first_name='Анна').exists())
+        self.assertTrue(User.objects.filter(pk=existing.pk).exists())
+        self.assertFalse(base.people.exists())
+        base.refresh_from_db()
+        self.assertIsNone(base.people_loaded_at)
+
+    def test_cancel_view_asks_running_job_to_stop_and_second_job_waits(self):
+        from blog.services import migration_jobs
+        base = self.upload()
+        job = migration_jobs.dc.create_migration_job(kind='people', operator=self.manager, base=base, total=2)
+        with self.assertRaisesMessage(ValidationError, 'Уже идёт загрузка'):
+            migration_jobs.start_people(self.manager, base)
+        self.client.force_login(self.manager)
+        page = self.client.get(reverse('legacy_migration'))
+        self.assertContains(page, 'Да, отменить')
+        self.assertContains(page, 'Идёт загрузка')
+        self.client.post(reverse('legacy_migration_job', args=[job.pk]), {'action': 'cancel', 'next': reverse('legacy_migration')})
+        job.refresh_from_db()
+        self.assertTrue(job.cancel_requested)
+        self.client.force_login(f.make_team_leader())
+        self.assertEqual(self.client.get(reverse('legacy_migration_job', args=[job.pk])).status_code, 403)
+
+    def test_cancelled_columns_job_unloads_its_columns(self):
+        from blog.services import migration_jobs
+        base = self.upload()
+        lm.load_people(self.manager, base)
+        group, columns = self.marathon(base)
+        lm.attach_fap(self.manager, group, FAP.read_bytes(), FAP.name)
+        self.map_all(group)
+        checks = iter([False, True, True])
+        with patch.object(migration_jobs, 'COLUMN_CHUNK', 1), \
+                patch.object(migration_jobs, '_cancelled', lambda job: next(checks, True)):
+            job = migration_jobs.start_columns(self.manager, group, columns[:2])
+        job.refresh_from_db()
+        self.assertEqual(job.status, 'cancelled')
+        self.assertFalse(Participation.objects.exists())
+
+
+class FapLibraryTests(MigrationTestCase):
+    """Несколько ФиП за раз в библиотеку; колонки базы сопоставляются с файлом и днём."""
+
+    def test_several_files_upload_each_checked_separately(self):
+        files = [(name, (FAP_DIR / name).read_bytes()) for name in
+                 ('marathon-2026-mentors.xlsx', 'night-2026-split-day.xlsx', 'april-2026-labels.xlsx')]
+        files.append(('сломанный.xlsx', b'not a workbook'))
+        results = lm.upload_fap_files(self.manager, files, default_year=2026)
+        ok = [doc for _, doc, error in results if doc and not error]
+        self.assertEqual(len(ok), 3)
+        self.assertTrue(results[-1][2])
+        self.assertTrue(all(doc.event_group is None for doc in ok))
+        again = lm.upload_fap_files(self.manager, files[:1])
+        self.assertIn('уже загружен', again[0][2])
+
+    def test_columns_mapped_to_fap_day_create_event_once_and_take_fap_dates(self):
+        base = self.upload()
+        [(_, document, _)] = lm.upload_fap_files(self.manager, [('Московский марафон 2026 - Функции и позиции.xlsx', FAP.read_bytes())])
+        self.assertEqual(document.title, 'Московский марафон 2026')
+        columns = list(base.columns.filter(header__startswith='ММ').order_by('index'))
+        overview = {item['column'].pk: item for item in lm.base_overview(base)['columns']}
+        self.assertEqual(overview[columns[0].pk]['fap_selected'], f'{document.pk}|2026-09-24')
+        self.assertTrue(overview[columns[0].pk]['fap_suggested'])
+        lm.map_columns_to_fap(self.manager, base, {columns[0].pk: f'{document.pk}|2026-09-24',
+                                                   columns[2].pk: f'{document.pk}|2026-09-26'})
+        document.refresh_from_db()
+        reserve = base.columns.get(pk=columns[2].pk)
+        self.assertEqual(reserve.day, date(2026, 9, 26))
+        self.assertEqual(reserve.event_group.title, 'Московский марафон 2026')
+        self.assertEqual((document.event_group, document.version), (reserve.event_group, 1))
+        self.assertEqual(reserve.event_group.positions.count(), 39)
+        self.assertTrue(lm.dc.position_templates_qs().filter(name='Волонтер пункта освежения (ПО1)').exists())
+
+    def test_state_hint_names_unmapped_values(self):
+        base = self.upload()
+        group, columns = self.marathon(base)
+        state = lm.column_state(columns[0])
+        self.assertEqual(state['code'], 'unmapped')
+        self.assertIn('7.2 - Ассистент выдачи номеров', state['hint'])
+        self.assertIn('Сопоставление значений', state['hint'])
+
+
+class PositionPoolTests(TestCase):
+    """Функции пула по ключевым словам с начала слова (documentation/position-pool.md)."""
+
+    def test_keywords_match_word_starts(self):
+        from blog.services.position_pool import classify
+        cases = {
+            'Ассистент выдачи номеров и пакетов участника — 42,2 км': 'Выдача стартовых пакетов',
+            'Тим-лидер волонтёров организации сервисов для отдельных клиентских категорий - СМИ': 'Пресс-центр и СМИ',
+            'Тим-лидер волонтёров организации сервисов для отдельных клиентских групп': 'VIP и гостеприимство',
+            'Волонтёр церемонии награждения': 'Режиссёрская группа и награждение',
+            'Волонтер для контроля ксерокопирования': 'Проверка медицинских справок',
+            'Волонтеры на пунктах передачи (П2, П3, П8)': 'Эстафеты и спецстарты',
+            'Волонтёр пункта питания на дистанции (ПП2)': 'Дистанция',
+            'Волонтёр выдачи питания на финише': 'Финиш',
+        }
+        for text, function in cases.items():
+            self.assertEqual(classify(text), function, text)

@@ -32,3 +32,25 @@ class FapUploadForm(forms.Form):
 
     def clean_workbook(self):
         return _xlsx(self.cleaned_data['workbook'], 'legacy_import_max_mb', 10)
+
+
+class MultipleFileInput(forms.ClearableFileInput):
+    allow_multiple_selected = True
+
+
+class MultipleXlsxField(forms.FileField):
+    """Несколько .xlsx за один раз (каждый файл проверяется отдельно)."""
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('widget', MultipleFileInput(attrs={'accept': '.xlsx', 'multiple': True}))
+        super().__init__(*args, **kwargs)
+
+    def clean(self, data, initial=None):
+        single = super().clean
+        files = data if isinstance(data, (list, tuple)) else [data]
+        return [_xlsx(single(item, initial), 'legacy_import_max_mb', 10) for item in files if item] or [single(None, initial)]
+
+
+class FapLibraryForm(forms.Form):
+    action = forms.CharField(widget=forms.HiddenInput, initial='upload_fap')
+    workbooks = MultipleXlsxField(label='Файлы ФиП (.xlsx, можно несколько)',
+                                  help_text='Читается только лист «Смены». Файлы попадают в библиотеку; к мероприятиям их привязывает таблица колонок базы.')

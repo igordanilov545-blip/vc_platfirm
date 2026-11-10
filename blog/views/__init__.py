@@ -6,7 +6,7 @@ urls.py и прочий код не меняются. Карта «домен �
 """
 from ._common import healthz  # noqa: F401
 from .settings_hub import appearance_update  # noqa: F401
-from .legacy_migration import legacy_migration, legacy_migration_base, legacy_migration_group  # noqa: F401
+from .legacy_migration import legacy_migration, legacy_migration_base, legacy_migration_group, legacy_migration_job  # noqa: F401
 from .profile_actualize import profile_actualize  # noqa: F401
 from .role_invitations import role_invitation_list, role_invitation_detail, role_invitation_create, role_invitation_accept, role_invitation_revoke  # noqa: F401
 from .event_sheets import (  # noqa: F401

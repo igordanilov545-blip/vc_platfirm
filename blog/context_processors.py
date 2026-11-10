@@ -22,12 +22,24 @@ def role_flags(request):
         'is_tech_admin': is_tech_admin(user) if authenticated else False,
         # Расхождения анкеты со старыми базами: при входе просим актуализировать данные.
         'profile_conflicts_pending': _has_profile_conflicts(user) if authenticated else False,
+        # Идущие фоновые загрузки миграции — строка состояния на всех страницах менеджера.
+        'migration_jobs': _migration_jobs(request, user) if authenticated else [],
         'analytics_page_view_id': getattr(request, 'analytics_page_view_id', None),
         # Пример меро для компаньон-тура: тур ведёт «за руку» на карточку конкретного
         # мероприятия, поэтому нужен id реального меро (первое опубликованное). Если меро
         # нет — тур пропускает шаги про карточку. Лёгкий запрос (values_list+first).
         'companion_sample_event_id': _companion_sample_event_id() if authenticated else None,
     }
+
+
+def _migration_jobs(request, user):
+    if not has_manager_access(user):
+        return []
+    from blog.services import migration_jobs
+    match = getattr(request, 'resolver_match', None)
+    # На страницах миграции по окончании загрузки страница обновится сама.
+    reload = bool(match and (match.url_name or '').startswith('legacy_migration'))
+    return [{'job': job, 'status': migration_jobs.status(job), 'reload': reload} for job in migration_jobs.active_jobs()]
 
 
 def _has_profile_conflicts(user):

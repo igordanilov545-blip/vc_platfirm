@@ -1921,4 +1921,62 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
     box-shadow: 0 10px 28px rgba(0,0,0,0.28); border: 1px solid var(--border-subtle);
 }
 .datepicker-popup > .datepicker-inline[hidden] { display: none; }
-.datepicker-popup > .btn { margin-top: 6px; }
+/* В компактном режиме дату очищают, стерев текст поля (data-dp-keep-empty). */
+.datepicker-popup > .btn { display: none; }
+
+/* Фоновая загрузка миграции: строка состояния с полосой и отменой. */
+.migration-job { display: grid; gap: 8px; padding: 12px 14px; margin-bottom: 1rem; border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); background: var(--bg-card); }
+.migration-job-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; }
+.migration-job-track { height: 8px; border-radius: 999px; background: var(--bg-card-hover); overflow: hidden; }
+.migration-job-bar { height: 100%; background: var(--accent); transition: width .4s ease; }
+.migration-job.is-finished .migration-job-bar { background: var(--success); }
+.migration-job[data-job-status="failed"] .migration-job-bar,
+.migration-job[data-job-status="stale"] .migration-job-bar { background: var(--warning); }
+.migration-job-message { margin: 0; color: var(--text-secondary); }
+.migration-job-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.migration-job-confirm[hidden] { display: none; }
+
+/* Таблицы миграции: помещаются в карточку (текст переносится), горизонтальная
+   прокрутка .table-scroll остаётся страховкой только для узких окон. */
+.migration-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
+.migration-grid > .card { margin: 0; }
+.table-scroll table.migration-table { width: 100%; min-width: 0; }
+.migration-table td, .migration-table th { vertical-align: top; white-space: normal; }
+.migration-table .col-header, .migration-table .col-value { min-width: 180px; width: 30%; }
+.migration-table .col-count { width: 1%; white-space: nowrap; }
+.migration-table .col-count .mono { white-space: nowrap; }
+.migration-table .col-fap { min-width: 240px; }
+.migration-table .col-date { min-width: 150px; width: 1%; }
+.migration-table .col-state { min-width: 150px; }
+.migration-table .col-position { min-width: 240px; width: 45%; }
+.migration-table .col-role { min-width: 150px; width: 1%; }
+.migration-table .col-role select { min-width: 140px; }
+.migration-table .col-actions { width: 1%; }
+.migration-table td.wrap, .migration-table th.wrap { min-width: 220px; }
+.migration-table select, .migration-table input[type="text"] { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.migration-table .is-hidden { display: none; }
+.migration-new-title { margin-top: 8px; display: grid; gap: 4px; }
+.migration-new-title label { font-size: 12px; color: var(--text-secondary); margin: 0; }
+.migration-table tr.is-unmapped > td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
+.migration-table tr.is-muted { opacity: .55; }
+.migration-actions { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 130px; }
+.migration-actions form { margin: 0; }
+.migration-actions .btn { width: 100%; }
+.migration-hint { cursor: help; }
+.migration-hint-link { margin-left: 6px; font-size: 12.5px; }
+.migration-missing { margin-top: 6px; font-size: 12.5px; color: var(--text-secondary); }
+.migration-filter { display: inline-flex !important; flex-direction: row; align-items: center; gap: 8px; width: auto; margin: .25rem 0 .75rem; cursor: pointer; }
+.migration-filter input { width: auto; margin: 0; }
+.migration-date-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+.migration-inline-upload { margin: .5rem 0 1rem; }
+.migration-inline-upload > summary { cursor: pointer; color: var(--accent); }
+.migration-skip-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.inline-details { display: inline-block; }
+@media (max-width: 720px) {
+  .migration-table .col-header, .migration-table .col-value, .migration-table .col-fap, .migration-table .col-date,
+  .migration-table .col-state, .migration-table .col-position, .migration-table .col-role, .migration-table .col-actions { min-width: 0; width: auto; }
+}
+
+.migration-table .pill { white-space: normal; text-align: left; line-height: 1.3; }
+.migration-pending { margin: 6px 0 0; padding-left: 1.1rem; display: grid; gap: 4px; }

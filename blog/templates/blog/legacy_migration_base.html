@@ -5,21 +5,71 @@
 
 <div class="card">
     <h2>Шаг 1. Люди</h2>
-    <p class="muted">{{ base.file_name }} · загружена {{ base.uploaded_at|date:"d.m.Y H:i" }}</p>
-    {% if base.people_loaded_at %}
-        <p><span class="pill success"><span class="dot"></span>загружены {{ base.people_loaded_at|date:"d.m.Y H:i" }}</span> · строк связано с аккаунтами: {{ people_count }}</p>
-    {% else %}
-        <p>Анкеты ещё не созданы. Новые люди получат профиль; уже известные не дублируются. Если человек сам заполнял профиль и данные расходятся — при входе он выберет актуальные.</p>
+    <p class="muted">{{ base.file_name }} · загружена {{ base.uploaded_at|date:"d.m.Y H:i" }} · строк связано с аккаунтами: {{ people_count }}</p>
+    {% if last_job and last_job.status.status != 'running' %}
+        {% include 'blog/partials/_migration_job.html' with item=last_job %}
     {% endif %}
-    <form method="post" data-disable-on-submit data-submitting-text="Загрузка людей…">
+    {% if base.people_loaded_at %}
+        <p><span class="pill success"><span class="dot"></span>загружены {{ base.people_loaded_at|date:"d.m.Y H:i" }}</span></p>
+    {% else %}
+        <p>Новые люди получат профиль; уже известные не дублируются. Если человек сам заполнял профиль и данные расходятся — при входе он выберет актуальные. Загрузка идёт в фоне: можно уходить на другие страницы, процент виден вверху страницы.</p>
+    {% endif %}
+    <form method="post">
         {% csrf_token %}<input type="hidden" name="action" value="load_people">
         <button type="submit" class="btn">{% if base.people_loaded_at %}Догрузить людей{% else %}Загрузить людей{% endif %}</button>
-        <p data-submit-status hidden role="status">Идёт загрузка. Не закрывайте страницу.</p>
     </form>
 </div>
 
 <div class="card">
-    <h2>Шаг 2. Колонки → мероприятие</h2>
+    <h2>Шаг 2. Колонки базы ↔ ФиП</h2>
+    <p>Для каждой колонки выберите файл ФиП и его день. Мероприятие создаётся по названию ФиП (или берётся то, к которому ФиП уже привязан), позиции и смены — из ФиП, дата колонки — день ФиП. ✨ — подсказка по дате колонки, проверьте и сохраните. Колонкам без ФиП укажите дату вручную (ДД.ММ.ГГГГ).</p>
+    <details class="migration-inline-upload">
+        <summary>Загрузить ещё файлы ФиП</summary>
+        {% include 'blog/partials/_modal_form.html' with form=fap_form form_enctype='multipart/form-data' submit_label='Загрузить файлы' %}
+    </details>
+    <form method="post">
+        {% csrf_token %}<input type="hidden" name="action" value="map_fap">
+        <div class="table-scroll"><table class="responsive-table migration-table">
+            <thead><tr><th class="col-header">Колонка базы</th><th class="col-count">Людей</th><th class="col-fap">ФиП и день</th><th class="col-date">Дата</th><th class="col-state">Состояние</th></tr></thead>
+            <tbody>
+            {% for item in columns %}
+                <tr{% if item.column.skipped %} class="is-muted"{% endif %}>
+                    <td data-label="Колонка базы" class="col-header">{{ item.column.header|linebreaksbr }}{% if item.column.event_group %}<div class="muted">→ <a href="{% url 'legacy_migration_group' item.column.event_group_id %}">{{ item.column.event_group.title }}</a></div>{% endif %}</td>
+                    <td data-label="Людей" class="col-count">{{ item.people }}</td>
+                    <td data-label="ФиП и день" class="col-fap">
+                        {% if item.column.loaded_at %}
+                            {% if item.column.fap_document %}{{ item.column.fap_document.title }} · {{ item.column.day|date:"d.m.Y" }}{% else %}без ФиП{% endif %}
+                            <input type="hidden" name="fap_{{ item.column.pk }}" value="{{ item.fap_selected }}">
+                        {% else %}
+                        <select name="fap_{{ item.column.pk }}" aria-label="ФиП и день">
+                            <option value="">— без ФиП —</option>
+                            {% for choice in fap_choices %}
+                                <optgroup label="{{ choice.label }}">
+                                    {% for day in choice.days %}<option value="{{ day.value }}"{% if day.value == item.fap_selected %} selected{% endif %}>{{ choice.document.title }} · {{ day.day|date:"d.m.Y (D)" }}</option>{% endfor %}
+                                </optgroup>
+                            {% endfor %}
+                        </select>
+                        {% if item.fap_suggested %}<span class="pill info" title="Подсказка: в ФиП есть день с датой этой колонки. Сохраните, чтобы применить."><span class="dot"></span>✨ подсказка</span>{% endif %}
+                        {% endif %}
+                    </td>
+                    <td data-label="Дата" class="col-date">
+                        {% if item.column.fap_document_id or item.column.loaded_at %}{{ item.column.day|date:"d.m.Y" }}
+                        {% else %}<input type="text" name="day_{{ item.column.pk }}" value="{{ item.column.day|date:'Y-m-d' }}" data-datepicker data-dp-popup data-dp-keep-empty placeholder="ДД.ММ.ГГГГ" aria-label="Дата колонки">{% endif %}
+                    </td>
+                    <td data-label="Состояние" class="col-state">
+                        <span class="pill {{ item.state.tone }} migration-hint" title="{{ item.state.hint }}" tabindex="0"><span class="dot"></span>{{ item.state.label }}</span>
+                        {% if item.state.code == 'unmapped' %}<a class="migration-hint-link" href="{% url 'legacy_migration_group' item.column.event_group_id %}#migration-mapping">где?</a>{% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table></div>
+        <button type="submit" class="btn">Сохранить колонки и ФиП</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Колонки без ФиП → мероприятие</h2>
     {% if free_columns %}
     <form method="post">
         {% csrf_token %}<input type="hidden" name="action" value="create_event">
@@ -52,28 +102,13 @@
     {% else %}
         <p>Все колонки распределены по мероприятиям или пропущены.</p>
     {% endif %}
-    {% if groups %}<p>Мероприятия этой базы: {% for group in groups %}<a href="{% url 'legacy_migration_group' group.pk %}">{{ group.title }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
-</div>
-
-<div class="card table-scroll">
-    <h2>Колонки базы</h2>
-    <table class="responsive-table" data-sortable>
-        <thead><tr><th>Колонка</th><th>Дата</th><th>Заполнено</th><th>Мероприятие</th><th>Состояние</th><th></th></tr></thead>
-        <tbody>
-        {% for item in columns %}
-            <tr>
-                <td data-label="Колонка">{{ item.column.header|linebreaksbr }}</td>
-                <td data-label="Дата">{% if item.column.day %}{{ item.column.day|date:"d.m.Y" }}{% else %}<span class="pill warning"><span class="dot"></span>укажите</span>{% endif %}</td>
-                <td data-label="Заполнено">{% with counts=item.column.value_counts %}{{ counts|length }} знач.{% endwith %}</td>
-                <td data-label="Мероприятие">{% if item.column.event_group %}<a href="{% url 'legacy_migration_group' item.column.event_group_id %}">{{ item.column.event_group.title }}</a>{% else %}—{% endif %}</td>
-                <td data-label="Состояние"><span class="pill {{ item.state.tone }}"><span class="dot"></span>{{ item.state.label }}</span></td>
-                <td data-label="">{% if not item.column.event_group_id %}
-                    <form method="post" class="inline">{% csrf_token %}<input type="hidden" name="action" value="skip"><input type="hidden" name="column" value="{{ item.column.pk }}"><input type="hidden" name="value" value="{% if item.column.skipped %}0{% else %}1{% endif %}">
-                        <button type="submit" class="btn secondary btn-sm">{% if item.column.skipped %}Вернуть{% else %}Пропустить{% endif %}</button></form>
-                {% endif %}</td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    <h3>Пропустить колонку</h3>
+    <p class="muted">Пропущенная колонка не загружается и не считается забытой.</p>
+    <div class="migration-skip-list">
+    {% for item in columns %}{% if not item.column.event_group_id %}
+        <form method="post" class="inline">{% csrf_token %}<input type="hidden" name="action" value="skip"><input type="hidden" name="column" value="{{ item.column.pk }}"><input type="hidden" name="value" value="{% if item.column.skipped %}0{% else %}1{% endif %}">
+            <button type="submit" class="btn secondary btn-sm">{% if item.column.skipped %}Вернуть{% else %}Пропустить{% endif %}: {{ item.column.header|truncatechars:40 }}</button></form>
+    {% endif %}{% endfor %}
+    </div>
 </div>
 {% endblock %}

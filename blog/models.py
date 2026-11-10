@@ -1315,6 +1315,12 @@ class LegacyBaseColumn(models.Model):
     skipped = models.BooleanField(default=False)
     loaded_at = models.DateTimeField(null=True, blank=True)
     value_counts = models.JSONField(default=dict)
+    fap_document = models.ForeignKey('FapDocument', on_delete=models.SET_NULL, null=True, blank=True, related_name='columns')
+
+    @property
+    def header_line(self):
+        """Заголовок колонки в одну строку — для сводок и подсказок."""
+        return ' '.join(self.header.split())
 
     class Meta:
         db_table = 'legacy_base_columns'
@@ -1334,9 +1340,12 @@ class LegacyBasePerson(models.Model):
 
 
 class FapDocument(models.Model):
-    """Каждая загруженная версия ФиП мероприятия; применённая — с applied_at."""
-    event_group = models.ForeignKey(EventGroup, on_delete=models.CASCADE, related_name='fap_documents')
-    version = models.PositiveIntegerField()
+    """Загруженный файл ФиП. Пока не привязан к мероприятию — лежит в библиотеке
+    (event_group пуст, version 0); при привязке получает номер версии в мероприятии."""
+    event_group = models.ForeignKey(EventGroup, on_delete=models.CASCADE, null=True, blank=True, related_name='fap_documents')
+    version = models.PositiveIntegerField(default=0)
+    title = models.CharField(max_length=255, blank=True)
+    plan = models.JSONField(default=dict)
     file_name = models.CharField(max_length=255)
     content = models.BinaryField()
     content_hash = models.CharField(max_length=64)
@@ -1382,6 +1391,32 @@ class LegacyLoadedCell(models.Model):
     class Meta:
         db_table = 'legacy_loaded_cells'
         constraints = [models.UniqueConstraint(fields=['column', 'user'], name='unique_legacy_loaded_cell')]
+
+
+class MigrationJob(models.Model):
+    """Фоновая загрузка миграции (люди базы или колонки) с прогрессом и отменой.
+
+    Celery нет: задача идёт в отдельном потоке веб-процесса, состояние — в БД,
+    чтобы страница могла показывать процент, а пользователь — уходить на другие."""
+    KIND_CHOICES = [('people', 'Люди базы'), ('columns', 'Колонки')]
+    STATUS_CHOICES = [('running', 'Идёт'), ('done', 'Готово'), ('cancelled', 'Отменено'), ('failed', 'Ошибка')]
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='running')
+    base = models.ForeignKey(LegacyBase, on_delete=models.CASCADE, null=True, blank=True, related_name='jobs')
+    event_group = models.ForeignKey(EventGroup, on_delete=models.CASCADE, null=True, blank=True, related_name='migration_jobs')
+    column_ids = models.JSONField(default=list)
+    total = models.PositiveIntegerField(default=0)
+    done = models.PositiveIntegerField(default=0)
+    message = models.TextField(blank=True)
+    result = models.JSONField(default=dict)
+    cancel_requested = models.BooleanField(default=False)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'migration_jobs'
+        ordering = ['-pk']
 
 
 class ProfileConflict(models.Model):

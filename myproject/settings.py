@@ -228,7 +228,8 @@ LOG_BACKUP_COUNT = env.int('LOG_BACKUP_COUNT', default=5)
 
 def _rotating_handler(filename):
     return {
-        'class': 'logging.handlers.RotatingFileHandler',
+        # Ротация не теряет строки, если файл занят вторым процессом runall (Windows).
+        'class': 'blog.log_handlers.SafeRotatingFileHandler',
         'filename': str(Path(LOG_DIR) / filename),
         'maxBytes': LOG_MAX_BYTES,
         'backupCount': LOG_BACKUP_COUNT,

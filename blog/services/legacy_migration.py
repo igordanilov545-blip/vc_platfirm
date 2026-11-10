@@ -192,6 +192,22 @@ def _carry_ids_by_name(group, plan):
     return plan
 
 
+def document_plan(document):
+    """Разобранный план ФиП. У файлов, загруженных до библиотеки (0049), плана нет —
+    разбираем сохранённый файл один раз и запоминаем (год — из имени файла или
+    мероприятия). Нечитаемый файл — пустой план без дней."""
+    if document.plan.get('directions'):
+        return document.plan
+    group_year = _group_year(document.event_group) if document.event_group_id else _now().year
+    content = document.content if 'content' not in document.get_deferred_fields() else         dc.fap_documents_qs().values_list('content', flat=True).get(pk=document.pk)
+    try:
+        plan = read_xlsx(bytes(content), default_year=guess_year(document.file_name, group_year))
+    except ValidationError:
+        return {}
+    dc.save_fap_plan(document, plan, fap_title(document.file_name) if not document.title else document.title)
+    return plan
+
+
 def fap_title(file_name):
     """«Ночной 2026 - Функции и позиции .xlsx» → «Ночной 2026»."""
     import re
@@ -231,7 +247,10 @@ def apply_fap(operator, document, group):
         raise ValidationError(f'ФиП «{document.title}» уже относится к мероприятию «{document.event_group.title}».')
     if document.event_group_id == group.pk and document.applied_at:
         return document
-    plan = _carry_ids_by_name(group, deepcopy(document.plan))
+    stored = document_plan(document)
+    if not stored:
+        raise ValidationError(f'ФиП «{document.file_name}» не читается — загрузите файл заново.')
+    plan = _carry_ids_by_name(group, deepcopy(stored))
     event_sheets.import_plan(operator, group, plan, bytes(document.content), document.file_name)
     dc.attach_fap_document(document, group, plan['warnings'], operator)
     names = {}
@@ -241,7 +260,7 @@ def apply_fap(operator, document, group):
     for sheet in dc.sheet_positions_qs().filter(event__event_group=group).select_related('event', 'direction'):
         source = names.get(str(sheet.source_key), {})
         assign_function(sheet.event, sheet.direction.name, *source.get('source_rows', []))
-    remember_positions(document.plan, operator)
+    remember_positions(stored, operator)
     return document
 
 
@@ -257,6 +276,9 @@ def _group_year(group):
 def attach_fap(operator, group, content, file_name):
     """Загрузить ФиП сразу в мероприятие (новая версия): файл хранится всегда."""
     _manager(operator)
+    same = dc.fap_documents_qs().filter(event_group=group, content_hash=_hash(content)).defer('content').first()
+    if same and same.applied_at:
+        return same  # тот же файл уже применён — новая версия-дубль не нужна
     year = guess_year(file_name, _group_year(group))
     plan = read_xlsx(content, default_year=year)
     document = dc.create_library_fap(file_name=file_name, title=fap_title(file_name), content=content,
@@ -268,7 +290,7 @@ def fap_choices():
     """Варианты «ФиП · день» для таблицы сопоставления колонок базы."""
     choices = []
     for document in dc.fap_documents_qs().defer('content').select_related('event_group').order_by('title', '-version'):
-        days = document.plan.get('dates', [])
+        days = document_plan(document).get('dates', [])
         label = document.title + (f' (v{document.version} · {document.event_group.title})' if document.event_group_id else '')
         choices.append({'document': document, 'label': label,
                         'days': [{'value': f'{document.pk}|{day}', 'day': date.fromisoformat(day)} for day in days]})
@@ -302,7 +324,7 @@ def map_columns_to_fap(operator, base, choices):
         document = documents.get(document_id) or dc.fap_documents_qs().defer('content').select_related('event_group').get(pk=document_id)
         documents[document_id] = document
         day = date.fromisoformat(raw_day)
-        if day.isoformat() not in document.plan.get('dates', []):
+        if day.isoformat() not in document_plan(document).get('dates', []):
             raise ValidationError(f'В ФиП «{document.title}» нет дня {day:%d.%m.%Y}.')
         group = document.event_group or column.event_group
         if column.event_group_id and group and column.event_group_id != group.pk:
@@ -517,9 +539,10 @@ def hub_overview():
                        'pending': [i for i in items if not i['state']['done']], 'documents': documents.get(group.pk, [])})
     library = []
     for document in dc.fap_documents_qs().defer('content').select_related('event_group').order_by('-uploaded_at'):
-        dates = [date.fromisoformat(day) for day in document.plan.get('dates', [])]
-        library.append({'document': document, 'dates': dates, 'positions': len(document.plan.get('directions', [])),
-                        'warnings': document.plan.get('warnings', [])})
+        plan = document_plan(document)
+        dates = [date.fromisoformat(day) for day in plan.get('dates', [])]
+        library.append({'document': document, 'dates': dates, 'positions': len(plan.get('directions', [])),
+                        'warnings': plan.get('warnings', [])})
     return {'bases': bases, 'groups': groups, 'library': library}
 
 

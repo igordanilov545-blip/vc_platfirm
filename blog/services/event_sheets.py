@@ -64,6 +64,10 @@ def current_plan(group):
             if item.position_id is None:
                 direction_map[item.direction_id][key].append(item.display_name)
     runtime_positions = list(dc.events_qs().filter(event_group=group).prefetch_related('shifts').order_by('pk'))
+    # Смены миграции старой базы («время не указано», legacy_import_shifts) — архивная
+    # явка, а не план: в обмен с ФиП не входят и не считаются локальной правкой,
+    # иначе новая версия ФиП после загрузки колонок отклонялась бы как «конфликт».
+    archival = set(dc.legacy_shifts_qs().filter(shift__event__event_group=group).values_list('shift_id', flat=True))
     all_dates = set(plan['dates'])
     for event in runtime_positions:
         mapped = mapped_positions.get(event.pk)
@@ -84,6 +88,8 @@ def current_plan(group):
                     'days': [], 'row': original.get('row')}
         shifts_by_day = {}
         for shift in event.shifts.all():
+            if shift.pk in archival:
+                continue
             day = shift.day.isoformat()
             all_dates.add(day)
             source = mapped_shifts.get(shift.pk)

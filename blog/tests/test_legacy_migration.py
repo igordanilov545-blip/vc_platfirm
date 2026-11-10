@@ -87,8 +87,10 @@ class BaseAndPeopleTests(MigrationTestCase):
             '7.2 - Ассистент выдачи номеров и пакетов участника — 42,2 км': 1,
             '7.2 - Тим-лидер волонтёров зоны выдачи номеров и пакетов участника': 1})
         self.assertFalse(User.objects.filter(first_name='Анна').exists())
+        # Тот же файл (байт в байт): openpyxl пишет время создания, поэтому
+        # повторно генерировать книгу нельзя — хеш мог бы отличаться.
         with self.assertRaisesMessage(ValidationError, 'уже загружена'):
-            self.upload(year=2025)
+            lm.upload_base(self.manager, bytes(base.content), 'копия.xlsx', 2025)
 
     def test_only_manager_uploads(self):
         with self.assertRaises(PermissionDenied):
@@ -147,8 +149,8 @@ class FapAndMappingTests(MigrationTestCase):
     def test_fap_versions_are_kept_and_positions_get_functions_from_pool(self):
         self.assertEqual(self.document.version, 1)
         self.assertIsNotNone(self.document.applied_at)
-        again = lm.attach_fap(self.manager, self.group, FAP.read_bytes(), FAP.name)
-        self.assertEqual((again.version, FapDocument.objects.filter(event_group=self.group).count()), (2, 2))
+        again = lm.attach_fap(self.manager, self.group, FAP.read_bytes(), 'другое имя.xlsx')
+        self.assertEqual((again.pk, FapDocument.objects.filter(event_group=self.group).count()), (self.document.pk, 1))
         distance = self.group.positions.get(title='Волонтёры дистанции — Пункт освежения (ПО1)')
         self.assertEqual(list(distance.category_map.values_list('category__name', flat=True)), ['Дистанция'])
 
@@ -234,6 +236,30 @@ class FapAndMappingTests(MigrationTestCase):
         warnings = lm.overlaps(self.group)
         self.assertEqual([w['user'] for w in warnings], [boris])
         self.assertEqual(len(warnings[0]['shifts']), 2)
+
+    def test_new_fap_version_accepted_after_columns_created_unknown_time_shifts(self):
+        """Реальный случай пользователя (МПМ, 2026-11-11): колонка «резерв» с датой вне
+        ФиП создала смену «без времени» в позиции ФиП — новая версия ФиП не должна
+        отклоняться как «конфликт»: такие смены — архивная явка, а не правка плана."""
+        from copy import deepcopy
+        from blog.services import event_sheets
+        self.map_all(self.group)
+        reserve = self.columns[2]
+        lm.set_column(self.manager, reserve, day=date(2026, 9, 20))
+        lm.load_columns(self.manager, [reserve])
+        self.assertTrue(EventShift.objects.filter(event__event_group=self.group, legacy_source__isnull=False).exists())
+        plan = deepcopy(lm.document_plan(self.document))
+        plan['directions'][0]['positions'][0]['days'][2]['shifts'][0]['count'] += 1
+        event_sheets.import_plan(self.manager, self.group, lm._carry_ids_by_name(self.group, plan), FAP.read_bytes() + b'v2', 'v2.xlsx')
+        self.assertTrue(Participation.objects.filter(event_day__day=date(2026, 9, 20)).exists())
+
+    def test_fap_uploaded_before_library_gets_plan_parsed_from_file(self):
+        FapDocument.objects.filter(pk=self.document.pk).update(plan={}, title='')
+        self.document.refresh_from_db()
+        choices = lm.fap_choices()
+        self.assertEqual([d['day'] for d in choices[0]['days']][:1], [date(2026, 9, 24)])
+        self.document.refresh_from_db()
+        self.assertEqual(self.document.title, 'marathon-2026-mentors')
 
     def test_unload_column_removes_only_what_it_created(self):
         self.map_all(self.group)

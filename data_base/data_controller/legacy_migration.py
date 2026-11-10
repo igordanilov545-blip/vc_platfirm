@@ -111,6 +111,14 @@ def attach_fap_document(document, group, warnings, operator):
     return document
 
 
+def save_fap_plan(document, plan, title):
+    """Разобранный план для ФиП, загруженного до появления библиотеки."""
+    FapDocument.objects.filter(pk=document.pk).update(plan=plan, title=title[:255])
+    document.plan, document.title = plan, title[:255]
+    logger.info('UPDATE fap_documents plan: document=%s', document.pk)
+    return document
+
+
 def mark_fap_applied(document, warnings, operator):
     document.applied_at = timezone.now()
     document.warnings = list(warnings)

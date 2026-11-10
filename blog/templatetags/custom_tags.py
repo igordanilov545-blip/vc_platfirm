@@ -133,3 +133,10 @@ def experience_copy_json(experience, share_url):
     # </script> внутри значений сломал бы разметку — экранируем '<' в безопасную форму.
     raw = json.dumps(payload, ensure_ascii=False).replace('<', '\\u003c')
     return mark_safe(raw)
+
+
+@register.inclusion_tag('blog/partials/_position_pool_datalist.html')
+def position_pool_datalist():
+    """<datalist id="position-pool"> — типовые позиции пула как подсказки названия."""
+    from blog.services.position_pool import pool_choices
+    return {'position_pool': pool_choices()}

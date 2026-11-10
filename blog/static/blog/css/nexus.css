@@ -1908,3 +1908,7 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
 }
 [data-table-empty] td { text-align: center; color: var(--text-secondary); }
 .responsive-table tr[hidden], .table-load-tools [hidden] { display: none; }
+
+/* Просьба уточнить данные профиля после загрузки старой базы (base.html). */
+.profile-actualize-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border-left: 4px solid var(--warning); }
+.migration-steps { margin: 0; padding-left: 1.25rem; display: grid; gap: 6px; }

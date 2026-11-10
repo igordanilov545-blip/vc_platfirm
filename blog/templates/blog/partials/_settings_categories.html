@@ -1,31 +1,65 @@
 {% comment %}
-Панель «Категории» внутри страницы настроек (agent-workflow.md §4) — справочник категорий
-мероприятий (EventCategory) с созданием/редактированием/удалением.
+Панель «Функции и позиции» внутри страницы настроек (agent-workflow.md §4): общий пул
+функций (EventCategory — прежние «категории») и типовых позиций внутри функций
+(PositionTemplate). Позиции пула подсказываются в названии при создании позиции.
 {% endcomment %}
 <div class="settings-panel-head">
-    <h2>Категории</h2>
-    <a href="{% url 'category_create' %}" class="btn" data-modal data-modal-title="Новая категория">+ Новая категория</a>
+    <h2>Функции</h2>
+    <a href="{% url 'category_create' %}" class="btn" data-modal data-modal-title="Новая функция">+ Новая функция</a>
 </div>
+<p class="muted">Функции переиспользуются на разных забегах: «Дистанция», «Выдача стартовых пакетов», «Проверка медицинских справок»… Позиции мероприятия привязываются к функциям.</p>
 
-{% include 'blog/partials/_table_search.html' with search_target="#categories-table" search_placeholder="Поиск по названию…" %}
+{% include 'blog/partials/_table_search.html' with search_target="#categories-table" search_placeholder="Поиск функции…" %}
 
 <div class="card" style="padding:0; overflow:hidden;">
     <table class="responsive-table" data-sortable data-hideable-columns id="categories-table">
-        <thead><tr><th data-sort-key="name">Название</th><th></th></tr></thead>
+        <thead><tr><th data-sort-key="name">Функция</th><th>Позиций в пуле</th><th></th></tr></thead>
         <tbody>
         {% for category in categories %}
             <tr data-search="{{ category.name }}">
-                <td data-label="Название" data-sort-value="{{ category.name }}">{{ category.name }}</td>
+                <td data-label="Функция" data-sort-value="{{ category.name }}">{{ category.name }}</td>
+                <td data-label="Позиций в пуле">{{ category.pool_count }}</td>
                 <td data-label="">
+                    <a href="{% url 'position_template_create' %}?category={{ category.id }}" class="btn secondary btn-sm" data-modal data-modal-title="Новая позиция: {{ category.name }}">+ Позиция</a>
                     <a href="{% url 'category_edit' category.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Редактировать: {{ category.name }}">Изменить</a>
-                    <form method="post" action="{% url 'category_delete' category.id %}" class="inline" data-confirm="Удалить категорию «{{ category.name }}»? Она будет снята со всех мероприятий.">
+                    <form method="post" action="{% url 'category_delete' category.id %}" class="inline" data-confirm="Удалить функцию «{{ category.name }}»? Она будет снята со всех позиций, её позиции пула удалятся.">
                         {% csrf_token %}
                         <button type="submit" class="btn danger btn-sm">Удалить</button>
                     </form>
                 </td>
             </tr>
         {% empty %}
-            <tr><td colspan="2">Категорий пока нет.</td></tr>
+            <tr><td colspan="3">Функций пока нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="settings-panel-head" style="margin-top:1.5rem;">
+    <h2>Позиции пула</h2>
+    <a href="{% url 'position_template_create' %}" class="btn" data-modal data-modal-title="Новая позиция пула">+ Новая позиция</a>
+</div>
+
+{% include 'blog/partials/_table_search.html' with search_target="#position-templates-table" search_placeholder="Поиск позиции или функции…" %}
+
+<div class="card" style="padding:0; overflow:hidden;">
+    <table class="responsive-table" data-sortable data-hideable-columns id="position-templates-table">
+        <thead><tr><th data-sort-key="name">Позиция</th><th data-sort-key="category">Функция</th><th></th></tr></thead>
+        <tbody>
+        {% for template in templates %}
+            <tr data-search="{{ template.name }} {{ template.category.name }}">
+                <td data-label="Позиция" data-sort-value="{{ template.name }}">{{ template.name }}</td>
+                <td data-label="Функция" data-sort-value="{{ template.category.name }}">{{ template.category.name }}</td>
+                <td data-label="">
+                    <a href="{% url 'position_template_edit' template.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Редактировать: {{ template.name }}">Изменить</a>
+                    <form method="post" action="{% url 'position_template_delete' template.id %}" class="inline" data-confirm="Удалить позицию «{{ template.name }}» из пула?">
+                        {% csrf_token %}
+                        <button type="submit" class="btn danger btn-sm">Удалить</button>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="3">Позиций в пуле пока нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>

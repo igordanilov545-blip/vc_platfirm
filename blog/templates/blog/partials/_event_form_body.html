@@ -1,4 +1,4 @@
-<form method="post" data-modal-form class="event-form">
+{% load custom_tags %}<form method="post" data-modal-form class="event-form">
     {% csrf_token %}
 
     {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
@@ -12,6 +12,7 @@
     <div class="field">
         {{ form.title.label_tag }}
         {{ form.title }}
+        {% position_pool_datalist %}
         {% if form.title.errors %}<div class="field-error">{{ form.title.errors|striptags }}</div>{% endif %}
     </div>
 
@@ -28,13 +29,13 @@
     </div>
 
     <div class="field">
-        <label>Категории</label>
-        <div class="category-chips" data-chip-select="{{ form.categories.id_for_label }}" data-chip-empty="Категории не выбраны">
+        <label>Функции</label>
+        <div class="category-chips" data-chip-select="{{ form.categories.id_for_label }}" data-chip-empty="Функции не выбраны">
             <div class="cat-chips-row" data-chips-selected></div>
             <div class="cat-chips-available-wrap">
-                <div class="cat-chips-available-label">Доступные категории — нажмите, чтобы добавить:</div>
+                <div class="cat-chips-available-label">Функции из пула — нажмите, чтобы добавить:</div>
                 <div class="cat-chips-row" data-chips-available></div>
-                <button type="button" class="btn secondary btn-sm add-ref-btn" data-add-ref="category" data-target="{{ form.categories.id_for_label }}" style="margin-top:8px;">＋ Новая категория</button>
+                <button type="button" class="btn secondary btn-sm add-ref-btn" data-add-ref="category" data-target="{{ form.categories.id_for_label }}" style="margin-top:8px;">＋ Новая функция</button>
             </div>
         </div>
         {{ form.categories }}

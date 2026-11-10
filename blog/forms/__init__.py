@@ -6,12 +6,12 @@
 """
 from .auth import LoginForm, RegisterForm  # noqa: F401
 from .role_invitations import RoleInvitationForm  # noqa: F401
-from .legacy_import import LegacyBaseUploadForm, LegacyDatesForm  # noqa: F401
+from .legacy_import import LegacyBaseUploadForm, FapUploadForm  # noqa: F401
 from .event_sheets import EventSheetImportForm, GoogleSheetsConnectionForm, SheetTeamLeaderBindingForm  # noqa: F401
 from .qr_attendance import ScannerGrantForm  # noqa: F401
 from .references import (  # noqa: F401
     QuickLocationForm, LocationForm, QuickOrganizationForm, OrganizationForm,
-    QuickOrganizerForm, OrganizerForm, QuickCategoryForm, CategoryForm,
+    QuickOrganizerForm, OrganizerForm, QuickCategoryForm, CategoryForm, PositionTemplateForm,
     QuickPerkForm, PerkForm,
     QuickRequirementForm, RequirementForm, RequirementEditForm, RequirementExceptionForm,
     ConstForm, SeasonForm, LetterTemplateForm, LetterFontForm,

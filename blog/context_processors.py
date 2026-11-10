@@ -20,12 +20,19 @@ def role_flags(request):
         'is_team_leader': is_team_leader(user) if authenticated else False,
         'role_label': role_label(user) if authenticated else None,
         'is_tech_admin': is_tech_admin(user) if authenticated else False,
+        # Расхождения анкеты со старыми базами: при входе просим актуализировать данные.
+        'profile_conflicts_pending': _has_profile_conflicts(user) if authenticated else False,
         'analytics_page_view_id': getattr(request, 'analytics_page_view_id', None),
         # Пример меро для компаньон-тура: тур ведёт «за руку» на карточку конкретного
         # мероприятия, поэтому нужен id реального меро (первое опубликованное). Если меро
         # нет — тур пропускает шаги про карточку. Лёгкий запрос (values_list+first).
         'companion_sample_event_id': _companion_sample_event_id() if authenticated else None,
     }
+
+
+def _has_profile_conflicts(user):
+    from blog.services.profile_conflicts import pending_conflicts
+    return pending_conflicts(user).exists()
 
 
 def _companion_sample_event_id():

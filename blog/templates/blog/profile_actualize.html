@@ -1,0 +1,31 @@
+{% extends 'blog/base.html' %}
+{% block title %}Уточнение данных профиля{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Уточните данные профиля</h1><a class="btn secondary" href="{% url 'profile_edit' %}">Редактировать профиль</a></div>
+{% if conflicts %}
+<div class="card">
+    <p>В архивной базе волонтёров есть данные, которые отличаются от вашего профиля. Выберите актуальный вариант или впишите новый. Поля, которые вы не трогаете, останутся как есть.</p>
+    <form method="post" data-disable-on-submit>
+        {% csrf_token %}
+        <div class="table-scroll"><table class="responsive-table">
+            <thead><tr><th>Поле</th><th>Сейчас в профиле</th><th>В базе</th><th>Своё значение</th></tr></thead>
+            <tbody>
+            {% for item in conflicts %}
+                <tr>
+                    <td data-label="Поле"><strong>{{ item.label }}</strong><br><span class="muted">{{ item.conflict.source }}</span>
+                        {% if item.error %}<div class="field-error" role="alert">{{ item.error }}</div>{% endif %}</td>
+                    <td data-label="Сейчас в профиле"><label><input type="radio" name="choice_{{ item.conflict.pk }}" value="current" {% if item.choice == 'current' %}checked{% endif %}> {{ item.conflict.current_value }}</label></td>
+                    <td data-label="В базе"><label><input type="radio" name="choice_{{ item.conflict.pk }}" value="proposed" {% if item.choice == 'proposed' %}checked{% endif %}> {{ item.conflict.proposed_value }}</label></td>
+                    <td data-label="Своё значение"><label><input type="radio" name="choice_{{ item.conflict.pk }}" value="custom" {% if item.choice == 'custom' %}checked{% endif %}> другое:</label>
+                        <input type="text" name="custom_{{ item.conflict.pk }}" value="{{ item.custom }}" maxlength="255" autocomplete="off"></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table></div>
+        <button type="submit" class="btn">Сохранить выбор</button>
+    </form>
+</div>
+{% else %}
+<div class="card"><p>Все данные профиля актуальны — уточнять нечего.</p><a class="btn" href="{% url 'profile_detail' user.pk %}">Открыть профиль</a></div>
+{% endif %}
+{% endblock %}

@@ -7,9 +7,9 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import TestCase
 from django.urls import reverse
 from openpyxl import Workbook
-from blog.models import EventGroup, EventShift, User, UserComment, Participation
+from blog.models import EventGroup, User, UserComment
 from blog.services.legacy_workbook import read_legacy_workbook, column_day, phone_key
-from blog.services.legacy_import import commit_legacy_base
+from blog.services import legacy_migration as lm
 from . import factories as f
 
 
@@ -97,34 +97,33 @@ class LegacyBaseTests(TestCase):
         self.assertEqual(column_day('ММ 2026\n25.09\nВыдача'), '2026-09-25')
         self.assertEqual(column_day('ММ\n9ОКТЯБРЯ\nВыдача'), '2026-10-09')
 
-    def test_import_creates_all_and_retries_without_duplicates(self):
-        plan = self.plan()
+    def load(self, *value_rows, headers=None):
+        """Новый поток (legacy_migration): база → люди. Мероприятия грузятся отдельно."""
+        content = rows_workbook(headers or HEADERS, value_rows or [VALUES])
+        base = lm.upload_base(self.manager, content, 'base.xlsx', 2026)
+        lm.load_people(self.manager, base)
+        return base
+
+    def test_people_stage_creates_profile_comments_and_retries_without_duplicates(self):
         before = User.objects.count()
-        overrides = {str(plan['columns'][2]['index']): '2026-05-30'}
-        commit_legacy_base(self.manager, plan, date_overrides=overrides)
+        base = self.load(VALUES)
         user = User.objects.get(telegram_username='anna')
         self.assertEqual(user.tshirt_size, 'XL')
         self.assertEqual(user.birthday, date(2000, 6, 1))
         self.assertEqual(user.registration_status, 'registered')
-        self.assertEqual(EventGroup.objects.count(), 2)
-        self.assertEqual(EventShift.objects.count(), 3)
-        self.assertEqual(Participation.objects.filter(user=user, status='attended', hours=0).count(), 3)
-        self.assertTrue(all(s.start_time == s.end_time for s in EventShift.objects.all()))
         self.assertEqual(UserComment.objects.filter(target_user=user).count(), 2)
-        self.assertEqual(user.total_event_count, 3)
-        commit_legacy_base(self.manager, plan, date_overrides=overrides)
-        self.assertEqual(EventShift.objects.count(), 3)
-        self.assertEqual(Participation.objects.filter(user=user).count(), 3)
+        self.assertFalse(EventGroup.objects.exists())
+        self.assertEqual(base.columns.count(), 3)
+        lm.load_people(self.manager, base)
         self.assertEqual(UserComment.objects.filter(target_user=user).count(), 2)
         self.assertEqual(User.objects.count(), before + 1)
 
     def test_existing_profile_is_not_overwritten_and_legacy_id_is_ignored(self):
         user = f.make_user(telegram_username='anna', first_name='Сохранить', motivation='Мои данные')
-        commit_legacy_base(self.manager, self.plan(), date_overrides={'24': '2026-05-30'})
+        self.load(VALUES)
         user.refresh_from_db()
         self.assertEqual((user.first_name, user.motivation), ('Сохранить', 'Мои данные'))
         self.assertFalse(User.objects.filter(telegram_id='123').exists())
-        self.assertEqual(Participation.objects.filter(user=user).count(), 3)
 
     def test_bad_size_boolean_missing_birthdate_and_ignored_columns(self):
         values = VALUES.copy()
@@ -136,7 +135,7 @@ class LegacyBaseTests(TestCase):
         self.assertEqual(profile['tshirt_size'], '')
 
     def test_legacy_comments_visible_to_staff_but_never_owner_or_volunteer(self):
-        commit_legacy_base(self.manager, self.plan(), date_overrides={'24': '2026-05-30'})
+        self.load(VALUES)
         user = User.objects.get(telegram_username='anna')
         for viewer in (self.manager, f.make_team_leader()):
             self.client.force_login(viewer)
@@ -147,22 +146,28 @@ class LegacyBaseTests(TestCase):
 
     def test_unauthorized_and_conflicting_accounts_leave_database_unchanged(self):
         with self.assertRaises(PermissionDenied):
-            commit_legacy_base(f.make_user(), self.plan(), date_overrides={'24': '2026-05-30'})
+            lm.upload_base(f.make_user(), workbook(), 'base.xlsx', 2026)
         f.make_user(telegram_username='anna', phone='+70000000000')
         f.make_user(telegram_username='other', phone='+79991112233')
+        base = lm.upload_base(self.manager, workbook(), 'base.xlsx', 2026)
+        before = User.objects.count()
         with self.assertRaises(ValidationError):
-            commit_legacy_base(self.manager, self.plan(), date_overrides={'24': '2026-05-30'})
-        self.assertFalse(EventGroup.objects.exists())
+            lm.load_people(self.manager, base)
+        self.assertEqual(User.objects.count(), before)
 
-    def test_two_shifts_same_day_remain_separate_and_partial_contacts_merge_rows(self):
-        headers = HEADERS.copy()
-        headers[22], headers[23] = 'БФБ\n23 августа\n1 смена', 'БФБ\n23 августа\n2 смена'
-        plan = self.plan(headers=headers)
-        second = dict(plan['rows'][0])
-        second['profile'] = dict(second['profile'], telegram_username='')
-        second['number'] = 3
-        plan['rows'].append(second)
-        commit_legacy_base(self.manager, plan, date_overrides={'24': '2026-05-30'})
+    def test_partial_contacts_merge_rows_into_one_person(self):
+        second = VALUES.copy()
+        second[9] = ''
+        self.load(VALUES, second)
         self.assertEqual(User.objects.filter(phone='+79991112233').count(), 1)
-        self.assertEqual(EventShift.objects.filter(day=date(2026, 8, 23)).count(), 2)
-        self.assertEqual(Participation.objects.count(), 3)
+
+
+def rows_workbook(headers, rows, sheet='База'):
+    wb = Workbook()
+    wb.active.title = sheet
+    wb.active.append(headers)
+    for row in rows:
+        wb.active.append(row)
+    output = BytesIO()
+    wb.save(output)
+    return output.getvalue()

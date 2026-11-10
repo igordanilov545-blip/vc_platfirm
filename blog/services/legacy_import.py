@@ -1,23 +1,14 @@
-"""Предпросмотр, сопоставление и атомарное добавление истории из старой базы."""
-from collections import Counter, defaultdict
-from datetime import date, datetime, time
+"""Идентичность людей старой базы: отпечатки контактов и сопоставление с аккаунтами.
+
+Прежняя одношаговая загрузка (мероприятия «по первым цифрам ячейки») заменена
+поэтапной миграцией — blog/services/legacy_migration.py (решение 2026-11-11)."""
+from collections import defaultdict
 import hashlib
-import uuid
-from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
-from django.utils import timezone
+
 from data_base import data_controller as dc
-from blog.services.fap_workbook import MSK, normalized_name
-from blog.services.legacy_workbook import phone_number, DEFAULT_LEGACY_DAY
+from blog.services.fap_workbook import normalized_name
+from blog.services.legacy_workbook import phone_number
 from blog.services.social_profiles import social_username
-from blog.services.roles import has_manager_access
-from blog.services.stats import recalc_user_aggregates
-from blog.services.formatting import fmt_date
-
-
-def _manager(operator):
-    if not has_manager_access(operator):
-        raise PermissionDenied('Загружать базу может только менеджер.')
 
 
 def _hash(value):
@@ -46,16 +37,6 @@ def _contact_keys(profile, row_number=None):
     return [_hash(name + ':' + value) for name, value in _recognized_contacts(profile).items() if value] or [identity_key(profile, row_number)]
 
 
-def prepared_plan(plan):
-    """Применить правило пустого ФИО также к уже открытому старому предпросмотру."""
-    rows = [row for row in plan['rows'] if any(
-        str(row['profile'].get(name) or '').strip().casefold() not in ('', 'unnamed')
-        for name in ('first_name', 'last_name'))]
-    usage = Counter(item['column'] for row in rows for item in row['assignments'])
-    return dict(plan, rows=rows, skipped_rows=plan.get('skipped_rows', 0) + len(plan['rows']) - len(rows),
-                columns=[dict(column, used=usage[column['index']]) for column in plan['columns']])
-
-
 def match_rows(plan):
     """Сопоставить все контакты; разные аккаунты по TG/телефону/почте — ошибка."""
     indexes = {name: defaultdict(set) for name in ('telegram_username', 'phone', 'email')}
@@ -80,120 +61,3 @@ def match_rows(plan):
             errors.append(f'Строка {row["number"]}: контакты указывают на разные аккаунты. Исправьте их в файле.')
         matches[row['number']] = users[next(iter(candidates))] if len(candidates) == 1 else None
     return matches, errors
-
-
-def preview_context(operator, plan, date_overrides=None):
-    _manager(operator)
-    plan = prepared_plan(plan)
-    matches, conflicts = match_rows(plan)
-    columns = []
-    errors = list(plan['errors']) + conflicts
-    overrides = date_overrides or {}
-    for original in plan['columns']:
-        column = dict(original)
-        column['field_name'] = f'date_{column["index"]}'
-        chosen = overrides.get(str(column['index']))
-        column['date_placeholder'] = not column['day'] and (not chosen or chosen == DEFAULT_LEGACY_DAY)
-        column['day'] = chosen or column['day'] or DEFAULT_LEGACY_DAY
-        if column['day']:
-            try:
-                column['day'] = date.fromisoformat(column['day']).isoformat()
-            except (ValueError, TypeError):
-                errors.append(f'Колонка «{column["header"]}»: неверная дата.')
-                column['day'] = None
-        column['needs_date'] = bool(column['used'] and not column['day'])
-        column['display_day'] = fmt_date(date.fromisoformat(column['day'])) if column['day'] else '—'
-        columns.append(column)
-    people = [{'row': row, 'existing': matches[row['number']]} for row in plan['rows']]
-    return {'plan': plan, 'columns': columns, 'errors': errors, 'warnings': plan['warnings'],
-            'people': people, 'preview_people': people[:int(dc.get_const('legacy_import_preview_rows', default=50))],
-            'can_commit': not errors and not any(column['needs_date'] for column in columns)}
-
-
-@transaction.atomic
-def commit_legacy_base(operator, plan, *, date_overrides=None):
-    context = preview_context(operator, plan, date_overrides)
-    if not context['can_commit']:
-        raise ValidationError(context['errors'][0] if context['errors'] else 'Укажите точные даты всех заполненных колонок.')
-    # Повторная проверка внутри транзакции, до любых INSERT.
-    list(dc.users_qs().select_for_update().filter(pk__in=[item['existing'].pk for item in context['people'] if item['existing']]).values_list('pk', flat=True))
-    groups = defaultdict(list)
-    for group in dc.event_groups_qs():
-        groups[normalized_name(group.title)].append(group)
-    positions = defaultdict(list)
-    for event in dc.events_qs().select_related('event_group'):
-        positions[(event.event_group_id, normalized_name(event.title))].append(event)
-    source_shifts = {item.key: item.shift for item in dc.legacy_shifts_qs().select_related('shift__event')}
-    columns = {column['index']: column for column in context['columns']}
-    result = {'created_users': 0, 'existing_users': 0, 'groups': 0, 'positions': 0, 'shifts': 0, 'participations': 0,
-              'skipped_rows': context['plan']['skipped_rows'], 'processed_rows': len(context['people'])}
-    known = {}
-    affected = {}
-    # Даже пустые колонки представлены мероприятием; никаких выдуманных смен.
-    for column in columns.values():
-        group_key = normalized_name(column['group'])
-        candidates = groups[group_key]
-        if len(candidates) > 1:
-            raise ValidationError(f'Несколько мероприятий с названием «{column["group"]}». Уточните название в файле.')
-        if not candidates:
-            candidates.append(dc.create_legacy_group(column['group'], operator))
-            result['groups'] += 1
-        column['group_object'] = candidates[0]
-    for item in context['people']:
-        row, user = item['row'], item['existing']
-        profile = row['profile']
-        fingerprint = identity_key(profile, row['number'])
-        contacts = _contact_keys(profile, row['number'])
-        seen = {known[contact].pk: known[contact] for contact in contacts if contact in known}
-        if user:
-            seen[user.pk] = user
-        if len(seen) > 1:
-            raise ValidationError(f'Строка {row["number"]}: конфликт аккаунтов между строками файла.')
-        user = next(iter(seen.values()), None)
-        if user is None:
-            birthday = date.fromisoformat(profile['birthday']) if profile['birthday'] else None
-            user = dc.create_user(telegram_id='legacy:' + uuid.uuid4().hex, telegram_username=profile['telegram_username'],
-                                  first_name=profile['first_name'], last_name=profile['last_name'], phone=profile['phone'],
-                                  email=profile['email'], vk_username=profile['VK_username'], birthday=birthday)
-            fields = {name: value for name, value in profile.items() if name not in
-                      ('first_name', 'last_name', 'phone', 'email', 'telegram_username', 'VK_username', 'birthday')}
-            fields['registration_status'] = 'registered'
-            dc.complete_legacy_user(user, fields, operator)
-            result['created_users'] += 1
-        else:
-            result['existing_users'] += 1
-        for contact in contacts:
-            known[contact] = user
-        dc.create_legacy_identity(fingerprint, user, row['reported_age'], operator)
-        for source, comment in row['comments'].items():
-            if comment:
-                dc.ensure_legacy_comment(user, source, comment, operator)
-        for assignment in row['assignments']:
-            column = columns[assignment['column']]
-            group = column['group_object']
-            position_key = (group.pk, normalized_name(assignment['position']))
-            candidates = positions[position_key]
-            if len(candidates) > 1:
-                raise ValidationError(f'В мероприятии «{group.title}» несколько позиций «{assignment["position"]}».')
-            if not candidates:
-                candidates.append(dc.create_legacy_position(group, assignment['position'], operator))
-                result['positions'] += 1
-            event = candidates[0]
-            source_key = _hash('2026:' + str(event.pk) + ':' + normalized_name(column['header']))
-            shift = source_shifts.get(source_key)
-            if shift is None:
-                day = date.fromisoformat(column['day'])
-                shift = dc.create_legacy_shift(event, day, datetime.combine(day, time.min, MSK), source_key, column['header'], operator)
-                source_shifts[source_key] = shift
-                result['shifts'] += 1
-            elif shift.day != date.fromisoformat(column['day']) and not column['date_placeholder']:
-                raise ValidationError(f'У ранее загруженной смены «{column["header"]}» другая дата. Исправьте её на странице позиции.')
-            app = dc.ensure_legacy_application(user, event, shift, assignment['description'], operator)
-            dc.ensure_legacy_decision(app, shift, operator)
-            _, created = dc.ensure_legacy_participation(user, shift, operator)
-            result['participations'] += int(created)
-            if created:
-                affected[user.pk] = user
-    for user in affected.values():
-        recalc_user_aggregates(user)
-    return result

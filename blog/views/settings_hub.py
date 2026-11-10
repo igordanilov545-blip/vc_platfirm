@@ -20,7 +20,7 @@ SETTINGS_TABS = [
     {'key': 'organizers', 'icon': '🤝', 'title': 'Организаторы', 'desc': 'Контактные лица организаций', 'url': 'organizer_list'},
     {'key': 'organizations', 'icon': '🏢', 'title': 'Организации', 'desc': 'Партнёры и заказчики мероприятий', 'url': 'organizations_list'},
     {'key': 'requirements', 'icon': '✅', 'title': 'Требования', 'desc': 'Условия допуска волонтёров', 'url': 'requirement_list'},
-    {'key': 'categories', 'icon': '🏷️', 'title': 'Категории', 'desc': 'Категории мероприятий', 'url': 'category_list'},
+    {'key': 'categories', 'icon': '🏷️', 'title': 'Функции и позиции', 'desc': 'Пул функций и типовых позиций забегов', 'url': 'category_list'},
     {'key': 'letters', 'icon': '✉️', 'title': 'Шаблоны писем', 'desc': 'Конструктор благодарственных писем', 'url': 'letter_template_list'},
     {'key': 'perks', 'icon': '🎁', 'title': 'Плюшки', 'desc': 'Бонусы волонтёрам за участие', 'url': 'perk_list'},
     {'key': 'constants', 'icon': '🔢', 'title': 'Константы', 'desc': 'Пороги и коэффициенты системы', 'url': 'settings'},
@@ -366,9 +366,10 @@ def requirement_delete(request, requirement_id):
 def category_list(request):
     # Панель хаба настроек (см. location_list): AJAX → partial, прямой заход → редирект.
     from data_base import data_controller as dc
-    categories = dc.event_categories_qs().order_by('name')
+    categories = dc.event_categories_qs().annotate(pool_count=Count('position_templates')).order_by('name')
+    templates = dc.position_templates_qs().select_related('category').order_by('category__name', 'name')
     if is_ajax(request):
-        return render(request, 'blog/partials/_settings_categories.html', {'categories': categories})
+        return render(request, 'blog/partials/_settings_categories.html', {'categories': categories, 'templates': templates})
     return redirect(reverse('settings') + '?tab=categories')
 
 @manager_required
@@ -376,14 +377,14 @@ def category_create(request):
     form = CategoryForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         form.save()
-        messages.success(request, 'Категория создана.')
+        messages.success(request, 'Функция создана.')
         return modal_form_response(
             request, None, None,
             success_redirect=reverse('settings') + '?tab=categories',
         )
     return modal_form_response(
         request, 'blog/category_form.html',
-        {'form': form, 'title': 'Новая категория'},
+        {'form': form, 'title': 'Новая функция'},
     )
 
 @manager_required
@@ -392,7 +393,7 @@ def category_edit(request, category_id):
     form = CategoryForm(request.POST or None, instance=category)
     if request.method == 'POST' and form.is_valid():
         form.save()
-        messages.success(request, 'Категория обновлена.')
+        messages.success(request, 'Функция обновлена.')
         return modal_form_response(
             request, None, None,
             success_redirect=reverse('settings') + '?tab=categories',
@@ -407,7 +408,35 @@ def category_delete(request, category_id):
     category = get_object_or_404(EventCategory, pk=category_id)
     if request.method == 'POST':
         category.delete()
-        messages.success(request, f'Категория «{category.name}» удалена.')
+        messages.success(request, f'Функция «{category.name}» удалена.')
+    return redirect(reverse('settings') + '?tab=categories')
+
+@manager_required
+def position_template_create(request):
+    form = PositionTemplateForm(request.POST or None, initial={'category': request.GET.get('category')})
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Позиция добавлена в пул.')
+        return modal_form_response(request, None, None, success_redirect=reverse('settings') + '?tab=categories')
+    return modal_form_response(request, 'blog/category_form.html', {'form': form, 'title': 'Новая позиция пула'})
+
+@manager_required
+def position_template_edit(request, template_id):
+    template = get_object_or_404(dc.position_templates_qs(), pk=template_id)
+    form = PositionTemplateForm(request.POST or None, instance=template)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, 'Позиция пула обновлена.')
+        return modal_form_response(request, None, None, success_redirect=reverse('settings') + '?tab=categories')
+    return modal_form_response(request, 'blog/category_form.html',
+                               {'form': form, 'title': f'Редактировать: {template.name}', 'submit_label': 'Сохранить'})
+
+@manager_required
+def position_template_delete(request, template_id):
+    template = get_object_or_404(dc.position_templates_qs(), pk=template_id)
+    if request.method == 'POST':
+        dc.delete_position_template(template, request.user)
+        messages.success(request, f'Позиция «{template.name}» удалена из пула.')
     return redirect(reverse('settings') + '?tab=categories')
 
 @manager_required

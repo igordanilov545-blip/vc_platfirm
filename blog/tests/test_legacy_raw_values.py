@@ -3,23 +3,31 @@ from copy import deepcopy
 from django.test import TestCase
 from django.urls import reverse
 from blog.forms import ProfileForm
-from blog.models import User, Participation
-from blog.services.legacy_import import commit_legacy_base
+from blog.models import User
+from blog.services import legacy_migration as lm
 from blog.services.legacy_workbook import read_legacy_workbook
-from blog.services.roster_exports import build_roster_workbook
 from . import factories as f
-from .test_legacy_base import VALUES, workbook
+from .test_legacy_base import HEADERS, VALUES, workbook, rows_workbook
 
 
 class LegacyRawValuesTests(TestCase):
     def setUp(self):
         self.manager = f.make_manager()
 
-    def plan(self):
+    def values(self):
         values = VALUES.copy()
         values[3], values[4] = None, 'Иванова'
         values[9], values[10], values[11] = 'нет телеграма', 'спросить лично', 'javascript:alert(1)'
-        return read_legacy_workbook(workbook(values=values))
+        return values
+
+    def plan(self):
+        return read_legacy_workbook(workbook(values=self.values()))
+
+    def load(self, *rows):
+        """Новый поток: база → люди (legacy_migration)."""
+        base = lm.upload_base(self.manager, rows_workbook(HEADERS, rows), 'base.xlsx', 2026)
+        lm.load_people(self.manager, base)
+        return base
 
     def test_unrecognized_social_text_and_missing_names_are_preserved_without_warnings(self):
         plan = self.plan()
@@ -45,9 +53,8 @@ class LegacyRawValuesTests(TestCase):
         self.assertFalse(plan['errors'])
         self.assertFalse(plan['warnings'])
 
-    def test_import_and_profile_and_excel_keep_raw_text_without_unsafe_links(self):
-        plan = self.plan()
-        commit_legacy_base(self.manager, plan, date_overrides={'24': '2026-05-30'})
+    def test_import_and_profile_keep_raw_text_without_unsafe_links(self):
+        self.load(self.values())
         user = User.objects.get(first_name='unnamed')
         self.assertEqual((user.telegram_username, user.VK_username, user.instagram_url),
                          ('нет телеграма', 'спросить лично', 'javascript:alert(1)'))
@@ -58,32 +65,21 @@ class LegacyRawValuesTests(TestCase):
         self.assertContains(response, 'спросить лично')
         self.assertContains(response, 'javascript:alert(1)')
         self.assertNotContains(response, 'href="javascript:')
-        group = user.participations.first().event_day.event.event_group
-        wb = build_roster_workbook(self.manager, group=group)
-        self.assertEqual(wb['Участники'].cell(2, 8).value, 'спросить лично')
-        self.assertEqual(wb['Участники'].cell(2, 9).value, 'javascript:alert(1)')
 
     def test_unnamed_rows_without_recognizable_contacts_stay_distinct_on_retry(self):
-        plan = self.plan()
-        row = plan['rows'][0]
-        row['profile']['phone'] = ''
-        row['profile']['email'] = ''
-        row['profile']['birthday'] = None
-        other = deepcopy(row)
-        other['number'] = row['number'] + 1
-        plan['rows'].append(other)
-        for _ in range(2):
-            commit_legacy_base(self.manager, plan, date_overrides={'24': '2026-05-30'})
+        row = self.values()
+        row[6], row[7], row[8] = None, '', ''
+        base = self.load(row, row.copy())
+        lm.load_people(self.manager, base)
         self.assertEqual(User.objects.filter(first_name='unnamed').count(), 2)
-        self.assertEqual(Participation.objects.count(), 6)
 
     def test_free_text_is_not_used_to_match_an_existing_account(self):
         existing = f.make_user(telegram_username='нет телеграма', phone='номер у координатора')
-        plan = self.plan()
-        plan['rows'][0]['profile'].update(phone='номер у координатора', email='')
-        commit_legacy_base(self.manager, plan, date_overrides={'24': '2026-05-30'})
-        self.assertFalse(Participation.objects.filter(user=existing).exists())
+        row = self.values()
+        row[7], row[8] = '', 'номер у координатора'
+        self.load(row)
         self.assertEqual(User.objects.filter(first_name='unnamed').count(), 1)
+        self.assertFalse(existing.legacy_base_rows.exists())
 
     def test_profile_form_does_not_erase_imported_free_text(self):
         user = f.make_user(VK_username='пока не знаю', instagram_url='не пользуюсь')
@@ -96,12 +92,8 @@ class LegacyRawValuesTests(TestCase):
 
     def test_punctuation_and_zero_placeholders_do_not_identify_a_person(self):
         existing = f.make_user(telegram_username='---', phone='0')
-        plan = self.plan()
-        row = plan['rows'][0]
-        row['profile'].update(telegram_username='---', phone='0', email='', birthday=None)
-        other = deepcopy(row)
-        other['number'] += 1
-        plan['rows'].append(other)
-        commit_legacy_base(self.manager, plan, date_overrides={'24': '2026-05-30'})
-        self.assertFalse(Participation.objects.filter(user=existing).exists())
+        row = self.values()
+        row[9], row[8], row[7], row[6] = '---', '0', '', None
+        self.load(row, row.copy())
+        self.assertFalse(existing.legacy_base_rows.exists())
         self.assertEqual(User.objects.filter(first_name='unnamed').count(), 2)

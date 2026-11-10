@@ -92,6 +92,12 @@
             {% endfor %}
         </ul>
         {% endif %}
+        {% if profile_conflicts_pending and request.resolver_match.url_name != 'profile_actualize' %}
+        <div class="card profile-actualize-notice" role="status">
+            <span>В архивной базе волонтёров есть данные, которые отличаются от вашего профиля. Подтвердите, какие из них актуальны.</span>
+            <a href="{% url 'profile_actualize' %}" class="btn">Уточнить данные</a>
+        </div>
+        {% endif %}
         {% block content %}{% endblock %}
     </main>
 </div>

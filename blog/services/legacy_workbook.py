@@ -2,6 +2,7 @@
 from datetime import date
 from io import BytesIO
 import re
+import unicodedata
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from openpyxl import load_workbook
@@ -50,17 +51,19 @@ def yes_no(value):
     return 'да' in words if len(words) == 1 else None
 
 
-def column_day(header):
+def column_day(header, year=2026):
+    """Дата колонки: «24.09», «24.09.2026» или «24 сентября». Нет явной даты —
+    None: дату задаёт человек (без выдуманных значений)."""
     raw = text(header)
     match = re.search(r'(?<!\d)(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[./-]\d{1,2}(?:[./-](?:\d{4}|\d{2}))?)(?!\d)', raw)
-    numeric = _date(match[0], reference='2026-01-01') if match else None
+    numeric = _date(match[0], reference=f'{year}-01-01') if match else None
     if numeric:
         return numeric
     match = re.search(r'(?<!\d)(\d{1,2})\s*([а-яё]+)(?:\s*(\d{4}))?', raw.casefold())
     if match:
         month = next((index for index, stem in enumerate(MONTHS, 1) if match[2].startswith(stem)), 0)
         try:
-            return date(int(match[3] or 2026), month, int(match[1])).isoformat()
+            return date(int(match[3] or year), month, int(match[1])).isoformat()
         except ValueError:
             pass
     return None
@@ -75,13 +78,34 @@ def column_group(header):
     return first.strip(' ,;—-\n') or text(header).splitlines()[0].strip()
 
 
+DASHES = re.compile(r'[‐‑‒–—―−]')
+CODE_RE = re.compile(r'^\s*(\d+(?:[.,]\d+)?)\s*(?:[-:.)]\s*)?(?=\D|$)')
+
+
+def value_key(value):
+    """Ключ уникального значения ячейки: регистр, ё/е, тире и пробелы не важны."""
+    raw = DASHES.sub('-', unicodedata.normalize('NFKC', text(value))).casefold().replace('ё', 'е')
+    raw = re.sub(r'\s*-\s*', ' - ', re.sub(r'\s+', ' ', raw)).strip()
+    return raw[:255]
+
+
+def split_code(value):
+    """«7.2 - Ассистент…» → ('7.2', 'Ассистент…'); без кода — ('', текст)."""
+    raw = DASHES.sub('-', text(value)).strip()
+    match = CODE_RE.match(raw)
+    if not match:
+        return '', raw
+    rest = raw[match.end():].strip(' -:.')
+    return match[1].replace(',', '.'), rest
+
+
 def position_name(value):
     raw = text(value)
     match = re.match(r'^\s*(\d+(?:[.,]\d+)*)(?=\s|[-–—:.)]|$)', raw)
     return match[1].replace(',', '.') if match else raw[:255]
 
 
-def read_legacy_workbook(content, *, max_rows=10000):
+def read_legacy_workbook(content, *, max_rows=10000, year=2026):
     try:
         wb = load_workbook(BytesIO(content), read_only=True, data_only=True, keep_links=False)
     except Exception as error:
@@ -122,7 +146,7 @@ def read_legacy_workbook(content, *, max_rows=10000):
                 mapping[field] = index
             elif normalized and normalized not in IGNORED:
                 columns.append({'index': index, 'header': text(value), 'group': column_group(value),
-                                'day': column_day(value), 'used': 0})
+                                'day': column_day(value, year), 'used': 0})
         rows, errors, warnings = [], [], []
         skipped_rows = 0
         for number, values in enumerate(iterator, row_number + 1):

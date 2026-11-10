@@ -336,14 +336,35 @@ class Location(models.Model):
 
 
 class EventCategory(models.Model):
-    """Справочник категорий мероприятий."""
+    """Функция из общего пула («Дистанция», «Выдача стартовых пакетов»…).
+
+    Таблица и связь с позициями прежние (event_categories / event_category_map);
+    после решения 2026-11-11 «категории» — это переиспользуемые функции забегов,
+    к которым в пуле привязаны типовые позиции (PositionTemplate)."""
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100, unique=True)
 
     class Meta:
         db_table = 'event_categories'
-        verbose_name = 'Категория мероприятия'
-        verbose_name_plural = 'Категории мероприятий'
+        verbose_name = 'Функция'
+        verbose_name_plural = 'Функции'
+
+    def __str__(self):
+        return self.name
+
+
+class PositionTemplate(models.Model):
+    """Типовая позиция пула внутри функции — подсказка названия при создании позиции."""
+    name = models.CharField(max_length=255)
+    category = models.ForeignKey(EventCategory, on_delete=models.CASCADE, related_name='position_templates')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'position_templates'
+        ordering = ['name', 'pk']
+        constraints = [models.UniqueConstraint(fields=['category', 'name'], name='unique_position_template')]
+        verbose_name = 'Позиция пула'
+        verbose_name_plural = 'Позиции пула'
 
     def __str__(self):
         return self.name
@@ -1237,7 +1258,8 @@ class UserComment(models.Model):
     @property
     def source_label(self):
         return {'legacy_coordinator': 'Комментарий координатора (старая база)',
-                'legacy_team_lead': 'Комментарий тим-лидера (старая база)'}.get(self.source, '')
+                'legacy_team_lead': 'Комментарий тим-лидера (старая база)',
+                'legacy_changes': 'Изменения данных по старым базам'}.get(self.source, '')
 
     class Meta:
         db_table = 'user_comments'
@@ -1264,6 +1286,121 @@ class LegacyImportShift(models.Model):
 
     class Meta:
         db_table = 'legacy_import_shifts'
+
+
+class LegacyBase(models.Model):
+    """Файл старой базы (одна база = один год). Хранится целиком: MEDIA-тома нет."""
+    year = models.PositiveSmallIntegerField()
+    file_name = models.CharField(max_length=255)
+    content = models.BinaryField()
+    content_hash = models.CharField(max_length=64, unique=True)
+    parsed = models.JSONField(default=dict)
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    people_loaded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'legacy_bases'
+        ordering = ['-year', '-pk']
+
+
+class LegacyBaseColumn(models.Model):
+    """Колонка «мероприятие + день» базы; дату и мероприятие задаёт человек."""
+    base = models.ForeignKey(LegacyBase, on_delete=models.CASCADE, related_name='columns')
+    index = models.PositiveIntegerField()
+    header = models.TextField()
+    title_hint = models.CharField(max_length=255, blank=True)
+    day = models.DateField(null=True, blank=True)
+    event_group = models.ForeignKey(EventGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name='legacy_columns')
+    skipped = models.BooleanField(default=False)
+    loaded_at = models.DateTimeField(null=True, blank=True)
+    value_counts = models.JSONField(default=dict)
+
+    class Meta:
+        db_table = 'legacy_base_columns'
+        ordering = ['base', 'index']
+        constraints = [models.UniqueConstraint(fields=['base', 'index'], name='unique_legacy_base_column')]
+
+
+class LegacyBasePerson(models.Model):
+    """Строка базы → аккаунт; из этого видно, в каких годах человек встречался."""
+    base = models.ForeignKey(LegacyBase, on_delete=models.CASCADE, related_name='people')
+    row_number = models.PositiveIntegerField()
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='legacy_base_rows')
+
+    class Meta:
+        db_table = 'legacy_base_people'
+        constraints = [models.UniqueConstraint(fields=['base', 'row_number'], name='unique_legacy_base_person')]
+
+
+class FapDocument(models.Model):
+    """Каждая загруженная версия ФиП мероприятия; применённая — с applied_at."""
+    event_group = models.ForeignKey(EventGroup, on_delete=models.CASCADE, related_name='fap_documents')
+    version = models.PositiveIntegerField()
+    file_name = models.CharField(max_length=255)
+    content = models.BinaryField()
+    content_hash = models.CharField(max_length=64)
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+    warnings = models.JSONField(default=list)
+
+    class Meta:
+        db_table = 'fap_documents'
+        ordering = ['event_group', '-version']
+        constraints = [models.UniqueConstraint(fields=['event_group', 'version'], name='unique_fap_document_version')]
+
+
+class LegacyValueMapping(models.Model):
+    """Уникальное значение ячеек мероприятия → позиция и роль, либо «пропустить»."""
+    ROLE_CHOICES = [('volunteer', 'Волонтёр'), ('team_lead', 'Тим-лидер')]
+    event_group = models.ForeignKey(EventGroup, on_delete=models.CASCADE, related_name='legacy_value_mappings')
+    value_key = models.CharField(max_length=255)
+    raw_value = models.CharField(max_length=500)
+    position = models.ForeignKey(Event, on_delete=models.SET_NULL, null=True, blank=True, related_name='legacy_value_mappings')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='volunteer')
+    skip = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'legacy_value_mappings'
+        constraints = [models.UniqueConstraint(fields=['event_group', 'value_key'], name='unique_legacy_value_mapping')]
+
+
+class LegacyLoadedCell(models.Model):
+    """Происхождение записей из ячейки базы: повтор без дублей, перенос и откат."""
+    column = models.ForeignKey(LegacyBaseColumn, on_delete=models.CASCADE, related_name='loaded_cells')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='legacy_loaded_cells')
+    value_key = models.CharField(max_length=255)
+    position = models.ForeignKey(Event, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    shift = models.ForeignKey(EventShift, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    application = models.ForeignKey(Application, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    participation = models.ForeignKey(Participation, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    staff = models.ForeignKey(EventStaff, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'legacy_loaded_cells'
+        constraints = [models.UniqueConstraint(fields=['column', 'user'], name='unique_legacy_loaded_cell')]
+
+
+class ProfileConflict(models.Model):
+    """Расхождение анкеты, заполненной человеком, с загруженной базой.
+
+    Профиль не перезаписывается молча: при входе пользователь выбирает актуальное
+    значение (своё, из базы или вводит новое)."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='profile_conflicts')
+    field = models.CharField(max_length=50)
+    current_value = models.TextField(blank=True)
+    proposed_value = models.TextField()
+    source = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    chosen_value = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'profile_conflicts'
+        ordering = ['pk']
 
 
 class Incident(models.Model):

@@ -52,11 +52,19 @@ class QuickCategoryForm(forms.ModelForm):
         labels = {'name': 'Название категории'}
 
 class CategoryForm(forms.ModelForm):
-    """Создание/редактирование категории мероприятия на странице настроек."""
+    """Создание/редактирование функции пула (EventCategory) на странице настроек."""
     class Meta:
         model = EventCategory
         fields = ['name']
-        labels = {'name': 'Название категории'}
+        labels = {'name': 'Название функции'}
+
+
+class PositionTemplateForm(forms.ModelForm):
+    """Типовая позиция пула внутри функции — подсказка при создании позиции."""
+    class Meta:
+        model = PositionTemplate
+        fields = ['category', 'name']
+        labels = {'category': 'Функция', 'name': 'Название позиции'}
 
 class QuickPerkForm(forms.ModelForm):
     """Мини-форма быстрого создания плюшки мероприятия прямо из формы мероприятия."""

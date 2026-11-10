@@ -1,38 +1,34 @@
-"""Загрузка старой базы и уточнение дат колонок в существующих виджетах."""
+"""Миграция старых баз: загрузка файла базы (с годом) и версии ФиП."""
 from django import forms
+from django.utils import timezone
+
 from data_base import data_controller as dc
-from blog.services.legacy_workbook import DEFAULT_LEGACY_DAY
+
+
+def _xlsx(upload, limit_const, default_mb):
+    maximum = dc.get_const(limit_const, default=default_mb)
+    if not upload.name.casefold().endswith('.xlsx') or upload.size > maximum * 1024 * 1024:
+        raise forms.ValidationError(f'Нужен файл .xlsx размером до {maximum:g} МБ.')
+    return upload
 
 
 class LegacyBaseUploadForm(forms.Form):
+    action = forms.CharField(widget=forms.HiddenInput, initial='upload_base')
     workbook = forms.FileField(label='Таблица базы (.xlsx)', widget=forms.ClearableFileInput(attrs={'accept': '.xlsx'}))
+    year = forms.IntegerField(label='Год базы', min_value=2000, max_value=2100,
+                              help_text='Одна база — один год. Год подставляется в даты колонок без года.')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['year'].initial = timezone.localdate().year
 
     def clean_workbook(self):
-        upload = self.cleaned_data['workbook']
-        maximum = dc.get_const('legacy_import_max_mb', default=10)
-        if not upload.name.casefold().endswith('.xlsx') or upload.size > maximum * 1024 * 1024:
-            raise forms.ValidationError(f'Нужен файл .xlsx размером до {maximum:g} МБ.')
-        return upload
+        return _xlsx(self.cleaned_data['workbook'], 'legacy_import_max_mb', 10)
 
 
-class LegacyDatesForm(forms.Form):
-    def __init__(self, plan, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        for column in plan['columns']:
-            self.fields[f'date_{column["index"]}'] = forms.DateField(
-                label=column['header'], required=False, initial=column['day'] or DEFAULT_LEGACY_DAY,
-                input_formats=['%Y-%m-%d', '%d.%m.%Y'],
-                widget=forms.DateInput(format='%Y-%m-%d', attrs={'data-datepicker': '', 'data-dp-keep-empty': '', 'autocomplete': 'off'}),
-            )
+class FapUploadForm(forms.Form):
+    action = forms.CharField(widget=forms.HiddenInput, initial='attach_fap')
+    workbook = forms.FileField(label='Файл ФиП (.xlsx)', widget=forms.ClearableFileInput(attrs={'accept': '.xlsx'}))
 
-    def date_overrides(self):
-        return {name.removeprefix('date_'): value.isoformat() for name, value in self.cleaned_data.items() if value}
-
-    @property
-    def error_summary(self):
-        summary = [{'message': message, 'anchor': 'legacy-import-status'} for message in self.non_field_errors()]
-        for name, messages in self.errors.items():
-            if name in self.fields:
-                summary.extend({'message': f'{self.fields[name].label}: {message}',
-                                'anchor': 'legacy-date-' + name.removeprefix('date_')} for message in messages)
-        return summary
+    def clean_workbook(self):
+        return _xlsx(self.cleaned_data['workbook'], 'legacy_import_max_mb', 10)

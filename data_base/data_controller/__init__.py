@@ -30,6 +30,16 @@ from .legacy_import import (  # noqa: F401
     create_legacy_position, create_legacy_shift, ensure_legacy_application, ensure_legacy_comment, ensure_legacy_participation,
     complete_legacy_user, ensure_legacy_decision,
 )
+from .legacy_migration import (  # noqa: F401
+    position_templates_qs, ensure_position_template, delete_position_template, legacy_bases_qs,
+    legacy_base_columns_qs, legacy_base_people_qs, create_legacy_base, create_legacy_base_column,
+    save_legacy_column, mark_base_people_loaded, record_legacy_base_person, fap_documents_qs,
+    create_fap_document, mark_fap_applied, legacy_value_mappings_qs, save_value_mapping,
+    legacy_loaded_cells_qs, record_loaded_cell, delete_loaded_cell, set_participation_hours,
+    delete_legacy_participation, unlink_legacy_application_shift, ensure_event_team_lead, delete_event_staff,
+    create_unknown_time_shift, profile_conflicts_qs, create_profile_conflict, resolve_profile_conflict,
+    update_user_profile_fields,
+)
 from .event_sheets import (  # noqa: F401
     event_directions_qs, sheet_positions_qs, sheet_days_qs, sheet_shifts_qs,
     sheet_leaders_qs, zone_responsibles_qs, event_sheet_links_qs, google_sheets_connection,
@@ -151,6 +161,7 @@ __all__ = [
     'legacy_identities_qs', 'legacy_shifts_qs', 'create_legacy_identity', 'create_legacy_group',
     'create_legacy_position', 'create_legacy_shift', 'ensure_legacy_application', 'ensure_legacy_comment', 'ensure_legacy_participation',
     'complete_legacy_user', 'ensure_legacy_decision',
+    'position_templates_qs', 'ensure_position_template', 'delete_position_template', 'legacy_bases_qs', 'legacy_base_columns_qs', 'legacy_base_people_qs', 'create_legacy_base', 'create_legacy_base_column', 'save_legacy_column', 'mark_base_people_loaded', 'record_legacy_base_person', 'fap_documents_qs', 'create_fap_document', 'mark_fap_applied', 'legacy_value_mappings_qs', 'save_value_mapping', 'legacy_loaded_cells_qs', 'record_loaded_cell', 'delete_loaded_cell', 'set_participation_hours', 'delete_legacy_participation', 'unlink_legacy_application_shift', 'ensure_event_team_lead', 'delete_event_staff', 'create_unknown_time_shift', 'profile_conflicts_qs', 'create_profile_conflict', 'resolve_profile_conflict', 'update_user_profile_fields',
     'role_invitation_uses_qs',
     'user_qr', 'user_from_qr', 'scanner_grants_qs', 'create_scanner_grant', 'revoke_scanner_grant',
     'shift_attendance_qs', 'create_shift_entry', 'save_shift_exit', 'save_qr_participation',

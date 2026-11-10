@@ -3,7 +3,10 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    path('settings/legacy-base/', views.legacy_base_upload, name='legacy_base_upload'),
+    path('settings/migration/', views.legacy_migration, name='legacy_migration'),
+    path('settings/migration/bases/<int:base_id>/', views.legacy_migration_base, name='legacy_migration_base'),
+    path('settings/migration/events/<int:group_id>/', views.legacy_migration_group, name='legacy_migration_group'),
+    path('profile/actualize/', views.profile_actualize, name='profile_actualize'),
     path('management/invitations/', views.role_invitation_list, name='role_invitation_list'),
     path('management/invitations/new/', views.role_invitation_create, name='role_invitation_create'),
     path('management/invitations/<int:invitation_id>/', views.role_invitation_detail, name='role_invitation_detail'),
@@ -155,6 +158,9 @@ urlpatterns = [
     path('categories/new/', views.category_create, name='category_create'),
     path('categories/<int:category_id>/edit/', views.category_edit, name='category_edit'),
     path('categories/<int:category_id>/delete/', views.category_delete, name='category_delete'),
+    path('categories/positions/new/', views.position_template_create, name='position_template_create'),
+    path('categories/positions/<int:template_id>/edit/', views.position_template_edit, name='position_template_edit'),
+    path('categories/positions/<int:template_id>/delete/', views.position_template_delete, name='position_template_delete'),
 
     path('perks/', views.perk_list, name='perk_list'),
     path('perks/new/', views.perk_create, name='perk_create'),

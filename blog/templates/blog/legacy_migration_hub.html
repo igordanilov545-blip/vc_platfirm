@@ -1,0 +1,59 @@
+{% extends 'blog/base.html' %}
+{% block title %}Миграция старой базы{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Миграция старой базы</h1><a class="btn secondary" href="{% url 'settings' %}">Настройки</a></div>
+
+<div class="card">
+    <h2>Как идёт миграция</h2>
+    <ol class="migration-steps">
+        <li><strong>База → люди.</strong> Загрузите файл базы (одна база — один год) и создайте анкеты. Один человек из разных баз — один аккаунт.</li>
+        <li><strong>Колонки → мероприятие.</strong> Отметьте колонки одного мероприятия, назовите его.</li>
+        <li><strong>ФиП.</strong> Прикрепите файл «Функции и позиции» — позиции и смены создадутся по наборам тим-лидеров. Без ФиП позиции создаются из значений.</li>
+        <li><strong>Сопоставление.</strong> Для каждого уникального значения ячеек выберите позицию и роль.</li>
+        <li><strong>Загрузка колонок.</strong> По одной или все готовые; повтор не создаёт дублей, изменённое сопоставление переносит участия.</li>
+    </ol>
+</div>
+
+<div class="card">
+    <h2>Загрузить базу</h2>
+    {% include 'blog/partials/_modal_form.html' with form=form form_enctype='multipart/form-data' submit_label='Сохранить базу' %}
+</div>
+
+<div class="card table-scroll">
+    <h2>Базы</h2>
+    <table class="responsive-table">
+        <thead><tr><th>База</th><th>Люди</th><th>Колонки</th><th>Не загружено</th></tr></thead>
+        <tbody>
+        {% for item in bases %}
+            <tr>
+                <td data-label="База"><a href="{% url 'legacy_migration_base' item.base.pk %}">База {{ item.base.year }}</a><br><span class="muted">{{ item.base.file_name }} · {{ item.base.uploaded_at|date:"d.m.Y H:i" }}</span></td>
+                <td data-label="Люди">{% if item.base.people_loaded_at %}<span class="pill success"><span class="dot"></span>загружены</span>{% else %}<span class="pill warning"><span class="dot"></span>не загружены</span>{% endif %}</td>
+                <td data-label="Колонки">{{ item.loaded }} из {{ item.total }} загружены</td>
+                <td data-label="Не загружено">{% for pending in item.pending %}<div>«{{ pending.column.header|linebreaksbr }}» — {{ pending.state.label }}</div>{% empty %}—{% endfor %}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="4">Баз пока нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card table-scroll">
+    <h2>Мероприятия из баз</h2>
+    <table class="responsive-table">
+        <thead><tr><th>Мероприятие</th><th>ФиП</th><th>Колонки</th><th>Не загружено</th></tr></thead>
+        <tbody>
+        {% for item in groups %}
+            <tr>
+                <td data-label="Мероприятие"><a href="{% url 'legacy_migration_group' item.group.pk %}">{{ item.group.title }}</a></td>
+                <td data-label="ФиП">{% for document in item.documents %}v{{ document.version }} ({{ document.uploaded_at|date:"d.m.Y" }}){% if not forloop.last %}, {% endif %}{% empty %}без ФиП{% endfor %}</td>
+                <td data-label="Колонки">{{ item.loaded }} из {{ item.total }} загружены</td>
+                <td data-label="Не загружено">{% for pending in item.pending %}<div>«{{ pending.column.header|linebreaksbr }}» — {{ pending.state.label }}</div>{% empty %}всё загружено{% endfor %}</td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="4">Мероприятий из баз пока нет — создайте их на странице базы.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

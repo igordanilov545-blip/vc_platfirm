@@ -13,7 +13,7 @@ from data_base import data_controller as dc
 from blog.models import (
     Event, EventComment, EventShift, Participation, Application, UserComment, EventFeedback,
     Const, Season, Organization, Organizer, User, Location,
-    EventCategory, EventPerk, ExternalExperience, EventRequirement, UserRequirementException,
+    EventCategory, PositionTemplate, EventPerk, ExternalExperience, EventRequirement, UserRequirementException,
     ThankYouLetterTemplate, LetterFont,
 )
 
@@ -24,6 +24,6 @@ __all__ = [
     'datetime', 'time', 'forms', 'timezone', 'dc',
     'Event', 'EventComment', 'EventShift', 'Participation', 'Application', 'UserComment',
     'EventFeedback', 'Const', 'Season', 'Organization', 'Organizer', 'User',
-    'Location', 'EventCategory', 'EventPerk', 'ExternalExperience', 'EventRequirement', 'UserRequirementException',
+    'Location', 'EventCategory', 'PositionTemplate', 'EventPerk', 'ExternalExperience', 'EventRequirement', 'UserRequirementException',
     'ThankYouLetterTemplate', 'LetterFont',
 ]

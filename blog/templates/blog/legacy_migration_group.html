@@ -1,0 +1,102 @@
+{% extends 'blog/base.html' %}
+{% load custom_tags %}
+{% block title %}Миграция: {{ group.title }}{% endblock %}
+{% block content %}
+<div class="page-header"><h1>{{ group.title }}</h1>
+    <div class="event-toolbar"><a class="btn secondary" href="{% url 'event_group_detail' group.pk %}">Открыть мероприятие</a><a class="btn secondary" href="{% url 'legacy_migration' %}">Миграция</a></div>
+</div>
+
+<div class="card table-scroll">
+    <h2>Колонки базы</h2>
+    {% if pending %}<p>Не загружено: {% for item in pending %}«{{ item.column.header|linebreaksbr }}» — {{ item.state.label }}{% if not forloop.last %}; {% endif %}{% endfor %}</p>{% endif %}
+    <table class="responsive-table">
+        <thead><tr><th>Колонка</th><th>База</th><th>Дата</th><th>Людей</th><th>Состояние</th><th></th></tr></thead>
+        <tbody>
+        {% for item in columns %}
+            <tr>
+                <td data-label="Колонка">{{ item.column.header|linebreaksbr }}</td>
+                <td data-label="База">{{ item.column.base.year }}</td>
+                <td data-label="Дата">
+                    <form method="post" class="inline">{% csrf_token %}<input type="hidden" name="action" value="set_day"><input type="hidden" name="column" value="{{ item.column.pk }}">
+                        <input type="text" name="day" value="{{ item.column.day|date:'Y-m-d' }}" data-datepicker data-dp-keep-empty autocomplete="off" placeholder="дата не указана" aria-label="Дата колонки">
+                        <button type="submit" class="btn secondary btn-sm">Сохранить</button></form>
+                </td>
+                <td data-label="Людей">{{ item.people }}</td>
+                <td data-label="Состояние"><span class="pill {{ item.state.tone }}"><span class="dot"></span>{{ item.state.label }}</span></td>
+                <td data-label="">
+                    {% if item.state.code in 'ready changed loaded' %}
+                    <form method="post" class="inline" data-disable-on-submit data-submitting-text="Загрузка…">{% csrf_token %}<input type="hidden" name="action" value="load"><input type="hidden" name="columns" value="{{ item.column.pk }}">
+                        <button type="submit" class="btn btn-sm">{% if item.state.code == 'ready' %}Загрузить{% else %}Перезагрузить{% endif %}</button></form>
+                    {% endif %}
+                    {% if item.column.loaded_at %}
+                    <form method="post" class="inline" data-confirm="Откатить загрузку колонки? Участия, изменённые сотрудниками, останутся.">{% csrf_token %}<input type="hidden" name="action" value="unload"><input type="hidden" name="column" value="{{ item.column.pk }}">
+                        <button type="submit" class="btn secondary btn-sm">Откатить</button></form>
+                    {% else %}
+                    <form method="post" class="inline">{% csrf_token %}<input type="hidden" name="action" value="skip"><input type="hidden" name="column" value="{{ item.column.pk }}"><input type="hidden" name="value" value="{% if item.column.skipped %}0{% else %}1{% endif %}">
+                        <button type="submit" class="btn secondary btn-sm">{% if item.column.skipped %}Вернуть{% else %}Пропустить{% endif %}</button></form>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% if ready_ids %}
+    <form method="post" data-disable-on-submit data-submitting-text="Загрузка колонок…">{% csrf_token %}<input type="hidden" name="action" value="load">
+        {% for pk in ready_ids %}<input type="hidden" name="columns" value="{{ pk }}">{% endfor %}
+        <button type="submit" class="btn">Загрузить все готовые ({{ ready_ids|length }})</button>
+        <p data-submit-status hidden role="status">Идёт загрузка. Не закрывайте страницу.</p>
+    </form>
+    {% endif %}
+</div>
+
+<div class="card">
+    <h2>ФиП</h2>
+    {% if documents %}
+        <ul>{% for document in documents %}<li>v{{ document.version }} · {{ document.file_name }} · {{ document.uploaded_at|date:"d.m.Y H:i" }}{% if document.applied_at %} · применён{% endif %}{% if document.warnings %} · предупреждений: {{ document.warnings|length }}{% endif %}</li>{% endfor %}</ul>
+    {% else %}
+        <p>ФиП не прикреплён. Можно загружать и без него: позиции создаются из значений базы, время смен — «не указано», часы 0.</p>
+    {% endif %}
+    {% include 'blog/partials/_modal_form.html' with form=fap_form form_enctype='multipart/form-data' submit_label='Загрузить версию ФиП' %}
+</div>
+
+<div class="card table-scroll" id="migration-mapping">
+    <h2>Сопоставление значений{% if unmapped %} · не сохранено: {{ unmapped }}{% endif %}</h2>
+    <p>Одно значение — одна строка на все колонки мероприятия. ✨ — подсказка по коду и тексту ФиП: проверьте и сохраните. Смена выбирается по дате колонки. «Тим-лидер» получает назначение на позицию и роль тим-лидера.</p>
+    {% if rows %}
+    <form method="post" action="{% url 'legacy_migration_group' group.pk %}#migration-mapping">
+        {% csrf_token %}<input type="hidden" name="action" value="save_mappings">
+        <table class="responsive-table">
+            <thead><tr><th>Значение в базе</th><th>Людей</th><th>Позиция</th><th>Роль</th><th>Новая позиция</th></tr></thead>
+            <tbody>
+            {% for row in rows %}
+                <tr>
+                    <td data-label="Значение в базе">{{ row.raw }}<input type="hidden" name="key_{{ forloop.counter0 }}" value="{{ row.key }}"><input type="hidden" name="raw_{{ forloop.counter0 }}" value="{{ row.raw }}">
+                        <br>{% if row.mapping %}<span class="pill success"><span class="dot"></span>сохранено</span>{% elif row.suggestion.position %}<span class="pill info"><span class="dot"></span>✨ подсказка</span>{% else %}<span class="pill warning"><span class="dot"></span>не выбрано</span>{% endif %}</td>
+                    <td data-label="Людей">{% for column, count in row.counts %}<div>{{ column.day|date:"d.m"|default:"без даты" }}: {{ count }}</div>{% endfor %}</td>
+                    <td data-label="Позиция">
+                        <select name="target_{{ forloop.counter0 }}" aria-label="Позиция">
+                            <option value="" {% if not row.selected %}selected{% endif %}>— не выбрано —</option>
+                            <option value="skip" {% if row.selected == 'skip' %}selected{% endif %}>Пропустить значение</option>
+                            <option value="new">＋ Новая позиция</option>
+                            {% for position in positions %}<option value="{{ position.pk }}" {% if row.selected == position.pk|stringformat:'s' %}selected{% endif %}>{{ position.title }}</option>{% endfor %}
+                        </select>
+                    </td>
+                    <td data-label="Роль">
+                        <select name="role_{{ forloop.counter0 }}" aria-label="Роль">
+                            <option value="volunteer" {% if row.selected_role == 'volunteer' %}selected{% endif %}>Волонтёр</option>
+                            <option value="team_lead" {% if row.selected_role == 'team_lead' %}selected{% endif %}>Тим-лидер</option>
+                        </select>
+                    </td>
+                    <td data-label="Новая позиция"><input type="text" name="title_{{ forloop.counter0 }}" value="{{ row.new_title }}" maxlength="255" list="position-pool" aria-label="Название новой позиции"></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% position_pool_datalist %}
+        <button type="submit" class="btn">Сохранить сопоставление</button>
+    </form>
+    {% else %}
+        <p>У колонок мероприятия нет заполненных значений.</p>
+    {% endif %}
+</div>
+{% endblock %}

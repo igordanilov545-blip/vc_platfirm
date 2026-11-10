@@ -89,7 +89,7 @@ class EventForm(forms.ModelForm):
     categories = forms.ModelMultipleChoiceField(
         queryset=dc.event_categories_qs().order_by('name'),
         required=False,
-        label='Категории',
+        label='Функции',
         widget=forms.SelectMultiple,
     )
     perks = forms.ModelMultipleChoiceField(
@@ -143,7 +143,8 @@ class EventForm(forms.ModelForm):
             'letter': 'Шаблон благодарственного письма',
         }
         widgets = {
-            'title': forms.TextInput(attrs={'maxlength': 255, 'placeholder': 'Название позиции'}),
+            # list → <datalist id="position-pool">: подсказки типовых позиций из пула функций.
+            'title': forms.TextInput(attrs={'maxlength': 255, 'placeholder': 'Название позиции — начните вводить, будут подсказки из пула', 'list': 'position-pool', 'autocomplete': 'off'}),
             'description': forms.Textarea(attrs={'rows': 3, 'maxlength': 250, 'placeholder': 'Кратко опишите позицию (до 250 символов)'}),
             'internal_comment': forms.Textarea(attrs={'rows': 3}),
             'chat_link': forms.URLInput(attrs={'placeholder': 'https://t.me/…'}),

@@ -31,6 +31,7 @@ from blog.services.stats import recalc_user_aggregates
 
 
 SUGGEST_THRESHOLD = 0.45
+CODELESS_THRESHOLD = 0.85
 
 
 def _manager(operator):
@@ -219,16 +220,20 @@ def suggest(raw, hints):
     for hint in hints:
         score = max((SequenceMatcher(None, target, text).ratio() for text in hint['texts']), default=0.0)
         if code and hint['code']:
+            # Точный код ФиП надёжнее текста: в базе встречаются подписи вроде
+            # «10.10 … пункт питания (ПО6)», где по коду это пункт освежения ПО6.
             if hint['code'] == code:
-                score += 0.3
+                score += 0.5
             elif hint['code'].split('.')[0] == major:
-                score += 0.1
+                score += 0.05
             else:
                 score -= 0.25
         if score > best_score:
             best, best_score = hint['event'], score
     role = 'team_lead' if is_team_lead_text(raw) else 'volunteer'
-    return {'position': best if best_score >= SUGGEST_THRESHOLD else None, 'score': round(best_score, 2), 'role': role}
+    # Без кода нечему сузить выбор — подсказываем только почти дословное совпадение.
+    threshold = SUGGEST_THRESHOLD if code else CODELESS_THRESHOLD
+    return {'position': best if best_score >= threshold else None, 'score': round(best_score, 2), 'role': role}
 
 
 def new_position_title(raw):
@@ -383,9 +388,36 @@ def group_page(group):
     for item in overview['columns']:
         item['people'] = sum(item['column'].value_counts.values())
     ready = [i['column'].pk for i in overview['columns'] if i['state']['code'] in ('ready', 'changed')]
-    return {'group': group, 'rows': rows, 'positions': positions, 'ready_ids': ready,
+    return {'group': group, 'rows': rows, 'positions': positions, 'ready_ids': ready, 'overlaps': overlaps(group),
             'documents': list(dc.fap_documents_qs().filter(event_group=group).defer('content').order_by('-version')),
             'unmapped': sum(1 for row in rows if not row['mapping']), **overview}
+
+
+def overlaps(group, limit=50):
+    """Люди с пересекающимися по времени сменами разных позиций мероприятия.
+
+    Не ошибка (решение 2026-11-11: тим-лидер может вести несколько наборов и
+    сам быть волонтёром) — только предупреждение менеджеру."""
+    rows = (dc.participations_qs().filter(event_day__event__event_group=group)
+            .select_related('user', 'event_day__event').order_by('user_id', 'event_day__start_time'))
+    by_user = defaultdict(list)
+    for participation in rows:
+        if not participation.event_day.time_unknown:
+            by_user[participation.user_id].append(participation)
+    result = []
+    for items in by_user.values():
+        clashing = {}
+        for i, a in enumerate(items):
+            for b in items[i + 1:]:
+                if b.event_day.start_time >= a.event_day.end_time:
+                    break
+                if a.event_day.event_id != b.event_day.event_id:
+                    clashing[a.pk], clashing[b.pk] = a.event_day, b.event_day
+        if clashing:
+            result.append({'user': items[0].user, 'shifts': list(clashing.values())})
+            if len(result) >= limit:
+                break
+    return result
 
 
 def group_overview(group):

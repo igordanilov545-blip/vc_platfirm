@@ -162,6 +162,14 @@ class FapAndMappingTests(MigrationTestCase):
         self.assertEqual(rows['11 - Помощник тим-лидера организации сервисов']['suggestion']['role'], 'volunteer')
         self.assertEqual(rows['7.2 - Ассистент выдачи номеров и пакетов участника — 42,2 км']['counts'][0][1], 1)
 
+    def test_exact_code_beats_similar_text_and_codeless_values_need_close_text(self):
+        """Реальная база ММ: «10.10 … (ПО6)» в базе подписано как «пункт питания», но код
+        10.10 однозначно указывает на ПО6. «Разбор медалей» в ФиП нет — подсказки нет."""
+        hints = lm._position_hints(self.group)
+        self.assertTrue(lm.suggest('10.10 - Волонтёр пункта питания на дистанции (ПО6)', hints)['position'].title.endswith('(ПО6)'))
+        self.assertIsNone(lm.suggest('Волонтёр разбора медалей', hints)['position'])
+        self.assertIsNone(lm.suggest('Тим-лидер разбора медалей', hints)['position'])
+
     def test_column_needs_mapping_and_explicit_date_before_load(self):
         first, _, reserve = self.columns
         self.assertEqual(lm.column_state(first)['code'], 'unmapped')
@@ -211,6 +219,19 @@ class FapAndMappingTests(MigrationTestCase):
         edited.refresh_from_db()
         self.assertEqual((edited.hours, edited.event_day.event.title.endswith('(ПП2)')), (Decimal('3'), True))
         self.assertEqual(len(result['conflicts']), 1)
+
+    def test_overlapping_shifts_of_one_person_are_warned_but_allowed(self):
+        """Решение 2026-11-11: человек может быть в нескольких позициях, даже если они
+        пересекаются по времени — БД это допускает, менеджер видит предупреждение."""
+        self.map_all(self.group)
+        first = self.columns[0]
+        lm.load_columns(self.manager, [first])
+        boris = User.objects.get(first_name='Борис')
+        other = self.group.positions.get(title__endswith='Зона проверки справок').shifts.get(day=date(2026, 9, 24))
+        Participation.objects.create(user=boris, event_day=other, status='attended')
+        warnings = lm.overlaps(self.group)
+        self.assertEqual([w['user'] for w in warnings], [boris])
+        self.assertEqual(len(warnings[0]['shifts']), 2)
 
     def test_unload_column_removes_only_what_it_created(self):
         self.map_all(self.group)

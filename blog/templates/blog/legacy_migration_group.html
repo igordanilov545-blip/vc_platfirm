@@ -49,6 +49,20 @@
     {% endif %}
 </div>
 
+{% if overlaps %}
+<div class="card table-scroll">
+    <h2>Пересечения по времени · {{ overlaps|length }}</h2>
+    <p>Эти люди стоят в разных позициях в одно и то же время. Это допустимо (тим-лидер может вести несколько наборов), но проверьте, нет ли ошибки в базе.</p>
+    <table class="responsive-table">
+        <thead><tr><th>Человек</th><th>Смены</th></tr></thead>
+        <tbody>{% for item in overlaps %}<tr>
+            <td data-label="Человек"><a href="{% url 'profile_detail' item.user.pk %}">{{ item.user.full_name }}</a></td>
+            <td data-label="Смены">{% for shift in item.shifts %}<div>{{ shift.event.title }} · {{ shift.day|date:"d.m" }} {{ shift.start_time|time:"H:i" }}–{{ shift.end_time|time:"H:i" }}</div>{% endfor %}</td>
+        </tr>{% endfor %}</tbody>
+    </table>
+</div>
+{% endif %}
+
 <div class="card">
     <h2>ФиП</h2>
     {% if documents %}

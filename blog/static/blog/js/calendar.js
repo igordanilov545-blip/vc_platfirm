@@ -28,6 +28,9 @@
             var fallback = new Date();
             if (defaultYearsAgo) fallback.setFullYear(fallback.getFullYear() - defaultYearsAgo);
             var keepEmpty = input.hasAttribute('data-dp-keep-empty');
+            // data-dp-popup — компактный режим для таблиц: видно текстовое поле
+            // (можно ввести ДД.ММ.ГГГГ вручную), календарь выпадает при фокусе.
+            var popup = input.hasAttribute('data-dp-popup');
             var selected = dpParseISO(input.value) || (keepEmpty ? null : fallback);
             var viewDate = selected || fallback;
             var viewMonth = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
@@ -41,10 +44,14 @@
             var label = document.createElement('span');
             label.className = 'pill neutral datepicker-value';
             label.innerHTML = '<span class="dot"></span><span class="mono"></span>';
-            wrap.appendChild(label);
+            if (!popup) wrap.appendChild(label);
 
             var cal = document.createElement('div');
             cal.className = 'cal datepicker-inline';
+            if (popup) {
+                wrap.classList.add('datepicker-popup');
+                cal.hidden = true;
+            }
             wrap.appendChild(cal);
 
             // Скрытое поле — реальное значение для сабмита формы (исходное имя
@@ -58,7 +65,42 @@
             hidden.name = input.name;
             hidden.value = selected ? dpToISO(selected) : '';
             input.removeAttribute('name');
-            input.remove();
+            if (popup) {
+                input.type = 'text';
+                input.value = selected ? dpFmt(selected) : '';
+                input.placeholder = input.placeholder || 'ДД.ММ.ГГГГ';
+                input.setAttribute('inputmode', 'numeric');
+                input.autocomplete = 'off';
+                wrap.insertBefore(input, cal);
+                var openCal = function () { cal.hidden = false; };
+                input.addEventListener('focus', openCal);
+                input.addEventListener('click', openCal);
+                input.addEventListener('keydown', function (e) { if (e.key === 'Escape') cal.hidden = true; });
+                document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) cal.hidden = true; });
+                input.addEventListener('change', function () {
+                    var raw = input.value.trim();
+                    var m = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+                    var parsed = m ? new Date(+m[3], +m[2] - 1, +m[1]) : dpParseISO(raw);
+                    if (m && (parsed.getDate() !== +m[1] || parsed.getMonth() !== +m[2] - 1)) parsed = null;
+                    if (!raw && keepEmpty) {
+                        selected = null;
+                    } else if (!parsed) {
+                        input.setCustomValidity('Дата в формате ДД.ММ.ГГГГ');
+                        input.reportValidity();
+                        return;
+                    } else {
+                        selected = parsed;
+                        viewMonth = new Date(parsed.getFullYear(), parsed.getMonth(), 1);
+                    }
+                    input.setCustomValidity('');
+                    hidden.value = selected ? dpToISO(selected) : '';
+                    hidden.dataset.isoValue = hidden.value;
+                    hidden.dispatchEvent(new Event('change', { bubbles: true }));
+                    renderMonth();
+                });
+            } else {
+                input.remove();
+            }
             wrap.appendChild(hidden);
             var clearButton;
             if (keepEmpty) {
@@ -112,6 +154,7 @@
                 html += '</div>';
                 cal.innerHTML = html;
                 label.querySelector('.mono').textContent = selected ? dpFmt(selected) : 'Дата не указана';
+                if (popup && document.activeElement !== input) input.value = selected ? dpFmt(selected) : '';
                 if (clearButton) clearButton.disabled = !selected;
 
                 cal.querySelectorAll('[data-dp-nav]').forEach(function (btn) {
@@ -145,6 +188,11 @@
                         hidden.dataset.isoValue = dpToISO(selected);
                         hidden.value = dpToISO(selected);
                         hidden.dispatchEvent(new Event('change', { bubbles: true }));
+                        if (popup) {
+                            input.value = dpFmt(selected);
+                            input.setCustomValidity('');
+                            cal.hidden = true;
+                        }
                         renderMonth();
                     });
                 });

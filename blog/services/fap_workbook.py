@@ -97,7 +97,9 @@ def _date(value, reference=None, epoch=CALENDAR_WINDOWS_1900):
             return converted.date().isoformat() if isinstance(converted, datetime) else None
         except (ValueError, OverflowError):
             return None
-    text = normalized_name(value)
+    # «Pre-race 1 18 июня»: пробел между числами — граница, иначе после удаления
+    # пробелов получится «118июня» и дата потеряется.
+    text = normalized_name(re.sub(r'(?<=\d)\s+(?=\d)', '|', str(value)))
     match = re.search(r'(?<!\d)(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)', text)
     if match:
         year, month, day = map(int, match.groups())
@@ -296,7 +298,7 @@ def _staff_columns(sheet):
     return columns
 
 
-def _header_layout(sheet, value, epoch, first_day_col=6):
+def _header_layout(sheet, value, epoch, first_day_col=6, default_year=None):
     """Дни работы, check-in/out и количества — независимые блоки заголовка."""
     def header(col):
         return re.sub(r'[-/–—]', '', normalized_name(sheet.cell(1, col).value))
@@ -309,7 +311,7 @@ def _header_layout(sheet, value, epoch, first_day_col=6):
     count_start = check_start + days_count
     starts = [col for col in range(count_start, sheet.max_column + 1)
               if 'кол' in header(col) and 'смен' in header(col)]
-    if len(starts) != days_count:
+    if len(starts) < days_count:
         raise ValidationError('Количество блоков «Кол-во / смена» должно совпадать с количеством рабочих дней.')
     widths = []
     for i, start in enumerate(starts):
@@ -325,24 +327,67 @@ def _header_layout(sheet, value, epoch, first_day_col=6):
         while re.fullmatch(r'[a-zа-я]', normalized_name(sheet.cell(2, end + 1).value)):
             end += 1
         widths.append(end - start + 1)
-    dates = []
-    for i, start in enumerate(starts):
-        headers = [value(2, first_day_col + i), value(2, check_start + i)]
-        headers += [value(row, col) for row in (1, 2) for col in range(start, start + widths[i])]
-        complete = [_date(item, epoch=epoch) for item in headers]
-        complete = [day for day in complete if day]
+
+    def block_headers(k):
+        return [value(row, col) for row in (1, 2) for col in range(starts[k], starts[k] + widths[k])]
+
+    def day_headers(i):
+        return [value(2, first_day_col + i), value(2, check_start + i)]
+
+    if len(starts) == days_count:
+        groups = [[k] for k in range(days_count)]
+    else:
+        # Блоков количества больше, чем дней (например, «20 июня 1 смена» и
+        # «20 июня 2 смена» при одной колонке времени): блоки одной даты — один день.
+        everything = [item for k in range(len(starts)) for item in block_headers(k)]
+        everything += [item for i in range(days_count) for item in day_headers(i)]
+        reference = next((d for d in (_date(item, epoch=epoch) for item in everything) if d), None)
+        if reference is None and default_year:
+            reference = f'{default_year}-01-01'
+        if reference is None:
+            raise ValidationError('Не удалось определить год дней ФиП. Укажите полную дату в заголовке работы, check-in/out или количества.')
+        block_days = [next((d for d in (_date(item, reference=reference, epoch=epoch) for item in block_headers(k)) if d), None)
+                      for k in range(len(starts))]
+        groups = []
+        for i in range(days_count):
+            known = [d for d in (_date(item, reference=reference, epoch=epoch) for item in day_headers(i)) if d]
+            day = known[0] if known else None
+            members = [k for k, d in enumerate(block_days) if d and day and d[5:] == day[5:]]
+            if not members:
+                raise ValidationError(f'Не удалось сопоставить день в колонке {get_column_letter(first_day_col + i)} с блоками «Кол-во / смена». Укажите дату в заголовке дня.')
+            groups.append(members)
+        if sorted(k for members in groups for k in members) != list(range(len(starts))):
+            raise ValidationError('Не каждый блок «Кол-во / смена» относится к рабочему дню. Проверьте даты в заголовках.')
+    dates, warnings = [], []
+    for i, members in enumerate(groups):
+        own = day_headers(i)
+        blocks = [item for k in members for item in block_headers(k)]
+        complete = [day for day in (_date(item, epoch=epoch) for item in own + blocks) if day]
+        if not complete and default_year:
+            # Год не указан нигде в ФиП — берём год мероприятия (миграция знает его по базе).
+            complete = [d for d in (_date(item, reference=f'{default_year}-01-01', epoch=epoch) for item in blocks + own) if d][:1]
+            if complete:
+                warnings.append(f'Колонка {get_column_letter(first_day_col + i)}: год в ФиП не указан, использован {default_year}.')
         if not complete:
             raise ValidationError(f'Не удалось определить год дня в колонке {get_column_letter(first_day_col + i)}. Укажите полную дату в заголовке работы, check-in/out или количества.')
-        day = complete[0]
-        recognized = [_date(item, reference=day, epoch=epoch) for item in headers]
-        if any(item and item != day for item in recognized):
-            raise ValidationError(f'Даты рабочего дня, check-in/out и количества не совпадают в колонке {get_column_letter(first_day_col + i)}.')
-        if not recognized[0]:
-            raise ValidationError(f'Не распознана дата рабочего дня в колонке {get_column_letter(first_day_col + i)}.')
+        # Дата блока количества приоритетна: в реальных ФиП заголовок дня бывает
+        # подписью («Pre-race 1») или с годом прошлогоднего шаблона.
+        block_complete = [day for day in (_date(item, epoch=epoch) for item in blocks) if day]
+        if not block_complete and default_year and not any(_date(item, epoch=epoch) for item in own):
+            block_complete = complete
+        day = block_complete[0] if block_complete else complete[0]
+        recognized = [d for d in (_date(item, reference=day, epoch=epoch) for item in own + blocks) if d]
+        mismatched = [d for d in recognized if d != day]
+        if mismatched:
+            if all(d[5:] == day[5:] for d in mismatched):
+                warnings.append(f'Колонка {get_column_letter(first_day_col + i)}: год в заголовке дня отличается, использована дата {day}.')
+            else:
+                raise ValidationError(f'Даты рабочего дня, check-in/out и количества не совпадают в колонке {get_column_letter(first_day_col + i)}.')
         dates.append(day)
     if len(set(dates)) != len(dates):
         raise ValidationError('Рабочие дни должны иметь разные даты.')
-    return dates, starts, widths
+    day_blocks = [[(starts[k], widths[k]) for k in members] for members in groups]
+    return dates, day_blocks, warnings
 
 
 def _zone_total(sheet, values, row, col, seen=frozenset()):
@@ -417,7 +462,7 @@ def _daily_zone_plan(plan):
     return result
 
 
-def read_xlsx(content):
+def read_xlsx(content, default_year=None):
     """Значения merged-ячеек наследуются логически; другие вкладки не используются."""
     try:
         content = only_shifts_content(content)
@@ -442,8 +487,29 @@ def read_xlsx(content):
 
     columns = _staff_columns(sheet)
     position_col, first_day = columns['position'], columns['position'] + 1
-    dates, starts, widths = _header_layout(sheet, value, workbook.epoch, first_day)
-    plan = {'dates': dates, 'directions': [], 'warnings': [], 'quantity_widths': widths}
+    dates, day_blocks, header_warnings = _header_layout(sheet, value, workbook.epoch, first_day, default_year)
+    widths = [blocks[0][1] for blocks in day_blocks]
+    plan = {'dates': dates, 'directions': [], 'warnings': list(header_warnings), 'quantity_widths': widths}
+    if any(len(blocks) > 1 for blocks in day_blocks):
+        plan['merged_count_blocks'] = True
+
+    def day_total(row):
+        totals = []
+        for blocks in day_blocks:
+            parts = []
+            for col, _ in blocks:
+                count = _zone_total(sheet, values, row, col)
+                if sheet.cell(row, col).value is not None and count is None:
+                    raise ValidationError(f'Не распознано количество в «ИТОГО В ЗОНЕ», ячейка {get_column_letter(col)}{row}. Укажите целое неотрицательное число или пересчитайте формулу в Excel.')
+                if count is not None:
+                    parts.append(count)
+            totals.append(sum(parts) if parts else None)
+        return totals
+
+    def row_count(row, i):
+        counts = [_row_count([value(row, col) for col in range(start, start + width)]) for start, width in day_blocks[i]]
+        counts = [c for c in counts if c is not None]
+        return sum(counts) if counts else None
     direction = None
     function_number = None
     for row in range(3, sheet.max_row + 1):
@@ -452,10 +518,7 @@ def read_xlsx(content):
             break
         if normalized_name(name).startswith('итого'):
             if direction is not None:
-                direction['_totals'] = [_zone_total(sheet, values, row, col) for col in starts]
-                for col, count in zip(starts, direction['_totals']):
-                    if sheet.cell(row, col).value is not None and count is None:
-                        raise ValidationError(f'Не распознано количество в «ИТОГО В ЗОНЕ», ячейка {get_column_letter(col)}{row}. Укажите целое неотрицательное число или пересчитайте формулу в Excel.')
+                direction['_totals'] = day_total(row)
                 direction['_has_total'] = True
             direction = None
             continue
@@ -489,7 +552,7 @@ def read_xlsx(content):
             checks = value(row, first_day + len(dates) + i)
             item = {'date': day, 'checkin_out': str(checks) if checks is not None else None,
                     '_source_ids': metadata.get('days', {}).get(day, []),
-                    '_count': _row_count([value(row, col) for col in range(starts[i], starts[i] + widths[i])])}
+                    '_count': row_count(row, i)}
             position['days'].append(item)
         direction['positions'].append(position)
     if not plan['directions']:
@@ -702,7 +765,7 @@ def write_xlsx(plan, template=None):
     template = template or (TEMPLATE_DIR / 'one-day.xlsx').read_bytes()
     template = only_shifts_content(template)
     original_plan = read_xlsx(template)
-    same_layout = (plan['dates'] == original_plan['dates'] and
+    same_layout = (not original_plan.get('merged_count_blocks') and plan['dates'] == original_plan['dates'] and
                    original_plan['input_rows'] == sum(len(d['positions']) for d in plan['directions']) and
                    plan.get('quantity_widths') == original_plan.get('quantity_widths') and
                    [len(d['positions']) for d in plan['directions']] == [len(d['positions']) for d in original_plan['directions']] and

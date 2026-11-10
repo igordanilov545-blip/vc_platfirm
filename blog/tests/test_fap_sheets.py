@@ -262,6 +262,27 @@ class FaPWorkbookTests(SimpleTestCase):
         self.assertEqual(zone['positions'][0]['days'][0]['shifts'][0]['count'], 157)
         self.assertEqual(zone['team_leaders'][:2], ['Анна Баринова', 'Марина Бабич'])
 
+    def test_real_fap_headers_tolerate_labels_year_typos_and_split_days(self):
+        """Реальные ФиП 2026 (пользователь, 2026-11-11), которые раньше не загружались:
+        - эстафета: в заголовке дня год прошлого шаблона (2025) — берётся дата блока
+          количества, предупреждение вместо отказа;
+        - апрель: заголовки дней — подписи «Pre-race 1», дата только в блоке количества;
+        - ночной: «20 июня 1 смена» и «2 смена» — два блока количества на один день,
+          года нет нигде — год мероприятия передаёт миграция."""
+        from blog.services.fap_workbook import read_xlsx
+        relay = read_xlsx((EXAMPLES / 'relay-2026-year-typo.xlsx').read_bytes())
+        self.assertEqual(relay['dates'], ['2026-05-14', '2026-05-15', '2026-05-16'])
+        self.assertTrue(any('год в заголовке дня отличается' in w for w in relay['warnings']))
+        april = read_xlsx((EXAMPLES / 'april-2026-labels.xlsx').read_bytes())
+        self.assertEqual(april['dates'], ['2026-04-03', '2026-04-04', '2026-04-05'])
+        with self.assertRaisesMessage(ValidationError, 'год'):
+            read_xlsx((EXAMPLES / 'night-2026-split-day.xlsx').read_bytes())
+        night = read_xlsx((EXAMPLES / 'night-2026-split-day.xlsx').read_bytes(), default_year=2026)
+        self.assertEqual(night['dates'], ['2026-06-18', '2026-06-19', '2026-06-20'])
+        self.assertTrue(night['merged_count_blocks'])
+        start = next(d for d in night['directions'] if d['name'] == 'Волонтёры старта')
+        self.assertEqual(start['positions'][0]['days'][2]['shifts'][0]['count'], 20)
+
     def test_team_lead_text_detection_ignores_case_spacing_and_yo(self):
         from blog.services.fap_workbook import is_team_lead_text
         for text in ('Тим-лидер зоны', 'тим лидер', 'ТИМЛИДЕР ПО1', 'Тим‑лидёр', '7.2 - Тим-лидер волонтёров'):

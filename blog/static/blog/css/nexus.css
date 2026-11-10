@@ -1912,3 +1912,13 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
 /* Просьба уточнить данные профиля после загрузки старой базы (base.html). */
 .profile-actualize-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border-left: 4px solid var(--warning); }
 .migration-steps { margin: 0; padding-left: 1.25rem; display: grid; gap: 6px; }
+
+/* Компактный date-picker (data-dp-popup): поле ввода ДД.ММ.ГГГГ, календарь выпадает. */
+.datepicker-wrap.datepicker-popup { position: relative; display: inline-block; margin-bottom: 0; min-width: 140px; }
+.datepicker-popup > input { width: 100%; }
+.datepicker-popup > .datepicker-inline {
+    position: absolute; z-index: 400; top: calc(100% + 4px); left: 0; width: 300px;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.28); border: 1px solid var(--border-subtle);
+}
+.datepicker-popup > .datepicker-inline[hidden] { display: none; }
+.datepicker-popup > .btn { margin-top: 6px; }

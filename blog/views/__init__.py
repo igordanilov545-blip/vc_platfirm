@@ -10,7 +10,7 @@ from .legacy_migration import legacy_migration, legacy_migration_base, legacy_mi
 from .profile_actualize import profile_actualize  # noqa: F401
 from .volunteer_wishes import (  # noqa: F401
     volunteer_wishes, volunteer_wish_add, volunteer_wish_edit, volunteer_wish_delete,
-    volunteer_wish_take, volunteer_wish_untake,
+    volunteer_wish_take, volunteer_wish_take_shift, volunteer_wish_untake,
 )
 from .role_invitations import role_invitation_list, role_invitation_detail, role_invitation_create, role_invitation_accept, role_invitation_revoke  # noqa: F401
 from .event_sheets import (  # noqa: F401

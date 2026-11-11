@@ -11,7 +11,8 @@ from ._base import logger, actor
 
 def volunteer_wishes_qs():
     """Ленивый queryset строк таблички с авторами и отметками «забрал»."""
-    return VolunteerWish.objects.select_related('user', 'added_by', 'taken_by', 'taken_event_group', 'event_group')
+    return VolunteerWish.objects.select_related('user', 'added_by', 'taken_by', 'taken_event_group', 'event_group',
+                                                'taken_shift__event')
 
 
 def get_volunteer_wish(wish_id):
@@ -35,15 +36,16 @@ def update_volunteer_wish(wish, operator=None, **fields):
     return wish
 
 
-def set_volunteer_wish_taken(wish, event_group=None, operator=None):
-    """Поставить (event_group задан) или снять (None) отметку «забрал»."""
-    wish.taken_event_group = event_group
-    wish.taken_by = operator if event_group else None
-    wish.taken_at = timezone.now() if event_group else None
-    wish.save(update_fields=['taken_event_group', 'taken_by', 'taken_at'])
+def set_volunteer_wish_taken(wish, taken=True, event_group=None, shift=None, operator=None):
+    """Поставить (taken=True; мероприятие/смена — необязательно) или снять отметку «забрали»."""
+    wish.taken_at = timezone.now() if taken else None
+    wish.taken_by = operator if taken else None
+    wish.taken_event_group = event_group if taken else None
+    wish.taken_shift = shift if taken else None
+    wish.save(update_fields=['taken_at', 'taken_by', 'taken_event_group', 'taken_shift'])
     logger.info(
-        'UPDATE volunteer_wishes: wish=%s taken_group=%s by=%s',
-        wish.pk, event_group.pk if event_group else None, actor(operator),
+        'UPDATE volunteer_wishes: wish=%s taken=%s group=%s shift=%s by=%s',
+        wish.pk, taken, event_group.pk if event_group else None, shift.pk if shift else None, actor(operator),
     )
     return wish
 

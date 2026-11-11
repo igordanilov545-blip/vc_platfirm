@@ -26,6 +26,29 @@
         <button type="submit" class="btn">Сохранить</button>
     </div>
 </form>
+{% elif take_mode %}
+{% if has_shifts %}
+<form method="post" data-modal-form>
+    {% csrf_token %}
+    {% if group %}<input type="hidden" name="group" value="{{ group.pk }}">{% endif %}
+    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+    <p class="muted">Человек получит одобренную заявку на выбранную смену и появится в её таблице явки.{% if not wish.user_id %} Аккаунта на платформе нет — будет создан по ФИО.{% endif %}</p>
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    {% for field in form %}
+    <div class="field">
+        {{ field.label_tag }}
+        {{ field }}
+        {% if field.help_text %}<div class="muted" style="font-size:.8rem;">{{ field.help_text }}</div>{% endif %}
+        {% if field.errors %}<div class="field-error">{{ field.errors|striptags }}</div>{% endif %}
+    </div>
+    {% endfor %}
+    <div class="modal-footer-actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
+        <button type="submit" class="btn">Забрать в смену</button>
+    </div>
+</form>
+{% else %}
+<p>Нет предстоящих смен, где вы можете одобрять заявки{% if group %} в «{{ group.title }}»{% endif %}. Если вы уже договорились с человеком сами — отметьте строку «✓ Забрали».</p>
+{% endif %}
 {% else %}
 {% include 'blog/partials/_modal_form.html' %}
 {% endif %}

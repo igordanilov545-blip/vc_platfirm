@@ -579,3 +579,112 @@ class WishSplitAndDedupeMigrationTests(TestCase):
                          [(1, '2026-11-21'), (1, '2026-11-22'), (3, None)])
         taken = {item['wish_date']: item['taken_event_group_id'] for item in rows['keep'] if item['source_pk'] == 1}
         self.assertEqual(taken, {'2026-11-21': group.id, '2026-11-22': group.id})
+
+
+class WishTakeTests(TestCase):
+    """«Забрать» желающего (решение 2026-11-11): два пути.
+
+    1) «✓ Забрали» в один клик — ТЛ уже сам написал человеку и перенёс его к себе;
+       мероприятие не обязательно (берётся со страницы или из ссылки строки).
+    2) «В смену…» — выбрать смену: человек сразу получает одобренную заявку на неё и
+       попадает в таблицу явки (ручная заявка → решение по смене), роль — из плана смены.
+       ТЛ видит только смены своих позиций, менеджер — все. Нет аккаунта — создаётся
+       служебный по ФИО (как ручное добавление волонтёра); без ФИО — просим привязать."""
+
+    def setUp(self):
+        self.tl = f.make_team_leader()
+        self.group = EventGroup.objects.create(title='Скорость 2026')
+        self.position = f.make_event(title='Регистрация', event_group=self.group)
+        self.shift = f.make_shift(self.position, days_from_now=10)
+        f.assign_team_leader(self.position, self.tl)
+        self.client.force_login(self.tl)
+
+    def wish(self, text):
+        return wishes.add_wishes_from_message(self.tl, text, source='web')[0][0]
+
+    def test_quick_take_without_details(self):
+        row = self.wish('@quick_one хочет на ближайший')
+        response = self.client.post(reverse('volunteer_wish_take', args=[row.pk]), {'next': reverse('volunteer_wishes')})
+        self.assertEqual(response.status_code, 302)
+        row.refresh_from_db()
+        self.assertTrue(row.is_taken)
+        self.assertIsNone(row.taken_event_group_id)
+        self.assertEqual(row.taken_by_id, self.tl.id)
+        page = self.client.get(reverse('volunteer_wishes')).content.decode()
+        self.assertIn('Забрали', page)
+        self.assertNotIn('@quick_one', self.client.get(reverse('volunteer_wishes'), {'hide_taken': '1'}).content.decode())
+
+    def test_quick_take_uses_linked_event(self):
+        row = self.wish('@linked_quick хочет на скорость')
+        self.assertEqual(row.event_group_id, self.group.id)
+        wishes.mark_wish_taken(self.tl, row.id)
+        row.refresh_from_db()
+        self.assertEqual(row.taken_event_group_id, self.group.id)
+
+    def test_take_into_shift_creates_approved_application(self):
+        from blog.models import ApplicationShiftDecision, Participation
+        person = f.make_user(telegram_username='shift_person')
+        row = self.wish('@shift_person хочет на скорость')
+        wish, error = wishes.take_wish_into_shift(self.tl, row.id, self.shift.id)
+        self.assertIsNone(error)
+        self.assertEqual((wish.taken_shift_id, wish.taken_event_group_id), (self.shift.id, self.group.id))
+        decision = ApplicationShiftDecision.objects.get(application__user=person, shift=self.shift)
+        self.assertEqual(decision.status, 'approved')
+        self.assertTrue(Participation.objects.filter(user=person, event_day=self.shift).exists())
+
+    def test_take_into_shift_creates_account_by_name(self):
+        row = self.wish('@new_face Петрова Анна хочет на скорость')
+        self.assertIsNone(row.user_id)
+        wish, error = wishes.take_wish_into_shift(self.tl, row.id, self.shift.id)
+        self.assertIsNone(error)
+        self.assertIsNotNone(wish.user_id)
+        self.assertEqual((wish.user.last_name, wish.user.first_name, wish.user.telegram_username), ('Петрова', 'Анна', 'new_face'))
+
+    def test_take_into_shift_needs_name_or_account(self):
+        row = self.wish('@only_nick хочет на скорость')
+        _, error = wishes.take_wish_into_shift(self.tl, row.id, self.shift.id)
+        self.assertEqual(error, 'no_name')
+
+    def test_take_into_shift_with_role_and_existing_application(self):
+        from blog.models import ApplicationShiftDecision
+        person = f.make_user(telegram_username='role_person')
+        other_shift = f.make_shift(self.position, days_from_now=11)
+        f.make_application(self.position, user=person, shifts=[other_shift])
+        self.shift.role_plan = [['Тим-лидер', 1], ['Регистратор', 4]]
+        self.shift.save(update_fields=['role_plan'])
+        row = self.wish('@role_person хочет на скорость')
+        _, error = wishes.take_wish_into_shift(self.tl, row.id, self.shift.id, role='Регистратор')
+        self.assertIsNone(error)
+        decision = ApplicationShiftDecision.objects.get(application__user=person, shift=self.shift)
+        self.assertEqual((decision.status, decision.role), ('approved', 'Регистратор'))
+        _, error = wishes.take_wish_into_shift(self.tl, row.id, self.shift.id, role='Нет такой роли')
+        self.assertEqual(error, 'bad_role')
+
+    def test_team_leader_only_into_own_shifts(self):
+        foreign = f.make_shift(f.make_event(title='Чужая позиция', event_group=self.group), days_from_now=10)
+        row = self.wish('@acl_person Иванов Иван хочет на скорость')
+        choices = {shift.id for shift in wishes.shift_choices(self.tl, row)}
+        self.assertEqual(choices, {self.shift.id})
+        _, error = wishes.take_wish_into_shift(self.tl, row.id, foreign.id)
+        self.assertEqual(error, 'forbidden')
+        manager = f.make_manager()
+        self.assertEqual({s.id for s in wishes.shift_choices(manager, row)}, {self.shift.id, foreign.id})
+
+    def test_take_shift_modal_and_post(self):
+        f.make_user(telegram_username='modal_person')
+        row = self.wish(f'@modal_person хочет на скорость {self.shift.day:%d.%m}')
+        url = reverse('volunteer_wish_take_shift', args=[row.pk])
+        response = self.client.get(url, {'group': self.group.pk}, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertContains(response, 'Регистрация')
+        self.assertContains(response, f'value="{self.shift.pk}" selected')
+        response = self.client.post(url, {'shift': self.shift.pk, 'role': '', 'next': reverse('volunteer_wishes')})
+        self.assertEqual(response.status_code, 302)
+        row.refresh_from_db()
+        self.assertEqual(row.taken_shift_id, self.shift.pk)
+
+    def test_table_has_take_buttons_and_delete_confirmation(self):
+        row = self.wish('@buttons_one хочет на ближайший')
+        page = self.client.get(reverse('volunteer_wishes')).content.decode()
+        self.assertIn(reverse('volunteer_wish_take', args=[row.pk]), page)
+        self.assertIn(reverse('volunteer_wish_take_shift', args=[row.pk]), page)
+        self.assertRegex(page, r'action="' + reverse('volunteer_wish_delete', args=[row.pk]) + r'"[^>]*data-confirm=')

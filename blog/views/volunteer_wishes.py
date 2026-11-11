@@ -3,7 +3,7 @@
 Вьюхи тонкие: правила и ACL — в blog/services/volunteer_wishes.py
 (documentation/volunteer-wishes.md)."""
 from ._common import *  # noqa: F401,F403
-from blog.forms import VolunteerWishAddForm, VolunteerWishEditForm
+from blog.forms import VolunteerWishAddForm, VolunteerWishEditForm, VolunteerWishTakeShiftForm
 from blog.services import volunteer_wishes as wishes
 
 
@@ -98,14 +98,47 @@ def volunteer_wish_delete(request, wish_id):
 @login_required
 @require_POST
 def volunteer_wish_take(request, wish_id):
-    """«Отметить, что забрал» — в мероприятие, со страницы которого нажали."""
-    try:
-        group_id = int(request.POST.get('group', ''))
-    except ValueError:
-        raise Http404('Не указано мероприятие.')
-    _, error = wishes.mark_wish_taken(request.user, wish_id, group_id)
+    """«✓ Забрали» без деталей: ТЛ сам договорился с человеком. Мероприятие — со
+    страницы, где нажали (`group`), иначе из ссылки строки."""
+    group_id = request.POST.get('group') or None
+    if group_id and not str(group_id).isdigit():
+        raise Http404('Неверное мероприятие.')
+    _, error = wishes.mark_wish_taken(request.user, wish_id, int(group_id) if group_id else None)
     _raise_for(error)
     return redirect(_safe_next(request, 'volunteer_wishes'))
+
+
+TAKE_SHIFT_ERRORS = {
+    'no_name': 'Человека нет на платформе и не указано ФИО — привяжите аккаунт или впишите ФИО через ✎.',
+    'bad_role': 'Такой роли нет в плане этой смены.',
+}
+
+
+@login_required
+def volunteer_wish_take_shift(request, wish_id):
+    """«В смену…»: выбрать смену (и роль) — человек получает одобренную заявку на неё
+    и попадает в таблицу явки; строка становится «Забрали»."""
+    _require_staff(request)
+    wish = get_object_or_404(dc.volunteer_wishes_qs(), pk=wish_id)
+    group_id = request.GET.get('group') or request.POST.get('group')
+    group = dc.event_groups_qs().filter(pk=group_id).first() if str(group_id or '').isdigit() else None
+    shifts = wishes.shift_choices(request.user, wish, group)
+    preferred = wishes.default_shift(wish, shifts)
+    form = VolunteerWishTakeShiftForm(request.POST or None, shifts=shifts,
+                                      initial={'shift': preferred.pk if preferred else None})
+    if request.method == 'POST' and form.is_valid():
+        _, error = wishes.take_wish_into_shift(request.user, wish.pk, form.cleaned_data['shift'],
+                                               role=form.cleaned_data['role'])
+        if error in TAKE_SHIFT_ERRORS:
+            form.add_error(None, TAKE_SHIFT_ERRORS[error])
+        else:
+            _raise_for(error)
+            messages.success(request, f'«{wish.display_name}» — в смене, заявка одобрена.')
+            return modal_form_response(request, '', {}, success_redirect=_safe_next(request, 'volunteer_wishes'))
+    return modal_form_response(request, 'blog/volunteer_wish_form.html', {
+        'form': form, 'title': f'Забрать в смену: {wish.display_name}', 'take_mode': True, 'wish': wish,
+        'has_shifts': bool(shifts), 'group': group, 'next_url': request.GET.get('next') or request.POST.get('next', ''),
+    }, partial_template='blog/partials/_volunteer_wish_form.html')
 
 
 @login_required

@@ -50,3 +50,32 @@ class VolunteerWishEditForm(forms.Form):
         if not any(data.get(name) for name in ('user', 'telegram_username', 'phone', 'full_name')):
             raise forms.ValidationError('Нужен аккаунт или хотя бы один контакт: Telegram, телефон или ФИО.')
         return data
+
+
+class VolunteerWishTakeShiftForm(forms.Form):
+    """«Забрать в смену»: смена (только доступные пользователю) и необязательная роль
+    из плана смен. Выбор делает services/volunteer_wishes.shift_choices."""
+    shift = forms.TypedChoiceField(label='Смена', coerce=int)
+    role = forms.ChoiceField(label='Роль в смене', required=False,
+                             help_text='Можно не выбирать — роль назначают и потом, в таблице смены.')
+
+    def __init__(self, *args, shifts=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        from django.utils import timezone as tz
+        from blog.services import shift_roles
+
+        # Название мероприятия в подписи — только если смены из разных мероприятий.
+        several_groups = len({shift.event.event_group_id for shift in shifts}) > 1
+
+        def label(shift):
+            group = shift.event.event_group.title + ' · ' if several_groups and shift.event.event_group_id else ''
+            start, end = tz.localtime(shift.start_time), tz.localtime(shift.end_time)
+            return f'{group}{shift.event.title} · {shift.day:%d.%m} {start:%H:%M}–{end:%H:%M}'
+
+        self.fields['shift'].choices = [(shift.pk, label(shift)) for shift in shifts]
+        roles = []
+        for shift in shifts:
+            for name, _ in shift_roles.shift_plan(shift):
+                if name not in roles:
+                    roles.append(name)
+        self.fields['role'].choices = [('', '— без роли —')] + [(name, name) for name in roles]

@@ -588,7 +588,7 @@ def link_wishes_to_group(group, operator=None):
         return 0
     linked = 0
     for wish in _apply_lifecycle(dc.volunteer_wishes_qs().filter(event_group__isnull=True), None):
-        if wish.archived or wish.taken_event_group_id:
+        if wish.archived or wish.is_taken:
             continue
         found = find_event_group(wish.event_hint, wish.wish_date, groups)
         if found and found.pk == group.pk:
@@ -606,24 +606,102 @@ def _wish_or_error(actor_user, wish_id):
     return (wish, None) if wish else (None, 'not_found')
 
 
-def mark_wish_taken(actor_user, wish_id, group_id):
-    """«Отметить, что забрал» в мероприятие group_id."""
+def mark_wish_taken(actor_user, wish_id, group_id=None):
+    """«✓ Забрали» без деталей: ТЛ сам договорился с человеком. Мероприятие — со страницы,
+    где нажали (group_id), иначе из ссылки строки; может остаться пустым."""
     wish, error = _wish_or_error(actor_user, wish_id)
     if error:
         return None, error
-    group = dc.event_groups_qs().filter(pk=group_id).first()
-    if group is None:
-        return None, 'not_found'
-    return dc.set_volunteer_wish_taken(wish, group, operator=actor_user), None
+    group = None
+    if group_id:
+        group = dc.event_groups_qs().filter(pk=group_id).first()
+        if group is None:
+            return None, 'not_found'
+    return dc.set_volunteer_wish_taken(wish, True, event_group=group or wish.event_group, operator=actor_user), None
 
 
 def unmark_wish_taken(actor_user, wish_id):
+    """«↩ Вернуть в желающие». Заявка, созданная при «В смену…», остаётся — её
+    при необходимости отклоняют в таблице смены, как любую другую."""
     wish, error = _wish_or_error(actor_user, wish_id)
     if error:
         return None, error
     if not can_untake_wish(actor_user, wish):
         return None, 'forbidden'
-    return dc.set_volunteer_wish_taken(wish, None, operator=actor_user), None
+    return dc.set_volunteer_wish_taken(wish, False, operator=actor_user), None
+
+
+def shift_choices(actor_user, wish, group=None):
+    """Смены, в которые этот пользователь может забрать человека: непрошедшие, своего
+    мероприятия (страница или ссылка строки; иначе все), и только те позиции, где он
+    вправе одобрять заявки (ТЛ — свои, менеджер — все)."""
+    qs = (dc.event_shifts_qs().filter(day__gte=timezone.localdate())
+          .select_related('event', 'event__event_group').order_by('day', 'start_time'))
+    group = group or wish.event_group
+    if group:
+        qs = qs.filter(event__event_group=group)
+    if not has_manager_access(actor_user):
+        own = dc.event_staff_qs().filter(user=actor_user, staff_role='team_lead').values_list('event_id', flat=True)
+        qs = qs.filter(event_id__in=own)
+    return list(qs)
+
+
+def default_shift(wish, shifts):
+    """Смена, совпадающая с днём строки, если такая одна — её выбираем заранее."""
+    same_day = [shift for shift in shifts if wish.wish_date and shift.day == wish.wish_date]
+    return same_day[0] if len(same_day) == 1 else None
+
+
+def _person_for_shift(wish, actor_user):
+    """Аккаунт для заявки: привязанный или служебный по ФИО (как «＋ волонтёр»)."""
+    if wish.user_id:
+        return wish.user
+    parts = wish.full_name.split()
+    if len(parts) < 2:
+        return None
+    from blog.services.applications import create_volunteer_by_name
+    # В чатах пишут «Фамилия Имя [Отчество]».
+    user = create_volunteer_by_name(parts[1], parts[0], middle_name=' '.join(parts[2:]),
+                                    phone=wish.phone, telegram_username=wish.telegram_username)
+    dc.update_volunteer_wish(wish, operator=actor_user, user=user)
+    return user
+
+
+@transaction.atomic
+def take_wish_into_shift(actor_user, wish_id, shift_id, role=''):
+    """«В смену…»: человек сразу получает одобренную заявку на выбранную смену и
+    попадает в таблицу явки (create_manual_application → process_shift_decision), строка
+    — «Забрали» в это мероприятие и смену. Ошибки: forbidden (не ТЛ этой позиции),
+    not_found, no_name (нет аккаунта и ФИО), bad_role (роли нет в плане смены)."""
+    from blog.services.applications import create_manual_application, ensure_shift_decisions, process_shift_decision
+    from blog.services.roles import can_process_applications
+    from blog.services import shift_roles
+
+    wish, error = _wish_or_error(actor_user, wish_id)
+    if error:
+        return None, error
+    shift = dc.event_shifts_qs().select_related('event', 'event__event_group').filter(pk=shift_id).first()
+    if shift is None:
+        return None, 'not_found'
+    if not can_process_applications(actor_user, shift.event_id):
+        return None, 'forbidden'
+    role = ' '.join(str(role or '').split())
+    if role and role.casefold() not in {name.casefold() for name, _ in shift_roles.shift_plan(shift)}:
+        return None, 'bad_role'
+    person = _person_for_shift(wish, actor_user)
+    if person is None:
+        return None, 'no_name'
+    application, created = create_manual_application(shift.event, person, created_by=actor_user, shifts=[shift])
+    if not created and not application.selected_shifts.filter(pk=shift.pk).exists():
+        application.selected_shifts.add(shift)
+        ensure_shift_decisions(application)
+    decision = process_shift_decision(application, shift, 'approved', actor_user)
+    if role:
+        shift_roles.set_role(actor_user, decision, role)
+    logger.info('Табличка желающих: wish=%s забрали в смену shift=%s application=%s by=%s',
+                wish.pk, shift.pk, application.pk, actor(actor_user))
+    return dc.set_volunteer_wish_taken(wish, True, event_group=shift.event.event_group, shift=shift,
+                                       operator=actor_user), None
 
 
 def delete_wish(actor_user, wish_id):
@@ -709,9 +787,9 @@ def _apply_lifecycle(wishes, viewer):
     days = hide_days()
     for wish in wishes:
         wish.can_edit = can_edit_wish(viewer, wish)
-        wish.can_untake = bool(wish.taken_event_group_id) and can_untake_wish(viewer, wish)
+        wish.can_untake = wish.is_taken and can_untake_wish(viewer, wish)
         wish.hide_on = wish.archived = None
-        if not wish.taken_event_group_id:
+        if not wish.is_taken:
             wish.archived = False
             continue
         limits = []
@@ -729,7 +807,7 @@ def _apply_lifecycle(wishes, viewer):
 
 def _sort_key(wish):
     # Сначала не забранные (раньше попросились — выше, дни человека — подряд), забранные — в конце.
-    return (wish.taken_event_group_id is not None, wish.created_at, wish.wish_date or datetime.date.max)
+    return (wish.is_taken, wish.created_at, wish.wish_date or datetime.date.max)
 
 
 def wishes_for_event_group(group, viewer, hide_taken=False):
@@ -742,7 +820,7 @@ def wishes_for_event_group(group, viewer, hide_taken=False):
     days = set(dc.event_shifts_qs().filter(event__event_group=group).values_list('day', flat=True))
     matched, others = [], []
     for wish in _apply_lifecycle(dc.volunteer_wishes_qs(), viewer):
-        if wish.archived or (hide_taken and wish.taken_event_group_id):
+        if wish.archived or (hide_taken and wish.is_taken):
             continue
         if wish.taken_event_group_id == group.pk:
             wish.match = 'taken'
@@ -751,12 +829,12 @@ def wishes_for_event_group(group, viewer, hide_taken=False):
         wish.match = match_reason(wish, group, days)
         if wish.match:
             matched.append(wish)
-        elif not wish.taken_event_group_id and not wish.event_group_id:
+        elif not wish.is_taken and not wish.event_group_id:
             others.append(wish)
     matched.sort(key=_sort_key)
     others.sort(key=_sort_key)
     return {'matched': matched, 'others': others,
-            'open_count': sum(1 for wish in matched if not wish.taken_event_group_id)}
+            'open_count': sum(1 for wish in matched if not wish.is_taken)}
 
 
 WISH_FILTERS = {
@@ -776,7 +854,7 @@ def wishes_list(viewer, status='active', hide_taken=False):
     if status == 'archive':
         rows = [wish for wish in rows if wish.archived]
     else:
-        rows = [wish for wish in rows if not wish.archived and not (hide_taken and wish.taken_event_group_id)]
+        rows = [wish for wish in rows if not wish.archived and not (hide_taken and wish.is_taken)]
     return sorted(rows, key=_sort_key)
 
 

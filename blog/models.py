@@ -1485,8 +1485,10 @@ class VolunteerWish(models.Model):
     source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='web')
     added_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='added_volunteer_wishes')
     created_at = models.DateTimeField(auto_now_add=True)
-    # «Отметить, что забрал» — в какое мероприятие, кто и когда; снимается обратно.
+    # «Забрали» — статус: taken_at задан. Куда (мероприятие/смена) — необязательно: ТЛ мог
+    # сам договориться с человеком и перенести его к себе. «Вернуть в желающие» снимает всё.
     taken_event_group = models.ForeignKey(EventGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name='taken_wishes')
+    taken_shift = models.ForeignKey('EventShift', on_delete=models.SET_NULL, null=True, blank=True, related_name='taken_wishes')
     taken_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='taken_volunteer_wishes')
     taken_at = models.DateTimeField(null=True, blank=True)
 
@@ -1498,6 +1500,10 @@ class VolunteerWish(models.Model):
 
     def __str__(self):
         return self.display_name
+
+    @property
+    def is_taken(self):
+        return self.taken_at is not None
 
     @property
     def display_name(self):

@@ -103,7 +103,8 @@
         </div>
         <div class="recruit-bar"><span class="recruit-bar-fill {% if recruit_overflow %}recruit-bar-fill--over{% endif %}" style="width:{% if recruit_overflow %}100{% else %}{{ recruit_percent }}{% endif %}%; --pct:{{ recruit_percent }}"></span></div>
         <div class="event-dash-days">
-            {% for entry in shifts_with_recruitment %}
+            {% if can_edit_applications %}<datalist id="shift-roles">{% for name in role_options %}<option value="{{ name }}"></option>{% endfor %}</datalist>{% endif %}
+    {% for entry in shifts_with_recruitment %}
             <div class="event-dash-day" title="{{ entry.shift.day|date:'d.m.y' }}: {{ entry.approved_count }} из {{ entry.needed }}">
                 <div class="event-dash-day-label mono">{{ entry.shift.day|date:"d.m" }}</div>
                 <div class="recruit-bar"><span class="recruit-bar-fill {% if entry.recruit_overflow %}recruit-bar-fill--over{% endif %}" style="width:{% if entry.recruit_overflow %}100{% else %}{{ entry.percent }}{% endif %}%; --pct:{{ entry.percent }}"></span></div>
@@ -337,7 +338,10 @@
 
     {% for entry in shifts_with_recruitment %}
     <div class="shift-recruit-head" style="padding:20px 20px 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <div>
         <h4 style="margin:0 0 4px;">Набор на смену «{{ entry.shift.day|date:"d.m.y" }}»: {{ entry.approved_count }} из {{ entry.needed }} (осталось {{ entry.remaining }})</h4>
+        {% if entry.role_stats %}<div class="role-stats" title="Сколько каких ролей среди одобренных — подсказка, ограничений нет">Роли: {% for name, n in entry.role_stats %}<span class="role-stat">{{ name }} — {{ n }}</span>{% endfor %}</div>{% endif %}
+        </div>
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             {% if entry.reserve_count %}
             <button type="button" class="btn secondary btn-sm" data-reserve-toggle="{{ entry.shift.id }}" aria-expanded="false">
@@ -374,6 +378,7 @@
             <th data-sort-key="tg">Telegram</th>
             <th data-sort-key="phone">Телефон</th>
             <th data-sort-key="status">Статус</th>
+            <th data-sort-key="role" title="Роль человека в смене — подсказка для планирования, без ограничений">Роль ⓘ</th>
             <th data-sort-key="attendance">Явка</th>
             <th data-sort-key="hours" class="num">Часы</th>
             <th data-sort-key="lunch">Обед</th>
@@ -403,6 +408,14 @@
                     {% if application.auto_reject_reason %}
                     <span class="pill danger" title="{{ application.auto_reject_reason }}" style="margin-left:4px;">⚠️ авто</span>
                     {% endif %}
+                </td>
+                <td data-label="Роль" data-sort-value="{{ row.decision.role }}">
+                    {% if can_edit_applications %}
+                    <form method="post" action="{% url 'shift_decision_role' row.decision.pk %}" class="inline" data-role-form>
+                        {% csrf_token %}
+                        <input type="text" name="role" value="{{ row.decision.role }}" list="shift-roles" placeholder="роль" autocomplete="off" class="role-input" aria-label="Роль: {{ application.first_name }}">
+                    </form>
+                    {% else %}{{ row.decision.role|default:"—" }}{% endif %}
                 </td>
                 {% comment %}Явка тремя кнопками (Был / Не был / Уважит.) — единый стиль с
                 кнопками обработки заявок. Только для одобренной заявки с привязанным профилем
@@ -453,7 +466,7 @@
             </tr>
             {% endwith %}
         {% empty %}
-            <tr><td colspan="9">Заявок на эту смену пока нет.</td></tr>
+            <tr><td colspan="10">Заявок на эту смену пока нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>

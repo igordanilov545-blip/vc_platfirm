@@ -195,7 +195,12 @@
             var form = select.closest('form') || document;
             var title = form.querySelector('#' + select.getAttribute('data-title-input'));
             var newField = form.querySelector('[data-new-function-field]');
+            var lastName = select.value && select.value !== 'new' ? select.options[select.selectedIndex].text : '';
             function sync() {
+                var name = select.value && select.value !== 'new' ? select.options[select.selectedIndex].text : '';
+                // Название позиции по умолчанию — название функции (пока его не меняли руками).
+                if (title && name && (!title.value || title.value === lastName)) title.value = name;
+                lastName = name;
                 if (title) {
                     var own = select.value && form.querySelector('#position-pool-' + select.value);
                     if (own) title.setAttribute('list', own.id); else title.removeAttribute('list');
@@ -208,32 +213,24 @@
     }
     initFunctionPoolSelect(document);
 
+
     /**
-     * Смена функции: под ролями — сумма «назначено по ролям» и предупреждение,
-     * если она не равна заявленному на смену (data-shift-total / data-role-count).
+     * Таблица набора смены: роль человека ([data-role-form]) сохраняется сразу при
+     * изменении поля, без перезагрузки (подсказки — datalist #shift-roles).
      */
-    function initRoleSum(root) {
-        root.querySelectorAll('[data-shift-total]').forEach(function (total) {
-            var form = total.closest('form');
-            if (!form || form.dataset.roleSumInit) return;
-            var counts = form.querySelectorAll('[data-role-count]');
-            if (!counts.length) return;
-            form.dataset.roleSumInit = '1';
-            var note = document.createElement('div');
-            note.className = 'role-sum';
-            var last = counts[counts.length - 1];
-            (last.closest('p, .field') || last).after(note);
-            function sync() {
-                var sum = 0;
-                counts.forEach(function (c) { sum += parseInt(c.value, 10) || 0; });
-                var need = parseInt(total.value, 10) || 0;
-                var bad = sum !== need;
-                note.classList.toggle('mismatch', bad);
-                note.textContent = 'Назначено по ролям: ' + sum + ' из ' + need + (bad ? ' — ⚠ не совпадает с количеством на смену' : ' ✓');
-                note.title = bad ? 'Поправьте количество по ролям или общее число людей на смену.' : '';
-            }
-            form.addEventListener('input', sync);
-            sync();
+    function initShiftRoles(root) {
+        root.querySelectorAll('[data-role-form]').forEach(function (form) {
+            if (form.dataset.roleInit) return;
+            form.dataset.roleInit = '1';
+            var input = form.querySelector('input[name=role]');
+            form.addEventListener('submit', function (e) { e.preventDefault(); input.blur(); });
+            input.addEventListener('change', function () {
+                input.classList.remove('saved', 'failed');
+                fetch(form.action, {method: 'POST', body: new FormData(form), headers: {'X-Requested-With': 'XMLHttpRequest'}})
+                    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+                    .then(function (data) { input.value = data.role; input.classList.add('saved'); })
+                    .catch(function () { input.classList.add('failed'); input.title = 'Не сохранилось — обновите страницу'; });
+            });
         });
     }
-    initRoleSum(document);
+    initShiftRoles(document);

@@ -761,9 +761,6 @@ class EventShift(models.Model):
     volunteer_needed = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     recruit_status = models.CharField(max_length=20, choices=RECRUIT_STATUS_CHOICES, default='open')
     location = models.ForeignKey(Location, on_delete=models.SET_NULL, null=True, blank=True, related_name='event_shifts')
-    # Ручное создание (2026-11-11): смена функции — матрица «смена × роль»; эта смена
-    # позиции-роли — одна клетка матрицы (сколько людей этой роли нужно в смене).
-    function_shift = models.ForeignKey('FunctionShift', on_delete=models.SET_NULL, null=True, blank=True, related_name='role_shifts')
 
     # Отметка «можно забирать» (визуальный индикатор для менеджера, db.md/reports.md):
     # тим-лидер/менеджер этого меро подтверждает, что явка и часы по смене актуализированы
@@ -841,22 +838,6 @@ class EventDirection(models.Model):
     class Meta:
         db_table = 'event_directions'
         ordering = ['sort_order', 'pk']
-
-
-class FunctionShift(models.Model):
-    """Смена функции мероприятия (ручное создание): период, когда нужны люди, и
-    сколько всего. Роли смены — EventShift позиций функции (function_shift=эта)."""
-    direction = models.ForeignKey(EventDirection, on_delete=models.CASCADE, related_name='function_shifts')
-    day = models.DateField()
-    start_time = models.DateTimeField()
-    end_time = models.DateTimeField()
-    volunteer_needed = models.PositiveIntegerField(default=0)
-    zone = models.CharField(max_length=255, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = 'function_shifts'
-        ordering = ['day', 'start_time', 'pk']
 
 
 class SheetPosition(models.Model):
@@ -1052,6 +1033,9 @@ class ApplicationShiftDecision(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
     assigned_at = models.DateTimeField(blank=True, null=True)
     assigned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='processed_shift_decisions')
+    # Роль человека в смене (2026-11-11): подсказка для планирования, без ограничений —
+    # ключевое по-прежнему количество людей. Тим-лидеры получают её автоматически.
+    role = models.CharField(max_length=255, blank=True, default='')
 
     class Meta:
         db_table = 'application_shift_decisions'

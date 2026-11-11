@@ -25,38 +25,17 @@
         <a href="{% url 'event_function_create' event_group.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Новая функция">+ Функция</a>
     </div>
     {% if functions.sections %}
-    <div class="event-functions-list">
+    <ul class="event-functions-list">
         {% for section in functions.sections %}
-        <section class="event-function">
-            <div class="event-function-head">
-                <span class="event-functions-name">{{ section.name }}</span>
-                {% if section.matrix.warnings %}<span class="event-function-warn" title="В {{ section.matrix.warnings }} смен(ах) сумма по ролям не равна заявленному количеству — откройте смену и поправьте числа.">⚠ {{ section.matrix.warnings }}</span>{% endif %}
-                {% if section.direction %}
-                <a href="{% url 'function_shift_create' section.direction.pk %}" class="btn btn-sm" data-modal data-modal-title="Новая смена: {{ section.name }}">+ Смена</a>
-                <a href="{% url 'function_role_create' section.direction.pk %}" class="btn secondary btn-sm" data-modal data-modal-title="Новая роль: {{ section.name }}">+ Роль</a>
-                {% endif %}
-            </div>
-            {% if section.matrix.columns %}
-            <div class="table-scroll">
-            <table class="function-matrix">
-                <thead><tr><th>Роль</th>{% for col in section.matrix.columns %}<th><a href="{% url 'function_shift_edit' col.shift.pk %}" data-modal data-modal-title="Смена: {{ section.name }}" title="Изменить смену и количество по ролям">{{ col.shift.day|date:"d.m" }}<br>{{ col.shift.start_time|time:"H:i" }}–{{ col.shift.end_time|time:"H:i" }}</a></th>{% endfor %}</tr></thead>
-                <tbody>
-                {% for row in section.matrix.rows %}<tr><td><a href="{% url 'event_detail' row.role.pk %}">{{ row.role.title }}</a></td>{% for cell in row.cells %}<td class="num">{{ cell|default_if_none:"—" }}</td>{% endfor %}</tr>{% endfor %}
-                </tbody>
-                <tfoot>
-                <tr><th>Назначено по ролям</th>{% for col in section.matrix.columns %}<td class="num{% if col.mismatch %} mismatch{% endif %}"{% if col.mismatch %} title="Сумма по ролям ({{ col.assigned }}) не равна заявленному на смену ({{ col.needed }}). Откройте смену и поправьте количество по ролям или общее число."{% endif %}>{{ col.assigned }}{% if col.mismatch %} ⚠{% endif %}</td>{% endfor %}</tr>
-                <tr><th>Нужно на смену</th>{% for col in section.matrix.columns %}<td class="num">{{ col.needed }}</td>{% endfor %}</tr>
-                </tfoot>
-            </table>
-            </div>
-            {% else %}
-            <p class="muted">Смен пока нет. «+ Смена» — период и сколько людей нужно; роли тим-лидера и волонтёров зоны создадутся сами.</p>
-            {% endif %}
-        </section>
+        <li>
+            <span class="event-functions-name">{{ section.name }}</span>
+            <span class="muted">{{ section.positions|length }} поз.</span>
+            {% if section.category %}<a href="{% url 'event_create' %}?group={{ event_group.id }}&function={{ section.category.pk }}" class="btn secondary btn-sm" data-modal data-modal-title="Новая позиция: {{ section.name }}">+ Позиция</a>{% endif %}
+        </li>
         {% endfor %}
-    </div>
+    </ul>
     {% else %}
-    <p class="muted">Мероприятие состоит из функций (например, «Организация выдачи пакетов участников»), внутри функции — смены, а в смене — роли и сколько людей на каждую. Начните с «+ Функция» — её можно выбрать из пула или создать новую.</p>
+    <p class="muted">Мероприятие состоит из функций (например, «Организация выдачи пакетов участников»), а позиции создаются внутри функции. Начните с «+ Функция» — её можно выбрать из пула или создать новую.</p>
     {% endif %}
     {% if functions.without_function %}<p class="muted">Позиций без функции: {{ functions.without_function|length }} — укажите функцию в их редактировании.</p>{% endif %}
 </div>

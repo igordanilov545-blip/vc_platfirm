@@ -247,6 +247,11 @@ class EventForm(forms.ModelForm):
             current = dc.event_categories_for_event(self.instance)
             if current:
                 self.fields['function'].initial = str(current[0].pk)
+        elif self.initial.get('function') and not self.initial.get('title'):
+            # Название позиции по умолчанию — название функции (2026-11-11); роли людей
+            # внутри смены задаются в таблице набора, а не отдельными позициями.
+            chosen = next((name for pk, name in own + rest if pk == str(self.initial['function'])), '')
+            self.initial['title'] = chosen
 
     def clean(self):
         cleaned = super().clean()
@@ -351,6 +356,9 @@ class EventForm(forms.ModelForm):
                     shift = shift_form.save(commit=False)
                     shift.event = event
                     shift.save()
+            # Тим-лидеры — сразу в таблицу набора каждой смены с ролью «Тим-лидер».
+            from blog.services.shift_roles import sync_team_leads
+            sync_team_leads(event, self.assigned_by)
         return event
 
     def _save_categories(self, event):
@@ -569,67 +577,3 @@ class EventFunctionForm(forms.Form):
             raise forms.ValidationError('Выберите функцию из пула или впишите название новой.')
         return cleaned
 
-
-class DatalistInput(forms.TextInput):
-    """Текстовое поле с подсказками <datalist> (свой список у каждого поля)."""
-    def __init__(self, options=(), list_id='', attrs=None):
-        super().__init__(attrs)
-        self.options, self.list_id = list(options), list_id
-
-    def render(self, name, value, attrs=None, renderer=None):
-        from django.utils.html import format_html, format_html_join
-        attrs = {**(attrs or {}), 'list': self.list_id, 'autocomplete': 'off'}
-        html = super().render(name, value, attrs, renderer)
-        options = format_html_join('', '<option value="{}"></option>', ((o,) for o in self.options))
-        return format_html('{}<datalist id="{}">{}</datalist>', html, self.list_id, options)
-
-
-class FunctionShiftForm(forms.Form):
-    """Смена функции: период и сколько людей нужно; при изменении — сколько на каждую роль."""
-    day = forms.DateField(label='Дата', widget=forms.DateInput(attrs={'type': 'text', 'data-datepicker': '', 'data-dp-popup': '', 'autocomplete': 'off'}, format='%Y-%m-%d'))
-    start_time = forms.TimeField(label='Время начала', initial=time(10, 0),
-                                 widget=forms.TimeInput(attrs={'type': 'text', 'data-timepicker': '', 'autocomplete': 'off'}, format='%H:%M'))
-    end_time = forms.TimeField(label='Время окончания', initial=time(18, 0),
-                               widget=forms.TimeInput(attrs={'type': 'text', 'data-timepicker': '', 'autocomplete': 'off'}, format='%H:%M'))
-    volunteer_needed = forms.IntegerField(label='Нужно людей на смену (всего)', min_value=1, initial=10,
-                                          widget=forms.NumberInput(attrs={'min': 1, 'data-shift-total': ''}))
-    zone = forms.CharField(label='Зона', required=False, max_length=200,
-                           help_text='Роли смены: «Тим-лидер зоны …» (1) и «Волонтёр зоны …» (нужно − 1). Пусто — название функции.')
-
-    def __init__(self, *args, shift=None, roles=(), **kwargs):
-        super().__init__(*args, **kwargs)
-        self.role_fields = []
-        if shift is None:
-            self.initial.setdefault('day', timezone.localdate())
-            return
-        self.fields.pop('zone')
-        start = timezone.localtime(shift.start_time)
-        self.initial.update({'day': shift.day, 'start_time': start.time(),
-                             'end_time': timezone.localtime(shift.end_time).time(), 'volunteer_needed': shift.volunteer_needed})
-        from blog.services.event_functions import shift_counts
-        counts = shift_counts(shift)
-        for role in roles:
-            name = f'role_{role.pk}'
-            self.fields[name] = forms.IntegerField(label=role.title, min_value=0, required=False, initial=counts.get(role.pk, 0),
-                                                   widget=forms.NumberInput(attrs={'min': 0, 'data-role-count': ''}))
-            self.role_fields.append((role.pk, name))
-        self.fields['delete'] = forms.BooleanField(label='Удалить смену', required=False,
-                                                   help_text='Клетки, по которым уже есть заявки или участия, останутся.')
-
-    def clean(self):
-        cleaned = super().clean()
-        if cleaned.get('start_time') and cleaned.get('end_time') and cleaned['end_time'] <= cleaned['start_time']:
-            self.add_error('end_time', 'Время окончания должно быть позже времени начала.')
-        return cleaned
-
-    def counts(self):
-        return {pk: self.cleaned_data.get(name) or 0 for pk, name in self.role_fields}
-
-
-class FunctionRoleForm(forms.Form):
-    """Новая роль функции: подсказки — только роли этой функции из пула."""
-    title = forms.CharField(label='Роль', max_length=255)
-
-    def __init__(self, *args, pool=(), list_id='role-pool', **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields['title'].widget = DatalistInput(pool, list_id, attrs={'placeholder': 'Например: Волонтёр зоны выдачи номеров'})

@@ -315,6 +315,19 @@ def application_shift_process(request, application_id, shift_id):
     return redirect(redirect_url)
 
 @login_required
+def shift_decision_role(request, decision_id):
+    """Роль человека в смене (колонка «Роль» таблицы набора) — подсказка, без ограничений."""
+    from blog.services import shift_roles
+    decision = get_object_or_404(dc.application_shift_decisions_qs().select_related('application__event', 'shift'), pk=decision_id)
+    event = decision.application.event
+    if request.method != 'POST' or not can_process_applications(request.user, event.id) or event.event_status == 'finished':
+        raise PermissionDenied('Нет прав менять роли в этой смене.')
+    shift_roles.set_role(request.user, decision, request.POST.get('role', ''))
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'ok': True, 'role': decision.role})
+    return redirect(reverse('event_detail', args=[event.id]) + '#applications')
+
+@login_required
 def shift_applications_approve_all(request, event_id, shift_id):
     """«Принять всех» на КОНКРЕТНУЮ смену — одобряет все нерешённые (new) решения по
     заявкам на эту смену. Дополняет общую кнопку «Принять всех» по мероприятию: та

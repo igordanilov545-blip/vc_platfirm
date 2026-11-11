@@ -1998,14 +1998,10 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
   border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); }
 .event-functions-name { font-weight: 600; flex: 1 1 260px; }
 
-/* Матрица «смена функции × роль» (ручное создание мероприятия) */
-.event-function { padding: 10px; border: 1px solid var(--border-subtle); border-radius: 10px; }
-.event-function-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.event-function-warn { color: var(--warning, #e0a43a); font-weight: 600; cursor: help; }
-.function-matrix { border-collapse: collapse; width: auto; min-width: 100%; font-size: .9rem; }
-.function-matrix th, .function-matrix td { padding: 6px 10px; border-bottom: 1px solid var(--border-subtle); text-align: left; white-space: nowrap; }
-.function-matrix td.num, .function-matrix tfoot td { text-align: center; }
-.function-matrix thead th a { color: inherit; text-decoration: underline dotted; }
-.function-matrix tfoot th { font-weight: 500; }
-.function-matrix td.mismatch, .role-sum.mismatch { color: var(--warning, #e0a43a); font-weight: 600; cursor: help; }
-.role-sum { margin: 6px 0 10px; font-size: .9rem; }
+
+/* Роль человека в смене (таблица набора) */
+.role-input { width: 150px; padding: 4px 6px; font-size: .85rem; margin: 0; }
+.role-input.saved { border-color: var(--success, #6aa84f); }
+.role-input.failed { border-color: var(--danger, #c0504d); }
+.role-stats { font-size: .85rem; color: var(--text-secondary); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.role-stat { white-space: nowrap; }

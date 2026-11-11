@@ -1,2 +1,31 @@
+{% comment %}Форма таблички желающих: добавление — общий _modal_form; правка — поля по
+одному, «Аккаунт на платформе» — общий выбор людей (data-select-remote="users"),
+день — общий календарь (data-datepicker). Инлайнового JS нет.{% endcomment %}
 {% if raw_text %}<details class="muted" style="margin-bottom:.75rem;"><summary>Исходное сообщение</summary><div style="white-space:pre-wrap;">{{ raw_text }}</div></details>{% endif %}
+{% if edit_mode %}
+<form method="post" data-modal-form>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="field">
+        <label>{{ form.user.label }}</label>
+        <div class="category-chips" data-chip-select data-chip-single data-select-remote="users" data-field-name="user" data-empty-text="Нет на платформе — укажите контакты ниже" data-linkable{% if user_preselect %} data-preselect="{{ user_preselect }}"{% endif %}>
+            <div class="cat-chips-search"><input type="text" placeholder="Найти человека в базе…" data-chips-search readonly></div>
+            <div class="cat-chips-row" data-chips-selected></div>
+        </div>
+        {% if form.user.errors %}<div class="field-error">{{ form.user.errors|striptags }}</div>{% endif %}
+    </div>
+    {% for field in form %}{% if field.name != 'user' %}
+    <div class="field">
+        {{ field.label_tag }}
+        {{ field }}
+        {% if field.help_text %}<div class="muted" style="font-size:.8rem;">{{ field.help_text }}</div>{% endif %}
+        {% if field.errors %}<div class="field-error">{{ field.errors|striptags }}</div>{% endif %}
+    </div>
+    {% endif %}{% endfor %}
+    <div class="modal-footer-actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
+        <button type="submit" class="btn">Сохранить</button>
+    </div>
+</form>
+{% else %}
 {% include 'blog/partials/_modal_form.html' %}
+{% endif %}

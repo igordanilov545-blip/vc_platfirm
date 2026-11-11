@@ -1,5 +1,10 @@
 """Табличка желающих: разбор сообщений, сопоставление с мероприятием, ACL.
 
+Строка = человек × мероприятие × ОДИН день; ссылки на реальные аккаунт (`user`) и
+мероприятие (`event_group`) ставятся, когда найдены однозначно, иначе — текст с
+пометкой «нет на платформе» / «нет в базе». Дубли (тот же человек × мероприятие × день,
+в т.ч. от другого ТЛ) не создаются — см. find_duplicate.
+
 Желающие — люди, которые ещё ДО старта набора попросили тим-лидера/менеджера взять
 их на следующий забег (documentation/volunteer-wishes.md). Мероприятия в платформе к
 этому моменту нет, поэтому строка хранит подсказки (название, даты, позиция) и исходный
@@ -440,9 +445,77 @@ def _match_user(row):
     )
 
 
+def upcoming_event_groups():
+    """Мероприятия, на которые ещё можно записать: последний день смен не раньше
+    сегодня или смен пока нет (мероприятие только заведено)."""
+    today = timezone.localdate()
+    return list(dc.event_groups_qs().annotate(last_day=Max('positions__shifts__day'))
+                .filter(Q(last_day__gte=today) | Q(last_day__isnull=True)))
+
+
+def find_event_group(hint, day=None, groups=None):
+    """Реальное мероприятие для строки — только если оно ОДНО: по названию (слово,
+    основа, аббревиатура) среди непрошедших, а без названия — единственное
+    непрошедшее мероприятие со сменой в этот день. Несколько кандидатов — не угадываем."""
+    groups = upcoming_event_groups() if groups is None else groups
+    if hint:
+        candidates = [group for group in groups if name_matches(hint, group.title)]
+    elif day:
+        on_day = set(dc.event_shifts_qs().filter(day=day).values_list('event__event_group_id', flat=True))
+        candidates = [group for group in groups if group.pk in on_day]
+    else:
+        candidates = []
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _same_event(wish, event_group, hint):
+    if wish.event_group_id and event_group:
+        return wish.event_group_id == event_group.pk
+    if wish.event_group_id:
+        return name_matches(hint, wish.event_group.title) if hint else False
+    if event_group:
+        return name_matches(wish.event_hint, event_group.title) if wish.event_hint else False
+    return _norm(wish.event_hint) == _norm(hint)
+
+
+def find_duplicate(fields, exclude_pk=None):
+    """Активная (не архивная) строка того же человека × мероприятия × дня.
+
+    Человек — тот же аккаунт, @username или телефон (ФИО — только если других
+    контактов нет ни там, ни там): запись другим ТЛ или с другим контактом того же
+    человека не плодит строку."""
+    cond = Q()
+    if fields.get('user'):
+        cond |= Q(user=fields['user'])
+    if fields.get('telegram_username'):
+        cond |= Q(telegram_username__iexact=fields['telegram_username'])
+    if fields.get('phone'):
+        cond |= Q(phone=fields['phone'])
+    if not cond:
+        if not fields.get('full_name'):
+            return None
+        cond = Q(full_name__iexact=fields['full_name'], user__isnull=True, telegram_username='', phone='')
+    day = fields.get('wish_date')
+    qs = dc.volunteer_wishes_qs().filter(cond).filter(**({'wish_date': day} if day else {'wish_date__isnull': True}))
+    if exclude_pk:
+        qs = qs.exclude(pk=exclude_pk)
+    for wish in _apply_lifecycle(qs, None):
+        if not wish.archived and _same_event(wish, fields.get('event_group'), fields.get('event_hint', '')):
+            return wish
+    return None
+
+
+MERGE_FIELDS = ('user', 'full_name', 'phone', 'telegram_username', 'position_hint', 'event_group')
+
+
 def add_wishes_from_message(actor_user, text, source='web', today=None):
     """Разобрать сообщение и записать желающих. Возвращает (строки, ошибка):
-    'forbidden' — не ТЛ/менеджер, 'no_people' — в сообщении никого не нашли."""
+    'forbidden' — не ТЛ/менеджер, 'no_people' — в сообщении никого не нашли.
+
+    Строка = человек × мероприятие × ОДИН день («хочет 21 и 22» — две строки, их могут
+    забрать разные ТЛ). Аккаунт и мероприятие связываются, если найдены однозначно;
+    иначе остаются текстом. Уже существующая строка (дубль, в т.ч. от другого ТЛ) не
+    создаётся заново: возвращается она с `is_duplicate=True`, пустые поля дополняются."""
     if not can_manage_wishes(actor_user):
         return [], 'forbidden'
     text = (text or '').strip()[:4000]
@@ -450,28 +523,46 @@ def add_wishes_from_message(actor_user, text, source='web', today=None):
     if not rows:
         return [], 'no_people'
     batch_id = uuid.uuid4()
-    created = []
+    groups = upcoming_event_groups()
+    result = []
     with transaction.atomic():
         for row in rows:
-            created.append(dc.create_volunteer_wish(
-                added_by=actor_user,
-                telegram_username=row['telegram_username'][:100],
-                phone=row['phone'][:20],
-                full_name=row['full_name'][:255],
-                user=_match_user(row),
-                event_hint=row['event_hint'][:255],
-                wish_dates=[value.isoformat() for value in row['dates']],
-                position_hint=row['position_hint'][:255],
-                raw_text=text,
-                batch_id=batch_id,
-                source=source,
-            ))
-    logger.info('Табличка желающих: добавлено %s строк batch=%s source=%s by=%s', len(created), batch_id, source, actor(actor_user))
-    return created, None
+            user = _match_user(row)
+            for day in row['dates'] or [None]:
+                fields = {
+                    'telegram_username': row['telegram_username'][:100],
+                    'phone': row['phone'][:20],
+                    'full_name': row['full_name'][:255],
+                    'user': user,
+                    'event_hint': row['event_hint'][:255],
+                    'event_group': find_event_group(row['event_hint'], day, groups),
+                    'wish_date': day,
+                    'position_hint': row['position_hint'][:255],
+                }
+                existing = find_duplicate(fields)
+                if existing:
+                    fill = {name: fields[name] for name in MERGE_FIELDS
+                            if fields[name] and not getattr(existing, name)}
+                    if fill:
+                        dc.update_volunteer_wish(existing, operator=actor_user, **fill)
+                    existing.is_duplicate = True
+                    result.append(existing)
+                    continue
+                wish = dc.create_volunteer_wish(
+                    added_by=actor_user, raw_text=text, batch_id=batch_id, source=source, **fields,
+                )
+                wish.is_duplicate = False
+                result.append(wish)
+    logger.info('Табличка желающих: новых %s, дублей %s batch=%s source=%s by=%s',
+                sum(not w.is_duplicate for w in result), sum(w.is_duplicate for w in result),
+                batch_id, source, actor(actor_user))
+    return result, None
 
 
 def update_wish(actor_user, wish, data):
-    """Ручная правка строки (форма сайта). data — cleaned_data формы правки."""
+    """Ручная правка строки (форма сайта). data — cleaned_data формы правки:
+    контакты, аккаунт (`user`), мероприятие (`event_group`), один день, позиция.
+    'duplicate' — такая строка (человек × мероприятие × день) уже есть."""
     if not can_edit_wish(actor_user, wish):
         return None, 'forbidden'
     fields = {
@@ -480,10 +571,32 @@ def update_wish(actor_user, wish, data):
         'full_name': (data.get('full_name') or '').strip()[:255],
         'event_hint': (data.get('event_hint') or '').strip()[:255],
         'position_hint': (data.get('position_hint') or '').strip()[:255],
-        'wish_dates': [value.isoformat() for value in data.get('dates') or []],
+        'wish_date': data.get('wish_date'),
     }
-    fields['user'] = _match_user(fields)
+    fields['user'] = data.get('user') or _match_user(fields)
+    fields['event_group'] = data.get('event_group') or find_event_group(fields['event_hint'], fields['wish_date'])
+    if find_duplicate(fields, exclude_pk=wish.pk):
+        return None, 'duplicate'
     return dc.update_volunteer_wish(wish, operator=actor_user, **fields), None
+
+
+def link_wishes_to_group(group, operator=None):
+    """Мероприятие создали/переименовали — привязать к нему желающих, записанных
+    раньше текстом, если теперь оно для них единственный подходящий кандидат."""
+    groups = upcoming_event_groups()
+    if group.pk not in {item.pk for item in groups}:
+        return 0
+    linked = 0
+    for wish in _apply_lifecycle(dc.volunteer_wishes_qs().filter(event_group__isnull=True), None):
+        if wish.archived or wish.taken_event_group_id:
+            continue
+        found = find_event_group(wish.event_hint, wish.wish_date, groups)
+        if found and found.pk == group.pk:
+            dc.update_volunteer_wish(wish, operator=operator, event_group=group)
+            linked += 1
+    if linked:
+        logger.info('Табличка желающих: к мероприятию %s привязано строк %s', group.pk, linked)
+    return linked
 
 
 def _wish_or_error(actor_user, wish_id):
@@ -559,11 +672,14 @@ def name_matches(hint, title) -> bool:
     return all(any(token == word or token.startswith(_stem(word)) for token in tokens) for word in words)
 
 
-def match_reason(wish, title, days):
-    """Почему строка подходит мероприятию: 'name' / 'dates' / None."""
+def match_reason(wish, group, days):
+    """Почему строка подходит мероприятию: 'linked' (ссылка на него) / 'name' /
+    'dates' / None. Строка со ссылкой на ДРУГОЕ мероприятие сюда не подходит."""
+    if wish.event_group_id:
+        return 'linked' if wish.event_group_id == group.pk else None
     if wish.event_hint:
-        return 'name' if name_matches(wish.event_hint, title) else None
-    if days and set(wish.dates) & set(days):
+        return 'name' if name_matches(wish.event_hint, group.title) else None
+    if days and wish.wish_date in days:
         return 'dates'
     return None
 
@@ -612,8 +728,8 @@ def _apply_lifecycle(wishes, viewer):
 
 
 def _sort_key(wish):
-    # Сначала не забранные (раньше попросились — выше), забранные — в конце.
-    return (wish.taken_event_group_id is not None, wish.created_at)
+    # Сначала не забранные (раньше попросились — выше, дни человека — подряд), забранные — в конце.
+    return (wish.taken_event_group_id is not None, wish.created_at, wish.wish_date or datetime.date.max)
 
 
 def wishes_for_event_group(group, viewer, hide_taken=False):
@@ -632,10 +748,10 @@ def wishes_for_event_group(group, viewer, hide_taken=False):
             wish.match = 'taken'
             matched.append(wish)
             continue
-        wish.match = match_reason(wish, group.title, days)
+        wish.match = match_reason(wish, group, days)
         if wish.match:
             matched.append(wish)
-        elif not wish.taken_event_group_id:
+        elif not wish.taken_event_group_id and not wish.event_group_id:
             others.append(wish)
     matched.sort(key=_sort_key)
     others.sort(key=_sort_key)
@@ -673,14 +789,17 @@ def describe_wish(wish) -> str:
         who.append(wish.full_name)
     if wish.phone:
         who.append(wish.phone)
+    who.append('(есть на платформе)' if wish.user_id else '(нет на платформе)')
     what = []
-    if wish.event_hint:
-        what.append(wish.event_hint)
-    if wish.dates:
-        what.append(', '.join(value.strftime('%d.%m') for value in wish.dates))
+    if wish.event_group_id:
+        what.append(f'«{wish.event_group.title}»')
+    elif wish.event_hint:
+        what.append(f'{wish.event_hint} (мероприятия нет в базе)')
+    if wish.wish_date:
+        what.append(wish.wish_date.strftime('%d.%m'))
     if wish.position_hint:
         what.append(f'позиция: {wish.position_hint}')
     line = ' '.join(who) + ' — ' + (' · '.join(what) if what else 'на ближайший забег')
-    if wish.user_id:
-        line += ' (есть на платформе)'
+    if getattr(wish, 'is_duplicate', False) and wish.added_by_id:
+        line += f' — записал(а) {wish.added_by.full_name}, {timezone.localtime(wish.created_at):%d.%m}'
     return html.escape(line)

@@ -297,11 +297,12 @@ def feedback_comment_prompt() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def wish_saved_actions(batch_id: str, web_url: str = None) -> InlineKeyboardMarkup:
-    """После записи желающих: отменить запись (вдруг разобралось не так) и открыть
-    табличку на сайте (если есть HTTPS-адрес)."""
+def wish_saved_actions(batch_id: str = None, web_url: str = None) -> InlineKeyboardMarkup:
+    """После записи желающих: отменить запись (вдруг разобралось не так; нет, если всё
+    оказалось дублями) и открыть табличку на сайте (если есть HTTPS-адрес)."""
     builder = InlineKeyboardBuilder()
-    builder.button(text='↩️ Отменить запись', callback_data=f'wish_undo:{batch_id}')
+    if batch_id:
+        builder.button(text='↩️ Отменить запись', callback_data=f'wish_undo:{batch_id}')
     if web_url:
         builder.button(text='🌐 Открыть табличку', url=web_url)
     builder.adjust(1)

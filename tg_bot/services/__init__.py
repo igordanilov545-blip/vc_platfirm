@@ -26,7 +26,7 @@ from .applications import (  # noqa: F401
 )
 from .volunteer_wishes import (  # noqa: F401
     can_add_volunteer_wishes, add_volunteer_wishes, undo_volunteer_wishes,
-    volunteer_wishes_summary, volunteer_wishes_web_link,
+    volunteer_wishes_summary, volunteer_wishes_web_link, new_batch_id,
 )
 from .comments import (  # noqa: F401
     add_user_comment,

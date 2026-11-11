@@ -67,10 +67,13 @@ async def _save(message: Message, state: FSMContext, user_id: int, text: str):
         return
     await state.clear()
     web_url = await sync_to_async(services.volunteer_wishes_web_link)(user_id)
-    await answer_with_expiring_keyboard(
-        message, services.volunteer_wishes_summary(rows),
-        kb.wish_saved_actions(str(rows[0].batch_id), web_url),
-    )
+    batch_id = services.new_batch_id(rows)
+    text = services.volunteer_wishes_summary(rows)
+    if not batch_id and not web_url:
+        # Всё оказалось дублями и ссылки на сайт нет — кнопок нет, пустую клавиатуру не шлём.
+        await message.answer(text)
+        return
+    await answer_with_expiring_keyboard(message, text, kb.wish_saved_actions(batch_id, web_url))
 
 
 @router.callback_query(F.data.startswith('wish_undo:'))

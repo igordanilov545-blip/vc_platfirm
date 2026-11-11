@@ -15,7 +15,8 @@
     <thead>
         <tr>
             <th data-sort-key="person">Человек</th>
-            <th data-sort-key="wish">Хочет</th>
+            <th data-sort-key="wish">Мероприятие</th>
+            <th data-sort-key="day">День</th>
             <th data-sort-key="position">Позиция</th>
             <th data-sort-key="added">Добавил</th>
             <th data-sort-key="taken">Статус</th>
@@ -23,21 +24,23 @@
     </thead>
     <tbody>
     {% for wish in wishes %}
-        <tr data-search="{{ wish.display_name }} {{ wish.telegram_username }} {{ wish.phone }} {{ wish.event_hint }} {{ wish.position_hint }} {{ wish.added_by.full_name }}">
+        <tr data-search="{{ wish.display_name }} {{ wish.telegram_username }} {{ wish.phone }} {{ wish.event_hint }} {{ wish.event_group.title }} {{ wish.position_hint }} {{ wish.added_by.full_name }}">
             <td data-label="Человек" data-sort-value="{{ wish.display_name }}">
                 {% if wish.user_id %}<a href="{% url 'profile_detail' wish.user_id %}"><strong>{{ wish.display_name }}</strong></a>{% else %}<strong>{{ wish.display_name }}</strong>{% endif %}
                 {% if wish.full_name and wish.user_id and wish.full_name != wish.display_name %}<div class="muted">{{ wish.full_name }}</div>{% endif %}
+                {% if not wish.user_id %}<div class="muted" title="Аккаунт не найден по Telegram, телефону и ФИО — можно привязать через ✎">нет на платформе</div>{% endif %}
                 <div class="row-actions" style="flex-wrap:wrap;">
                     {% if wish.telegram_username %}<a href="https://t.me/{{ wish.telegram_username }}" target="_blank" rel="noopener noreferrer">@{{ wish.telegram_username }}</a>{% endif %}
                     {% if wish.phone %}<a href="tel:{{ wish.phone }}" class="mono">{{ wish.phone }}</a>{% endif %}
                 </div>
             </td>
-            <td data-label="Хочет" data-sort-value="{{ wish.event_hint }}">
-                {% if wish.event_hint %}<strong>{{ wish.event_hint }}</strong>{% endif %}
-                {% if wish.dates %}<div class="mono">{% for day in wish.dates %}{{ day|date:"d.m" }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
-                {% if not wish.event_hint and not wish.dates %}<span class="muted">ближайший забег</span>{% endif %}
+            <td data-label="Мероприятие" data-sort-value="{{ wish.event_group.title|default:wish.event_hint }}">
+                {% if wish.event_group_id %}<a href="{% url 'event_group_detail' wish.event_group_id %}"><strong>{{ wish.event_group.title }}</strong></a>
+                {% elif wish.event_hint %}<strong>{{ wish.event_hint }}</strong><div class="muted" title="Мероприятие с таким названием в базе не найдено (или их несколько) — привяжется само, когда его создадут">нет в базе</div>
+                {% else %}<span class="muted">ближайший забег</span>{% endif %}
                 {% if wish.match == 'name' %}<span class="pill info" title="Совпадает с названием мероприятия">по названию</span>{% elif wish.match == 'dates' %}<span class="pill info" title="Совпадает с днём смены мероприятия">по датам</span>{% endif %}
             </td>
+            <td data-label="День" class="mono" data-sort-value="{{ wish.wish_date|date:'Y-m-d' }}">{{ wish.wish_date|date:"d.m"|default:"—" }}</td>
             <td data-label="Позиция" data-sort-value="{{ wish.position_hint }}">{{ wish.position_hint|default:"—" }}</td>
             <td data-label="Добавил" data-sort-value="{{ wish.created_at|date:'Y-m-d H:i' }}">
                 {{ wish.added_by.full_name|default:"—" }}
@@ -64,7 +67,7 @@
             </td>
         </tr>
     {% empty %}
-        <tr><td colspan="5" class="muted">{{ empty_text|default:"Пока никого." }}</td></tr>
+        <tr><td colspan="7" class="muted">{{ empty_text|default:"Пока никого." }}</td></tr>
     {% endfor %}
     </tbody>
 </table>

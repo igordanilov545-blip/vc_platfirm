@@ -25,10 +25,27 @@ def undo_volunteer_wishes(user_id: int, batch_id: str):
 
 
 def volunteer_wishes_summary(rows) -> str:
-    lines = [f'✅ Записал в табличку желающих ({len(rows)}):']
-    lines += [f'• {wishes_service.describe_wish(row)}' for row in rows]
-    lines.append('\nНа странице мероприятия на сайте они появятся сами — по названию или датам.')
+    """Ответ после записи: новые строки и те, что уже были (дубли не создаются)."""
+    fresh = [row for row in rows if not getattr(row, 'is_duplicate', False)]
+    duplicates = [row for row in rows if getattr(row, 'is_duplicate', False)]
+    lines = []
+    if fresh:
+        lines.append(f'✅ Записал в табличку желающих ({len(fresh)}):')
+        lines += [f'• {wishes_service.describe_wish(row)}' for row in fresh]
+    if duplicates:
+        if lines:
+            lines.append('')
+        lines.append(f'♻️ Уже в табличке, повторно не записываю ({len(duplicates)}):')
+        lines += [f'• {wishes_service.describe_wish(row)}' for row in duplicates]
+    lines.append('\nОдна строка — один день: дни человека можно забрать разным тим-лидерам. '
+                 'На странице мероприятия на сайте желающие появятся сами.')
     return '\n'.join(lines)
+
+
+def new_batch_id(rows):
+    """batch новых строк (для «Отменить запись»); None — всё оказалось дублями."""
+    fresh = [row for row in rows if not getattr(row, 'is_duplicate', False)]
+    return str(fresh[0].batch_id) if fresh else None
 
 
 def volunteer_wishes_web_link(user_id: int):

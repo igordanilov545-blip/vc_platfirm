@@ -75,6 +75,9 @@ class EventGroupForm(forms.ModelForm):
         if commit:
             dc.save_event_group(group, list(self.cleaned_data['managers']), assigned_by=self.assigned_by)
             dc.apply_group_dobro_link(group, self.assigned_by)
+            # Желающие, записанные раньше названием, получают ссылку на это мероприятие.
+            from blog.services.volunteer_wishes import link_wishes_to_group
+            link_wishes_to_group(group, self.assigned_by)
             if self.prepared_sheet:
                 from blog.services.event_sheets import apply_prepared_sheet
                 apply_prepared_sheet(self.assigned_by, group, self.prepared_sheet)

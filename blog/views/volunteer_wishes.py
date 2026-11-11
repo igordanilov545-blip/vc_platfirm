@@ -48,7 +48,8 @@ def volunteer_wish_add(request):
         if error == 'no_people':
             form.add_error('text', 'Не нашёл ни @юзернейма, ни телефона, ни ФИО рядом со словом «хочет».')
         else:
-            messages.success(request, f'Записано в табличку желающих: {len(created)}.')
+            fresh = sum(not row.is_duplicate for row in created)
+            messages.success(request, f'Записано новых: {fresh}, уже были в табличке: {len(created) - fresh}.')
             return modal_form_response(request, '', {}, success_redirect=reverse('volunteer_wishes') + '?status=mine')
     return modal_form_response(request, 'blog/volunteer_wish_form.html', {
         'form': form, 'title': 'Добавить желающих', 'submit_label': 'Записать',
@@ -62,17 +63,28 @@ def volunteer_wish_edit(request, wish_id):
     if not wishes.can_edit_wish(request.user, wish):
         raise PermissionDenied('Править строку может автор или менеджер.')
     initial = {
-        'telegram_username': wish.telegram_username, 'phone': wish.phone, 'full_name': wish.full_name,
-        'event_hint': wish.event_hint, 'position_hint': wish.position_hint,
-        'dates_text': ', '.join(value.strftime('%d.%m.%Y') for value in wish.dates),
+        'user': wish.user_id, 'telegram_username': wish.telegram_username, 'phone': wish.phone,
+        'full_name': wish.full_name, 'event_group': wish.event_group_id, 'event_hint': wish.event_hint,
+        'wish_date': wish.wish_date, 'position_hint': wish.position_hint,
     }
-    form = VolunteerWishEditForm(request.POST or None, initial=initial)
+    form = VolunteerWishEditForm(request.POST or None, initial=initial, current_group=wish.event_group)
     if request.method == 'POST' and form.is_valid():
         _, error = wishes.update_wish(request.user, wish, form.cleaned_data)
-        _raise_for(error)
-        return modal_form_response(request, '', {}, success_redirect=_safe_next(request, 'volunteer_wishes'))
+        if error == 'duplicate':
+            form.add_error(None, 'Такая строка уже есть: этот человек на это мероприятие в этот день.')
+        else:
+            _raise_for(error)
+            return modal_form_response(request, '', {}, success_redirect=_safe_next(request, 'volunteer_wishes'))
+    import json
+    selected = form['user'].value() if form.is_bound else wish.user_id
+    preselect = ''
+    if selected:
+        person = dc.users_qs().filter(pk=selected).first()
+        if person:
+            preselect = json.dumps([{'id': person.pk, 'label': person.full_name}], ensure_ascii=False)
     return modal_form_response(request, 'blog/volunteer_wish_form.html', {
-        'form': form, 'title': 'Желающий: изменить', 'raw_text': wish.raw_text,
+        'form': form, 'title': 'Желающий: изменить', 'raw_text': wish.raw_text, 'edit_mode': True,
+        'user_preselect': preselect,
     }, partial_template='blog/partials/_volunteer_wish_form.html')
 
 

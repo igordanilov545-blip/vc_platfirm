@@ -1462,9 +1462,10 @@ class VolunteerWish(models.Model):
     EventGroup: хранит разобранные подсказки (название, даты, позиция) и исходное
     сообщение, а с мероприятием сопоставляется при показе (services/volunteer_wishes).
 
-    Одна строка = человек × мероприятие из сообщения («хочет на СКБС и на Скорость» —
-    две строки), чтобы «забрал на СКБС» не прятал человека со Скорости. Строки одного
-    сообщения объединены `batch_id` («Отменить запись» в боте)."""
+    Одна строка = человек × мероприятие × ОДИН день («хочет на СКБС и на Скорость 21 и
+    22» — четыре строки): «забрал на СКБС» не прячет человека со Скорости, а два его
+    дня могут забрать разные ТЛ. Дублей (тот же человек × мероприятие × день) нет —
+    проверяет сервис. Строки одного сообщения объединены `batch_id` («Отменить запись»)."""
     SOURCE_CHOICES = [('bot', 'Бот'), ('web', 'Сайт')]
 
     telegram_username = models.CharField(max_length=100, blank=True, default='')
@@ -1472,9 +1473,12 @@ class VolunteerWish(models.Model):
     full_name = models.CharField(max_length=255, blank=True, default='')
     # Найденный по контактам аккаунт (telegram → телефон → ФИО), если человек уже есть.
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='volunteer_wishes')
+    # Название, как его написали в чате; event_group — реальное мероприятие, если оно
+    # однозначно найдено (иначе пусто — «нет в базе», привяжется при его создании).
     event_hint = models.CharField(max_length=255, blank=True, default='')
-    # ISO-даты (YYYY-MM-DD), которые человек назвал; год/месяц достроены «вперёд».
-    wish_dates = models.JSONField(default=list, blank=True)
+    event_group = models.ForeignKey(EventGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name='wishes')
+    # Один день; год/месяц из сообщения достроены «вперёд». Пусто — «ближайший забег».
+    wish_date = models.DateField(null=True, blank=True, db_index=True)
     position_hint = models.CharField(max_length=255, blank=True, default='')
     raw_text = models.TextField(blank=True, default='')
     batch_id = models.UUIDField(default=uuid.uuid4, db_index=True)
@@ -1501,16 +1505,6 @@ class VolunteerWish(models.Model):
             return self.user.full_name
         return self.full_name or (f'@{self.telegram_username}' if self.telegram_username else self.phone)
 
-    @property
-    def dates(self):
-        import datetime
-        result = []
-        for value in self.wish_dates or []:
-            try:
-                result.append(datetime.date.fromisoformat(value))
-            except (TypeError, ValueError):
-                continue
-        return result
 
 
 class Incident(models.Model):

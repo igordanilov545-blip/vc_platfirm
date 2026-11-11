@@ -11,7 +11,7 @@ from ._base import logger, actor
 
 def volunteer_wishes_qs():
     """Ленивый queryset строк таблички с авторами и отметками «забрал»."""
-    return VolunteerWish.objects.select_related('user', 'added_by', 'taken_by', 'taken_event_group')
+    return VolunteerWish.objects.select_related('user', 'added_by', 'taken_by', 'taken_event_group', 'event_group')
 
 
 def get_volunteer_wish(wish_id):

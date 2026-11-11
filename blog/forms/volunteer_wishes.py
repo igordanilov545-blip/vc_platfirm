@@ -17,22 +17,36 @@ class VolunteerWishAddForm(forms.Form):
 
 
 class VolunteerWishEditForm(forms.Form):
-    """Ручная правка разобранной строки, если эвристика ошиблась."""
+    """Ручная правка строки: привязать реальный аккаунт и мероприятие, один день.
+
+    `user` приходит из общего выбора людей (data-select-remote="users", скрытый input
+    перед сабмитом), поэтому в шаблоне поле рисуется пикером, а не стандартным виджетом."""
+    user = forms.ModelChoiceField(label='Аккаунт на платформе', queryset=dc.users_qs(), required=False)
     telegram_username = forms.CharField(label='Telegram', max_length=100, required=False)
     phone = forms.CharField(label='Телефон', max_length=20, required=False)
     full_name = forms.CharField(label='ФИО', max_length=255, required=False)
-    event_hint = forms.CharField(label='Мероприятие', max_length=255, required=False,
-                                 help_text='Как называют забег в сообществе: «Скорость», «СКБС».')
-    dates_text = forms.CharField(label='Даты', max_length=255, required=False,
-                                 help_text='Например: 21.11.2026, 22.11.2026 или «21-22 ноября».')
+    event_group = forms.ModelChoiceField(
+        label='Мероприятие в базе', queryset=dc.event_groups_qs().none(), required=False,
+        empty_label='— нет в базе (указать названием ниже) —',
+    )
+    event_hint = forms.CharField(label='Название, как написали', max_length=255, required=False,
+                                 help_text='Если мероприятия ещё нет в базе: «Скорость», «СКБС».')
+    wish_date = forms.DateField(
+        label='День', required=False, input_formats=['%Y-%m-%d', '%d.%m.%Y'],
+        widget=forms.DateInput(attrs={'type': 'text', 'data-datepicker': '', 'data-dp-keep-empty': '',
+                                      'autocomplete': 'off'}, format='%Y-%m-%d'),
+        help_text='Один день. Хочет на несколько — отдельная строка на каждый.',
+    )
     position_hint = forms.CharField(label='Позиция', max_length=255, required=False)
 
+    def __init__(self, *args, current_group=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        from blog.services.volunteer_wishes import upcoming_event_groups
+        ids = [group.pk for group in upcoming_event_groups()] + ([current_group.pk] if current_group else [])
+        self.fields['event_group'].queryset = dc.event_groups_qs().filter(pk__in=ids).order_by('title')
+
     def clean(self):
-        from blog.services.volunteer_wishes import parse_dates_text
         data = super().clean()
-        if not any(data.get(name) for name in ('telegram_username', 'phone', 'full_name')):
-            raise forms.ValidationError('Нужен хотя бы один контакт: Telegram, телефон или ФИО.')
-        data['dates'] = parse_dates_text(data.get('dates_text'))
-        if data.get('dates_text') and not data['dates']:
-            self.add_error('dates_text', 'Не удалось разобрать даты.')
+        if not any(data.get(name) for name in ('user', 'telegram_username', 'phone', 'full_name')):
+            raise forms.ValidationError('Нужен аккаунт или хотя бы один контакт: Telegram, телефон или ФИО.')
         return data

@@ -6,7 +6,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from django.conf import settings
 
-from tg_bot.handlers import common, volunteer, web_access, team_leader, manager
+from tg_bot.handlers import common, volunteer, web_access, team_leader, manager, wishes
 from tg_bot.middlewares import ActivityMiddleware
 from blog.logging_utils import get_bot_logger
 
@@ -29,6 +29,9 @@ def create_dispatcher() -> Dispatcher:
     dp.callback_query.outer_middleware(ActivityMiddleware())
     # Более специфичные роутеры (ТЛ/менеджер) — раньше общих, чтобы их callback_data
     # не перехватывались хендлерами волонтёра.
+    # Табличка желающих — первой: её FSM-состояние ждёт свободный текст, а кнопка меню
+    # или команда посреди сценария должны выйти из него, а не попасть в другой роутер.
+    dp.include_router(wishes.router)
     dp.include_router(team_leader.router)
     dp.include_router(manager.router)
     dp.include_router(web_access.router)

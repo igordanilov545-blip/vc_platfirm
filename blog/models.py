@@ -1454,6 +1454,65 @@ class ProfileConflict(models.Model):
         ordering = ['pk']
 
 
+class VolunteerWish(models.Model):
+    """Строка «таблички желающих» (documentation/volunteer-wishes.md).
+
+    Человек заранее, ещё до старта набора, попросил тим-лидера/менеджера взять его на
+    следующий забег. Мероприятия в платформе ещё нет, поэтому запись НЕ ссылается на
+    EventGroup: хранит разобранные подсказки (название, даты, позиция) и исходное
+    сообщение, а с мероприятием сопоставляется при показе (services/volunteer_wishes).
+
+    Одна строка = человек × мероприятие из сообщения («хочет на СКБС и на Скорость» —
+    две строки), чтобы «забрал на СКБС» не прятал человека со Скорости. Строки одного
+    сообщения объединены `batch_id` («Отменить запись» в боте)."""
+    SOURCE_CHOICES = [('bot', 'Бот'), ('web', 'Сайт')]
+
+    telegram_username = models.CharField(max_length=100, blank=True, default='')
+    phone = models.CharField(max_length=20, blank=True, default='')
+    full_name = models.CharField(max_length=255, blank=True, default='')
+    # Найденный по контактам аккаунт (telegram → телефон → ФИО), если человек уже есть.
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='volunteer_wishes')
+    event_hint = models.CharField(max_length=255, blank=True, default='')
+    # ISO-даты (YYYY-MM-DD), которые человек назвал; год/месяц достроены «вперёд».
+    wish_dates = models.JSONField(default=list, blank=True)
+    position_hint = models.CharField(max_length=255, blank=True, default='')
+    raw_text = models.TextField(blank=True, default='')
+    batch_id = models.UUIDField(default=uuid.uuid4, db_index=True)
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='web')
+    added_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='added_volunteer_wishes')
+    created_at = models.DateTimeField(auto_now_add=True)
+    # «Отметить, что забрал» — в какое мероприятие, кто и когда; снимается обратно.
+    taken_event_group = models.ForeignKey(EventGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name='taken_wishes')
+    taken_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='taken_volunteer_wishes')
+    taken_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'volunteer_wishes'
+        ordering = ['-created_at', '-pk']
+        verbose_name = 'Желающий'
+        verbose_name_plural = 'Табличка желающих'
+
+    def __str__(self):
+        return self.display_name
+
+    @property
+    def display_name(self):
+        if self.user_id and self.user:
+            return self.user.full_name
+        return self.full_name or (f'@{self.telegram_username}' if self.telegram_username else self.phone)
+
+    @property
+    def dates(self):
+        import datetime
+        result = []
+        for value in self.wish_dates or []:
+            try:
+                result.append(datetime.date.fromisoformat(value))
+            except (TypeError, ValueError):
+                continue
+        return result
+
+
 class Incident(models.Model):
     """Пункт раздела «Главное» менеджера — что-то, требующее внимания или решения
     (коллизия Telegram-аккаунтов, идущее/скоро начинающееся мероприятие, запрос

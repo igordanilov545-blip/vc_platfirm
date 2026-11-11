@@ -129,5 +129,26 @@
     </div>
 </div>
 
+{% if wish_table %}
+{% comment %}Табличка желающих: люди, попросившиеся заранее, ещё до создания мероприятия
+(documentation/volunteer-wishes.md). Подходящие по названию/датам — сверху, остальные
+не забранные — в раскрывашке, чтобы никого не потерять.{% endcomment %}
+<div class="card" id="wishes" style="padding:0; overflow:hidden;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:16px 16px 8px;">
+        <h2 style="margin:0;">🙋 Желающие{% if wish_table.open_count %} <span class="pill info">{{ wish_table.open_count }}</span>{% endif %}</h2>
+        <div class="row-actions">
+            <a href="{% url 'volunteer_wish_add' %}" class="btn secondary btn-sm" data-modal data-modal-title="Добавить желающих">+ Добавить</a>
+            <a href="{% url 'volunteer_wishes' %}" class="btn secondary btn-sm">Вся табличка</a>
+        </div>
+    </div>
+    {% include 'blog/partials/_volunteer_wishes_table.html' with wishes=wish_table.matched table_id='group-wishes-table' take_group=event_group empty_text='Под это мероприятие (по названию или датам) пока никто не просился.' %}
+    {% if wish_table.others %}
+    <details style="padding:8px 16px 16px;">
+        <summary>Остальные желающие без совпадения ({{ wish_table.others|length }})</summary>
+        {% include 'blog/partials/_volunteer_wishes_table.html' with wishes=wish_table.others table_id='group-wishes-others' take_group=event_group %}
+    </details>
+    {% endif %}
+</div>
+{% endif %}
 
 {% endblock %}

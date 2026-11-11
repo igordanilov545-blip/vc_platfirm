@@ -6,6 +6,7 @@
 """
 from .auth import LoginForm, RegisterForm  # noqa: F401
 from .role_invitations import RoleInvitationForm  # noqa: F401
+from .volunteer_wishes import VolunteerWishAddForm, VolunteerWishEditForm  # noqa: F401
 from .legacy_import import LegacyBaseUploadForm, FapUploadForm, FapLibraryForm  # noqa: F401
 from .event_sheets import EventSheetImportForm, GoogleSheetsConnectionForm, SheetTeamLeaderBindingForm  # noqa: F401
 from .qr_attendance import ScannerGrantForm  # noqa: F401

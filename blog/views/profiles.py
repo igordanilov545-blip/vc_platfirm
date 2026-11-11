@@ -167,6 +167,8 @@ def profile_detail(request, user_id):
         context['show_active_applications'] = True
 
     if is_owner:
+        from blog.services.volunteer_wishes import can_manage_wishes
+        context['can_manage_wishes'] = can_manage_wishes(request.user)
         from blog.services.pgas_certificate import pgas_certificate_eligibility, only_verification_missing
         pgas = pgas_certificate_eligibility(target)
         context['pgas_eligible'] = pgas['eligible']

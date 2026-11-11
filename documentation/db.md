@@ -13,6 +13,14 @@
 в одной записи и с аудитом. ACL административных настроек не меняется.
 Подробности: [appearance-system.md](appearance-system.md).
 
+## Табличка желающих (миграция 0056)
+
+`volunteer_wishes` — люди, попросившиеся на будущий забег до создания мероприятия:
+контакты из сообщения, найденный `user`, подсказки `event_hint`/`wish_dates`/
+`position_hint`, исходный `raw_text`, `batch_id` одного сообщения, отметка «забрал»
+(`taken_event_group`/`taken_by`/`taken_at`). Связи с `EventGroup` до «забрал» нет —
+сопоставление по названию/датам при показе. Подробно — [volunteer-wishes.md](volunteer-wishes.md).
+
 ## Миграция старых баз и пул функций (миграция 0049)
 
 Подробно — [legacy-migration.md](legacy-migration.md). Таблицы:

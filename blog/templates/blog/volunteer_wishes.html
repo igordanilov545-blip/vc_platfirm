@@ -1,0 +1,21 @@
+{% extends 'blog/base.html' %}
+{% block title %}Табличка желающих{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div><a href="{% url 'profile_detail' request.user.pk %}">Профиль</a><h1>Табличка желающих</h1></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a href="{% url 'volunteer_wish_add' %}" class="btn" data-modal data-modal-title="Добавить желающих">+ Добавить желающих</a>
+    </div>
+</div>
+<p class="muted">Люди, которые заранее попросились на следующий забег. На странице мероприятия они
+показываются сами — по названию или датам; там же их отмечают «✓ Забрал». В боте — кнопка «🙋 Желающие».</p>
+
+<nav class="tabs" aria-label="Фильтр таблички">
+    {% for key, label in filters.items %}<a href="?status={{ key }}" class="{% if key == status %}active{% endif %}">{{ label }}</a>{% endfor %}
+</nav>
+
+{% include 'blog/partials/_table_search.html' with search_target='#wishes-table' search_placeholder='Поиск по имени, @юзернейму, забегу, позиции…' %}
+<div class="card" style="padding:0; overflow:hidden;">
+    {% include 'blog/partials/_volunteer_wishes_table.html' with wishes=wishes table_id='wishes-table' empty_text='Здесь пока никого. Нажмите «+ Добавить желающих» и вставьте сообщение из чата.' %}
+</div>
+{% endblock %}

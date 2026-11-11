@@ -18,6 +18,7 @@
 | [`orgs.py`](orgs.py) | Организации, организаторы, их связи и взаимодействия, локации. |
 | [`events.py`](events.py) | Мероприятия, смены, категории, staff, публикация, рассылка. |
 | [`event_groups.py`](event_groups.py) | Новый верхний уровень мероприятий: queryset, сохранение названия и менеджеров. Прежние `events.py`/`Event` относятся к позициям. |
+| [`volunteer_wishes.py`](volunteer_wishes.py) | Табличка желающих: `volunteer_wishes_qs`, создание/правка/удаление строк, отметка «забрал» (`set_volunteer_wish_taken`). Разбор и ACL — `services/volunteer_wishes.py`. |
 | [`event_sheets.py`](event_sheets.py) | CRUD направлений FaP, источника/снимка плана, исходных дней и смен, отдельных ответственных за зоны, привязок ТЛ и зашифрованного ключа Google. |
 | [`qr_attendance.py`](qr_attendance.py) | Личные QR, доступ, входы/выходы; `save_shift_attendance` меняет и очищает времена, `save_qr_participation` сохраняет явку/часы. `shift_meals_qs`/`event_badges_qs`, идемпотентная выдача и `revoke_shift_meal`/`revoke_event_badge` для снятия. Изменения логируются; время передаёт сервис из подписанного сканирования, токены в лог не пишутся. |
 | [`applications.py`](applications.py) | Заявки, привязка смен, участия (явка), запросы фидбека. |

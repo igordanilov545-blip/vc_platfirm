@@ -8,6 +8,10 @@ from ._common import healthz  # noqa: F401
 from .settings_hub import appearance_update  # noqa: F401
 from .legacy_migration import legacy_migration, legacy_migration_base, legacy_migration_group, legacy_migration_job  # noqa: F401
 from .profile_actualize import profile_actualize  # noqa: F401
+from .volunteer_wishes import (  # noqa: F401
+    volunteer_wishes, volunteer_wish_add, volunteer_wish_edit, volunteer_wish_delete,
+    volunteer_wish_take, volunteer_wish_untake,
+)
 from .role_invitations import role_invitation_list, role_invitation_detail, role_invitation_create, role_invitation_accept, role_invitation_revoke  # noqa: F401
 from .event_sheets import (  # noqa: F401
     event_sheet, event_sheet_link, event_sheet_sync, event_sheet_export,

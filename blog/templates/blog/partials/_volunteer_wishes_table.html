@@ -1,0 +1,67 @@
+{% comment %}
+Таблица «табличка желающих» (documentation/volunteer-wishes.md). Общая для страницы
+/wishes/ и карточки мероприятия — разметку не копируем.
+Переменные:
+  wishes      — строки (VolunteerWish c .can_edit / .can_untake, на странице меро ещё .match)
+  table_id    — id таблицы (для поиска _table_search)
+  take_group  — мероприятие, в которое «забираем» (только на странице мероприятия)
+Действия — обычные POST-формы с next=текущая страница, без инлайнового JS.
+{% endcomment %}
+<div class="table-scroll">
+<table class="responsive-table" data-sortable id="{{ table_id }}">
+    <thead>
+        <tr>
+            <th data-sort-key="person">Человек</th>
+            <th data-sort-key="wish">Хочет</th>
+            <th data-sort-key="position">Позиция</th>
+            <th data-sort-key="added">Добавил</th>
+            <th data-sort-key="taken">Забрал</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for wish in wishes %}
+        <tr data-search="{{ wish.display_name }} {{ wish.telegram_username }} {{ wish.phone }} {{ wish.event_hint }} {{ wish.position_hint }} {{ wish.added_by.full_name }}">
+            <td data-label="Человек" data-sort-value="{{ wish.display_name }}">
+                {% if wish.user_id %}<a href="{% url 'profile_detail' wish.user_id %}"><strong>{{ wish.display_name }}</strong></a>{% else %}<strong>{{ wish.display_name }}</strong>{% endif %}
+                {% if wish.full_name and wish.user_id and wish.full_name != wish.display_name %}<div class="muted">{{ wish.full_name }}</div>{% endif %}
+                <div class="row-actions" style="flex-wrap:wrap;">
+                    {% if wish.telegram_username %}<a href="https://t.me/{{ wish.telegram_username }}" target="_blank" rel="noopener noreferrer">@{{ wish.telegram_username }}</a>{% endif %}
+                    {% if wish.phone %}<a href="tel:{{ wish.phone }}" class="mono">{{ wish.phone }}</a>{% endif %}
+                </div>
+            </td>
+            <td data-label="Хочет" data-sort-value="{{ wish.event_hint }}">
+                {% if wish.event_hint %}<strong>{{ wish.event_hint }}</strong>{% endif %}
+                {% if wish.dates %}<div class="mono">{% for day in wish.dates %}{{ day|date:"d.m" }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+                {% if not wish.event_hint and not wish.dates %}<span class="muted">ближайший забег</span>{% endif %}
+                {% if wish.match == 'name' %}<span class="pill info" title="Совпадает с названием мероприятия">по названию</span>{% elif wish.match == 'dates' %}<span class="pill info" title="Совпадает с днём смены мероприятия">по датам</span>{% endif %}
+            </td>
+            <td data-label="Позиция" data-sort-value="{{ wish.position_hint }}">{{ wish.position_hint|default:"—" }}</td>
+            <td data-label="Добавил" data-sort-value="{{ wish.created_at|date:'Y-m-d H:i' }}">
+                {{ wish.added_by.full_name|default:"—" }}
+                <div class="muted">{{ wish.created_at|date:"d.m.Y" }} · {% if wish.source == 'bot' %}бот{% else %}сайт{% endif %}</div>
+                {% if wish.raw_text %}<details><summary class="muted">сообщение</summary><div style="white-space:pre-wrap;">{{ wish.raw_text }}</div></details>{% endif %}
+            </td>
+            <td data-label="Забрал" data-sort-value="{% if wish.taken_event_group_id %}1{% else %}0{% endif %}">
+                <div class="row-actions" style="flex-wrap:wrap;">
+                {% if wish.taken_event_group_id %}
+                    <span class="pill success" title="{{ wish.taken_at|date:'d.m.Y H:i' }}"><span class="dot"></span>Забрал{% if wish.taken_by %} {{ wish.taken_by.full_name }}{% endif %}</span>
+                    {% if not take_group %}<a href="{% url 'event_group_detail' wish.taken_event_group_id %}">{{ wish.taken_event_group.title }}</a>{% endif %}
+                    {% if wish.can_untake %}<form method="post" action="{% url 'volunteer_wish_untake' wish.pk %}" style="display:inline;">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit" class="btn secondary btn-sm">Снять отметку</button></form>{% endif %}
+                {% elif take_group %}
+                    <form method="post" action="{% url 'volunteer_wish_take' wish.pk %}" style="display:inline;">{% csrf_token %}<input type="hidden" name="group" value="{{ take_group.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit" class="btn btn-sm" title="Отметить, что забрал в «{{ take_group.title }}»">✓ Забрал</button></form>
+                {% else %}
+                    <span class="muted">ещё нет</span>
+                {% endif %}
+                {% if wish.can_edit %}
+                    <a href="{% url 'volunteer_wish_edit' wish.pk %}?next={{ request.get_full_path|urlencode }}" class="btn secondary btn-sm" data-modal data-modal-title="Желающий: изменить">✎</a>
+                    <form method="post" action="{% url 'volunteer_wish_delete' wish.pk %}" style="display:inline;">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit" class="btn secondary btn-sm" title="Удалить строку">✕</button></form>
+                {% endif %}
+                </div>
+            </td>
+        </tr>
+    {% empty %}
+        <tr><td colspan="5" class="muted">{{ empty_text|default:"Пока никого." }}</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>

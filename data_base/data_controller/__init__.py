@@ -24,6 +24,10 @@
 from ._base import get_full_table, create_record_generic, TABLE_MODEL_MAP  # noqa: F401
 from .appearance import save_user_appearance  # noqa: F401
 from .event_groups import event_groups_qs, save_event_group  # noqa: F401
+from .volunteer_wishes import (  # noqa: F401
+    volunteer_wishes_qs, get_volunteer_wish, create_volunteer_wish, update_volunteer_wish,
+    set_volunteer_wish_taken, delete_volunteer_wishes,
+)
 from .role_invitations import role_invitations_qs, role_invitation_uses_qs, create_role_invitation, record_role_invitation_use, revoke_role_invitation  # noqa: F401
 from .legacy_import import (  # noqa: F401
     legacy_identities_qs, legacy_shifts_qs, create_legacy_identity, create_legacy_group,
@@ -163,6 +167,8 @@ from .querysets import (  # noqa: F401
 
 # Публичный контракт слоя — тот же, что был у монолитного data_controller.py.
 __all__ = [
+    'volunteer_wishes_qs', 'get_volunteer_wish', 'create_volunteer_wish', 'update_volunteer_wish',
+    'set_volunteer_wish_taken', 'delete_volunteer_wishes',
     'legacy_identities_qs', 'legacy_shifts_qs', 'create_legacy_identity', 'create_legacy_group',
     'create_legacy_position', 'create_legacy_shift', 'ensure_legacy_application', 'ensure_legacy_comment', 'ensure_legacy_participation',
     'complete_legacy_user', 'ensure_legacy_decision', 'create_event_function',

@@ -251,13 +251,16 @@ def event_group_detail(request, group_id):
         e.first_day or datetime.date.max,
     ))
 
-    from blog.services import event_functions
+    from blog.services import event_functions, volunteer_wishes
     return render(request, 'blog/position_list.html', {
         'event_group': group,
         'events': rows,
         'functions': event_functions.functions_overview(group, rows),
         'manager_view': manager_view,
         'hide_passed': hide_passed,
+        # Табличка желающих (documentation/volunteer-wishes.md) — только ТЛ/менеджерам.
+        'wish_table': volunteer_wishes.wishes_for_event_group(group, request.user)
+        if volunteer_wishes.can_manage_wishes(request.user) else None,
     })
 
 @login_required

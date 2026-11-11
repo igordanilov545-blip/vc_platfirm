@@ -19,6 +19,9 @@ def _add_webapp_button(builder: ReplyKeyboardBuilder):
     builder.button(text='🖥 Личный кабинет', web_app=WebAppInfo(url=url.rstrip('/') + '/webapp/'))
 
 
+WISHES_BUTTON = '🙋 Желающие'
+
+
 # ---------------------------------------------------------------------------
 # Reply-клавиатуры (основное меню)
 # ---------------------------------------------------------------------------
@@ -55,6 +58,9 @@ def main_menu(is_team_leader: bool = False, is_manager: bool = False) -> ReplyKe
     # (ТЛ своих меро и менеджеры). Волонтёру эта кнопка не показывается (§5.5).
     if is_team_leader or is_manager:
         builder.button(text='🔔 Заявки: уведомления')
+        # Табличка желающих: ТЛ и менеджеры записывают тех, кто заранее попросился
+        # на будущий забег (documentation/volunteer-wishes.md).
+        builder.button(text=WISHES_BUTTON)
     _add_webapp_button(builder)
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
@@ -289,3 +295,23 @@ def feedback_comment_prompt() -> InlineKeyboardMarkup:
     builder.button(text='Готово', callback_data='feedback_done')
     builder.adjust(1)
     return builder.as_markup()
+
+
+def wish_saved_actions(batch_id: str, web_url: str = None) -> InlineKeyboardMarkup:
+    """После записи желающих: отменить запись (вдруг разобралось не так) и открыть
+    табличку на сайте (если есть HTTPS-адрес)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text='↩️ Отменить запись', callback_data=f'wish_undo:{batch_id}')
+    if web_url:
+        builder.button(text='🌐 Открыть табличку', url=web_url)
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+# Тексты кнопок нижнего меню: посреди короткого сценария (табличка желающих) нажатие
+# кнопки меню — выход из сценария, а не ответ на вопрос бота.
+MENU_BUTTONS = {
+    '📅 Мероприятия', '📱 QR код', '📝 Зарегистрироваться', '🔔 Подписка', '🔐 Авторизоваться на сайте',
+    '📝 Мои заявки', '📊 Статистика', '🌐 Перейти на сайт', '👥 Мои мероприятия (ТЛ)', '⚙️ Управление',
+    '📢 Опубликовать меро', '📨 Сделать рассылку', '🔔 Заявки: уведомления', WISHES_BUTTON, '🖥 Личный кабинет',
+}

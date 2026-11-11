@@ -24,6 +24,10 @@ from .applications import (  # noqa: F401
     event_ready_for_attendance, mark_all_attended, attendance_web_link, all_applications,
     notify_manager_processed_application,
 )
+from .volunteer_wishes import (  # noqa: F401
+    can_add_volunteer_wishes, add_volunteer_wishes, undo_volunteer_wishes,
+    volunteer_wishes_summary, volunteer_wishes_web_link,
+)
 from .comments import (  # noqa: F401
     add_user_comment,
 )

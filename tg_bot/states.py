@@ -47,3 +47,10 @@ class ApplicationCancel(StatesGroup):
     """Отмена активной заявки самим волонтёром — причина обязательна
     (tg-bot.md §4.3.3, доступно только пока до меро больше `const.late_cancel_hours`)."""
     waiting_reason = State()
+
+
+class WishInput(StatesGroup):
+    """Табличка желающих: ждём сообщение о людях, которые хотят на будущий забег
+    (documentation/volunteer-wishes.md). Одно сообщение — одна запись, затем состояние
+    снимается."""
+    waiting_text = State()

@@ -5,6 +5,10 @@
         {{ form.title.label_tag }}{{ form.title }}{{ form.title.errors }}
     </div>
     <div class="field">
+        {{ form.dobro_ru_link.label_tag }}{{ form.dobro_ru_link }}{{ form.dobro_ru_link.errors }}
+        <span class="event-dash-muted">{{ form.dobro_ru_link.help_text }}</span>
+    </div>
+    <div class="field">
         {{ form.managers.label_tag }}
         <div class="category-chips" data-chip-select="{{ form.managers.id_for_label }}" data-chip-empty="Менеджеры не назначены">
             <div class="cat-chips-row" data-chips-selected></div>

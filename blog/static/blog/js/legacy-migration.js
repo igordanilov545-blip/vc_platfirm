@@ -198,7 +198,7 @@
             function sync() {
                 if (title) {
                     var own = select.value && form.querySelector('#position-pool-' + select.value);
-                    title.setAttribute('list', own ? own.id : 'position-pool');
+                    if (own) title.setAttribute('list', own.id); else title.removeAttribute('list');
                 }
                 if (newField) newField.hidden = select.value !== 'new';
             }
@@ -207,3 +207,33 @@
         });
     }
     initFunctionPoolSelect(document);
+
+    /**
+     * Смена функции: под ролями — сумма «назначено по ролям» и предупреждение,
+     * если она не равна заявленному на смену (data-shift-total / data-role-count).
+     */
+    function initRoleSum(root) {
+        root.querySelectorAll('[data-shift-total]').forEach(function (total) {
+            var form = total.closest('form');
+            if (!form || form.dataset.roleSumInit) return;
+            var counts = form.querySelectorAll('[data-role-count]');
+            if (!counts.length) return;
+            form.dataset.roleSumInit = '1';
+            var note = document.createElement('div');
+            note.className = 'role-sum';
+            var last = counts[counts.length - 1];
+            (last.closest('p, .field') || last).after(note);
+            function sync() {
+                var sum = 0;
+                counts.forEach(function (c) { sum += parseInt(c.value, 10) || 0; });
+                var need = parseInt(total.value, 10) || 0;
+                var bad = sum !== need;
+                note.classList.toggle('mismatch', bad);
+                note.textContent = 'Назначено по ролям: ' + sum + ' из ' + need + (bad ? ' — ⚠ не совпадает с количеством на смену' : ' ✓');
+                note.title = bad ? 'Поправьте количество по ролям или общее число людей на смену.' : '';
+            }
+            form.addEventListener('input', sync);
+            sync();
+        });
+    }
+    initRoleSum(document);

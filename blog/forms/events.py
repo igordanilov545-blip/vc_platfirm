@@ -52,8 +52,10 @@ class EventGroupForm(forms.ModelForm):
 
     class Meta:
         model = EventGroup
-        fields = ['title', 'managers']
-        labels = {'title': 'Название'}
+        fields = ['title', 'dobro_ru_link', 'managers']
+        labels = {'title': 'Название', 'dobro_ru_link': 'Ссылка на Добро.ру'}
+        widgets = {'dobro_ru_link': forms.URLInput(attrs={'placeholder': 'https://dobro.ru/…'})}
+        help_texts = {'dobro_ru_link': 'Одна ссылка на всё мероприятие: каждая смена каждой позиции учитывается по ней.'}
 
     def __init__(self, *args, assigned_by=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -72,6 +74,7 @@ class EventGroupForm(forms.ModelForm):
         group = super().save(commit=False)
         if commit:
             dc.save_event_group(group, list(self.cleaned_data['managers']), assigned_by=self.assigned_by)
+            dc.apply_group_dobro_link(group, self.assigned_by)
             if self.prepared_sheet:
                 from blog.services.event_sheets import apply_prepared_sheet
                 apply_prepared_sheet(self.assigned_by, group, self.prepared_sheet)
@@ -128,9 +131,9 @@ class EventForm(forms.ModelForm):
     class Meta:
         model = Event
         fields = [
-            'event_group', 'title', 'description', 'scale',
-            'organization', 'organizer', 'location',
-            'chat_link', 'post_in_chanel_link', 'dobro_ru_link',
+            # Масштаб, организация, контактное лицо, пост в канале и Добро.ру убраны из
+            # UI (2026-11-11); поля модели остаются. Добро.ру — у мероприятия.
+            'event_group', 'title', 'description', 'location', 'chat_link',
             'people_helped', 'internal_comment', 'letter',
         ]
         labels = {
@@ -329,7 +332,11 @@ class EventForm(forms.ModelForm):
         # Упрощённая модель: менеджер просто вставляет ссылку на Добро.ру (или оставляет
         # пустой) — kind проставляется автоматически, без выбора shared/unique (db.md 7e
         # по-прежнему хранит это поле, но UI его больше не показывает).
-        event.dobro_ru_link_kind = 'unique' if event.dobro_ru_link else 'none'
+        group = self.cleaned_data.get('event_group')
+        if group is not None and group.dobro_ru_link:
+            event.dobro_ru_link, event.dobro_ru_shared_link = group.dobro_ru_link, None
+        if event.dobro_ru_link_kind != 'shared':
+            event.dobro_ru_link_kind = 'unique' if event.dobro_ru_link else 'none'
         if commit:
             event.save()
             self._save_categories(event)
@@ -561,3 +568,68 @@ class EventFunctionForm(forms.Form):
         if not cleaned.get('category') and not (cleaned.get('name') or '').strip():
             raise forms.ValidationError('Выберите функцию из пула или впишите название новой.')
         return cleaned
+
+
+class DatalistInput(forms.TextInput):
+    """Текстовое поле с подсказками <datalist> (свой список у каждого поля)."""
+    def __init__(self, options=(), list_id='', attrs=None):
+        super().__init__(attrs)
+        self.options, self.list_id = list(options), list_id
+
+    def render(self, name, value, attrs=None, renderer=None):
+        from django.utils.html import format_html, format_html_join
+        attrs = {**(attrs or {}), 'list': self.list_id, 'autocomplete': 'off'}
+        html = super().render(name, value, attrs, renderer)
+        options = format_html_join('', '<option value="{}"></option>', ((o,) for o in self.options))
+        return format_html('{}<datalist id="{}">{}</datalist>', html, self.list_id, options)
+
+
+class FunctionShiftForm(forms.Form):
+    """Смена функции: период и сколько людей нужно; при изменении — сколько на каждую роль."""
+    day = forms.DateField(label='Дата', widget=forms.DateInput(attrs={'type': 'text', 'data-datepicker': '', 'data-dp-popup': '', 'autocomplete': 'off'}, format='%Y-%m-%d'))
+    start_time = forms.TimeField(label='Время начала', initial=time(10, 0),
+                                 widget=forms.TimeInput(attrs={'type': 'text', 'data-timepicker': '', 'autocomplete': 'off'}, format='%H:%M'))
+    end_time = forms.TimeField(label='Время окончания', initial=time(18, 0),
+                               widget=forms.TimeInput(attrs={'type': 'text', 'data-timepicker': '', 'autocomplete': 'off'}, format='%H:%M'))
+    volunteer_needed = forms.IntegerField(label='Нужно людей на смену (всего)', min_value=1, initial=10,
+                                          widget=forms.NumberInput(attrs={'min': 1, 'data-shift-total': ''}))
+    zone = forms.CharField(label='Зона', required=False, max_length=200,
+                           help_text='Роли смены: «Тим-лидер зоны …» (1) и «Волонтёр зоны …» (нужно − 1). Пусто — название функции.')
+
+    def __init__(self, *args, shift=None, roles=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.role_fields = []
+        if shift is None:
+            self.initial.setdefault('day', timezone.localdate())
+            return
+        self.fields.pop('zone')
+        start = timezone.localtime(shift.start_time)
+        self.initial.update({'day': shift.day, 'start_time': start.time(),
+                             'end_time': timezone.localtime(shift.end_time).time(), 'volunteer_needed': shift.volunteer_needed})
+        from blog.services.event_functions import shift_counts
+        counts = shift_counts(shift)
+        for role in roles:
+            name = f'role_{role.pk}'
+            self.fields[name] = forms.IntegerField(label=role.title, min_value=0, required=False, initial=counts.get(role.pk, 0),
+                                                   widget=forms.NumberInput(attrs={'min': 0, 'data-role-count': ''}))
+            self.role_fields.append((role.pk, name))
+        self.fields['delete'] = forms.BooleanField(label='Удалить смену', required=False,
+                                                   help_text='Клетки, по которым уже есть заявки или участия, останутся.')
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get('start_time') and cleaned.get('end_time') and cleaned['end_time'] <= cleaned['start_time']:
+            self.add_error('end_time', 'Время окончания должно быть позже времени начала.')
+        return cleaned
+
+    def counts(self):
+        return {pk: self.cleaned_data.get(name) or 0 for pk, name in self.role_fields}
+
+
+class FunctionRoleForm(forms.Form):
+    """Новая роль функции: подсказки — только роли этой функции из пула."""
+    title = forms.CharField(label='Роль', max_length=255)
+
+    def __init__(self, *args, pool=(), list_id='role-pool', **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['title'].widget = DatalistInput(pool, list_id, attrs={'placeholder': 'Например: Волонтёр зоны выдачи номеров'})

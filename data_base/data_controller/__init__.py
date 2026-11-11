@@ -51,6 +51,10 @@ from .event_sheets import (  # noqa: F401
     delete_empty_sheet_days, refresh_sheet_leader_staff, delete_unused_sheet_directions, consolidate_sheet_directions,
     create_event_function,
 )
+from .function_shifts import (  # noqa: F401
+    function_shifts_qs, create_function_shift, save_function_shift, delete_function_shift,
+    create_role_position, role_shift, save_role_shift, apply_group_dobro_link,
+)
 from .qr_attendance import (  # noqa: F401
     user_qr, user_from_qr, scanner_grants_qs, create_scanner_grant, revoke_scanner_grant,
     shift_attendance_qs, create_shift_entry, save_shift_exit, save_qr_participation,
@@ -174,6 +178,8 @@ __all__ = [
     'shift_meals_qs', 'event_badges_qs', 'issue_shift_meal', 'issue_event_badge',
     'save_shift_attendance', 'revoke_shift_meal', 'revoke_event_badge',
     'event_groups_qs', 'save_event_group',
+    'function_shifts_qs', 'create_function_shift', 'save_function_shift', 'delete_function_shift',
+    'create_role_position', 'role_shift', 'save_role_shift', 'apply_group_dobro_link',
     'create_user', 'get_users',
     'get_user_by_telegram_id', 'get_user_by_id', 'get_user_by_login', 'is_login_taken',
     'get_or_create_user_by_telegram_id', 'update_user_fields',

@@ -124,10 +124,78 @@ def event_function_create(request, group_id):
         except ValidationError as error:
             form.add_error(None, error)
         else:
-            messages.success(request, f'Функция «{direction.name}» добавлена. Теперь добавьте в неё позиции.')
+            messages.success(request, f'Функция «{direction.name}» добавлена. Теперь добавьте в неё смены.')
             return modal_form_response(request, None, None, success_redirect=reverse('event_group_detail', args=[group.pk]))
     return modal_form_response(request, 'blog/category_form.html',
                                {'form': form, 'title': f'Новая функция: {group.title}', 'submit_label': 'Добавить функцию'})
+
+
+def _group_redirect(request, group, text=None):
+    if text:
+        messages.success(request, text)
+    return modal_form_response(request, None, None, success_redirect=reverse('event_group_detail', args=[group.pk]))
+
+
+@manager_required
+def function_shift_create(request, direction_id):
+    """«+ Смена» функции: период, сколько нужно; роли ТЛ и волонтёров — сразу."""
+    from blog.forms.events import FunctionShiftForm
+    from blog.services import event_functions
+    direction = get_object_or_404(dc.event_directions_qs().select_related('event_group'), pk=direction_id)
+    form = FunctionShiftForm(request.POST or None, initial={'zone': direction.name})
+    if request.method == 'POST' and form.is_valid():
+        data = form.cleaned_data
+        try:
+            event_functions.add_shift(request.user, direction, data['day'], data['start_time'], data['end_time'],
+                                      data['volunteer_needed'], data['zone'])
+        except ValidationError as error:
+            form.add_error(None, error)
+        else:
+            return _group_redirect(request, direction.event_group, 'Смена добавлена: тим-лидер и волонтёры уже расписаны.')
+    return modal_form_response(request, 'blog/category_form.html',
+                               {'form': form, 'title': f'Новая смена: {direction.name}', 'submit_label': 'Добавить смену'})
+
+
+@manager_required
+def function_shift_edit(request, shift_id):
+    """Смена функции: время, сколько нужно и сколько на каждую роль (с проверкой суммы)."""
+    from blog.forms.events import FunctionShiftForm
+    from blog.services import event_functions
+    shift = get_object_or_404(dc.function_shifts_qs().select_related('direction__event_group'), pk=shift_id)
+    group = shift.direction.event_group
+    if request.method == 'POST' and request.POST.get('delete'):
+        event_functions.delete_shift(request.user, shift)
+        return _group_redirect(request, group, 'Смена удалена.')
+    form = FunctionShiftForm(request.POST or None, shift=shift, roles=event_functions.function_roles(shift.direction))
+    if request.method == 'POST' and form.is_valid():
+        data = form.cleaned_data
+        try:
+            event_functions.update_shift(request.user, shift, data['day'], data['start_time'], data['end_time'],
+                                         data['volunteer_needed'], form.counts())
+        except ValidationError as error:
+            form.add_error(None, error)
+        else:
+            return _group_redirect(request, group, 'Смена сохранена.')
+    return modal_form_response(request, 'blog/category_form.html',
+                               {'form': form, 'title': f'Смена: {shift.direction.name}', 'submit_label': 'Сохранить смену'})
+
+
+@manager_required
+def function_role_create(request, direction_id):
+    """«+ Роль» функции: из пула ролей этой функции или новая (попадает в пул)."""
+    from blog.forms.events import FunctionRoleForm
+    from blog.services import event_functions
+    direction = get_object_or_404(dc.event_directions_qs().select_related('event_group'), pk=direction_id)
+    form = FunctionRoleForm(request.POST or None, pool=event_functions.role_pool(direction), list_id=f'role-pool-{direction.pk}')
+    if request.method == 'POST' and form.is_valid():
+        try:
+            role = event_functions.ensure_role(request.user, direction, form.cleaned_data['title'])
+        except ValidationError as error:
+            form.add_error(None, error)
+        else:
+            return _group_redirect(request, direction.event_group, f'Роль «{role.title}» добавлена — укажите, сколько её нужно в сменах.')
+    return modal_form_response(request, 'blog/category_form.html',
+                               {'form': form, 'title': f'Новая роль: {direction.name}', 'submit_label': 'Добавить роль'})
 
 
 @login_required

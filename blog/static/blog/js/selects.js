@@ -99,7 +99,7 @@
                 var availableCount = 0;
                 optionItems(false).forEach(function (it) {
                     if (it.opt.selected) return;
-                    if (query && it.label.toLowerCase().indexOf(query) === -1) return;
+                    if (query && !window.searchMatches(it.label, query)) return;
                     availableCount++;
                     var avail = document.createElement('button');
                     avail.type = 'button';
@@ -130,7 +130,7 @@
                         single: single,
                         candidates: function (query) {
                             return optionItems(false).filter(function (it) {
-                                return !it.opt.selected && (!query || it.label.toLowerCase().indexOf(query) !== -1);
+                                return !it.opt.selected && (!query || window.searchMatches(it.label, query));
                             });
                         },
                         onPick: function (it) { setSelected(it.value, true); render(); },
@@ -207,8 +207,7 @@
         var visibleCount = 0;
 
         function candidates() {
-            var query = searchEl.value.trim().toLowerCase();
-            return cfg.candidates(query);
+            return cfg.candidates(searchEl.value.trim());
         }
 
         // Полоса «Выбрано: …» прямо внутри окна — чтобы при множественном выборе было
@@ -242,7 +241,8 @@
             var list = candidates();
             if (reset) { visibleCount = 0; bodyEl.innerHTML = ''; }
             if (!list.length) {
-                bodyEl.innerHTML = '<div class="cat-chips-empty" style="padding:16px;">Ничего не найдено.</div>';
+                bodyEl.innerHTML = '<div class="cat-chips-empty" style="padding:16px;">' +
+                    (cfg.searching ? 'Поиск по всей базе…' : 'Ничего не найдено.') + '</div>';
                 footEl.innerHTML = '';
                 return;
             }
@@ -296,7 +296,12 @@
         var debounceTimer = null;
         searchEl.addEventListener('input', function () {
             clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(function () { renderPage(true); }, 200);
+            debounceTimer = setTimeout(function () {
+                // Remote-выбор (люди) ищет на сервере по всей базе, а не по подгруженной
+                // порции; пока ответ не пришёл, показываем локальные совпадения.
+                if (cfg && cfg.onQuery) cfg.onQuery(searchEl.value);
+                renderPage(true);
+            }, 200);
         });
 
         // Табы ранжирования (только remote): переключение режима перезагружает данные.
@@ -357,11 +362,14 @@
         manager: function (u) { return u.is_manager; },
         not_manager: function (u) { return !u.is_manager; },
     };
-    var usersCache = {}; // key `${order}|${all}` -> Promise<{users, truncated}>
-    function loadUsers(order, all) {
-        var key = order + '|' + (all ? '1' : '0');
+    // Поиск (`q`) и фильтр ролей (`filter`) выполняет сервер ДО лимита
+    // users_picker_limit — иначе человек вне первой порции не находится.
+    var usersCache = {}; // key `${order}|${all}|${filter}|${q}` -> Promise<{users, truncated}>
+    function loadUsers(order, all, filter, query) {
+        var key = [order, all ? '1' : '0', filter || '', query || ''].join('|');
         if (!usersCache[key]) {
-            var url = window.VC_URLS.usersPickerData + '?order=' + encodeURIComponent(order) + (all ? '&all=1' : '');
+            var url = window.VC_URLS.usersPickerData + '?order=' + encodeURIComponent(order) + (all ? '&all=1' : '') +
+                (filter ? '&filter=' + encodeURIComponent(filter) : '') + (query ? '&q=' + encodeURIComponent(query) : '');
             usersCache[key] = fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
                 .then(function (r) { return r.json(); })
                 .then(function (d) { return { users: d.users || [], truncated: !!d.truncated, total: d.total || 0 }; })
@@ -372,21 +380,26 @@
 
     function initRemoteSelect(widget, opts) {
         var fieldName = widget.getAttribute('data-field-name');
-        var filterFn = USER_FILTERS[widget.getAttribute('data-filter')] || null;
+        var filterKey = USER_FILTERS[widget.getAttribute('data-filter')] ? widget.getAttribute('data-filter') : '';
+        var filterFn = USER_FILTERS[filterKey] || null;
         var linkable = widget.hasAttribute('data-linkable');
         var form = widget.closest('form');
         var selected = new Map(); // value(str) -> label
         var searchInput = widget.querySelector('[data-chips-search]');
 
         // Локальное состояние загрузки: текущий порядок и «показаны все».
-        var st = { order: 'recent', all: false, users: [], truncated: false };
+        // query — поиск, по которому загружены users; wanted — последний введённый.
+        var st = { order: 'recent', all: false, users: [], truncated: false, query: '', wanted: '', searching: false };
         var token = {}; // идентификатор этого виджета для модалки
 
         function items(query) {
             var pool = filterFn ? st.users.filter(filterFn) : st.users;
+            // Сервер уже отобрал по этому запросу (в т.ч. по Telegram, которого нет в
+            // подписи) — повторно не фильтруем; иначе — локально до ответа сервера.
+            var serverMatched = window.normalizeSearchText(query) === st.query;
             return pool
                 .filter(function (u) { return !selected.has(String(u.id)); })
-                .filter(function (u) { return !query || u.label.toLowerCase().indexOf(query) !== -1; })
+                .filter(function (u) { return !query || serverMatched || window.searchMatches(u.label, query); })
                 .map(function (u) { return { value: String(u.id), label: u.label }; });
         }
 
@@ -404,7 +417,16 @@
                 single: opts.single,
                 linkable: linkable,
                 truncated: st.truncated,
+                searching: st.searching,
                 candidates: items,
+                onQuery: function (query) {
+                    var q = window.normalizeSearchText(query);
+                    if (q === st.wanted) return;
+                    st.wanted = q;
+                    st.searching = true;
+                    ensureSelectModal().refresh(modalConfig());
+                    load(function () { ensureSelectModal().refresh(modalConfig()); });
+                },
                 onPick: function (it) {
                     if (opts.single) selected.clear();
                     selected.set(it.value, it.label);
@@ -429,14 +451,18 @@
         }
 
         function load(after) {
-            loadUsers(st.order, st.all).then(function (res) {
-                st.users = res.users; st.truncated = res.truncated;
+            var q = st.wanted;
+            loadUsers(st.order, st.all, filterKey, q).then(function (res) {
+                if (q !== st.wanted) return; // устаревший ответ на прежний запрос
+                st.users = res.users; st.truncated = res.truncated; st.query = q; st.searching = false;
                 if (after) after();
             });
         }
 
         function openPicker() {
             var modal = ensureSelectModal();
+            // Модалка открывается с пустым поиском — сбрасываем прежний серверный запрос.
+            if (st.wanted) { st.wanted = ''; st.query = ''; st.users = []; }
             var cfg = modalConfig();
             if (st.users.length) { modal.open(cfg); }
             else {

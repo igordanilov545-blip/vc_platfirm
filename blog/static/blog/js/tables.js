@@ -416,9 +416,7 @@
             emptyRow.appendChild(emptyCell);
             table.querySelector('tbody').appendChild(emptyRow);
 
-            function normalize(value) {
-                return (value || '').toLowerCase().replace(/ё/g, 'е').replace(/@/g, '').replace(/\s+/g, ' ').trim();
-            }
+            var normalize = window.normalizeSearchText;
 
             function apply() {
                 var tokens = normalize(input.value).split(' ').filter(Boolean);

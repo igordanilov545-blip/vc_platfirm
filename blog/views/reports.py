@@ -548,13 +548,9 @@ def report_organization_pdf(request, org_id):
 def report_people_search(request):
     """Поиск человека для карточки выбора отчёта «по человеку» (по ФИО/username)."""
     from data_base import data_controller as dc
-    query = request.GET.get('q', '').strip()
-    users = dc.users_qs()
-    if query:
-        users = users.filter(
-            Q(first_name__icontains=query) | Q(last_name__icontains=query)
-            | Q(telegram_username__icontains=query)
-        )
+    from blog.services.user_table import search_users
+    # Общий поиск людей: все слова в любом порядке, ё/е, Telegram (как список пользователей).
+    users = search_users(dc.users_qs(), request.GET.get('q', ''))
     users = users.order_by('last_name', 'first_name')[:30]
     return JsonResponse({'users': [
         {'id': u.id, 'name': u.full_name, 'telegram': u.telegram_username or ''} for u in users

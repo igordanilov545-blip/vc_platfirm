@@ -7,6 +7,19 @@
  * Грузится обычным <script> (не модуль) — все init-функции и хелперы остаются в
  * глобальном scope, как раньше; initPageContent зовёт их через window[fn].
  */
+    // Единые правила поиска для ВСЕХ таблиц и выборов (tables.js, selects.js, misc.js):
+    // все слова в любом порядке, без регистра, ё/е, без @ и лишних пробелов. Сервер
+    // ищет по тем же правилам (services/user_table.search_users).
+    window.normalizeSearchText = function (value) {
+        return String(value || '').toLowerCase().replace(/ё/g, 'е').replace(/@/g, '').replace(/\s+/g, ' ').trim();
+    };
+    window.searchMatches = function (text, query) {
+        var haystack = window.normalizeSearchText(text);
+        return window.normalizeSearchText(query).split(' ').filter(Boolean).every(function (token) {
+            return haystack.indexOf(token) !== -1;
+        });
+    };
+
     // Double-click по строке таблицы с data-href → переход на страницу деталей/профиля.
     document.addEventListener('dblclick', function (event) {
         var row = event.target.closest('tr[data-href]');

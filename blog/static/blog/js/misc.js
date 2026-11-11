@@ -562,7 +562,7 @@
                 if (selected.length >= COPY_MAX) return [];
                 return cfg.events
                     .filter(function (e) { return selected.indexOf(e.id) === -1; })
-                    .filter(function (e) { return !query || e.title.toLowerCase().indexOf(query) !== -1; })
+                    .filter(function (e) { return !query || window.searchMatches(e.title, query); })
                     .map(function (e) {
                         // Роль-подсказку показываем прямо в подписи строки модалки.
                         var suffix = e.role === 'team_lead' ? ' — тим-лидер' : '';

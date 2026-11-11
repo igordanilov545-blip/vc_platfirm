@@ -623,7 +623,8 @@ def base_overview(base):
     groups = dc.event_groups_qs().filter(pk__in={i['column'].event_group_id for i in items if i['column'].event_group_id}).order_by('title')
     free = [i for i in items if not i['column'].event_group_id and not i['column'].skipped]
     return {'base': base, 'columns': items, 'free_columns': free, 'groups': groups, 'fap_choices': choices,
-            'all_groups': dc.event_groups_qs().order_by('-created_at')[:200],
+            # Все мероприятия: обрезанный список прятал старые от сопоставления колонки.
+            'all_groups': dc.event_groups_qs().order_by('-created_at'),
             'people_count': dc.legacy_base_people_qs().filter(base=base).count()}
 
 

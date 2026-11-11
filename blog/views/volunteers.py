@@ -83,13 +83,27 @@ def users_picker_data(request):
       - без `?all=1` отдаём только первые `users_picker_limit` (константа) записей
         ВЫБРАННОГО порядка + флаг `truncated`, чтобы клиент показал «показать всех»;
       - `?all=1` — весь список (менеджер нажал «показать всех»)."""
+    # Поиск и фильтр ролей — на сервере ДО лимита, иначе человек за пределами первой
+    # порции не находится вовсе: `?q=` — общий user_table.search_users (все слова,
+    # ФИО/Telegram, ё/е), `?filter=` — team_lead / not_team_lead / manager /
+    # not_manager (тот же ключ, что data-filter виджета).
     from data_base import data_controller as dc
+    from blog.services.user_table import search_users
 
     tl_ids = set(dc.team_leaders_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
     mgr_ids = set(dc.managers_qs().filter(revoked_at__isnull=True).values_list('user_id', flat=True))
 
     order = 'name' if request.GET.get('order') == 'name' else 'recent'
-    qs = dc.users_ranked_qs(order)
+    qs = search_users(dc.users_ranked_qs(order), request.GET.get('q', ''))
+    role_filter = request.GET.get('filter', '')
+    if role_filter == 'team_lead':
+        qs = qs.filter(pk__in=tl_ids)
+    elif role_filter == 'not_team_lead':
+        qs = qs.exclude(pk__in=tl_ids)
+    elif role_filter == 'manager':
+        qs = qs.filter(pk__in=mgr_ids)
+    elif role_filter == 'not_manager':
+        qs = qs.exclude(pk__in=mgr_ids)
 
     show_all = request.GET.get('all') == '1'
     limit = int(dc.get_const('users_picker_limit', default=200))

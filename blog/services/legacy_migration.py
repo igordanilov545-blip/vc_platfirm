@@ -592,13 +592,22 @@ def hub_overview():
 
 def base_overview(base):
     choices = fap_choices()
+    columns = list(dc.legacy_base_columns_qs().filter(base=base).select_related('event_group', 'base', 'fap_document')
+                   .defer('base__content', 'base__parsed', 'fap_document__content').order_by('index'))
+    # День ФиП, уже выбранный колонкой, другим колонкам не предлагается — кроме
+    # колонок той же даты («20 июня 1 смена» / «2 смена» на один день ФиП).
+    taken = {f'{c.fap_document_id}|{c.day.isoformat()}': c for c in columns if c.fap_document_id and c.day}
     items = []
-    for c in (dc.legacy_base_columns_qs().filter(base=base).select_related('event_group', 'base', 'fap_document')
-              .defer('base__content', 'base__parsed', 'fap_document__content').order_by('index')):
+    for c in columns:
         selected = f'{c.fap_document_id}|{c.day.isoformat()}' if c.fap_document_id and c.day else ''
         suggested = '' if selected or c.event_group_id or c.skipped else suggest_fap(c, choices)
+        options = []
+        for choice in choices:
+            days = [d for d in choice['days'] if d['value'] not in taken or taken[d['value']].pk == c.pk or d['day'] == c.day]
+            if days:
+                options.append({**choice, 'days': days})
         items.append({'column': c, 'state': column_state(c), 'fap_selected': selected or suggested,
-                      'fap_suggested': bool(suggested), 'people': sum(c.value_counts.values())})
+                      'fap_suggested': bool(suggested), 'people': sum(c.value_counts.values()), 'fap_options': options})
     groups = dc.event_groups_qs().filter(pk__in={i['column'].event_group_id for i in items if i['column'].event_group_id}).order_by('title')
     free = [i for i in items if not i['column'].event_group_id and not i['column'].skipped]
     return {'base': base, 'columns': items, 'free_columns': free, 'groups': groups, 'fap_choices': choices,

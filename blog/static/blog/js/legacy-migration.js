@@ -114,3 +114,41 @@
         });
     }
     initMappingRows(document);
+
+    /**
+     * Таблица «Колонки базы ↔ ФиП»: день ФиП, выбранный в одной строке, пропадает
+     * из выбора других строк (кроме колонок той же даты); [data-hide-fap-chosen]
+     * скрывает строки, где ФиП уже выбран.
+     */
+    function initFapColumns(root) {
+        root.querySelectorAll('[data-hide-fap-chosen]').forEach(function (toggle) {
+            if (toggle.dataset.fapInit) return;
+            toggle.dataset.fapInit = '1';
+            var table = document.querySelector(toggle.getAttribute('data-hide-fap-chosen'));
+            if (!table) return;
+            var selects = table.querySelectorAll('[data-fap-select]');
+            function chosen(row) {
+                var select = row.querySelector('[data-fap-select]');
+                return select ? !!select.value : row.hasAttribute('data-fap-chosen');
+            }
+            function refresh() {
+                var used = {};
+                selects.forEach(function (select) { if (select.value) used[select.value] = select; });
+                selects.forEach(function (select) {
+                    var day = select.closest('[data-fap-row]').getAttribute('data-column-day');
+                    Array.prototype.forEach.call(select.options, function (option) {
+                        var owner = used[option.value];
+                        var sameDay = option.value.split('|')[1] === day;
+                        option.hidden = !!(owner && owner !== select && !sameDay);
+                    });
+                });
+                table.querySelectorAll('[data-fap-row]').forEach(function (row) {
+                    row.hidden = toggle.checked && chosen(row);
+                });
+            }
+            selects.forEach(function (select) { select.addEventListener('change', refresh); });
+            toggle.addEventListener('change', refresh);
+            refresh();
+        });
+    }
+    initFapColumns(document);

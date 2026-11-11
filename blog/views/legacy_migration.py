@@ -1,13 +1,13 @@
 """Миграция старых баз (менеджер): хаб → база → мероприятие. Вьюхи тонкие —
 разбирают ввод и зовут blog/services/legacy_migration.py и migration_jobs.py;
 см. documentation/legacy-migration.md."""
-from datetime import date, datetime
-
 from django.db import IntegrityError
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 
 from ._common import *  # noqa: F401,F403
+# После звёздочного импорта: _common экспортирует модуль datetime, он перекрыл бы класс.
+from datetime import date, datetime  # noqa: E402
 from blog.forms import LegacyBaseUploadForm, FapUploadForm, FapLibraryForm
 from blog.services import legacy_migration as lm
 from blog.services import migration_jobs

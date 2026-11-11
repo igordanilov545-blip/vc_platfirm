@@ -27,13 +27,14 @@
         <summary>Загрузить ещё файлы ФиП</summary>
         {% include 'blog/partials/_modal_form.html' with form=fap_form form_enctype='multipart/form-data' submit_label='Загрузить файлы' %}
     </details>
+    <label class="migration-filter"><input type="checkbox" data-hide-fap-chosen="#fap-columns-table"> Скрыть колонки с выбранным ФиП</label>
     <form method="post">
         {% csrf_token %}<input type="hidden" name="action" value="map_fap">
-        <div class="table-scroll"><table class="responsive-table migration-table">
+        <div class="table-scroll"><table class="responsive-table migration-table" id="fap-columns-table">
             <thead><tr><th class="col-header">Колонка базы</th><th class="col-count">Людей</th><th class="col-fap">ФиП и день</th><th class="col-date">Дата</th><th class="col-state">Состояние</th></tr></thead>
             <tbody>
             {% for item in columns %}
-                <tr{% if item.column.skipped %} class="is-muted"{% endif %}>
+                <tr data-fap-row data-column-day="{{ item.column.day|date:'Y-m-d' }}"{% if item.fap_selected %} data-fap-chosen{% endif %}{% if item.column.skipped %} class="is-muted"{% endif %}>
                     <td data-label="Колонка базы" class="col-header">{{ item.column.header|linebreaksbr }}{% if item.column.event_group %}<div class="muted">→ <a href="{% url 'legacy_migration_group' item.column.event_group_id %}">{{ item.column.event_group.title }}</a></div>{% endif %}</td>
                     <td data-label="Людей" class="col-count">{{ item.people }}</td>
                     <td data-label="ФиП и день" class="col-fap">
@@ -41,9 +42,9 @@
                             {% if item.column.fap_document %}{{ item.column.fap_document.title }} · {{ item.column.day|date:"d.m.Y" }}{% else %}без ФиП{% endif %}
                             <input type="hidden" name="fap_{{ item.column.pk }}" value="{{ item.fap_selected }}">
                         {% else %}
-                        <select name="fap_{{ item.column.pk }}" aria-label="ФиП и день">
+                        <select name="fap_{{ item.column.pk }}" aria-label="ФиП и день" data-fap-select>
                             <option value="">— без ФиП —</option>
-                            {% for choice in fap_choices %}
+                            {% for choice in item.fap_options %}
                                 <optgroup label="{{ choice.label }}">
                                     {% for day in choice.days %}<option value="{{ day.value }}"{% if day.value == item.fap_selected %} selected{% endif %}>{{ choice.document.title }} · {{ day.day|date:"d.m.Y (D)" }}</option>{% endfor %}
                                 </optgroup>

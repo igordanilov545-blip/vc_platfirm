@@ -554,3 +554,29 @@ class HubUploadTests(MigrationTestCase):
         self.assertLess(bases, page.index('name="workbook"'))
         self.assertLess(page.index('name="workbook"'), library)
         self.assertLess(library, page.index('name="workbooks"'))
+
+
+class BaseFapTableTests(MigrationTestCase):
+    """Таблица «Колонки базы ↔ ФиП» (2026-11-11): сохранение с ручной датой,
+    уже выбранные дни ФиП не предлагаются другим колонкам."""
+
+    def test_save_with_manual_date_in_russian_format(self):
+        base = self.upload()
+        column = base.columns.get(header__startswith='БФБ\n23 августа \nвс - 1')
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('legacy_migration_base', args=[base.pk]),
+                                    {'action': 'map_fap', f'day_{column.pk}': '24.08.2026'})
+        self.assertEqual(response.status_code, 302)
+        column.refresh_from_db()
+        self.assertEqual(column.day, date(2026, 8, 24))
+
+    def test_chosen_fap_day_hidden_for_other_columns(self):
+        base = self.upload()
+        [(_, document, _)] = lm.upload_fap_files(self.manager, [('ММ 2026.xlsx', FAP.read_bytes())])
+        first, second = base.columns.filter(header__startswith='ММ').order_by('index')[:2]
+        lm.map_columns_to_fap(self.manager, base, {first.pk: f'{document.pk}|2026-09-24'})
+        items = {i['column'].pk: i for i in lm.base_overview(base)['columns']}
+        values = lambda item: [d['value'] for c in item['fap_options'] for d in c['days']]
+        self.assertIn(f'{document.pk}|2026-09-24', values(items[first.pk]))
+        self.assertNotIn(f'{document.pk}|2026-09-24', values(items[second.pk]))
+        self.assertIn(f'{document.pk}|2026-09-25', values(items[second.pk]))

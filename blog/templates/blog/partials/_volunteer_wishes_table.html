@@ -5,6 +5,9 @@
   wishes      — строки (VolunteerWish c .can_edit / .can_untake, на странице меро ещё .match)
   table_id    — id таблицы (для поиска _table_search)
   take_group  — мероприятие, в которое «забираем» (только на странице мероприятия)
+«Забрали» — статус, а не удаление: строка видна до hide_on (мероприятие прошло или
+статус висит дольше Const wish_taken_hide_days), затем уходит в архив; «↩ Вернуть в
+желающие» снимает статус.
 Действия — обычные POST-формы с next=текущая страница, без инлайнового JS.
 {% endcomment %}
 <div class="table-scroll">
@@ -15,7 +18,7 @@
             <th data-sort-key="wish">Хочет</th>
             <th data-sort-key="position">Позиция</th>
             <th data-sort-key="added">Добавил</th>
-            <th data-sort-key="taken">Забрал</th>
+            <th data-sort-key="taken">Статус</th>
         </tr>
     </thead>
     <tbody>
@@ -41,16 +44,17 @@
                 <div class="muted">{{ wish.created_at|date:"d.m.Y" }} · {% if wish.source == 'bot' %}бот{% else %}сайт{% endif %}</div>
                 {% if wish.raw_text %}<details><summary class="muted">сообщение</summary><div style="white-space:pre-wrap;">{{ wish.raw_text }}</div></details>{% endif %}
             </td>
-            <td data-label="Забрал" data-sort-value="{% if wish.taken_event_group_id %}1{% else %}0{% endif %}">
+            <td data-label="Статус" data-sort-value="{% if wish.taken_event_group_id %}1{% else %}0{% endif %}">
                 <div class="row-actions" style="flex-wrap:wrap;">
                 {% if wish.taken_event_group_id %}
-                    <span class="pill success" title="{{ wish.taken_at|date:'d.m.Y H:i' }}"><span class="dot"></span>Забрал{% if wish.taken_by %} {{ wish.taken_by.full_name }}{% endif %}</span>
-                    {% if not take_group %}<a href="{% url 'event_group_detail' wish.taken_event_group_id %}">{{ wish.taken_event_group.title }}</a>{% endif %}
-                    {% if wish.can_untake %}<form method="post" action="{% url 'volunteer_wish_untake' wish.pk %}" style="display:inline;">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit" class="btn secondary btn-sm">Снять отметку</button></form>{% endif %}
+                    <span class="pill success" title="{{ wish.taken_at|date:'d.m.Y H:i' }}"><span class="dot"></span>Забрали</span>
+                    {% if not take_group or wish.taken_event_group_id != take_group.pk %}<span>в <a href="{% url 'event_group_detail' wish.taken_event_group_id %}">«{{ wish.taken_event_group.title }}»</a></span>{% endif %}
+                    <span class="muted">{% if wish.taken_by %}{{ wish.taken_by.full_name }}, {% endif %}{{ wish.taken_at|date:"d.m" }}{% if wish.archived %} · в архиве{% elif wish.hide_on %} · в табличке до {{ wish.hide_on|date:"d.m" }}{% endif %}</span>
+                    {% if wish.can_untake %}<form method="post" action="{% url 'volunteer_wish_untake' wish.pk %}" style="display:inline;">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit" class="btn secondary btn-sm" title="Снять статус «Забрали» — человек снова в желающих">↩ Вернуть в желающие</button></form>{% endif %}
                 {% elif take_group %}
                     <form method="post" action="{% url 'volunteer_wish_take' wish.pk %}" style="display:inline;">{% csrf_token %}<input type="hidden" name="group" value="{{ take_group.pk }}"><input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit" class="btn btn-sm" title="Отметить, что забрал в «{{ take_group.title }}»">✓ Забрал</button></form>
                 {% else %}
-                    <span class="muted">ещё нет</span>
+                    <span class="pill info"><span class="dot"></span>Желающий</span>
                 {% endif %}
                 {% if wish.can_edit %}
                     <a href="{% url 'volunteer_wish_edit' wish.pk %}?next={{ request.get_full_path|urlencode }}" class="btn secondary btn-sm" data-modal data-modal-title="Желающий: изменить">✎</a>

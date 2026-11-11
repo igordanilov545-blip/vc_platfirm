@@ -28,7 +28,7 @@ class Command(BaseCommand):
             pass
 
     async def _run(self):
-        from aiogram.types import BotCommand
+        from tg_bot.commands import set_default_commands
 
         bot = create_bot()
         notifier_task = None
@@ -41,12 +41,8 @@ class Command(BaseCommand):
                     'Снятие webhook отключит доставку обновлений на сервер.'
                 )
             dp = create_dispatcher()
-            await bot.set_my_commands([
-                BotCommand(command='start', description='Начать / главное меню'),
-                BotCommand(command='login', description='Авторизоваться на сайте'),
-                BotCommand(command='help', description='Помощь'),
-                BotCommand(command='get_qr', description='Мой QR-код'),
-            ])
+            # Общее меню «/» (команды гостя); личное по роли ставится в чате при /start.
+            await set_default_commands(bot)
             notifier_task = asyncio.create_task(run_notifier_loop(bot))
             await dp.start_polling(bot, close_bot_session=False)
         finally:

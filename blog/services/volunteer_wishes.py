@@ -10,14 +10,17 @@
 - названия нет, есть даты → хотя бы одна дата совпадает с днём смены мероприятия;
 - ни того ни другого → в «прочих желающих» каждого мероприятия, пока не забрали.
 
-Забранный («Отметить, что забрал») показывается только в своём мероприятии.
+«Забрали» — статус, а не удаление: человек остаётся в табличке (в своём мероприятии и
+в подходящих других — с пометкой, куда забрали), пока мероприятие не прошло и статус
+висит не дольше `Const wish_taken_hide_days` (3 дня). Потом строка уходит в архив;
+«↩ Вернуть в желающие» снимает статус в любой момент.
 
 Сообщения неформальные, поэтому разбор эвристический: исходный текст всегда
 сохраняется рядом, а строку можно поправить вручную.
 
 ACL: добавлять/забирать — активные тим-лидеры и менеджеры (веб и бот — одно правило,
-`can_manage_wishes`); править/удалять — автор или менеджер; снять отметку «забрал» —
-поставивший её или менеджер.
+`can_manage_wishes`); править/удалять — автор или менеджер; вернуть из «забрали» в
+желающие — любой ТЛ/менеджер.
 """
 import calendar
 import datetime
@@ -26,7 +29,7 @@ import re
 import uuid
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Max, Q
 from django.utils import timezone
 
 from blog.logging_utils import get_web_logger, actor
@@ -56,8 +59,8 @@ MONTHS = [
 ]
 RANGE_SEPARATORS = {'-', '–', '—', 'по'}
 LIST_SEPARATORS = {',', 'и'}
-# Число рядом с этими словами — не день: «10 км», «2 человека», «18 лет».
-NUMBER_UNITS = ('км', 'k', 'к', 'м', 'мин', 'лет', 'год', 'чел', 'раз', 'час', 'ч')
+# Число рядом с этими словами — не день: «10 км», «2 человека», «18 лет», «2 дня», «3 смены».
+NUMBER_UNITS = ('км', 'k', 'к', 'м', 'мин', 'лет', 'год', 'чел', 'раз', 'час', 'ч', 'дн', 'ден', 'смен', 'недел', 'мес', 'шт')
 PUNCT = {',', '.', ';', ':', '!', '?', '(', ')', '«', '»', '"', '-', '–', '—'}
 # Слова, на которых обрывается название после «на»: «на скорость, очень классная».
 PHRASE_STOP = {
@@ -416,7 +419,9 @@ def can_edit_wish(user, wish) -> bool:
 
 
 def can_untake_wish(user, wish) -> bool:
-    return can_manage_wishes(user) and (has_manager_access(user) or wish.taken_by_id == user.id)
+    """Вернуть из «забрали» в желающие — любой ТЛ/менеджер: табличка — общий пул
+    сообщества, кто и когда забирал, видно в строке."""
+    return can_manage_wishes(user)
 
 
 # ---------------------------------------------------------------------------
@@ -563,10 +568,47 @@ def match_reason(wish, title, days):
     return None
 
 
-def _decorate(wish, viewer):
-    wish.can_edit = can_edit_wish(viewer, wish)
-    wish.can_untake = bool(wish.taken_event_group_id) and can_untake_wish(viewer, wish)
-    return wish
+def hide_days() -> int:
+    """Сколько дней «Забрали» висит в табличке (Const, по умолчанию 3)."""
+    try:
+        return max(0, int(dc.get_const('wish_taken_hide_days', default=3)))
+    except (TypeError, ValueError):
+        return 3
+
+
+def _group_last_days(group_ids):
+    """Последний день смен каждого мероприятия — чтобы понять, что оно прошло."""
+    rows = (dc.event_shifts_qs().filter(event__event_group_id__in=set(group_ids))
+            .values('event__event_group_id').annotate(last=Max('day')))
+    return {row['event__event_group_id']: row['last'] for row in rows}
+
+
+def _apply_lifecycle(wishes, viewer):
+    """Помечает строки: can_edit/can_untake, `hide_on` (когда «забрали» уйдёт из
+    таблички) и `archived` — мероприятие, куда забрали, прошло, или статус висит
+    дольше hide_days(). Архивные из таблички пропадают, но запись цела."""
+    wishes = list(wishes)
+    last_days = _group_last_days(w.taken_event_group_id for w in wishes if w.taken_event_group_id)
+    today = timezone.localdate()
+    days = hide_days()
+    for wish in wishes:
+        wish.can_edit = can_edit_wish(viewer, wish)
+        wish.can_untake = bool(wish.taken_event_group_id) and can_untake_wish(viewer, wish)
+        wish.hide_on = wish.archived = None
+        if not wish.taken_event_group_id:
+            wish.archived = False
+            continue
+        limits = []
+        if wish.taken_at:
+            limits.append(timezone.localtime(wish.taken_at + datetime.timedelta(days=days)).date())
+        last = last_days.get(wish.taken_event_group_id)
+        if last:
+            limits.append(last + datetime.timedelta(days=1))
+        wish.hide_on = min(limits) if limits else None
+        expired_by_time = wish.taken_at and wish.taken_at <= timezone.now() - datetime.timedelta(days=days)
+        expired_by_event = last is not None and last < today
+        wish.archived = bool(expired_by_time or expired_by_event)
+    return wishes
 
 
 def _sort_key(wish):
@@ -574,20 +616,27 @@ def _sort_key(wish):
     return (wish.taken_event_group_id is not None, wish.created_at)
 
 
-def wishes_for_event_group(group, viewer):
-    """Табличка на странице мероприятия: matched — подходят по названию/датам или уже
-    забраны сюда; others — не забранные и без совпадения (чтобы никого не потерять)."""
+def wishes_for_event_group(group, viewer, hide_taken=False):
+    """Табличка на странице мероприятия.
+
+    matched — подходят по названию/датам (в т.ч. уже забранные куда-то — со статусом
+    «Забрали в «X»», чтобы не забирать человека дважды) и забранные сюда; others — не
+    забранные без совпадения (чтобы никого не потерять). Архивные строки не показываются;
+    hide_taken — скрыть всех со статусом «Забрали»."""
     days = set(dc.event_shifts_qs().filter(event__event_group=group).values_list('day', flat=True))
     matched, others = [], []
-    rows = dc.volunteer_wishes_qs().filter(Q(taken_event_group__isnull=True) | Q(taken_event_group=group))
-    for wish in rows:
-        _decorate(wish, viewer)
+    for wish in _apply_lifecycle(dc.volunteer_wishes_qs(), viewer):
+        if wish.archived or (hide_taken and wish.taken_event_group_id):
+            continue
         if wish.taken_event_group_id == group.pk:
             wish.match = 'taken'
             matched.append(wish)
             continue
         wish.match = match_reason(wish, group.title, days)
-        (matched if wish.match else others).append(wish)
+        if wish.match:
+            matched.append(wish)
+        elif not wish.taken_event_group_id:
+            others.append(wish)
     matched.sort(key=_sort_key)
     others.sort(key=_sort_key)
     return {'matched': matched, 'others': others,
@@ -595,23 +644,24 @@ def wishes_for_event_group(group, viewer):
 
 
 WISH_FILTERS = {
-    'open': 'Не забранные',
-    'taken': 'Забранные',
+    'active': 'Желающие',
     'mine': 'Мои',
-    'all': 'Все',
+    'archive': 'Архив забранных',
 }
 
 
-def wishes_list(viewer, status='open'):
-    """Общая табличка (страница из профиля) с фильтром WISH_FILTERS."""
+def wishes_list(viewer, status='active', hide_taken=False):
+    """Общая табличка (страница из профиля): active — желающие и «забрали» до срока,
+    mine — добавленные мной (тоже без архива), archive — ушедшие из таблички."""
     qs = dc.volunteer_wishes_qs()
-    if status == 'open':
-        qs = qs.filter(taken_event_group__isnull=True)
-    elif status == 'taken':
-        qs = qs.filter(taken_event_group__isnull=False)
-    elif status == 'mine':
+    if status == 'mine':
         qs = qs.filter(added_by=viewer)
-    return sorted((_decorate(wish, viewer) for wish in qs), key=_sort_key)
+    rows = _apply_lifecycle(qs, viewer)
+    if status == 'archive':
+        rows = [wish for wish in rows if wish.archived]
+    else:
+        rows = [wish for wish in rows if not wish.archived and not (hide_taken and wish.taken_event_group_id)]
+    return sorted(rows, key=_sort_key)
 
 
 def describe_wish(wish) -> str:

@@ -17,6 +17,7 @@ import datetime
 
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from blog.models import EventGroup, VolunteerWish
 from blog.services import volunteer_wishes as wishes
@@ -138,6 +139,11 @@ class ParseEdgeCasesTests(TestCase):
         self.assertEqual(parse('@x_user хочет 5-го')[0]['dates'], [d(5, 12)])
         self.assertEqual(parse('@x_user хочет 03.01')[0]['dates'], [d(3, 1, 2027)])
 
+    def test_counts_are_not_dates(self):
+        """«2 дня», «3 смены», «10 км» — количество, а не число месяца."""
+        for text in ('@x_user хочет на Быстрый пёс 2 дня', '@x_user хочет на 3 смены', '@x_user хочет на 10 км'):
+            self.assertEqual(parse(text)[0]['dates'], [], text)
+
     def test_username_case_and_tme_link(self):
         rows = parse('https://t.me/Ivan_Petrov хочет на скорость')
         self.assertEqual(rows[0]['telegram_username'], 'ivan_petrov')
@@ -197,8 +203,9 @@ class WishServiceTests(TestCase):
         self.assertIn(other_event_same_day.id, {w.id for w in table['matched']})
 
     def test_take_and_untake(self):
-        group = self._group('Скорость 2026', d(21))
-        other = self._group('Другой забег', d(28))
+        soon = timezone.localdate() + datetime.timedelta(days=10)
+        group = self._group('Скорость 2026', soon)
+        other = self._group('Другой забег', soon + datetime.timedelta(days=7))
         wish = self.add('@a_name хочет на скорость')[0]
         _, error = wishes.mark_wish_taken(self.volunteer, wish.id, group.id)
         self.assertEqual(error, 'forbidden')
@@ -213,10 +220,10 @@ class WishServiceTests(TestCase):
         other_table = wishes.wishes_for_event_group(other, self.tl)
         self.assertNotIn(wish.id, {w.id for w in other_table['matched'] + other_table['others']})
 
-        other_tl = f.make_team_leader()
-        _, error = wishes.unmark_wish_taken(other_tl, wish.id)
+        # Вернуть из «забрали» в желающие может любой ТЛ/менеджер (общий пул), не волонтёр.
+        _, error = wishes.unmark_wish_taken(self.volunteer, wish.id)
         self.assertEqual(error, 'forbidden')
-        wish, error = wishes.unmark_wish_taken(self.manager, wish.id)
+        wish, error = wishes.unmark_wish_taken(f.make_team_leader(), wish.id)
         self.assertIsNone(error)
         self.assertIsNone(wish.taken_event_group_id)
         self.assertIsNone(wish.taken_by_id)
@@ -284,7 +291,7 @@ class WishWebTests(TestCase):
         self.assertRedirects(response, url, fetch_redirect_response=False)
         wish.refresh_from_db()
         self.assertEqual(wish.taken_event_group_id, self.group.pk)
-        self.assertContains(self.client.get(url), 'Снять отметку')
+        self.assertContains(self.client.get(url), 'Вернуть в желающие')
         self.client.post(reverse('volunteer_wish_untake', args=[wish.pk]), {'next': url})
         wish.refresh_from_db()
         self.assertIsNone(wish.taken_event_group_id)
@@ -325,3 +332,84 @@ class WishBotServiceTests(TestCase):
         self.assertIn('Петров Иван', text)
         self.assertIn('СКБС', text)
         self.assertIn('Скорость', text)
+
+
+class WishTakenLifecycleTests(TestCase):
+    """«Забрали» — не удаление: человек остаётся в табличке со статусом, пока не пройдёт
+    мероприятие, куда его забрали, или пока статус висит дольше `wish_taken_hide_days`
+    (Const, по умолчанию 3 дня). Потом он уходит в архив — из таблицы желающих пропадает,
+    но запись цела, и его можно вернуть в желающие."""
+
+    def setUp(self):
+        self.tl = f.make_team_leader()
+        self.client.force_login(self.tl)
+        self.today = timezone.localdate()
+        self.group = self._group('Скорость 2026', 10)
+        self.twin = self._group('Скорость весна', 40)
+        self.taken = wishes.add_wishes_from_message(self.tl, '@taken_one хочет на скорость', source='web')[0][0]
+        self.open = wishes.add_wishes_from_message(self.tl, '@open_one хочет на скорость', source='web')[0][0]
+        wishes.mark_wish_taken(self.tl, self.taken.id, self.group.id)
+
+    def _group(self, title, days_from_now):
+        group = EventGroup.objects.create(title=title)
+        f.make_shift(f.make_event(title='Регистрация', event_group=group), days_from_now=days_from_now)
+        return group
+
+    def ids(self, rows):
+        return {row.id for row in rows}
+
+    def age_taken(self, days):
+        VolunteerWish.objects.filter(pk=self.taken.pk).update(
+            taken_at=timezone.now() - datetime.timedelta(days=days, minutes=1))
+
+    def test_taken_stays_in_table_with_status(self):
+        self.assertEqual(self.ids(wishes.wishes_list(self.tl, 'active')), {self.taken.id, self.open.id})
+        # На другом подходящем мероприятии виден со статусом «забрали», без кнопки «Забрал».
+        twin = wishes.wishes_for_event_group(self.twin, self.tl)
+        self.assertIn(self.taken.id, self.ids(twin['matched']))
+        self.assertEqual(twin['open_count'], 1)
+        page = self.client.get(reverse('event_group_detail', args=[self.twin.pk])).content.decode()
+        self.assertIn('@taken_one', page)
+        self.assertIn('Забрали', page)
+        self.assertIn('Скорость 2026', page)
+        self.assertEqual(page.count(reverse('volunteer_wish_take', args=[self.taken.pk])), 0)
+
+    def test_hidden_after_hide_days(self):
+        self.age_taken(3)
+        self.assertEqual(self.ids(wishes.wishes_list(self.tl, 'active')), {self.open.id})
+        self.assertNotIn(self.taken.id, self.ids(wishes.wishes_for_event_group(self.group, self.tl)['matched']))
+        self.assertEqual(self.ids(wishes.wishes_list(self.tl, 'archive')), {self.taken.id})
+        self.assertNotContains(self.client.get(reverse('volunteer_wishes')), '@taken_one')
+
+    def test_hide_days_is_a_const(self):
+        f.make_const('wish_taken_hide_days', 10)
+        self.age_taken(5)
+        self.assertIn(self.taken.id, self.ids(wishes.wishes_list(self.tl, 'active')))
+
+    def test_hidden_after_event_passed(self):
+        past = self._group('Скорость прошлая', -1)
+        wish = wishes.add_wishes_from_message(self.tl, '@past_one хочет на скорость', source='web')[0][0]
+        wishes.mark_wish_taken(self.tl, wish.id, past.id)
+        self.assertNotIn(wish.id, self.ids(wishes.wishes_list(self.tl, 'active')))
+        self.assertIn(wish.id, self.ids(wishes.wishes_list(self.tl, 'archive')))
+
+    def test_hide_taken_toggle(self):
+        event_url = reverse('event_group_detail', args=[self.group.pk])
+        self.assertContains(self.client.get(event_url), '@taken_one')
+        response = self.client.get(event_url, {'wishes_hide_taken': '1'})
+        self.assertNotContains(response, '@taken_one')
+        self.assertContains(response, '@open_one')
+        self.assertContains(response, 'Показать забранных')
+        response = self.client.get(reverse('volunteer_wishes'), {'hide_taken': '1'})
+        self.assertNotContains(response, '@taken_one')
+        self.assertContains(response, '@open_one')
+
+    def test_return_from_archive_to_wishers(self):
+        self.age_taken(4)
+        response = self.client.post(reverse('volunteer_wish_untake', args=[self.taken.pk]),
+                                    {'next': reverse('volunteer_wishes') + '?status=archive'})
+        self.assertEqual(response.status_code, 302)
+        self.taken.refresh_from_db()
+        self.assertIsNone(self.taken.taken_event_group_id)
+        self.assertIn(self.taken.id, self.ids(wishes.wishes_list(self.tl, 'active')))
+        self.assertContains(self.client.get(reverse('volunteer_wishes'), {'status': 'archive'}), 'Архив')

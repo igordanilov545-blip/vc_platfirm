@@ -56,6 +56,9 @@ class Command(BaseCommand):
                 drop_pending_updates=True,
                 allowed_updates=['message', 'callback_query', 'my_chat_member'],
             )
+            # В webhook-режиме run_bot не запускается — общее меню «/» ставим здесь.
+            from tg_bot.commands import set_default_commands
+            await set_default_commands(bot)
             self.stdout.write(self.style.SUCCESS(f'Webhook установлен: {url}'))
         finally:
             await bot.session.close()

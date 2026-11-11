@@ -9,6 +9,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKe
 from tg_bot import services, keyboards as kb
 from tg_bot.states import Registration, PendingApplication, TelegramLogin
 from tg_bot.templates_loader import render
+from tg_bot.commands import refresh_chat_commands
 from tg_bot.ui import answer_with_expiring_keyboard
 
 router = Router(name='common')
@@ -85,6 +86,7 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
         )
         return
 
+    await refresh_chat_commands(message.bot, message.chat.id, user)
     if not created and not await sync_to_async(services.is_guest)(user):
         is_tl, is_mgr = await _menu_for(user)
         await message.answer(
@@ -98,6 +100,7 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
 
 @router.message(Command('weblogin'))
 @router.message(F.text == '🌐 Перейти на сайт')
+@router.message(F.text == '🔐 Авторизоваться на сайте')  # та же функция в меню гостя
 async def cmd_weblogin(message: Message, state: FSMContext):
     """Прислать одноразовую ссылку для входа на сайт (действует 5 минут). Работает
     сразу после /start — не важно, зарегистрирован пользователь в боте или нет:
@@ -115,6 +118,7 @@ async def cmd_help(message: Message):
         message.from_user.id, message.from_user.username
     )
 
+    await refresh_chat_commands(message.bot, message.chat.id, user)
     if await sync_to_async(services.is_guest)(user):
         await message.answer(render('help_guest'))
         return
@@ -237,6 +241,7 @@ async def cb_tglogin_yes(callback: CallbackQuery, state: FSMContext):
         return
 
     is_tl, is_mgr = await _menu_for(account)
+    await refresh_chat_commands(callback.bot, callback.message.chat.id, account)
     await callback.message.edit_text(f'✅ С возвращением, {account.first_name}! Ты вошёл(ла) — весь твой прежний опыт (часы, меро) на месте.')
     await callback.message.answer('Что дальше?', reply_markup=kb.main_menu(is_tl, is_mgr))
 
@@ -293,6 +298,7 @@ async def _finish_registration(message: Message, state: FSMContext, phone: str =
     await state.set_state(None)
 
     is_tl, is_mgr = await _menu_for(user)
+    await refresh_chat_commands(message.bot, message.chat.id, user)
     await message.answer(
         render('register_done'),
         reply_markup=kb.main_menu(is_tl, is_mgr),

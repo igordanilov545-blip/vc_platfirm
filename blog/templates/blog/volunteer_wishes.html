@@ -8,11 +8,17 @@
     </div>
 </div>
 <p class="muted">Люди, которые заранее попросились на следующий забег. На странице мероприятия они
-показываются сами — по названию или датам; там же их отмечают «✓ Забрал». В боте — кнопка «🙋 Желающие».</p>
+показываются сами — по названию или датам; там же их отмечают «✓ Забрал». Статус «Забрали» висит
+{{ hide_days }} дн. или до конца мероприятия, потом человек уходит в архив. В боте — кнопка «🙋 Желающие».</p>
 
-<nav class="tabs" aria-label="Фильтр таблички">
-    {% for key, label in filters.items %}<a href="?status={{ key }}" class="{% if key == status %}active{% endif %}">{{ label }}</a>{% endfor %}
-</nav>
+<div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <nav class="tabs" aria-label="Фильтр таблички">
+        {% for key, label in filters.items %}<a href="?status={{ key }}{% if hide_taken and key != 'archive' %}&amp;hide_taken=1{% endif %}" class="{% if key == status %}active{% endif %}">{{ label }}</a>{% endfor %}
+    </nav>
+    {% if status != 'archive' %}
+    {% if hide_taken %}<a href="?status={{ status }}" class="btn secondary btn-sm">Показать забранных</a>{% else %}<a href="?status={{ status }}&amp;hide_taken=1" class="btn secondary btn-sm">Скрыть забранных</a>{% endif %}
+    {% endif %}
+</div>
 
 {% include 'blog/partials/_table_search.html' with search_target='#wishes-table' search_placeholder='Поиск по имени, @юзернейму, забегу, позиции…' %}
 <div class="card" style="padding:0; overflow:hidden;">

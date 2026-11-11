@@ -23,13 +23,16 @@ def _raise_for(error):
 def volunteer_wishes(request):
     """Общая табличка (кнопка в профиле ТЛ/менеджера) с фильтром по статусу."""
     _require_staff(request)
-    status = request.GET.get('status', 'open')
+    status = request.GET.get('status', 'active')
     if status not in wishes.WISH_FILTERS:
-        status = 'open'
+        status = 'active'
+    hide_taken = request.GET.get('hide_taken') == '1'
     return render(request, 'blog/volunteer_wishes.html', {
-        'wishes': wishes.wishes_list(request.user, status),
+        'wishes': wishes.wishes_list(request.user, status, hide_taken=hide_taken),
         'status': status,
+        'hide_taken': hide_taken,
         'filters': wishes.WISH_FILTERS,
+        'hide_days': wishes.hide_days(),
     })
 
 

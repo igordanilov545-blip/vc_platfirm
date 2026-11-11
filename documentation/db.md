@@ -18,7 +18,8 @@
 `volunteer_wishes` — люди, попросившиеся на будущий забег до создания мероприятия:
 контакты из сообщения, найденный `user`, подсказки `event_hint`/`wish_dates`/
 `position_hint`, исходный `raw_text`, `batch_id` одного сообщения, отметка «забрал»
-(`taken_event_group`/`taken_by`/`taken_at`). Связи с `EventGroup` до «забрал» нет —
+(`taken_event_group`/`taken_by`/`taken_at`; статус «Забрали» скрывается после конца
+мероприятия или через `const.wish_taken_hide_days` дней, строка остаётся). Связи с `EventGroup` до «забрал» нет —
 сопоставление по названию/датам при показе. Подробно — [volunteer-wishes.md](volunteer-wishes.md).
 
 ## Миграция старых баз и пул функций (миграция 0049)

@@ -137,6 +137,7 @@
     <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:16px 16px 8px;">
         <h2 style="margin:0;">🙋 Желающие{% if wish_table.open_count %} <span class="pill info">{{ wish_table.open_count }}</span>{% endif %}</h2>
         <div class="row-actions">
+            {% if wishes_hide_taken %}<a href="?#wishes" class="btn secondary btn-sm">Показать забранных</a>{% else %}<a href="?wishes_hide_taken=1#wishes" class="btn secondary btn-sm">Скрыть забранных</a>{% endif %}
             <a href="{% url 'volunteer_wish_add' %}" class="btn secondary btn-sm" data-modal data-modal-title="Добавить желающих">+ Добавить</a>
             <a href="{% url 'volunteer_wishes' %}" class="btn secondary btn-sm">Вся табличка</a>
         </div>

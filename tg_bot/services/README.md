@@ -22,6 +22,9 @@
 | **Инфраструктура очередей** (исходящие, снятие кнопок) | [`outbox.py`](outbox.py) | `schedule_button_removal`, `fetch_due_button_removals`, `fetch_pending_outbox`, `mark_outbox_*` |
 | **Общие импорты** | [`_common.py`](_common.py) | `dc`, Django-утилиты, общие сервисы, `logger` |
 
+Меню команд «/» по роли и его синхронизация со справкой — `tg_bot/commands.py`
+(не сервис: только реестр и вызовы Telegram API), тест — `test_bot_commands.py`.
+
 ## Правила (важно для бота)
 
 - **Доступ к данным — только через `dc` (`data_controller`)**, не через `Model.objects`

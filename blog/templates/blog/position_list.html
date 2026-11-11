@@ -1,9 +1,9 @@
 {% extends 'blog/base.html' %}
 {% load custom_tags %}
-{% block title %}{{ event_group.title }} — Позиции{% endblock %}
+{% block title %}{{ event_group.title }} — Функции{% endblock %}
 {% block content %}
 <div class="page-header">
-    <div><a href="{% url 'event_list' %}">Мероприятия</a><h1>{{ event_group.title }}</h1><h2>Позиции</h2></div>
+    <div><a href="{% url 'event_list' %}">Мероприятия</a><h1>{{ event_group.title }}</h1><h2>Функции</h2></div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
         {% if is_manager %}<a class="btn secondary" href="{% url 'event_group_roster_export' event_group.pk %}" download>Скачать Excel участников</a>{% endif %}
         {% if event_group.sheet_link.google_url %}<a class="btn secondary" href="{{ event_group.sheet_link.google_url }}" target="_blank" rel="noopener noreferrer">Google Таблица ↗</a>{% endif %}
@@ -14,32 +14,9 @@
         подача заявки — второстепенное (серая). У волонтёра наоборот: подача — основное
         действие, поэтому фиолетовая.{% endcomment %}
         <a href="{% url 'application_create' %}" class="btn {% if is_manager %}secondary{% endif %}" data-modal data-modal-title="Подать заявку на позицию" data-tour="events-apply">📝 Подать заявку</a>
-        {% if is_manager %}<a href="{% url 'event_group_edit' event_group.id %}" class="btn secondary" data-modal data-modal-title="Редактировать мероприятие">Мероприятие: изменить</a><a href="{% url 'event_function_create' event_group.id %}" class="btn" data-modal data-modal-title="Новая функция" data-tour="events-create">+ Функция</a>{% endif %}
+        {% if is_manager %}<a href="{% url 'event_group_edit' event_group.id %}" class="btn secondary" data-modal data-modal-title="Редактировать мероприятие">Мероприятие: изменить</a><a href="{% url 'event_create' %}?group={{ event_group.id }}" class="btn" data-modal data-modal-title="Новая функция: {{ event_group.title }}" data-tour="events-create">+ Функция</a>{% endif %}
     </div>
 </div>
-
-{% if is_manager %}
-<div class="card event-functions">
-    <div class="event-functions-head">
-        <h2>Функции мероприятия</h2>
-        <a href="{% url 'event_function_create' event_group.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Новая функция">+ Функция</a>
-    </div>
-    {% if functions.sections %}
-    <ul class="event-functions-list">
-        {% for section in functions.sections %}
-        <li>
-            <span class="event-functions-name">{{ section.name }}</span>
-            <span class="muted">{{ section.positions|length }} поз.</span>
-            {% if section.category %}<a href="{% url 'event_create' %}?group={{ event_group.id }}&function={{ section.category.pk }}" class="btn secondary btn-sm" data-modal data-modal-title="Новая позиция: {{ section.name }}">+ Позиция</a>{% endif %}
-        </li>
-        {% endfor %}
-    </ul>
-    {% else %}
-    <p class="muted">Мероприятие состоит из функций (например, «Организация выдачи пакетов участников»), а позиции создаются внутри функции. Начните с «+ Функция» — её можно выбрать из пула или создать новую.</p>
-    {% endif %}
-    {% if functions.without_function %}<p class="muted">Позиций без функции: {{ functions.without_function|length }} — укажите функцию в их редактировании.</p>{% endif %}
-</div>
-{% endif %}
 
 <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
     <input type="search" id="event-search" data-table-filter="#events-table" data-table-hide-passed="#hide-passed" placeholder="Поиск по названию, локации, организации…" style="max-width:360px; margin:0;">
@@ -75,7 +52,7 @@
         <tbody>
         {% for event in events %}
             <tr data-href="{% url 'event_detail' event.id %}" data-search="{{ event.function.name|default:'' }} {{ event.title }} {% if manager_view %}{{ event.team_leads_str }}{% else %}{{ event.location.name }}{% endif %} {{ event.organization.name }}" data-passed="{% if event.compute_status == 'passed' or event.compute_status == 'finished' %}1{% else %}0{% endif %}">
-                <td data-label="Функция" class="wrap" data-sort-value="{{ event.function.name|default:'' }}">{{ event.function.name|default:'—' }}</td>
+                <td data-label="Функция" class="wrap" data-sort-value="{{ event.function.name|default:'' }}">{% if event.function %}<span class="fn-tag fn-tone-{{ event.function_tone }}">{{ event.function.name }}</span>{% else %}—{% endif %}</td>
                 <td data-label="Название" class="wrap" data-sort-value="{{ event.title }}">
                     <a href="{% url 'event_detail' event.id %}" class="role-badge event-status-badge event-status-badge--{{ event.compute_status }}">{{ event.title }}</a>
                 </td>
@@ -144,7 +121,7 @@
                 {% endif %}
             </tr>
         {% empty %}
-            <tr><td colspan="{% if manager_view %}9{% else %}6{% endif %}">Позиций пока нет. Добавьте функцию, затем позиции в ней.</td></tr>
+            <tr><td colspan="{% if manager_view %}9{% else %}6{% endif %}">Функций пока нет. Нажмите «+ Функция»: выберите функцию и добавьте смены.</td></tr>
         {% endfor %}
         </tbody>
     </table>

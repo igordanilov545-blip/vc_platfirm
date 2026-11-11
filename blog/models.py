@@ -761,6 +761,9 @@ class EventShift(models.Model):
     volunteer_needed = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     recruit_status = models.CharField(max_length=20, choices=RECRUIT_STATUS_CHOICES, default='open')
     location = models.ForeignKey(Location, on_delete=models.SET_NULL, null=True, blank=True, related_name='event_shifts')
+    # План ролей смены (2026-11-11): [[роль, сколько], …] — уточнение «сколько людей
+    # куда», подсказка без ограничений. По умолчанию 1 тим-лидер + остальные волонтёры.
+    role_plan = models.JSONField(default=list, blank=True)
 
     # Отметка «можно забирать» (визуальный индикатор для менеджера, db.md/reports.md):
     # тим-лидер/менеджер этого меро подтверждает, что явка и часы по смене актуализированы

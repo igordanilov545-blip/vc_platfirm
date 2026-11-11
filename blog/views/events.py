@@ -330,7 +330,7 @@ def event_detail(request, event_id):
         from blog.services import shift_roles
         if not is_finished:
             shift_roles.sync_team_leads(event, request.user)
-        context['role_options'] = shift_roles.role_options(event)
+        context['role_options'] = shift_roles.role_options(event, shifts)
 
         needed = sum(s.volunteer_needed for s in shifts)
         pending_count = event.applications.filter(status='new').count()
@@ -408,7 +408,7 @@ def event_detail(request, event_id):
                 'recruit_overflow': pct > 100,
                 # Кол-во строк в резерве — чтобы показать это на кнопке «показать резерв».
                 'reserve_count': sum(1 for r in rows if r['decision'].status == 'rejected'),
-                'role_stats': shift_roles.role_stats([r['decision'] for r in rows]),
+                'role_stats': shift_roles.role_stats(shift, [r['decision'] for r in rows]),
             })
 
         # Общий процент набора по меро (для мини-дашборда наверху) — тоже без потолка.

@@ -20,21 +20,22 @@
             {% endwith %}
         </select>
         {% if form.function.errors %}<div class="field-error">{{ form.function.errors|striptags }}</div>{% endif %}
-        <div class="field-hint">Позиция создаётся внутри функции мероприятия. Название позиции подсказывается из позиций выбранной функции.</div>
+        <div class="field-hint">Функция — блок мероприятия со своими сменами. В каждой смене можно уточнить, сколько людей на какую роль.</div>
         <div data-new-function-field hidden>
             {{ form.function_name.label_tag }}{{ form.function_name }}
             {% if form.function_name.errors %}<div class="field-error">{{ form.function_name.errors|striptags }}</div>{% endif %}
         </div>
+        <datalist id="role-pool-default">{% for name in form.default_role_pool %}<option value="{{ name }}"></option>{% endfor %}</datalist>
         {% for category_id, names in form.function_pools.items %}<datalist id="position-pool-{{ category_id }}">{% for name in names %}<option value="{{ name }}"></option>{% endfor %}</datalist>{% endfor %}
         <div hidden>{{ form.categories }}</div>
     </div>
 
+    {% if form.require_shift %}{{ form.title.as_hidden }}{% else %}
     <div class="field">
         {{ form.title.label_tag }}
         {{ form.title }}
-        {% position_pool_datalist %}
         {% if form.title.errors %}<div class="field-error">{{ form.title.errors|striptags }}</div>{% endif %}
-    </div>
+    </div>{% endif %}
 
     <div class="field">
         {{ form.description.label_tag }}
@@ -140,6 +141,7 @@
         </div>
         <button type="button" class="btn secondary shift-add-btn" data-shift-add title="Добавить смену" aria-label="Добавить смену">＋</button>
     </div>
+    {% include 'blog/partials/_role_plan_editor.html' with pool_id='role-pool-default' needed='[data-shift-needed]' %}
     <datalist id="volunteer-needed-options">
         {% for n in volunteer_needed_options %}<option value="{{ n }}">{% endfor %}
     </datalist>

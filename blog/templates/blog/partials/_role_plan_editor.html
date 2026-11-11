@@ -1,0 +1,10 @@
+{% comment %}План ролей смены: сколько людей куда (необязательно). Поведение —
+initRolePlans (legacy-migration.js). pool_id — datalist подсказок ролей функции,
+needed — селектор поля «нужно волонтёров» в той же форме.{% endcomment %}
+<div class="role-plan" data-role-plan data-role-pool="{{ pool_id }}" data-role-plan-needed="{{ needed }}">
+    <div class="role-plan-head">Роли в смене <span class="field-hint">— необязательно: без уточнения будет 1 тим-лидер, остальные волонтёры</span></div>
+    <div data-role-plan-rows></div>
+    <button type="button" class="btn secondary btn-sm" data-role-plan-add>＋ Роль</button>
+    <div class="role-plan-sum" data-role-plan-sum></div>
+    {{ json_field|default:'' }}
+</div>

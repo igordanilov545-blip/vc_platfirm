@@ -62,7 +62,7 @@ class EventGroupTests(TestCase):
         self.assertContains(response, 'Регистрация')
         self.assertNotContains(response, 'Чужая позиция')
         self.assertContains(response, reverse('event_detail', args=[self.position.pk]))
-        self.assertContains(response, 'Позиции')
+        self.assertContains(response, 'Функции')
 
     def test_totals_do_not_multiply_applications_by_number_of_shifts(self):
         second_shift = f.make_shift(self.position, volunteer_needed=7)

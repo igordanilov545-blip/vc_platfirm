@@ -206,6 +206,12 @@
                     if (own) title.setAttribute('list', own.id); else title.removeAttribute('list');
                 }
                 if (newField) newField.hidden = select.value !== 'new';
+                // Подсказки ролей в плане смены — роли выбранной функции.
+                var pool = select.value && form.querySelector('#position-pool-' + select.value);
+                form.querySelectorAll('[data-role-plan]').forEach(function (box) {
+                    if (box.rolePlan) box.rolePlan.setPool(pool ? pool.id : 'role-pool-default');
+                    else box.setAttribute('data-role-pool', pool ? pool.id : 'role-pool-default');
+                });
             }
             select.addEventListener('change', sync);
             sync();
@@ -214,23 +220,119 @@
     initFunctionPoolSelect(document);
 
 
-    /**
-     * Таблица набора смены: роль человека ([data-role-form]) сохраняется сразу при
-     * изменении поля, без перезагрузки (подсказки — datalist #shift-roles).
-     */
+    /** Роль человека в таблице набора смены: select из ролей плана, сохраняется сразу. */
     function initShiftRoles(root) {
         root.querySelectorAll('[data-role-form]').forEach(function (form) {
             if (form.dataset.roleInit) return;
             form.dataset.roleInit = '1';
-            var input = form.querySelector('input[name=role]');
-            form.addEventListener('submit', function (e) { e.preventDefault(); input.blur(); });
+            var input = form.querySelector('[name=role]');
+            form.addEventListener('submit', function (e) { e.preventDefault(); });
             input.addEventListener('change', function () {
                 input.classList.remove('saved', 'failed');
                 fetch(form.action, {method: 'POST', body: new FormData(form), headers: {'X-Requested-With': 'XMLHttpRequest'}})
                     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-                    .then(function (data) { input.value = data.role; input.classList.add('saved'); })
+                    .then(function () { input.classList.add('saved'); })
                     .catch(function () { input.classList.add('failed'); input.title = 'Не сохранилось — обновите страницу'; });
             });
         });
     }
     initShiftRoles(document);
+
+    /**
+     * План ролей смены [data-role-plan]: строки «роль — сколько», итог против «нужно».
+     * Пустой план = 1 тим-лидер, остальные волонтёры (та же нормализация, что
+     * shift_roles.normalize_role_plan на сервере). box.rolePlan — read/reset/setPool
+     * для чипов смен формы функции (forms.js initShiftChips).
+     */
+    var TEAM_LEAD_ROLE = 'Тим-лидер', VOLUNTEER_ROLE = 'Волонтёр';
+    function roleKey(name) { return String(name || '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' '); }
+    function rolePlanNormalize(plan, needed) {
+        var out = [], seen = {};
+        (plan || []).forEach(function (item) {
+            var role = String(item[0] || '').trim().replace(/\s+/g, ' '), n = parseInt(item[1], 10) || 0;
+            if (!role || n <= 0) return;
+            var key = roleKey(role);
+            if (key in seen) out[seen[key]][1] += n; else { seen[key] = out.length; out.push([role, n]); }
+        });
+        needed = parseInt(needed, 10) || 0;
+        if (!out.length && needed) out.push([TEAM_LEAD_ROLE, 1]);
+        var rest = needed - out.reduce(function (a, r) { return a + r[1]; }, 0);
+        if (rest > 0) {
+            var vol = out.filter(function (r) { return roleKey(r[0]) === roleKey(VOLUNTEER_ROLE); })[0];
+            if (vol) vol[1] += rest; else out.push([VOLUNTEER_ROLE, rest]);
+        }
+        return out;
+    }
+    function rolePlanLabel(plan) { return plan.map(function (r) { return r[0] + ' ' + r[1]; }).join(', '); }
+    window.rolePlanNormalize = rolePlanNormalize;
+    window.rolePlanLabel = rolePlanLabel;
+
+    function initRolePlans(root) {
+        root.querySelectorAll('[data-role-plan]').forEach(function (box) {
+            if (box.rolePlan) return;
+            var form = box.closest('form') || document;
+            var rows = box.querySelector('[data-role-plan-rows]');
+            var sumEl = box.querySelector('[data-role-plan-sum]');
+            var json = box.querySelector('[data-role-plan-json]');
+            var neededSel = box.getAttribute('data-role-plan-needed');
+            function neededInput() { return neededSel ? form.querySelector(neededSel) : null; }
+            function addRow(role, count) {
+                var row = document.createElement('div');
+                row.className = 'role-plan-row';
+                row.innerHTML = '<input type="text" class="role-plan-name" placeholder="Роль" autocomplete="off">' +
+                    '<input type="number" class="role-plan-count" min="0" placeholder="0">' +
+                    '<button type="button" class="cat-chip-x" aria-label="Убрать роль">×</button>';
+                var name = row.querySelector('.role-plan-name');
+                name.setAttribute('list', box.getAttribute('data-role-pool'));
+                name.value = role || '';
+                row.querySelector('.role-plan-count').value = count || '';
+                row.querySelector('button').addEventListener('click', function () { row.remove(); update(); });
+                rows.appendChild(row);
+                return row;
+            }
+            function read() {
+                var plan = [];
+                rows.querySelectorAll('.role-plan-row').forEach(function (row) {
+                    var role = row.querySelector('.role-plan-name').value.trim();
+                    var n = parseInt(row.querySelector('.role-plan-count').value, 10) || 0;
+                    if (role && n > 0) plan.push([role, n]);
+                });
+                return plan;
+            }
+            function update() {
+                var plan = read();
+                var input = neededInput();
+                var need = input ? (parseInt(input.value, 10) || 0) : 0;
+                var sum = plan.reduce(function (a, r) { return a + r[1]; }, 0);
+                var text, warn = false;
+                if (!plan.length) text = need ? 'Будет: ' + rolePlanLabel(rolePlanNormalize([], need)) : '';
+                else if (sum < need) text = 'Расписано ' + sum + ' из ' + need + ' — остальные (' + (need - sum) + ') станут волонтёрами';
+                else if (sum > need) { text = '⚠ Расписано ' + sum + ' — больше, чем нужно на смену (' + need + ')'; warn = true; }
+                else text = 'Расписано ' + sum + ' из ' + need + ' ✓';
+                sumEl.textContent = text;
+                sumEl.classList.toggle('mismatch', warn);
+                if (json) json.value = JSON.stringify(plan);
+            }
+            box.querySelector('[data-role-plan-add]').addEventListener('click', function () {
+                if (!rows.children.length) addRow(TEAM_LEAD_ROLE, 1);
+                addRow('', '').querySelector('input').focus();
+                update();
+            });
+            box.addEventListener('input', update);
+            var input = neededInput();
+            if (input) input.addEventListener('input', update);
+            if (json && json.value) {
+                try { JSON.parse(json.value).forEach(function (r) { addRow(r[0], r[1]); }); } catch (e) { /* пустой план */ }
+            }
+            box.rolePlan = {
+                read: read,
+                reset: function () { rows.innerHTML = ''; update(); },
+                setPool: function (id) {
+                    box.setAttribute('data-role-pool', id);
+                    rows.querySelectorAll('.role-plan-name').forEach(function (n) { n.setAttribute('list', id); });
+                },
+            };
+            update();
+        });
+    }
+    initRolePlans(document);

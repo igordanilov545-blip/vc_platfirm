@@ -135,6 +135,7 @@
             var neededInput = wrap.querySelector('[data-shift-needed]');
             var addBtn = wrap.querySelector('[data-shift-add]');
             var errorBox = wrap.querySelector('[data-shift-error]');
+            var planBox = wrap.querySelector('[data-role-plan]');
             if (!selectedRow || !dayInput || !addBtn) return;
 
             // initDatepickers удаляет исходный dayInput и кладёт рядом hidden с
@@ -165,7 +166,8 @@
                         '<button type="button" class="cat-chip-x" aria-label="Убрать смену">×</button>';
                     chip.querySelector('.cat-chip-label').textContent =
                         s.dayLabel + ' ' + s.start_time + '–' + s.end_time +
-                        (s.volunteer_needed ? ' (' + s.volunteer_needed + ' чел.)' : '');
+                        (s.volunteer_needed ? ' (' + s.volunteer_needed + ' чел.' +
+                            (window.rolePlanLabel ? ': ' + window.rolePlanLabel(window.rolePlanNormalize(s.role_plan, s.volunteer_needed)) : '') + ')' : '');
                     chip.querySelector('.cat-chip-x').addEventListener('click', function () {
                         shifts.splice(idx, 1);
                         sync();
@@ -173,7 +175,7 @@
                     selectedRow.appendChild(chip);
                 });
                 jsonInput.value = JSON.stringify(shifts.map(function (s) {
-                    return { day: s.day, start_time: s.start_time, end_time: s.end_time, volunteer_needed: s.volunteer_needed };
+                    return { day: s.day, start_time: s.start_time, end_time: s.end_time, volunteer_needed: s.volunteer_needed, role_plan: s.role_plan || [] };
                 }));
             }
 
@@ -243,7 +245,9 @@
                     start_time: start,
                     end_time: end,
                     volunteer_needed: needed,
+                    role_plan: planBox && planBox.rolePlan ? planBox.rolePlan.read() : [],
                 });
+                if (planBox && planBox.rolePlan) planBox.rolePlan.reset();
                 sync();
                 if (typeof window.showToast === 'function') window.showToast('Смена добавлена', 'success');
             });

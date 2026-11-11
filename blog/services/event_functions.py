@@ -11,7 +11,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 
 from data_base import data_controller as dc
-from blog.services.position_pool import _key, function_category
+from blog.services.position_pool import _key, function_category, function_tone
 from blog.services.roles import has_manager_access
 
 
@@ -47,6 +47,7 @@ def functions_overview(group, events=None):
     for event in events:
         category = links.get(event.pk)
         event.function = category
+        event.function_tone = function_tone(category.name) if category is not None else None
         if category is None:
             loose.append(event)
             continue

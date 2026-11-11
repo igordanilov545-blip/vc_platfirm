@@ -2000,8 +2000,27 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
 
 
 /* Роль человека в смене (таблица набора) */
-.role-input { width: 150px; padding: 4px 6px; font-size: .85rem; margin: 0; }
+.role-input { width: 170px; padding: 4px 6px; font-size: .85rem; margin: 0; }
 .role-input.saved { border-color: var(--success, #6aa84f); }
 .role-input.failed { border-color: var(--danger, #c0504d); }
 .role-stats { font-size: .85rem; color: var(--text-secondary); display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .role-stat { white-space: nowrap; }
+
+/* План ролей смены и цвета функций (2026-11-11) */
+.role-plan { margin: 6px 0 10px; padding: 8px 10px; border: 1px dashed var(--border-subtle); border-radius: var(--radius-sm); }
+.role-plan-head { font-weight: 600; font-size: .9rem; margin-bottom: 6px; }
+.role-plan-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.role-plan-row .role-plan-name { flex: 1 1 auto; margin: 0; }
+.role-plan-row .role-plan-count { width: 80px; margin: 0; }
+.role-plan-sum { font-size: .85rem; color: var(--text-secondary); margin-top: 6px; }
+.role-plan-sum.mismatch, .role-stat.off { color: var(--warning, #e0a43a); }
+select.role-input { width: 170px; }
+.fn-tag { display: inline-block; padding: 3px 8px; border-radius: 6px; border-left: 3px solid var(--fn); background: color-mix(in srgb, var(--fn) 18%, transparent); line-height: 1.3; }
+.fn-tone-0 { --fn: #6aa84f; }  /* старт/финиш — зелёный */
+.fn-tone-1 { --fn: #4a86c8; }  /* дистанция — синий */
+.fn-tone-2 { --fn: #e69138; }  /* выдача пакетов — оранжевый */
+.fn-tone-3 { --fn: #8e7cc3; }  /* атташе, VIP, клиентские группы — сиреневый */
+.fn-tone-4 { --fn: #d5677a; }  /* медики — розовый */
+.fn-tone-5 { --fn: #45a5a0; }  /* информация, сервисы — бирюзовый */
+.fn-tone-6 { --fn: #d4b03c; }  /* режиссёрская, спецстарты — жёлтый */
+.fn-tone-7 { --fn: #8d99ae; }  /* реализация программы, штаб — серо-голубой */

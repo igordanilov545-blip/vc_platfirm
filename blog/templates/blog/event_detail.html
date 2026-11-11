@@ -4,7 +4,7 @@
 {% block title %}{{ event.title }}{% endblock %}
 {% block content %}
 {% if event.event_group_id %}
-<p><a href="{% url 'event_list' %}">Мероприятия</a> / <a href="{% url 'event_group_detail' event.event_group_id %}">{{ event.event_group.title }}</a> / Позиция</p>
+<p><a href="{% url 'event_list' %}">Мероприятия</a> / <a href="{% url 'event_group_detail' event.event_group_id %}">{{ event.event_group.title }}</a> / Функция</p>
 {% if event.event_group.sheet_link.google_url %}<p><a href="{{ event.event_group.sheet_link.google_url }}" target="_blank" rel="noopener noreferrer">Общая Google Таблица мероприятия ↗</a></p>{% endif %}
 {% endif %}
 <div class="page-header">
@@ -103,8 +103,7 @@
         </div>
         <div class="recruit-bar"><span class="recruit-bar-fill {% if recruit_overflow %}recruit-bar-fill--over{% endif %}" style="width:{% if recruit_overflow %}100{% else %}{{ recruit_percent }}{% endif %}%; --pct:{{ recruit_percent }}"></span></div>
         <div class="event-dash-days">
-            {% if can_edit_applications %}<datalist id="shift-roles">{% for name in role_options %}<option value="{{ name }}"></option>{% endfor %}</datalist>{% endif %}
-    {% for entry in shifts_with_recruitment %}
+            {% for entry in shifts_with_recruitment %}
             <div class="event-dash-day" title="{{ entry.shift.day|date:'d.m.y' }}: {{ entry.approved_count }} из {{ entry.needed }}">
                 <div class="event-dash-day-label mono">{{ entry.shift.day|date:"d.m" }}</div>
                 <div class="recruit-bar"><span class="recruit-bar-fill {% if entry.recruit_overflow %}recruit-bar-fill--over{% endif %}" style="width:{% if entry.recruit_overflow %}100{% else %}{{ entry.percent }}{% endif %}%; --pct:{{ entry.percent }}"></span></div>
@@ -214,7 +213,7 @@
 </div>
 
 <div class="card" style="padding:0; overflow:hidden;">
-    <h3 style="padding:20px 20px 0;">Смены позиции</h3>
+    <h3 style="padding:20px 20px 0;">Смены</h3>
     <p style="padding:0 20px; color:var(--text-secondary); font-size:13px;">Ближайшая/идущая смена — сверху, прошедшие уходят в конец списка.</p>
     <table class="responsive-table shift-table" data-sortable>
         <thead>
@@ -340,7 +339,7 @@
     <div class="shift-recruit-head" style="padding:20px 20px 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
         <div>
         <h4 style="margin:0 0 4px;">Набор на смену «{{ entry.shift.day|date:"d.m.y" }}»: {{ entry.approved_count }} из {{ entry.needed }} (осталось {{ entry.remaining }})</h4>
-        {% if entry.role_stats %}<div class="role-stats" title="Сколько каких ролей среди одобренных — подсказка, ограничений нет">Роли: {% for name, n in entry.role_stats %}<span class="role-stat">{{ name }} — {{ n }}</span>{% endfor %}</div>{% endif %}
+        <div class="role-stats" title="Роли среди одобренных: есть / по плану смены. Подсказка — ограничений нет">Роли: {% for r in entry.role_stats.roles %}<span class="role-stat{% if r.have != r.plan %} off{% endif %}">{{ r.role }} {{ r.have }}/{{ r.plan }}</span>{% endfor %}{% if entry.role_stats.without %}<span class="role-stat muted">без роли — {{ entry.role_stats.without }}</span>{% endif %}</div>
         </div>
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             {% if entry.reserve_count %}
@@ -413,7 +412,11 @@
                     {% if can_edit_applications %}
                     <form method="post" action="{% url 'shift_decision_role' row.decision.pk %}" class="inline" data-role-form>
                         {% csrf_token %}
-                        <input type="text" name="role" value="{{ row.decision.role }}" list="shift-roles" placeholder="роль" autocomplete="off" class="role-input" aria-label="Роль: {{ application.first_name }}">
+                        <select name="role" class="role-input" aria-label="Роль: {{ application.first_name }}">
+                            <option value="">— роль —</option>
+                            {% for name in role_options %}<option value="{{ name }}"{% if name == row.decision.role %} selected{% endif %}>{{ name }}</option>{% endfor %}
+                            {% if row.decision.role and row.decision.role not in role_options %}<option value="{{ row.decision.role }}" selected>{{ row.decision.role }}</option>{% endif %}
+                        </select>
                     </form>
                     {% else %}{{ row.decision.role|default:"—" }}{% endif %}
                 </td>

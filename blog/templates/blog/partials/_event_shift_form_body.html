@@ -42,6 +42,9 @@
         {% if form.volunteer_needed.errors %}<div class="field-error">{{ form.volunteer_needed.errors|striptags }}</div>{% endif %}
     </div>
 
+    <datalist id="role-pool-shift">{% for name in form.role_pool %}<option value="{{ name }}"></option>{% endfor %}</datalist>
+    {% include 'blog/partials/_role_plan_editor.html' with pool_id='role-pool-shift' needed='[name=volunteer_needed]' json_field=form.role_plan %}
+
     <div class="field">
         {{ form.recruit_status.label_tag }}
         {{ form.recruit_status }}

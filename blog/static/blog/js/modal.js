@@ -80,7 +80,7 @@
          'initDateRangePair', 'initTimepickers', 'initInfiniteScroll',
          'bindRoleForms', 'initAttendanceHoursInputs', 'initPositionHandouts', 'initLetterEditor',
          'initPasswordToggle', 'initToasts', 'initExperienceCopy',
-         'initAchievementPopup', 'initQrScanner', 'initProfileCompletion', 'initMigrationJobs', 'initMappingRows', 'initFapColumns', 'initFunctionPoolSelect', 'initShiftRoles'].forEach(function (fn) {
+         'initAchievementPopup', 'initQrScanner', 'initProfileCompletion', 'initMigrationJobs', 'initMappingRows', 'initFapColumns', 'initRolePlans', 'initFunctionPoolSelect', 'initShiftRoles'].forEach(function (fn) {
             if (typeof window[fn] === 'function') window[fn](root);
         });
     }
@@ -161,6 +161,7 @@
                 initCharCounters(modalBody);
                 initEventForm(modalBody);
                 // Форма позиции: подсказки названия по выбранной функции (legacy-migration.js).
+                if (typeof window.initRolePlans === 'function') window.initRolePlans(modalBody);
                 if (typeof window.initFunctionPoolSelect === 'function') window.initFunctionPoolSelect(modalBody);
                 bindModalForm(url);
             });

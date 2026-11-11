@@ -217,3 +217,27 @@ def remember_positions(plan, operator=None):
                 dc.ensure_position_template(category, name, operator)
                 added += 1
     return added
+
+
+# Цвет функции в таблицах (2026-11-11): родственные функции — один тон, как
+# заливки блоков в ФиП. Индекс → CSS-класс fn-tone-N (nexus.css).
+FUNCTION_TONES = (
+    (('старт', 'финиш'), 0),
+    (('дистанц',), 1),
+    (('пакет', 'выдач'), 2),
+    (('атташе', 'клиентск', 'отел', 'vip', 'вип'), 3),
+    (('медик', 'медиц'), 4),
+    (('информац', 'навигац', 'спортсмен', 'зрител'), 5),
+    (('режисс', 'специальн'), 6),
+    (('реализац', 'программ', 'штаб'), 7),
+)
+
+
+def function_tone(name):
+    key = _key(name or '')
+    if not key:
+        return None
+    for words, tone in FUNCTION_TONES:
+        if any(word in key for word in words):
+            return tone
+    return sum(map(ord, key)) % 8

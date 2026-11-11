@@ -212,6 +212,9 @@ class EventForm(forms.ModelForm):
                 self.fields.pop(name, None)
 
         self._setup_function_field()
+        if not self.instance.pk:
+            # «+ Функция» = позиция с этим названием: название берётся из функции.
+            self.fields['title'].required = False
 
         if self.instance.pk:
             self.fields['categories'].initial = dc.event_categories_for_event(self.instance)
@@ -240,9 +243,11 @@ class EventForm(forms.ModelForm):
         choices += [('Пул функций', rest), ('new', '＋ Новая функция')]
         self.fields['function'].choices = choices
         self.function_own, self.function_rest = own, rest
-        self.function_pools = {}
+        from blog.services.shift_roles import TEAM_LEAD_ROLE, VOLUNTEER_ROLE
+        self.function_pools = {int(pk): [TEAM_LEAD_ROLE, VOLUNTEER_ROLE] for pk, _ in own + rest}
         for template in dc.position_templates_qs().order_by('name'):
-            self.function_pools.setdefault(template.category_id, []).append(template.name)
+            self.function_pools.setdefault(template.category_id, [TEAM_LEAD_ROLE, VOLUNTEER_ROLE]).append(template.name)
+        self.default_role_pool = [TEAM_LEAD_ROLE, VOLUNTEER_ROLE]
         if self.instance.pk:
             current = dc.event_categories_for_event(self.instance)
             if current:
@@ -259,12 +264,19 @@ class EventForm(forms.ModelForm):
         if chosen == 'new':
             if not (cleaned.get('function_name') or '').strip():
                 self.add_error('function_name', 'Впишите название новой функции.')
+            elif not cleaned.get('title'):
+                cleaned['title'] = ' '.join(cleaned['function_name'].split())
             return cleaned
         if chosen:
             cleaned['function_category'] = dc.event_categories_qs().filter(pk=chosen).first()
+            if not cleaned.get('title') and cleaned['function_category']:
+                cleaned['title'] = cleaned['function_category'].name
         elif self.data and 'function' in self.data and not self.instance.pk:
             self.add_error('function', 'Выберите функцию: позиция создаётся внутри функции мероприятия.')
         return cleaned
+
+    def clean_title(self):
+        return (self.cleaned_data.get('title') or '').strip()
 
     def _save_function(self, event):
         """Функция позиции: связь с пулом + функция в списке мероприятия + название в пул."""
@@ -302,6 +314,7 @@ class EventForm(forms.ModelForm):
                 f'shift-{i}-volunteer_needed': row.get('volunteer_needed') or 0,
                 f'shift-{i}-recruit_status': 'open',
                 f'shift-{i}-location': '',
+                f'shift-{i}-role_plan': json.dumps(row.get('role_plan') or []),
             }
             forms_list.append(EventShiftForm(data, prefix=f'shift-{i}'))
         return forms_list
@@ -435,6 +448,9 @@ class EventShiftForm(forms.ModelForm):
         label='Время окончания',
         widget=forms.TimeInput(attrs={'type': 'text', 'data-timepicker': '', 'autocomplete': 'off'}, format='%H:%M'),
     )
+    # План ролей смены (2026-11-11): JSON [[роль, n], …] из редактора [data-role-plan];
+    # пусто — 1 тим-лидер и остальные волонтёры.
+    role_plan = forms.CharField(required=False, widget=forms.HiddenInput(attrs={'data-role-plan-json': ''}))
 
     class Meta:
         model = EventShift
@@ -464,6 +480,11 @@ class EventShiftForm(forms.ModelForm):
         self.overlap_event = event
         super().__init__(*args, **kwargs)
         self.fields['location'].queryset = dc.locations_qs().order_by('-id')
+        from blog.services import shift_roles
+        self.role_pool = shift_roles.role_pool(event) if event is not None else shift_roles.role_pool()
+        if self.instance and self.instance.pk and self.instance.role_plan:
+            import json
+            self.initial.setdefault('role_plan', json.dumps(self.instance.role_plan, ensure_ascii=False))
         if self.instance and self.instance.pk:
             # При редактировании существующего дня разложить datetime обратно на дату и время.
             if self.instance.start_time:
@@ -485,6 +506,14 @@ class EventShiftForm(forms.ModelForm):
         if value is None or value < 1:
             raise forms.ValidationError('Укажите, сколько волонтёров нужно на смену (не менее 1).')
         return value
+
+    def clean_role_plan(self):
+        import json
+        try:
+            raw = json.loads(self.cleaned_data.get('role_plan') or '[]')
+        except ValueError:
+            raw = []
+        return raw if isinstance(raw, list) else []
 
     def clean(self):
         cleaned = super().clean()
@@ -521,6 +550,8 @@ class EventShiftForm(forms.ModelForm):
         instance.end_time = timezone.make_aware(
             datetime.combine(day, self.cleaned_data['end_time']), tz
         )
+        from blog.services.shift_roles import normalize_role_plan
+        instance.role_plan = normalize_role_plan(self.cleaned_data.get('role_plan'), instance.volunteer_needed)
         if commit:
             instance.save()
             # При изменении времени смены часы уже проставленной явки должны стать

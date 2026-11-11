@@ -14,7 +14,7 @@ from django.utils import timezone
 from blog.models import (
     Event, EventShift, Participation, Application, ApplicationShiftDecision, EventStaff, User,
     EventFeedback, Manager, TeamLeader, Season, DobroRuSharedLink,
-    Location, Organization, Organizer, EventCategory, EventPerk, EventRequirement,
+    Location, Organization, Organizer, EventCategory, EventCategoryMap, EventPerk, EventRequirement,
     UserRequirementException, Incident, ChurnHistory, ApplicationChangeLog,
     UserComment, OrganizerInteractionLog,
     WebSession, WebPageView, ButtonClickEvent, BotSessionPing,
@@ -92,6 +92,11 @@ def organizers_qs():
 
 def event_categories_qs():
     return EventCategory.objects.all()
+
+
+def event_category_maps_qs():
+    """Связи позиция → функция пула (ленивый queryset)."""
+    return EventCategoryMap.objects.all()
 
 
 def event_perks_qs():

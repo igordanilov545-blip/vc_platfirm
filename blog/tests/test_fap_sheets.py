@@ -18,30 +18,21 @@ EXAMPLES = Path(__file__).resolve().parents[1] / 'resources' / 'fap'
 
 
 class FaPWorkbookTests(SimpleTestCase):
-    def test_vip_zone_has_one_shift_per_day_with_subtotal_and_check_bounds(self):
+    def test_each_fap_row_is_a_position_with_its_own_count_and_time(self):
+        """Решение пользователя (2026-11-11): позиция = строка «Позиция» ФиП со своим
+        количеством и временем; функция = блок колонки B. Прежнее «количество только
+        из ИТОГО В ЗОНЕ» и «набор тим-лидера = позиция» отменены."""
         from blog.services.fap_workbook import read_xlsx
         plan = read_xlsx((EXAMPLES / 'marathon.xlsx').read_bytes())
-        days = plan['directions'][0]['positions'][0]['days']
-        shifts = [s for day in days for s in day['shifts']]
-        self.assertEqual([(s['start'], s['end'], s['count']) for s in shifts], [
-            ('2026-09-26T07:00:00+03:00', '2026-09-26T13:00:00+03:00', 12),
-            ('2026-09-27T06:00:00+03:00', '2026-09-27T17:00:00+03:00', 14),
-        ])
-        self.assertTrue(all(s['start'] == s['checkin'] and s['end'] == s['checkout'] for s in shifts))
+        first = plan['directions'][0]
+        self.assertEqual(first['name'], 'Организация сервисов для отдельных клиентских групп')
+        self.assertGreater(len(first['positions']), 1)
+        for position in first['positions']:
+            for shift in (s for day in position['days'] for s in day['shifts']):
+                self.assertTrue(shift['count'] > 0 and shift['start'] == shift['checkin'])
+        self.assertEqual(sum(p['days'][2]['quantities'][0]['count'] or 0 for p in first['positions']), 12)
 
-    def test_zone_capacity_comes_only_from_subtotal_not_inner_rows(self):
-        from blog.services.fap_workbook import read_xlsx
-        book = load_workbook(EXAMPLES / 'marathon.xlsx')
-        sheet = book.active
-        sheet['R3'], sheet['R4'], sheet['R8'] = 999, 999, 20
-        sheet['H3'] = '00:00-23:59'
-        stream = BytesIO()
-        book.save(stream)
-        day = read_xlsx(stream.getvalue())['directions'][0]['positions'][0]['days'][2]
-        self.assertEqual(len(day['shifts']), 1)
-        self.assertEqual(day['shifts'][0]['count'], 20)
-        self.assertEqual(day['shifts'][0]['start'], '2026-09-26T07:00:00+03:00')
-        self.assertEqual(day['shifts'][0]['end'], '2026-09-26T13:00:00+03:00')
+
 
     def test_invalid_zone_subtotal_is_not_replaced_by_inner_row_counts(self):
         from blog.services.fap_workbook import read_xlsx
@@ -52,25 +43,16 @@ class FaPWorkbookTests(SimpleTestCase):
         with self.assertRaisesMessage(ValidationError, 'R8'):
             read_xlsx(stream.getvalue())
 
-    def test_marathon_short_dates_use_year_from_count_headers_and_keep_all_zone_blocks(self):
+    def test_marathon_short_dates_use_year_from_count_headers_and_round_trip_ids(self):
         from blog.services.fap_workbook import read_xlsx, write_xlsx
         source = (EXAMPLES / 'marathon.xlsx').read_bytes()
         plan = read_xlsx(source)
         self.assertEqual(plan['dates'], ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27'])
-        self.assertEqual(len(plan['directions']), 24)
-        first, second = plan['directions'][:2]
-        # Два блока одной функции — разные позиции; общий префикс функции, а
-        # подпись группы различает их для тим-лидеров и менеджера.
-        function = 'Организация сервисов для отдельных клиентских групп — '
-        self.assertTrue(first['name'].startswith(function) and second['name'].startswith(function))
-        self.assertNotEqual(first['name'], second['name'])
-        self.assertNotEqual(first['id'], second['id'])
-        self.assertEqual(first['positions'][0]['days'][2]['quantities'][0]['count'], 12)
-        self.assertEqual(second['positions'][0]['days'][2]['quantities'][0]['count'], 9)
-        self.assertEqual(plan['directions'][-1]['positions'][0]['days'][2]['quantities'][0]['count'], 16)
         self.assertTrue(any(d['name'] == 'Волонтёры-медики' for d in plan['directions']))
+        ids = [p['id'] for d in plan['directions'] for p in d['positions']]
+        self.assertEqual(len(ids), len(set(ids)))
         restored = read_xlsx(write_xlsx(plan, source))
-        self.assertEqual([d['id'] for d in restored['directions']], [d['id'] for d in plan['directions']])
+        self.assertEqual([p['id'] for d in restored['directions'] for p in d['positions']], ids)
         self.assertEqual(restored['dates'], plan['dates'])
 
     def test_names_headers_and_subtotals_ignore_case_and_whitespace(self):
@@ -126,21 +108,8 @@ class FaPWorkbookTests(SimpleTestCase):
                             [{'label': '', 'count': 7}, {'label': 'A', 'count': 2}, {'label': 'B', 'count': 5}], [])
         self.assertEqual([s['count'] for s in shifts], [5, 2])
 
-    def test_position_column_names_do_not_affect_direction_or_shift_counts(self):
-        from blog.services.fap_workbook import read_xlsx
-        from blog.services.event_sheets import content_signature
-        source = (EXAMPLES / 'one-day.xlsx').read_bytes()
-        expected = read_xlsx(source)
-        book = load_workbook(BytesIO(source))
-        for row in (3, 4, 5, 6):
-            book['Смены'].cell(row, 5).value = None
-        output = BytesIO()
-        book.save(output)
-        result = read_xlsx(output.getvalue())
-        self.assertEqual(content_signature(expected), content_signature(result))
-        first = result['directions'][0]
-        self.assertEqual(first['positions'][0]['name'], first['name'])
-        self.assertEqual([s['count'] for s in first['positions'][0]['days'][0]['shifts']], [15])
+
+
     def test_other_sheet_xml_is_not_parsed(self):
         from zipfile import ZipFile
         from blog.services.fap_workbook import read_xlsx
@@ -155,7 +124,7 @@ class FaPWorkbookTests(SimpleTestCase):
         self.assertEqual(len(read_xlsx(broken.getvalue())['directions']), 4)
     def test_both_examples_have_variable_days_and_directions(self):
         from blog.services.fap_workbook import read_xlsx
-        for name, days, positions in [('three-days.xlsx', 3, 4), ('one-day.xlsx', 1, 4)]:
+        for name, days, positions in [('three-days.xlsx', 3, 14), ('one-day.xlsx', 1, 13)]:
             with self.subTest(name=name):
                 plan = read_xlsx((EXAMPLES / name).read_bytes())
                 self.assertEqual(len(plan['dates']), days)
@@ -166,11 +135,11 @@ class FaPWorkbookTests(SimpleTestCase):
     def test_zero_blank_and_incomplete_time_are_not_lost(self):
         from blog.services.fap_workbook import read_xlsx
         plan = read_xlsx((EXAMPLES / 'three-days.xlsx').read_bytes())
-        position = plan['directions'][0]['positions'][0]
-        self.assertEqual(position['days'][0]['shifts'][0]['count'], 9)
-        unknown = plan['directions'][3]['positions'][0]['days'][2]['quantities']
-        self.assertEqual(next(q['count'] for q in unknown if q['label'] == 'Без времени'), 5)
-        self.assertTrue(plan['warnings'])
+        # Количество без check-in/out остаётся в плане строки, смена не выдумывается.
+        rows = [p for d in plan['directions'] for p in d['positions']]
+        untimed = [day for p in rows for day in p['days'] if day['quantities'][0]['count'] and not day['shifts']]
+        self.assertTrue(untimed)
+        self.assertTrue(any('нет check-in/out' in w for w in plan['warnings']))
 
     def test_only_shifts_sheet_is_exported_and_styles_are_preserved(self):
         from blog.services.fap_workbook import read_xlsx, write_xlsx
@@ -212,7 +181,7 @@ class FaPWorkbookTests(SimpleTestCase):
                         position['days'].append(item)
             result = read_xlsx(write_xlsx(plan, template))
             self.assertEqual(result['dates'], plan['dates'])
-            self.assertEqual(sum(len(d['positions']) for d in result['directions']), 4)
+            self.assertEqual(sum(len(d['positions']) for d in result['directions']), 13)
 
     def test_three_subshifts_keep_separate_times_and_counts(self):
         from blog.services.fap_workbook import day_shifts
@@ -221,46 +190,28 @@ class FaPWorkbookTests(SimpleTestCase):
         self.assertEqual([r['count'] for r in result], [1, 2, 3])
         self.assertEqual([r['label'] for r in result], ['A', 'B', 'C'])
 
-    def test_each_team_leader_set_inside_zone_is_a_separate_position(self):
-        """Решение пользователя (2026-11-11): позиция = набор одного тим-лидера внутри
-        блока «ИТОГО В ЗОНЕ». Тим-лидер видит только свой набор, менеджер — разрез
-        «по точкам». Количество группы — сумма её строк, а не общий итог зоны."""
-        from blog.services.fap_workbook import read_xlsx
-        book = load_workbook(EXAMPLES / 'one-day.xlsx')
-        sheet = book['Смены']
-        sheet.unmerge_cells('C3:C7')
-        sheet.merge_cells('C3:C4')
-        sheet['C3'] = 'Первый лидер'
-        sheet.merge_cells('C5:C6')
-        sheet['C5'] = 'Второй лидер'
-        stream = BytesIO()
-        book.save(stream)
-        plan = read_xlsx(stream.getvalue())
-        first, second = plan['directions'][:2]
-        self.assertEqual(first['team_leaders'], ['Первый лидер'])
-        self.assertEqual(second['team_leaders'], ['Второй лидер'])
-        self.assertNotEqual(first['name'], second['name'])
-        self.assertEqual(len(plan['directions']), 5)
-
-    def test_real_marathon_with_mentor_column_splits_distance_by_team_leaders(self):
-        """Реальный ФиП ММ 2026: лишняя колонка «Наставник» сдвигает дни; «Дистанция»
-        — один блок итогов, но 12 тим-лидерских наборов. Код группы совпадает с
-        нумерацией в старой базе (10.1 ПО1 … 10.11 ПП5)."""
+    def test_team_leader_names_belong_to_their_team_lead_row(self):
+        """Имена колонки тим-лидеров закрепляются за строкой «Тим-лидер …» своего
+        набора; тим-лидер — позиция функции, а не отдельное направление."""
         from blog.services.fap_workbook import read_xlsx
         plan = read_xlsx((EXAMPLES / 'marathon-2026-mentors.xlsx').read_bytes())
-        self.assertEqual(plan['dates'], ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27'])
-        by_code = {d['code']: d for d in plan['directions'] if d['code']}
-        distance = [d for d in plan['directions'] if d['code'].startswith('10.')]
-        self.assertEqual(len(distance), 12)
-        first = by_code['10.1']
-        self.assertEqual(first['name'], 'Волонтёры дистанции — Пункт освежения (ПО1)')
-        self.assertIn('Волонтер пункта освежения (ПО1)', first['source_rows'])
-        self.assertEqual(first['positions'][0]['days'][3]['shifts'][0]['count'], 77)
-        self.assertEqual(by_code['10.4']['name'], 'Волонтёры дистанции — Пункт питания на дистанции (ПП2)')
-        zone = by_code['7.2']
-        self.assertEqual(zone['name'], 'Организация выдачи пакетов участников — Зона выдачи номеров и пакетов участника')
-        self.assertEqual(zone['positions'][0]['days'][0]['shifts'][0]['count'], 157)
-        self.assertEqual(zone['team_leaders'][:2], ['Анна Баринова', 'Марина Бабич'])
+        distance = [d for d in plan['directions'] if d['name'] == 'Волонтёры дистанции'][0]
+        leads = [p for p in distance['positions'] if p['is_team_lead_role']]
+        self.assertTrue(leads and all(p['team_leaders'] for p in leads))
+        self.assertTrue(all(not p['team_leaders'] for p in distance['positions'] if not p['is_team_lead_role']))
+
+    def test_real_marathon_functions_and_rows(self):
+        """Реальный ФиП ММ 2026 с колонкой «Наставник»: 12 функций из колонки B,
+        позиции — строки; код набора совпадает с нумерацией старой базы."""
+        from blog.services.fap_workbook import read_xlsx
+        plan = read_xlsx((EXAMPLES / 'marathon-2026-mentors.xlsx').read_bytes())
+        self.assertEqual(len({d['name'] for d in plan['directions']}), 12)
+        rows = {p['base_name']: p for d in plan['directions'] for p in d['positions']}
+        po1 = rows['Волонтер пункта освежения (ПО1)']
+        self.assertEqual((po1['code'], po1['days'][3]['shifts'][0]['count']), ('10.1', 75))
+        self.assertEqual(rows['Тим-лидер волонтёров пункта освежения (ПО1)']['code'], '10.1')
+        hostess = [p['name'] for d in plan['directions'] for p in d['positions'] if p['base_name'] == 'Хостес']
+        self.assertEqual(len(hostess), len(set(hostess)))
 
     def test_real_fap_headers_tolerate_labels_year_typos_and_split_days(self):
         """Реальные ФиП 2026 (пользователь, 2026-11-11), которые раньше не загружались:
@@ -281,7 +232,7 @@ class FaPWorkbookTests(SimpleTestCase):
         self.assertEqual(night['dates'], ['2026-06-18', '2026-06-19', '2026-06-20'])
         self.assertTrue(night['merged_count_blocks'])
         start = next(d for d in night['directions'] if d['name'] == 'Волонтёры старта')
-        self.assertEqual(start['positions'][0]['days'][2]['shifts'][0]['count'], 20)
+        self.assertEqual(sum(p['days'][2]['quantities'][0]['count'] or 0 for p in start['positions']), 20)
 
     def test_team_lead_text_detection_ignores_case_spacing_and_yo(self):
         from blog.services.fap_workbook import is_team_lead_text
@@ -317,7 +268,7 @@ class FaPWorkbookTests(SimpleTestCase):
         batch = xlsx_update_requests(exported, 42, original)
         self.assertFalse(any('createDeveloperMetadata' in item for item in batch))
         rows = next(item['updateCells']['rows'] for item in batch if item.get('updateCells', {}).get('rows'))
-        self.assertEqual(sum(META_PREFIX in cell.get('note', '') for row in rows for cell in row['values']), 4)
+        self.assertEqual(sum(META_PREFIX in cell.get('note', '') for row in rows for cell in row['values']), 13)
 
     def test_named_shift_ids_follow_labels_after_reordering(self):
         from blog.services.fap_workbook import day_shifts
@@ -331,50 +282,17 @@ class FaPImportTests(TestCase):
     def setUp(self):
         self.manager = f.make_manager()
 
-    def test_same_file_reimport_corrects_previous_multiple_shifts_per_day(self):
-        from copy import deepcopy
-        from uuid import uuid4
-        from blog.models import EventGroup
-        from blog.services.event_sheets import import_plan, import_workbook
-        from blog.services.fap_workbook import read_xlsx, group_directions
-        source = (EXAMPLES / 'marathon.xlsx').read_bytes()
-        legacy = read_xlsx(source)
-        legacy.pop('daily_zone_shifts')
-        day = legacy['directions'][0]['positions'][0]['days'][2]
-        day['shifts'][0]['count'] = 1
-        extra = deepcopy(day['shifts'][0])
-        extra['id'], extra['count'] = str(uuid4()), 2
-        extra['start'] = extra['checkin'] = '2026-09-26T08:00:00+03:00'
-        day['shifts'].append(extra)
-        legacy = group_directions(legacy)
-        group = EventGroup.objects.create(title='Прежний импорт')
-        import_plan(self.manager, group, legacy, source, 'мм.xlsx')
-        event = group.positions.order_by('pk').first()
-        retained_id = event.shifts.order_by('day', 'pk').first().pk
-        self.assertEqual(event.shifts.count(), 3)
-        application = f.make_application(event)
-        with self.assertRaises(ValidationError):
-            import_workbook(self.manager, group, source)
-        self.assertEqual(event.shifts.count(), 3)
-        application.delete()
-        import_workbook(self.manager, group, source)
-        self.assertEqual(group.positions.count(), 24)
-        self.assertEqual(list(event.shifts.order_by('day').values_list('volunteer_needed', flat=True)), [12, 14])
-        self.assertEqual(event.shifts.order_by('day').first().pk, retained_id)
 
-    def test_marathon_upload_creates_each_zone_as_a_separate_position(self):
+
+    def test_marathon_upload_creates_row_positions_with_functions(self):
+        from blog.services.event_sheets import import_workbook
         from blog.models import EventGroup
-        from blog.services.event_sheets import import_workbook, export_workbook
         group = EventGroup.objects.create(title='Марафон')
-        source = (EXAMPLES / 'marathon.xlsx').read_bytes()
-        import_workbook(self.manager, group, source)
-        self.assertEqual(group.positions.count(), 24)
-        first = group.positions.order_by('pk').first()
-        self.assertEqual(list(first.shifts.order_by('day').values_list('day', 'volunteer_needed')), [(date(2026, 9, 26), 12), (date(2026, 9, 27), 14)])
-        ids = list(group.positions.order_by('pk').values_list('pk', flat=True))
-        exported = export_workbook(self.manager, group)
-        import_workbook(self.manager, group, exported)
-        self.assertEqual(list(group.positions.order_by('pk').values_list('pk', flat=True)), ids)
+        import_workbook(self.manager, group, (EXAMPLES / 'marathon-2026-mentors.xlsx').read_bytes())
+        self.assertEqual(group.positions.count(), 106)
+        functions = set(group.positions.values_list('category_map__category__name', flat=True))
+        self.assertIn('Волонтёры дистанции', functions)
+        self.assertNotIn(None, functions)
 
     def test_legacy_import_repair_preserves_first_event_and_shift_ids(self):
         import hashlib, uuid
@@ -412,14 +330,14 @@ class FaPImportTests(TestCase):
         from blog.models import EventGroup, ZoneResponsible, Manager
         group = EventGroup.objects.create(title='FaP')
         import_workbook(self.manager, group, (EXAMPLES / 'one-day.xlsx').read_bytes(), 'пример.xlsx')
-        self.assertEqual(group.positions.count(), 4)
-        self.assertEqual(sum(p.shifts.count() for p in group.positions.all()), 4)
+        self.assertEqual(group.positions.count(), 13)
+        self.assertGreaterEqual(sum(p.shifts.count() for p in group.positions.all()), 4)
         self.assertEqual(ZoneResponsible.objects.filter(direction__event_group=group).count(), 4)
         self.assertEqual(Manager.objects.count(), 1)
         link = group.sheet_link
         self.assertTrue(link.warnings == [] or isinstance(link.warnings, list))
         import_workbook(self.manager, group, (EXAMPLES / 'one-day.xlsx').read_bytes(), 'пример.xlsx')
-        self.assertEqual(group.positions.count(), 4)
+        self.assertEqual(group.positions.count(), 13)
 
     def test_non_manager_cannot_import(self):
         from blog.services.event_sheets import import_workbook
@@ -436,7 +354,7 @@ class FaPImportTests(TestCase):
         self.assertEqual(fingerprint(link.baseline), fingerprint(current_plan(group)))
         exported = export_workbook(self.manager, group)
         import_workbook(self.manager, group, exported)
-        self.assertEqual(group.positions.count(), 4)
+        self.assertEqual(group.positions.count(), 14)
 
     def test_manually_added_positions_stay_separate_directions_on_round_trip(self):
         from blog.services.event_sheets import import_workbook, export_workbook
@@ -456,7 +374,7 @@ class FaPImportTests(TestCase):
         # подменять их рабочим временем и удалять исходные смены.
         with self.assertRaises(ValidationError):
             import_workbook(self.manager, group, exported)
-        self.assertEqual(group.positions.count(), 6)
+        self.assertEqual(group.positions.count(), 15)
         for event in events:
             event.refresh_from_db()
             self.assertEqual(event.shifts.count(), 1)
@@ -491,7 +409,7 @@ class FaPImportTests(TestCase):
         upload = SimpleUploadedFile('plan.xlsx', (EXAMPLES / 'one-day.xlsx').read_bytes())
         response = self.client.post(reverse('event_group_create'), {'title': 'Из таблицы', 'managers': [self.manager.pk], 'workbook': upload})
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(EventGroup.objects.get(title='Из таблицы').positions.count(), 4)
+        self.assertEqual(EventGroup.objects.get(title='Из таблицы').positions.count(), 13)
 
     def test_sheet_management_is_manager_only_and_url_is_shared_by_positions(self):
         from blog.models import EventGroup, EventSheetLink

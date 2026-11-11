@@ -156,6 +156,7 @@ from .querysets import (  # noqa: F401
     seasons_qs, user_requirement_exceptions_qs, incidents_qs, churn_history_qs,
     application_change_logs_qs, user_comments_qs, organizer_interactions_qs,
     web_sessions_qs, web_page_views_qs, button_click_events_qs, bot_session_pings_qs,
+    event_category_maps_qs,
 )
 
 # Публичный контракт слоя — тот же, что был у монолитного data_controller.py.
@@ -232,7 +233,7 @@ __all__ = [
     'events_qs', 'event_shifts_qs', 'participations_qs', 'applications_qs', 'application_shift_decisions_qs',
     'event_staff_qs', 'users_qs', 'users_ranked_qs', 'feedbacks_qs', 'managers_qs', 'team_leaders_qs',
     'dobro_ru_shared_links_qs', 'get_current_season', 'get_event_by_id',
-    'locations_qs', 'organizations_qs', 'organizers_qs', 'event_categories_qs', 'event_perks_qs', 'requirements_qs',
+    'locations_qs', 'organizations_qs', 'organizers_qs', 'event_categories_qs', 'event_category_maps_qs', 'event_perks_qs', 'requirements_qs',
     'seasons_qs', 'user_requirement_exceptions_qs', 'incidents_qs', 'churn_history_qs',
     'application_change_logs_qs', 'user_comments_qs', 'organizer_interactions_qs',
     'web_sessions_qs', 'web_page_views_qs', 'button_click_events_qs', 'bot_session_pings_qs',

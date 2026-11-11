@@ -1943,13 +1943,14 @@ button.nav-link.companion-guide-btn:hover { background: var(--bg-card-hover); co
 .migration-grid > .card { margin: 0; }
 .table-scroll table.migration-table { width: 100%; min-width: 0; }
 .migration-table td, .migration-table th { vertical-align: top; white-space: normal; }
-.migration-table .col-header, .migration-table .col-value { min-width: 180px; width: 30%; }
+.migration-table .col-header, .migration-table .col-value { min-width: 170px; width: 24%; }
 .migration-table .col-count { width: 1%; white-space: nowrap; }
 .migration-table .col-count .mono { white-space: nowrap; }
 .migration-table .col-fap { min-width: 240px; }
 .migration-table .col-date { min-width: 150px; width: 1%; }
 .migration-table .col-state { min-width: 150px; }
-.migration-table .col-position { min-width: 240px; width: 45%; }
+.migration-table .col-position { min-width: 220px; width: 30%; }
+.migration-table .col-function { min-width: 200px; width: 22%; }
 .migration-table .col-role { min-width: 150px; width: 1%; }
 .migration-table .col-role select { min-width: 140px; }
 .migration-table .col-actions { width: 1%; }

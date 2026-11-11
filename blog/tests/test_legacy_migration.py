@@ -151,18 +151,19 @@ class FapAndMappingTests(MigrationTestCase):
         self.assertIsNotNone(self.document.applied_at)
         again = lm.attach_fap(self.manager, self.group, FAP.read_bytes(), 'другое имя.xlsx')
         self.assertEqual((again.pk, FapDocument.objects.filter(event_group=self.group).count()), (self.document.pk, 1))
-        distance = self.group.positions.get(title='Волонтёры дистанции — Пункт освежения (ПО1)')
-        self.assertEqual(list(distance.category_map.values_list('category__name', flat=True)), ['Дистанция'])
+        distance = self.group.positions.get(title='Волонтер пункта освежения (ПО1)')
+        self.assertEqual(list(distance.category_map.values_list('category__name', flat=True)), ['Волонтёры дистанции'])
 
     def test_suggestions_use_code_and_text_and_detect_team_leads(self):
         rows = {row['raw']: row for row in lm.mapping_table(self.group)}
         volunteer = rows['7.2 - Ассистент выдачи номеров и пакетов участника — 42,2 км']['suggestion']
-        self.assertEqual(volunteer['position'].title, 'Организация выдачи пакетов участников — Зона выдачи номеров и пакетов участника')
+        self.assertEqual(volunteer['position'].title, 'Ассистент выдачи номеров и пакетов участника — 42,2 км')
         self.assertEqual(volunteer['role'], 'volunteer')
+        self.assertEqual(volunteer['function'].name, 'Организация выдачи пакетов участников')
         lead = rows['7.2 - Тим-лидер волонтёров зоны выдачи номеров и пакетов участника']['suggestion']
-        self.assertEqual((lead['position'], lead['role']), (volunteer['position'], 'team_lead'))
+        self.assertEqual((lead['position'].title, lead['role']), ('Тим-лидер волонтёров зоны выдачи номеров и пакетов участника', 'team_lead'))
         self.assertEqual(rows['10.4 - Волонтёр пункта питания на дистанции (ПП2)']['suggestion']['position'].title,
-                         'Волонтёры дистанции — Пункт питания на дистанции (ПП2)')
+                         'Волонтёр пункта питания на дистанции (ПП2)')
         self.assertEqual(rows['11 - Помощник тим-лидера организации сервисов']['suggestion']['role'], 'volunteer')
         self.assertEqual(rows['7.2 - Ассистент выдачи номеров и пакетов участника — 42,2 км']['counts'][0][1], 1)
 
@@ -191,13 +192,14 @@ class FapAndMappingTests(MigrationTestCase):
         result = lm.load_columns(self.manager, [first, marathon_day])
         anna, boris = User.objects.get(first_name='Анна'), User.objects.get(first_name='Борис')
         part = Participation.objects.get(user=anna, event_day__day=date(2026, 9, 24))
-        self.assertEqual((part.status, part.hours), ('attended', Decimal('6.08')))
+        self.assertEqual((part.status, part.hours), ('attended', Decimal('5.83')))
         position = part.event_day.event
         self.assertTrue(EventStaff.objects.filter(event=position, user=boris, staff_role='team_lead').exists())
         self.assertTrue(TeamLeader.objects.filter(user=boris, revoked_at__isnull=True).exists())
-        self.assertTrue(Participation.objects.filter(user=boris, event_day__event=position).exists())
+        # Тим-лидер видит весь набор функции: назначен и на позицию ассистентов (выше).
+        self.assertTrue(Participation.objects.filter(user=boris, event_day__day=date(2026, 9, 24)).exists())
         anna.refresh_from_db()
-        self.assertEqual(anna.total_hours, Decimal('6.08') + Decimal('5.83'))
+        self.assertEqual(anna.total_hours, Decimal('5.83') + Decimal('5.83'))
         self.assertEqual(result['participations'], 4)
         lm.load_columns(self.manager, [first, marathon_day])
         self.assertEqual(Participation.objects.filter(user__in=[anna, boris]).count(), 4)
@@ -212,8 +214,8 @@ class FapAndMappingTests(MigrationTestCase):
         edited = Participation.objects.get(user=anna, event_day__day=date(2026, 9, 27))
         edited.hours, edited.hours_overridden = Decimal('3'), True
         edited.save()
-        other = self.group.positions.get(title__endswith='Зона проверки справок')
-        po1 = self.group.positions.get(title__endswith='Пункт освежения (ПО1)')
+        other = self.group.positions.get(title='Ассистент проверки медицинских справок')
+        po1 = self.group.positions.get(title='Волонтер пункта освежения (ПО1)')
         self.map_all(self.group, {'7.2 - Ассистент выдачи номеров и пакетов участника — 42,2 км': str(other.pk),
                                   '10.4 - Волонтёр пункта питания на дистанции (ПП2)': str(po1.pk)})
         first.refresh_from_db()
@@ -231,7 +233,7 @@ class FapAndMappingTests(MigrationTestCase):
         first = self.columns[0]
         lm.load_columns(self.manager, [first])
         boris = User.objects.get(first_name='Борис')
-        other = self.group.positions.get(title__endswith='Зона проверки справок').shifts.get(day=date(2026, 9, 24))
+        other = self.group.positions.get(title='Ассистент проверки медицинских справок').shifts.get(day=date(2026, 9, 24))
         Participation.objects.create(user=boris, event_day=other, status='attended')
         warnings = lm.overlaps(self.group)
         self.assertEqual([w['user'] for w in warnings], [boris])
@@ -283,7 +285,7 @@ class WithoutFapTests(MigrationTestCase):
         self.assertIsNone(rows['Ассистент выдачи номеров']['suggestion']['position'])
         self.map_all(group, {'Ассистент выдачи номеров': 'new', 'Волонтёр выдачи медалей': 'new'})
         position = group.positions.get(title='Ассистент выдачи номеров')
-        self.assertEqual(list(position.category_map.values_list('category__name', flat=True)), ['Выдача стартовых пакетов'])
+        self.assertEqual(list(position.category_map.values_list('category__name', flat=True)), ['Организация выдачи пакетов участников'])
         lm.load_columns(self.manager, columns)
         shifts = EventShift.objects.filter(event__event_group=group, day=date(2026, 8, 23))
         self.assertEqual(shifts.count(), 2)
@@ -476,7 +478,7 @@ class FapLibraryTests(MigrationTestCase):
         self.assertEqual(reserve.day, date(2026, 9, 26))
         self.assertEqual(reserve.event_group.title, 'Московский марафон 2026')
         self.assertEqual((document.event_group, document.version), (reserve.event_group, 1))
-        self.assertEqual(reserve.event_group.positions.count(), 39)
+        self.assertEqual(reserve.event_group.positions.count(), 106)
         self.assertTrue(lm.dc.position_templates_qs().filter(name='Волонтер пункта освежения (ПО1)').exists())
 
     def test_state_hint_names_unmapped_values(self):
@@ -494,14 +496,16 @@ class PositionPoolTests(TestCase):
     def test_keywords_match_word_starts(self):
         from blog.services.position_pool import classify
         cases = {
-            'Ассистент выдачи номеров и пакетов участника — 42,2 км': 'Выдача стартовых пакетов',
-            'Тим-лидер волонтёров организации сервисов для отдельных клиентских категорий - СМИ': 'Пресс-центр и СМИ',
-            'Тим-лидер волонтёров организации сервисов для отдельных клиентских групп': 'VIP и гостеприимство',
-            'Волонтёр церемонии награждения': 'Режиссёрская группа и награждение',
-            'Волонтер для контроля ксерокопирования': 'Проверка медицинских справок',
-            'Волонтеры на пунктах передачи (П2, П3, П8)': 'Эстафеты и спецстарты',
-            'Волонтёр пункта питания на дистанции (ПП2)': 'Дистанция',
-            'Волонтёр выдачи питания на финише': 'Финиш',
+            'Ассистент выдачи номеров и пакетов участника — 42,2 км': 'Организация выдачи пакетов участников',
+            'Тим-лидер волонтёров организации сервисов для отдельных клиентских категорий - СМИ': 'Организация сервисов для отдельных клиентских групп',
+            'Волонтёр раздевалок в стартовом городке': 'Организация сервисов для отдельных клиентских групп',
+            'Волонтёр церемонии награждения': 'Волонтёры режиссёрской группы',
+            'Волонтер для контроля ксерокопирования': 'Организация выдачи пакетов участников',
+            'Волонтеры на пунктах передачи (П2, П3, П8)': 'Волонтёры специальных стартов',
+            'Волонтёр пункта питания на дистанции (ПП2)': 'Волонтёры дистанции',
+            'Волонтёр выдачи питания на финише': 'Волонтёры финиша',
+            'Тим-лидер зоны регистрации и информации': 'Организация выдачи пакетов участников',
+            'Стюард парка — Центральная аллея': 'Организация сервисов для спортсменов и зрителей',
         }
         for text, function in cases.items():
             self.assertEqual(classify(text), function, text)
@@ -580,3 +584,53 @@ class BaseFapTableTests(MigrationTestCase):
         self.assertIn(f'{document.pk}|2026-09-24', values(items[first.pk]))
         self.assertNotIn(f'{document.pk}|2026-09-24', values(items[second.pk]))
         self.assertIn(f'{document.pk}|2026-09-25', values(items[second.pk]))
+
+
+
+class FunctionMappingTests(MigrationTestCase):
+    """Решение 2026-11-11: мероприятие → функции (названия колонки B ФиП, пул ~10–20)
+    → позиции внутри функции. В сопоставлении выбирается функция, затем позиция."""
+
+    def test_pool_holds_fap_function_names(self):
+        names = set(lm.dc.event_categories_qs().values_list('name', flat=True))
+        for name in ('Организация сервисов для отдельных клиентских групп', 'Волонтёры-атташе и волонтёры отеля-партнёра',
+                     'Волонтёры режиссёрской группы', 'Волонтёры дистанции'):
+            self.assertIn(name, names)
+        self.assertLessEqual(len(names), 20)
+
+    def test_new_position_is_created_inside_chosen_or_new_function(self):
+        base = self.upload()
+        lm.load_people(self.manager, base)
+        columns = list(base.columns.filter(header__startswith='БФБ').order_by('index'))
+        group = lm.create_event_from_columns(self.manager, base, [c.pk for c in columns], 'БФБ 2026')
+        rows = {row['raw']: row for row in lm.mapping_table(group)}
+        self.assertEqual(lm.dc.event_categories_qs().get(pk=rows['Волонтёр выдачи медалей']['function_selected']).name,
+                         'Волонтёры финиша')
+        finish = lm.dc.event_categories_qs().get(name='Волонтёры финиша')
+        lm.save_mappings(self.manager, group, [
+            {'key': rows['Волонтёр выдачи медалей']['key'], 'raw': 'Волонтёр выдачи медалей', 'target': 'new',
+             'role': 'volunteer', 'title': 'Волонтёр выдачи медалей', 'function': str(finish.pk)},
+            {'key': rows['Ассистент выдачи номеров']['key'], 'raw': 'Ассистент выдачи номеров', 'target': 'new',
+             'role': 'volunteer', 'title': 'Ассистент выдачи номеров', 'function': 'new', 'function_name': 'Стартовый городок'},
+        ])
+        medals = group.positions.get(title='Волонтёр выдачи медалей')
+        self.assertEqual(list(medals.category_map.values_list('category__name', flat=True)), ['Волонтёры финиша'])
+        numbers = group.positions.get(title='Ассистент выдачи номеров')
+        self.assertEqual(list(numbers.category_map.values_list('category__name', flat=True)), ['Стартовый городок'])
+        page = lm.group_page(group)
+        self.assertEqual({f.name for f in page['used_functions']}, {'Волонтёры финиша', 'Стартовый городок'})
+
+    def test_team_lead_is_assigned_to_every_position_of_the_function(self):
+        base = self.upload()
+        lm.load_people(self.manager, base)
+        group, columns = self.marathon(base)
+        lm.attach_fap(self.manager, group, FAP.read_bytes(), FAP.name)
+        self.map_all(group)
+        lm.load_columns(self.manager, [columns[0]])
+        boris = User.objects.get(first_name='Борис')
+        function = lm.dc.event_categories_qs().get(name='Организация выдачи пакетов участников')
+        positions = group.positions.filter(category_map__category=function)
+        self.assertGreater(positions.count(), 5)
+        self.assertEqual(EventStaff.objects.filter(user=boris, staff_role='team_lead', event__in=positions).count(), positions.count())
+        lm.unload_column(self.manager, base.columns.get(pk=columns[0].pk))
+        self.assertFalse(EventStaff.objects.filter(user=boris, staff_role='team_lead').exists())

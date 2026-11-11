@@ -559,7 +559,7 @@ def read_xlsx(content, default_year=None):
         raise ValidationError('На вкладке «Смены» не найдены направления и позиции.')
     for direction in plan['directions']:
         direction.pop('_inherited', None)
-    return _daily_zone_plan(_split_leader_groups(plan))
+    return _row_plan(plan)
 
 
 TEAM_LEAD_RE = re.compile(r'тим[\s\-‐‑–—]*лид[еёe]р', re.I)
@@ -854,3 +854,89 @@ def write_xlsx(plan, template=None):
     output = BytesIO()
     wb.save(output)
     return output.getvalue()
+
+
+
+def _row_codes(plan):
+    """Код набора тим-лидера каждой строки (`7.2`, `10.4`) — совпадает с нумерацией
+    старой базы; набор начинается со строки с другим текстом в колонке тим-лидера."""
+    counts, groups = {}, []
+    for direction in plan['directions']:
+        current = None
+        for row in direction['positions']:
+            if current is None or row['_leader_text'] and row['_leader_text'] != current['leader']:
+                current = {'leader': row['_leader_text'], 'rows': [], 'function': direction['_function'],
+                           'key': normalized_name(direction['name'])}
+                groups.append(current)
+            current['rows'].append(row)
+    for group in groups:
+        counts[group['key']] = counts.get(group['key'], 0) + 1
+    ordinals = {}
+    for group in groups:
+        ordinals[group['key']] = ordinals.get(group['key'], 0) + 1
+        number = group['function']
+        code = (f'{number}.{ordinals[group["key"]]}' if counts[group['key']] > 1 else str(number)) if number else ''
+        leaders = [name for row in group['rows'] for name in row['team_leaders']]
+        for row in group['rows']:
+            row['code'] = code
+            row['_group_leaders'] = leaders
+
+
+def _row_plan(plan):
+    """Позиция платформы = строка «Позиция» ФиП со своим количеством и временем по
+    дням; функция = блок колонки B (решение пользователя 2026-11-11, вместо набора
+    тим-лидера). Тим-лидер — тоже позиция функции; имена из колонки тим-лидеров
+    закрепляются за строкой «Тим-лидер …» своего набора."""
+    from blog.services.position_pool import function_name
+    _row_codes(plan)
+    titles = {}
+    for direction in plan['directions']:
+        if not direction.pop('_has_total', False):
+            raise ValidationError(f'У функции «{direction["name"]}» отсутствует строка «ИТОГО В ЗОНЕ».')
+        direction.pop('_totals', None)
+        direction['function'] = function_name(direction['name'])
+        direction['name'] = direction['function']
+        number = direction.pop('_function', None)
+        direction['code'] = str(number) if number else ''
+        positions = []
+        for row in direction['positions']:
+            if not row['name'] or normalized_name(row['name']).startswith('итого'):
+                continue
+            days = []
+            for i, day in enumerate(plan['dates']):
+                source = row['days'][i]
+                checks = _intervals(re.sub(r'(?<=\d);(?=\d{2})', ':', source['checkin_out'] or ''), day, plan['warnings'])
+                count = source.get('_count')
+                shifts, text = [], None
+                if checks and count:
+                    start, end = min(s['start'] for s in checks), max(s['end'] for s in checks)
+                    known = source.get('_source_ids', [])
+                    source_id = (known[0] if isinstance(known[0], str) else known[0]['id']) if known else new_id()
+                    shifts = [{'id': source_id, 'label': 'A', 'start': start, 'end': end, 'count': count,
+                               'checkin': start, 'checkout': end}]
+                    text = f'{datetime.fromisoformat(start):%H:%M}-{datetime.fromisoformat(end):%H:%M}'
+                elif count:
+                    plan['warnings'].append(f'«{row["name"]}», {day}: {count} человек, но нет check-in/out; заполните время для создания смены.')
+                days.append({'date': day, 'work': text, 'checkin_out': text, 'shifts': shifts,
+                             'quantities': [{'label': '', 'count': count}, {'label': 'A', 'count': count if shifts else None},
+                                            {'label': 'B', 'count': None}]})
+            leaders = row.pop('_group_leaders', [])
+            position = {'id': row['id'], 'name': row['name'], 'base_name': row['name'], 'order': len(positions),
+                        'row': row['row'], 'is_team_lead_role': row['is_team_lead_role'], 'code': row.get('code', ''),
+                        'team_leaders': (leaders or list(direction['team_leaders'])) if row['is_team_lead_role'] else [],
+                        'responsibles': row['responsibles'], 'days': days}
+            positions.append(position)
+            titles.setdefault(normalized_name(row['name']), []).append(position)
+        direction['positions'] = positions
+        direction['team_leaders'] = []
+    # Одинаковые строки разных зон («Хостес» в нескольких зонах) — разные позиции:
+    # к названию добавляется код набора, чтобы их различали в списках.
+    for same in titles.values():
+        if len(same) > 1:
+            for index, position in enumerate(same, 1):
+                position['name'] = f'{position["base_name"]} · {position["code"] or index}'[:255]
+    plan['directions'] = [d for d in plan['directions'] if d['positions']]
+    plan['row_positions'] = True
+    plan['input_rows'] = sum(len(d['positions']) for d in plan['directions'])
+    plan['quantity_widths'] = [3] * len(plan['dates'])
+    return plan

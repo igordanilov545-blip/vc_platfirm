@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from blog.models import Location, EventCategory, PositionTemplate, Season, Const
+from blog.models import Location, EventCategory, EventCategoryMap, PositionTemplate, Season, Const
 from blog.services.position_pool import ensure_default_pool
 from django.utils import timezone
 
@@ -37,7 +37,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f'✓ Локаций создано: {len(DEFAULT_LOCATIONS)}'))
 
         # Пул функций и типовых позиций забегов (blog/services/position_pool.py).
-        created = ensure_default_pool(EventCategory, PositionTemplate)
+        created = ensure_default_pool(EventCategory, PositionTemplate, EventCategoryMap)
         self.stdout.write(self.style.SUCCESS(f'✓ Пул функций и позиций обновлён (новых функций: {created})'))
 
         if not Season.objects.exists():

@@ -162,7 +162,9 @@ def legacy_migration_group(request, group_id):
                 while f'key_{index}' in request.POST:
                     items.append({'key': request.POST[f'key_{index}'], 'raw': request.POST.get(f'raw_{index}', ''),
                                   'target': request.POST.get(f'target_{index}', ''), 'role': request.POST.get(f'role_{index}'),
-                                  'title': request.POST.get(f'title_{index}', '')})
+                                  'title': request.POST.get(f'title_{index}', ''),
+                                  'function': request.POST.get(f'function_{index}', ''),
+                                  'function_name': request.POST.get(f'function_name_{index}', '')})
                     index += 1
                 lm.save_mappings(request.user, group, items)
                 messages.success(request, 'Сопоставление сохранено.')

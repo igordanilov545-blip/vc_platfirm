@@ -86,25 +86,37 @@
 
 <div class="card" id="migration-mapping">
     <h2>Сопоставление значений{% if unmapped %} · не сохранено: {{ unmapped }}{% endif %}</h2>
-    <p>Одно значение — одна строка на все колонки мероприятия; несопоставленные — сверху. ✨ — подсказка по коду и тексту ФиП: проверьте и сохраните. Смена выбирается по дате колонки. «Тим-лидер» получает назначение на позицию и роль тим-лидера. Название новой позиции подсказывается из пула позиций.</p>
+    <p>Одно значение — одна строка на все колонки мероприятия; несопоставленные — сверху. ✨ — подсказка по коду и тексту ФиП: проверьте и сохраните. Смена выбирается по дате колонки. Сначала функция (из функций мероприятия или общего пула), затем позиция внутри неё — список позиций сужается по функции. «Тим-лидер» получает роль тим-лидера и назначение на все позиции своей функции. Название новой позиции подсказывается из пула позиций.</p>
     {% if rows %}
     <label class="migration-filter"><input type="checkbox" data-mapping-filter="#migration-mapping-table"> Только несопоставленные</label>
     <form method="post" action="{% url 'legacy_migration_group' group.pk %}">
         {% csrf_token %}<input type="hidden" name="action" value="save_mappings">
         <div class="table-scroll"><table class="responsive-table migration-table mapping-table" id="migration-mapping-table">
-            <thead><tr><th class="col-value">Значение в базе</th><th class="col-count">Людей</th><th class="col-position">Позиция</th><th class="col-role">Роль</th></tr></thead>
+            <thead><tr><th class="col-value">Значение в базе</th><th class="col-count">Людей</th><th class="col-function">Функция</th><th class="col-position">Позиция</th><th class="col-role">Роль</th></tr></thead>
             <tbody>
             {% for row in rows %}
                 <tr data-mapping-row{% if not row.selected %} class="is-unmapped"{% endif %}>
                     <td data-label="Значение в базе" class="col-value">{{ row.raw }}<input type="hidden" name="key_{{ forloop.counter0 }}" value="{{ row.key }}"><input type="hidden" name="raw_{{ forloop.counter0 }}" value="{{ row.raw }}">
                         <div>{% if row.mapping %}<span class="pill success"><span class="dot"></span>сохранено</span>{% elif row.suggestion.position %}<span class="pill info" title="Подсказка по коду и тексту ФиП — проверьте и сохраните."><span class="dot"></span>✨ подсказка</span>{% else %}<span class="pill warning" title="Выберите позицию, «＋ Новая позиция» или «Пропустить значение» и сохраните."><span class="dot"></span>не выбрано</span>{% endif %}</div></td>
                     <td data-label="Людей" class="col-count">{% for column, count in row.counts %}<div class="mono">{{ column.day|date:"d.m"|default:"без даты" }}: {{ count }}</div>{% endfor %}</td>
+                    <td data-label="Функция" class="col-function">
+                        <select name="function_{{ forloop.counter0 }}" aria-label="Функция" data-function-select>
+                            <option value="" {% if not row.function_selected %}selected{% endif %}>— функция —</option>
+                            {% if used_functions %}<optgroup label="Функции мероприятия">{% for function in used_functions %}<option value="{{ function.pk }}" {% if row.function_selected == function.pk|stringformat:'s' %}selected{% endif %}>{{ function.name }}</option>{% endfor %}</optgroup>{% endif %}
+                            <optgroup label="Пул функций">{% for function in other_functions %}<option value="{{ function.pk }}" {% if row.function_selected == function.pk|stringformat:'s' %}selected{% endif %}>{{ function.name }}</option>{% endfor %}</optgroup>
+                            <option value="new">＋ Новая функция</option>
+                        </select>
+                        <div class="migration-new-title is-hidden" data-new-function-wrap>
+                            <label for="new-function-{{ forloop.counter0 }}">Название новой функции</label>
+                            <input type="text" id="new-function-{{ forloop.counter0 }}" name="function_name_{{ forloop.counter0 }}" maxlength="100" autocomplete="off">
+                        </div>
+                    </td>
                     <td data-label="Позиция" class="col-position">
                         <select name="target_{{ forloop.counter0 }}" aria-label="Позиция" data-target-select>
                             <option value="" {% if not row.selected %}selected{% endif %}>— не выбрано —</option>
                             <option value="skip" {% if row.selected == 'skip' %}selected{% endif %}>Пропустить значение</option>
                             <option value="new" {% if row.selected == 'new' %}selected{% endif %}>＋ Новая позиция</option>
-                            {% for position in positions %}<option value="{{ position.pk }}" {% if row.selected == position.pk|stringformat:'s' %}selected{% endif %}>{{ position.title }}</option>{% endfor %}
+                            {% for position in positions %}<option value="{{ position.pk }}" data-function="{{ position.function_id|default:'' }}" {% if row.selected == position.pk|stringformat:'s' %}selected{% endif %}>{{ position.title }}</option>{% endfor %}
                         </select>
                         <div class="migration-new-title{% if row.selected != 'new' %} is-hidden{% endif %}" data-new-title-wrap>
                             <label for="new-title-{{ forloop.counter0 }}">Название новой позиции</label>

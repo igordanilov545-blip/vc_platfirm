@@ -38,8 +38,11 @@ def fingerprint(plan):
         # в current_plan() их нет, и они не должны вызывать ложный «конфликт».
         direction.pop('source_rows', None)
         direction.pop('code', None)
+        direction.pop('function', None)
         for position in direction['positions']:
             position.pop('row', None)
+            position.pop('code', None)
+            position.pop('base_name', None)
     return hashlib.sha256(json.dumps(clean, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
@@ -48,7 +51,7 @@ def current_plan(group):
     link = dc.event_sheet_links_qs().filter(event_group=group).first()
     baseline = link.baseline if link else {}
     plan = {'dates': list(baseline.get('dates', [])), 'directions': [], 'warnings': [], 'quantity_widths': list(baseline.get('quantity_widths', []))}
-    for key in ('grouped_directions', 'quantity_labels', 'daily_zone_shifts'):
+    for key in ('grouped_directions', 'quantity_labels', 'daily_zone_shifts', 'row_positions'):
         if key in baseline:
             plan[key] = deepcopy(baseline[key])
     original_positions = {p['id']: p for d in baseline.get('directions', []) for p in d['positions']}
@@ -142,7 +145,8 @@ def current_plan(group):
         selected = [p for p in parts if p['event_day__day'].isoformat() == day]
         plan['stats'][day] = {'recruited': len(selected), 'checked_in': sum(p['status'] == 'attended' for p in selected)}
     plan['stats']['unique_people'] = len({p['user_id'] for p in parts if p['status'] == 'attended'})
-    return group_directions(plan)
+    # Новый формат (2026-11-11): позиция = строка ФиП — направления не сворачиваются.
+    return plan if baseline.get('row_positions') else group_directions(plan)
 
 
 def _validate_plan(group, plan):
@@ -194,6 +198,11 @@ def _apply_plan(group, plan):
     dc.delete_empty_sheet_days(dc.sheet_days_qs().filter(position__event__event_group=group, shifts__isnull=True).exclude(day__in=plan['dates']))
     dc.delete_unused_sheet_directions(group, [d['id'] for d in plan['directions']])
     dc.refresh_sheet_leader_staff(group.pk)
+    if plan.get('row_positions'):
+        # Функция позиции = блок колонки B ФиП (пул функций, решение 2026-11-11).
+        from blog.services.position_pool import assign_function, function_category
+        for sheet in dc.sheet_positions_qs().filter(event__event_group=group).select_related('event', 'direction'):
+            assign_function(sheet.event, category=function_category(sheet.direction.name))
 
 
 def import_workbook(operator, group, content, name='Смены.xlsx'):
@@ -207,7 +216,7 @@ def import_plan(operator, group, plan, content, name, **link_values):
     _manager(operator)
     group = dc.event_groups_qs().select_for_update().get(pk=group.pk)
     link = dc.event_sheet_links_qs().filter(event_group=group).first()
-    if link and link.baseline and not link.baseline.get('grouped_directions'):
+    if link and link.baseline and not link.baseline.get('grouped_directions') and not link.baseline.get('row_positions'):
         repair_direction_import(operator, group)
         link = dc.event_sheet_links_qs().get(event_group=group)
     source_hash = hashlib.sha256(content).hexdigest()
@@ -258,7 +267,7 @@ def repair_direction_import(operator, group):
     """Исправляет прежний импорт без заявок/явки, сохраняя первую позицию направления."""
     _manager(operator)
     link = dc.event_sheet_links_qs().filter(event_group=group).first()
-    if not link or not link.baseline or link.baseline.get('grouped_directions'):
+    if not link or not link.baseline or link.baseline.get('grouped_directions') or link.baseline.get('row_positions'):
         return link
     plan = group_directions(link.baseline)
     dc.consolidate_sheet_directions(group, plan)

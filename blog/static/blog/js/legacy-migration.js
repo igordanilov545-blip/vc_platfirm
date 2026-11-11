@@ -80,6 +80,36 @@
                 sync();
                 if (select.value === 'new') input.focus();
             });
+            // Функция → позиции только этой функции; «＋ Новая функция» — поле названия.
+            var functionSelect = row.querySelector('[data-function-select]');
+            var functionWrap = row.querySelector('[data-new-function-wrap]');
+            function filterPositions() {
+                if (!functionSelect) return;
+                var chosen = functionSelect.value;
+                if (functionWrap) functionWrap.classList.toggle('is-hidden', chosen !== 'new');
+                Array.prototype.forEach.call(select.options, function (option) {
+                    var own = option.getAttribute('data-function');
+                    if (own === null) return;  // «не выбрано», «пропустить», «новая»
+                    option.hidden = !!chosen && chosen !== 'new' && own !== chosen;
+                });
+                if (select.selectedOptions[0] && select.selectedOptions[0].hidden) {
+                    select.value = 'new';
+                    sync();
+                }
+                if (chosen === 'new' && select.value !== 'skip') {
+                    select.value = 'new';
+                    sync();
+                }
+            }
+            if (functionSelect) {
+                functionSelect.addEventListener('change', filterPositions);
+                select.addEventListener('change', function () {
+                    var own = select.selectedOptions[0] && select.selectedOptions[0].getAttribute('data-function');
+                    if (own) functionSelect.value = own;
+                    filterPositions();
+                });
+                filterPositions();
+            }
             input.addEventListener('input', function () {
                 if (select.value !== 'new') {
                     select.value = 'new';

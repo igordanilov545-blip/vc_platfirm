@@ -11,7 +11,7 @@
 """
 from collections import Counter, defaultdict
 from copy import deepcopy
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from difflib import SequenceMatcher
 import hashlib
@@ -25,7 +25,7 @@ from blog.services import event_sheets
 from blog.services.fap_workbook import MSK, is_team_lead_text, read_xlsx, normalized_name, _leader_row_label
 from blog.services.legacy_import import _contact_keys, identity_key, match_rows
 from blog.services.legacy_workbook import read_legacy_workbook, split_code, value_key
-from blog.services.position_pool import assign_function, classify, remember_positions
+from blog.services.position_pool import assign_function, classify, function_category, position_function, remember_positions
 from blog.services.profile_conflicts import sync_profile_from_base
 from blog.services.roles import has_manager_access
 from blog.services.stats import recalc_user_aggregates
@@ -297,13 +297,6 @@ def apply_fap(operator, document, group):
     plan = _carry_ids_by_name(group, deepcopy(stored))
     event_sheets.import_plan(operator, group, plan, bytes(document.content), document.file_name)
     dc.attach_fap_document(document, group, plan['warnings'], operator)
-    names = {}
-    link = dc.event_sheet_links_qs().filter(event_group=group).first()
-    for direction in (link.baseline.get('directions', []) if link else []):
-        names[direction['positions'][0]['id']] = direction
-    for sheet in dc.sheet_positions_qs().filter(event__event_group=group).select_related('event', 'direction'):
-        source = names.get(str(sheet.source_key), {})
-        assign_function(sheet.event, sheet.direction.name, *source.get('source_rows', []))
     remember_positions(stored, operator)
     return document
 
@@ -389,14 +382,19 @@ def map_columns_to_fap(operator, base, choices):
 
 def _position_hints(group):
     link = dc.event_sheet_links_qs().filter(event_group=group).first()
-    baseline = {d['positions'][0]['id']: d for d in (link.baseline.get('directions', []) if link else [])}
+    baseline = {}
+    for direction in (link.baseline.get('directions', []) if link else []):
+        for position in direction['positions']:
+            baseline[position['id']] = position
     sheets = {s.event_id: str(s.source_key) for s in dc.sheet_positions_qs().filter(event__event_group=group)}
+    functions = {link.event_id: link.category for link in dc.event_category_maps_qs()
+                 .filter(event__event_group=group).select_related('category').order_by('pk')}
     hints = []
     for event in dc.events_qs().filter(event_group=group).order_by('pk'):
         source = baseline.get(sheets.get(event.pk), {})
-        title_tail = event.title.split(' — ', 1)[-1]
-        texts = [event.title, title_tail] + list(source.get('source_rows', []))
-        hints.append({'event': event, 'code': source.get('code', ''),
+        base_name = source.get('base_name') or event.title.split(' · ', 1)[0]
+        texts = [event.title, base_name] + list(source.get('source_rows', []))
+        hints.append({'event': event, 'code': source.get('code', ''), 'function': functions.get(event.pk),
                       'texts': [value_key(split_code(text)[1]) for text in texts if text]})
     return hints
 
@@ -423,7 +421,12 @@ def suggest(raw, hints):
     role = 'team_lead' if is_team_lead_text(raw) else 'volunteer'
     # Без кода нечему сузить выбор — подсказываем только почти дословное совпадение.
     threshold = SUGGEST_THRESHOLD if code else CODELESS_THRESHOLD
-    return {'position': best if best_score >= threshold else None, 'score': round(best_score, 2), 'role': role}
+    position = best if best_score >= threshold else None
+    function = next((h['function'] for h in hints if position is not None and h['event'] == position), None)
+    if function is None:
+        name = classify(rest or raw)
+        function = next((c for c in dc.event_categories_qs() if c.name == name), None) if name else None
+    return {'position': position, 'score': round(best_score, 2), 'role': role, 'function': function}
 
 
 def new_position_title(raw):
@@ -451,6 +454,9 @@ def mapping_table(group):
         mapping = mappings.get(key)
         suggestion = suggest(item['raw'], hints)
         item.update(mapping=mapping, suggestion=suggestion, new_title=new_position_title(item['raw']))
+        mapped_function = position_function(mapping.position) if mapping and mapping.position_id else None
+        function = mapped_function or suggestion['function']
+        item['function_selected'] = str(function.pk) if function else ''
         if mapping:
             item['selected'] = 'skip' if mapping.skip else str(mapping.position_id or '')
             item['selected_role'] = mapping.role
@@ -465,7 +471,8 @@ def mapping_table(group):
 
 @transaction.atomic
 def save_mappings(operator, group, items):
-    """items: key, raw, target ('', 'skip', 'new' или id позиции), role, title."""
+    """items: key, raw, target ('', 'skip', 'new' или id позиции), role, title,
+    function (id функции пула или 'new') и function_name — функция новой позиции."""
     _manager(operator)
     positions = {str(e.pk): e for e in dc.events_qs().filter(event_group=group)}
     created = {}
@@ -480,8 +487,13 @@ def save_mappings(operator, group, items):
             position = created.get(normalized_name(title)) or next(
                 (e for e in positions.values() if normalized_name(e.title) == normalized_name(title)), None)
             if position is None:
+                chosen = (item.get('function') or '').strip()
+                if chosen == 'new':
+                    category = function_category(item.get('function_name') or '', operator)
+                else:
+                    category = dc.event_categories_qs().filter(pk=chosen).first() if chosen.isdigit() else None
                 position = dc.create_legacy_position(group, title, operator)
-                function = assign_function(position, item['raw'])
+                function = assign_function(position, item['raw'], category=category)
                 if function is not None:
                     dc.ensure_position_template(function, title, operator)
                 positions[str(position.pk)] = position
@@ -615,14 +627,26 @@ def base_overview(base):
             'people_count': dc.legacy_base_people_qs().filter(base=base).count()}
 
 
+def function_options(group):
+    """Функции для выбора: сначала функции этого мероприятия, затем остальной пул."""
+    used = list(dc.event_categories_qs().filter(event_map__event__event_group=group).distinct().order_by('name'))
+    rest = list(dc.event_categories_qs().exclude(pk__in=[c.pk for c in used]).order_by('name'))
+    return used, rest
+
+
 def group_page(group):
     overview = group_overview(group)
     rows = mapping_table(group)
+    functions = {link.event_id: link.category_id for link in dc.event_category_maps_qs().filter(event__event_group=group).order_by('-pk')}
     positions = list(dc.events_qs().filter(event_group=group).order_by('title'))
+    for position in positions:
+        position.function_id = functions.get(position.pk)
+    used_functions, other_functions = function_options(group)
     for item in overview['columns']:
         item['people'] = sum(item['column'].value_counts.values())
     ready = [i['column'].pk for i in overview['columns'] if i['state']['code'] in ('ready', 'changed')]
     return {'group': group, 'rows': rows, 'positions': positions, 'ready_ids': ready, 'overlaps': overlaps(group),
+            'used_functions': used_functions, 'other_functions': other_functions,
             'documents': list(dc.fap_documents_qs().filter(event_group=group).defer('content').order_by('-version')),
             'unmapped': sum(1 for row in rows if not row['mapping']), **overview}
 
@@ -700,6 +724,16 @@ def _undo_cell(cell, operator, affected):
     if cell.application and cell.shift:
         dc.unlink_legacy_application_shift(cell.application, cell.shift, operator)
     if cell.staff and not dc.legacy_loaded_cells_qs().filter(staff=cell.staff).exclude(pk=cell.pk).exists():
+        # Назначения тим-лидера на остальные позиции функции, сделанные этой
+        # загрузкой (не раньше ячейки), снимаются вместе с ней; ручные — остаются.
+        function = position_function(cell.staff.event)
+        if function is not None:
+            for other in dc.event_staff_qs().filter(user_id=cell.user_id, staff_role='team_lead',
+                                                    event__event_group_id=cell.staff.event.event_group_id,
+                                                    event__category_map__category=function,
+                                                    assigned_at__gte=cell.created_at - timedelta(minutes=1)).exclude(pk=cell.staff.pk):
+                if not dc.legacy_loaded_cells_qs().filter(staff__event=other.event, user_id=cell.user_id).exclude(pk=cell.pk).exists():
+                    dc.delete_event_staff(other, operator)
         dc.delete_event_staff(cell.staff, operator)
     affected[cell.user_id] = cell.user
     dc.delete_loaded_cell(cell, operator)
@@ -790,8 +824,14 @@ def load_columns(operator, columns):
 
 
 def _grant_team_lead(operator, position, user, result):
+    """Тим-лидер видит весь набор своей функции по каждой смене (решение 2026-11-11):
+    назначение на все позиции этой функции в мероприятии, плюс глобальная роль."""
     existed = dc.event_staff_qs().filter(event=position, user=user, staff_role='team_lead').exists()
     staff = dc.ensure_event_team_lead(position, user, operator)
+    function = position_function(position)
+    if function is not None:
+        for other in dc.events_qs().filter(event_group_id=position.event_group_id, category_map__category=function).exclude(pk=position.pk):
+            dc.ensure_event_team_lead(other, user, operator)
     if not dc.has_active_role('team_lead', user):
         dc.create_role('team_lead', user, assigned_by=operator)
         result['team_leads'] += 1

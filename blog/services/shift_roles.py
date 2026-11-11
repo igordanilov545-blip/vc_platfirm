@@ -103,12 +103,14 @@ def set_role(operator, decision, role):
 
 @transaction.atomic
 def sync_team_leads(event, operator=None):
-    """Тим-лидеры позиции — в таблицу набора каждой смены, одобрены, роль «Тим-лидер».
+    """Тим-лидеры позиции — в таблицу набора каждой будущей смены, одобрены, роль «Тим-лидер».
 
     Только если у тим-лидера ещё нет решения по этой смене: убранного вручную в
     резерв обратно не возвращаем, роль, выбранную вручную, не перетираем."""
     leads = dc.event_staff_users(event, 'team_lead')
-    shifts = list(event.shifts.all())
+    # Только непрошедшие и не архивные смены: история (миграция базы, где тим-лидер
+    # назначен на все позиции функции) не должна получать лишних участий и часов.
+    shifts = list(event.shifts.filter(day__gte=timezone.localdate(), legacy_source__isnull=True))
     if not leads or not shifts:
         return 0
     added = 0

@@ -123,3 +123,18 @@ class ShiftRolesTests(TestCase):
         self.assertEqual(response.json()['role'], 'Хостес старта')
         page = self.client.get(reverse('event_detail', args=[self.event.pk]))
         self.assertContains(page, 'Хостес старта 1/2')
+
+
+class TeamLeadSyncHistoryTests(TestCase):
+    """Автозанесение тим-лидеров не трогает прошедшие и архивные (миграция базы) смены."""
+
+    def test_passed_shifts_are_left_alone(self):
+        from blog.services.shift_roles import sync_team_leads
+        manager = f.make_manager()
+        event = f.make_event(title='Волонтёры старта')
+        past = f.make_shift(event, days_from_now=-30)
+        future = f.make_shift(event, days_from_now=5)
+        EventStaff.objects.create(event=event, user=manager, staff_role='team_lead')
+        sync_team_leads(event, manager)
+        self.assertEqual(list(ApplicationShiftDecision.objects.values_list('shift_id', flat=True)), [future.pk])
+        self.assertFalse(past.participations.exists())

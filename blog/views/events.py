@@ -111,6 +111,25 @@ def event_group_edit(request, group_id):
     )
 
 
+@manager_required
+def event_function_create(request, group_id):
+    """«+ Функция» на странице мероприятия: мероприятие → функции → позиции."""
+    from blog.forms.events import EventFunctionForm
+    from blog.services import event_functions
+    group = get_object_or_404(dc.event_groups_qs(), pk=group_id)
+    form = EventFunctionForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        try:
+            direction = event_functions.add_function(request.user, group, form.cleaned_data['category'], form.cleaned_data['name'])
+        except ValidationError as error:
+            form.add_error(None, error)
+        else:
+            messages.success(request, f'Функция «{direction.name}» добавлена. Теперь добавьте в неё позиции.')
+            return modal_form_response(request, None, None, success_redirect=reverse('event_group_detail', args=[group.pk]))
+    return modal_form_response(request, 'blog/category_form.html',
+                               {'form': form, 'title': f'Новая функция: {group.title}', 'submit_label': 'Добавить функцию'})
+
+
 @login_required
 def event_group_detail(request, group_id):
     """Прежний список позиций и смен, ограниченный выбранным мероприятием."""
@@ -232,9 +251,11 @@ def event_group_detail(request, group_id):
         e.first_day or datetime.date.max,
     ))
 
+    from blog.services import event_functions
     return render(request, 'blog/position_list.html', {
         'event_group': group,
         'events': rows,
+        'functions': event_functions.functions_overview(group, rows),
         'manager_view': manager_view,
         'hide_passed': hide_passed,
     })
@@ -489,6 +510,8 @@ def event_create(request):
         initial['title'] = request.GET['title']
     if request.GET.get('group'):
         initial['event_group'] = get_object_or_404(dc.event_groups_qs(), pk=request.GET['group']).pk
+    if request.GET.get('function', '').isdigit():
+        initial['function'] = request.GET['function']
     from_import = request.GET.get('from_import') == '1'
 
     form = EventForm(request.POST or None, initial=initial, assigned_by=request.user)

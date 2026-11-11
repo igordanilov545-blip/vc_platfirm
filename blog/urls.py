@@ -59,6 +59,7 @@ urlpatterns = [
     path('events/sheet-leaders/<int:assignment_id>/bind/', views.sheet_team_leader_bind, name='sheet_team_leader_bind'),
     path('events/groups/<int:group_id>/', views.event_group_detail, name='event_group_detail'),
     path('events/groups/<int:group_id>/edit/', views.event_group_edit, name='event_group_edit'),
+    path('events/groups/<int:group_id>/functions/new/', views.event_function_create, name='event_function_create'),
     path('events/new/', views.event_create, name='event_create'),
     path('events/<int:event_id>/', views.event_detail, name='event_detail'),
     path('events/<int:event_id>/edit/', views.event_edit, name='event_edit'),

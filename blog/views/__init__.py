@@ -46,7 +46,7 @@ from .events import (  # noqa: F401
     event_comment_add, event_change_log_mark_read, event_feedback_add, event_create,
     event_edit, event_delete, event_publish, event_broadcast,
     shift_toggle_recruit, shift_toggle_attendance_confirmed, event_reopen, event_close,
-    event_dobro_toggle, event_shift_add, event_shift_edit, event_shift_delete,
+    event_dobro_toggle, event_shift_add, event_shift_edit, event_shift_delete, event_function_create,
 )
 from .participations import (  # noqa: F401
     participation_set_status, participation_set_hours, participation_edit, participation_handout,

@@ -194,3 +194,11 @@ def consolidate_sheet_directions(group, plan):
         keeper.save(update_fields=['source_key', 'sort_order'])
         Event.objects.filter(pk=keeper.event_id).update(title=source['name'])
     logger.info('CONSOLIDATE FaP directions: group=%s', group.pk)
+
+
+def create_event_function(group, name, operator=None):
+    """Функция, добавленная в мероприятие вручную (та же таблица, что блоки ФиП)."""
+    order = EventDirection.objects.filter(event_group=group).count()
+    obj = EventDirection.objects.create(event_group=group, name=name[:500], sort_order=order)
+    logger.info('INSERT event_directions manual: direction=%s group=%s by=%s', obj.pk, group.pk, actor(operator))
+    return obj

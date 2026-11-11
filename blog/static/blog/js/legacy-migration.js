@@ -182,3 +182,28 @@
         });
     }
     initFapColumns(document);
+
+    /**
+     * Форма позиции: выбранная функция задаёт подсказки названия (datalist
+     * position-pool-<id>, позиции этой функции из пула); «＋ Новая функция»
+     * показывает поле её названия.
+     */
+    function initFunctionPoolSelect(root) {
+        root.querySelectorAll('[data-function-pool-select]').forEach(function (select) {
+            if (select.dataset.poolInit) return;
+            select.dataset.poolInit = '1';
+            var form = select.closest('form') || document;
+            var title = form.querySelector('#' + select.getAttribute('data-title-input'));
+            var newField = form.querySelector('[data-new-function-field]');
+            function sync() {
+                if (title) {
+                    var own = select.value && form.querySelector('#position-pool-' + select.value);
+                    title.setAttribute('list', own ? own.id : 'position-pool');
+                }
+                if (newField) newField.hidden = select.value !== 'new';
+            }
+            select.addEventListener('change', sync);
+            sync();
+        });
+    }
+    initFunctionPoolSelect(document);

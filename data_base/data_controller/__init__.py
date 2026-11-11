@@ -49,6 +49,7 @@ from .event_sheets import (  # noqa: F401
     save_sheet_position, save_sheet_day, save_sheet_shift, sync_sheet_staff,
     bind_sheet_leader_record, delete_sheet_shift_records, delete_sheet_position_records,
     delete_empty_sheet_days, refresh_sheet_leader_staff, delete_unused_sheet_directions, consolidate_sheet_directions,
+    create_event_function,
 )
 from .qr_attendance import (  # noqa: F401
     user_qr, user_from_qr, scanner_grants_qs, create_scanner_grant, revoke_scanner_grant,
@@ -163,7 +164,7 @@ from .querysets import (  # noqa: F401
 __all__ = [
     'legacy_identities_qs', 'legacy_shifts_qs', 'create_legacy_identity', 'create_legacy_group',
     'create_legacy_position', 'create_legacy_shift', 'ensure_legacy_application', 'ensure_legacy_comment', 'ensure_legacy_participation',
-    'complete_legacy_user', 'ensure_legacy_decision',
+    'complete_legacy_user', 'ensure_legacy_decision', 'create_event_function',
     'create_library_fap', 'attach_fap_document', 'save_fap_plan', 'migration_jobs_qs', 'create_migration_job', 'save_migration_job',
     'delete_users_created_by_job', 'delete_legacy_base_rows', 'delete_job_profile_notes',
     'position_templates_qs', 'ensure_position_template', 'delete_position_template', 'legacy_bases_qs', 'legacy_base_columns_qs', 'legacy_base_people_qs', 'create_legacy_base', 'create_legacy_base_column', 'save_legacy_column', 'mark_base_people_loaded', 'record_legacy_base_person', 'fap_documents_qs', 'create_fap_document', 'mark_fap_applied', 'legacy_value_mappings_qs', 'save_value_mapping', 'legacy_loaded_cells_qs', 'record_loaded_cell', 'delete_loaded_cell', 'set_participation_hours', 'delete_legacy_participation', 'unlink_legacy_application_shift', 'ensure_event_team_lead', 'delete_event_staff', 'create_unknown_time_shift', 'profile_conflicts_qs', 'create_profile_conflict', 'resolve_profile_conflict', 'update_user_profile_fields',

@@ -86,6 +86,11 @@ class EventForm(forms.ModelForm):
     пост-меро (`people_helped`, `internal_comment`, `letter`) появляются только при редактировании
     уже существующего меро (`show_closing_fields`), чтобы не засорять форму создания.
     """
+    # Мероприятие → функции → позиции (решение 2026-11-11): позиция создаётся внутри
+    # одной функции. Сначала функции этого мероприятия, затем общий пул, «＋ новая».
+    function = forms.ChoiceField(label='Функция', required=False)
+    function_name = forms.CharField(label='Название новой функции', required=False, max_length=100,
+                                    widget=forms.TextInput(attrs={'placeholder': 'Например: Организация выдачи пакетов участников'}))
     categories = forms.ModelMultipleChoiceField(
         queryset=dc.event_categories_qs().order_by('name'),
         required=False,
@@ -203,6 +208,8 @@ class EventForm(forms.ModelForm):
             for name in self.CLOSING_FIELDS:
                 self.fields.pop(name, None)
 
+        self._setup_function_field()
+
         if self.instance.pk:
             self.fields['categories'].initial = dc.event_categories_for_event(self.instance)
             self.fields['perks'].initial = dc.event_perks_for_event(self.instance)
@@ -214,6 +221,59 @@ class EventForm(forms.ModelForm):
             # Создание нового меро — создатель визуально предвыбран ответственным
             # менеджером в пикере (можно сменить прямо здесь же, до сохранения).
             self.fields['manager'].initial = self.assigned_by
+
+    def _setup_function_field(self):
+        from blog.services.position_pool import _key
+        group_id = self.data.get('event_group') if self.data else None
+        group_id = group_id or self.initial.get('event_group') or (self.instance.event_group_id if self.instance.pk else None)
+        group_id = getattr(group_id, 'pk', group_id)
+        own_names = {_key(d.name) for d in dc.event_directions_qs().filter(event_group_id=group_id)} if group_id else set()
+        pool = list(dc.event_categories_qs().order_by('name'))
+        own = [(str(c.pk), c.name) for c in pool if _key(c.name) in own_names]
+        rest = [(str(c.pk), c.name) for c in pool if _key(c.name) not in own_names]
+        choices = [('', '— выберите функцию —')]
+        if own:
+            choices.append(('Функции мероприятия', own))
+        choices += [('Пул функций', rest), ('new', '＋ Новая функция')]
+        self.fields['function'].choices = choices
+        self.function_own, self.function_rest = own, rest
+        self.function_pools = {}
+        for template in dc.position_templates_qs().order_by('name'):
+            self.function_pools.setdefault(template.category_id, []).append(template.name)
+        if self.instance.pk:
+            current = dc.event_categories_for_event(self.instance)
+            if current:
+                self.fields['function'].initial = str(current[0].pk)
+
+    def clean(self):
+        cleaned = super().clean()
+        chosen = cleaned.get('function') or ''
+        if chosen == 'new':
+            if not (cleaned.get('function_name') or '').strip():
+                self.add_error('function_name', 'Впишите название новой функции.')
+            return cleaned
+        if chosen:
+            cleaned['function_category'] = dc.event_categories_qs().filter(pk=chosen).first()
+        elif self.data and 'function' in self.data and not self.instance.pk:
+            self.add_error('function', 'Выберите функцию: позиция создаётся внутри функции мероприятия.')
+        return cleaned
+
+    def _save_function(self, event):
+        """Функция позиции: связь с пулом + функция в списке мероприятия + название в пул."""
+        from blog.services import event_functions
+        from blog.services.position_pool import function_category
+        chosen = self.cleaned_data.get('function') or ''
+        if not chosen:
+            return
+        category = (function_category(self.cleaned_data.get('function_name'), self.assigned_by) if chosen == 'new'
+                    else self.cleaned_data.get('function_category'))
+        if category is None:
+            return
+        others = [c for c in (self.cleaned_data.get('categories') or []) if c.pk != category.pk]
+        dc.sync_event_categories(event, [category] + others)
+        if event.event_group_id:
+            event_functions.add_function(self.assigned_by, event.event_group, category=category) if self.assigned_by else None
+        event_functions.remember_position(event, category, self.assigned_by)
 
     def _build_shift_forms(self):
         """Разбирает JSON-массив смен из скрытого поля `shifts_json` (собирается на
@@ -273,6 +333,7 @@ class EventForm(forms.ModelForm):
         if commit:
             event.save()
             self._save_categories(event)
+            self._save_function(event)
             self._save_perks(event)
             self._save_requirements(event)
             self._save_team_leads(event)
@@ -487,3 +548,16 @@ class EventFeedbackForm(forms.ModelForm):
             'rating': forms.NumberInput(attrs={'min': 0, 'max': 10}),
             'comment': forms.Textarea(attrs={'rows': 3}),
         }
+
+
+class EventFunctionForm(forms.Form):
+    """Добавить функцию в мероприятие: из пула (названия из ФиП) или новую."""
+    category = forms.ModelChoiceField(queryset=dc.event_categories_qs().order_by('name'), required=False,
+                                      label='Функция из пула', empty_label='— новая функция —')
+    name = forms.CharField(label='Или название новой функции', required=False, max_length=100)
+
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get('category') and not (cleaned.get('name') or '').strip():
+            raise forms.ValidationError('Выберите функцию из пула или впишите название новой.')
+        return cleaned

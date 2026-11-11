@@ -32,7 +32,6 @@
         <thead>
             <tr>
                 <th data-sort-key="function" class="wrap" style="min-width:160px;">Функция</th>
-                <th data-sort-key="title" class="wrap" style="min-width:180px;">Название</th>
                 {% if manager_view %}
                 <th data-sort-key="tl">Тим-лидер</th>
                 <th data-sort-key="manager">Менеджер</th>
@@ -52,9 +51,11 @@
         <tbody>
         {% for event in events %}
             <tr data-href="{% url 'event_detail' event.id %}" data-search="{{ event.function.name|default:'' }} {{ event.title }} {% if manager_view %}{{ event.team_leads_str }}{% else %}{{ event.location.name }}{% endif %} {{ event.organization.name }}" data-passed="{% if event.compute_status == 'passed' or event.compute_status == 'finished' %}1{% else %}0{% endif %}">
-                <td data-label="Функция" class="wrap" data-sort-value="{{ event.function.name|default:'' }}">{% if event.function %}<span class="fn-tag fn-tone-{{ event.function_tone }}">{{ event.function.name }}</span>{% else %}—{% endif %}</td>
-                <td data-label="Название" class="wrap" data-sort-value="{{ event.title }}">
-                    <a href="{% url 'event_detail' event.id %}" class="role-badge event-status-badge event-status-badge--{{ event.compute_status }}">{{ event.title }}</a>
+                {% comment %}Колонка «Название» убрана (2026-11-11): название = функция. Если у
+                позиции своё название (импорт ФиП/базы), оно мелко под функцией.{% endcomment %}
+                <td data-label="Функция" class="wrap" data-sort-value="{{ event.function.name|default:event.title }}">
+                    <a href="{% url 'event_detail' event.id %}" class="fn-tag{% if event.function %} fn-tone-{{ event.function_tone }}{% endif %}">{{ event.function.name|default:event.title }}</a>
+                    {% if event.function and event.title != event.function.name %}<div class="fn-subtitle">{{ event.title }}</div>{% endif %}
                 </td>
                 {% if manager_view %}
                 <td data-label="Тим-лидер" data-sort-value="{{ event.team_leads_str }}">
@@ -121,7 +122,7 @@
                 {% endif %}
             </tr>
         {% empty %}
-            <tr><td colspan="{% if manager_view %}9{% else %}6{% endif %}">Функций пока нет. Нажмите «+ Функция»: выберите функцию и добавьте смены.</td></tr>
+            <tr><td colspan="{% if manager_view %}8{% else %}5{% endif %}">Функций пока нет. Нажмите «+ Функция»: выберите функцию и добавьте смены.</td></tr>
         {% endfor %}
         </tbody>
     </table>

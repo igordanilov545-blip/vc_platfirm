@@ -46,6 +46,41 @@ def _hash(value):
 
 # --- Этап 1: база и люди -------------------------------------------------------
 
+def detect_base_year(file_name, headers, default):
+    """Год базы: из имени файла, иначе самый частый явный год в заголовках колонок."""
+    import re
+    named = guess_year(file_name, None)
+    if named:
+        return named
+    years = Counter(int(match) for header in headers for match in re.findall(r'(?<!\d)(20\d{2})(?!\d)', header or ''))
+    return years.most_common(1)[0][0] if years else default
+
+
+WORKBOOK_KINDS = {'база': 'base', 'смены': 'fap'}
+
+
+def workbook_kind(content):
+    """«base» (есть лист «База»), «fap» (есть лист «Смены») или None — по названиям
+    листов, без разбора содержимого: файл попадёт в нужное место, в какую бы форму
+    загрузки его ни отправили."""
+    import re
+    from io import BytesIO
+    from zipfile import BadZipFile, ZipFile
+    from xml.etree import ElementTree as ET
+    try:
+        with ZipFile(BytesIO(content)) as archive:
+            book = ET.fromstring(archive.read('xl/workbook.xml'))
+    except (BadZipFile, KeyError, ET.ParseError, OSError):
+        return None
+    names = {re.sub(r'[\W_]+', '', normalized_name(sheet.attrib.get('name', '')))
+             for sheet in book.iter() if sheet.tag.endswith('}sheet')}
+    if 'база' in names:
+        return 'base'
+    if 'смены' in names:
+        return 'fap'
+    return None
+
+
 def guess_year(file_name, default):
     import re
     match = re.search(r'20\d{2}', file_name or '')
@@ -53,13 +88,22 @@ def guess_year(file_name, default):
 
 
 @transaction.atomic
-def upload_base(operator, content, file_name, year):
-    """Сохранить файл и колонки базы. Ничего не меняет в профилях и мероприятиях."""
+def upload_base(operator, content, file_name, year=None):
+    """Сохранить файл и колонки базы. Ничего не меняет в профилях и мероприятиях.
+
+    Год (одна база = один год) — указанный человеком, иначе определяется сам: из
+    имени файла, затем самый частый год в датах заголовков колонок, иначе текущий."""
     _manager(operator)
     content_hash = _hash(content)
     if dc.legacy_bases_qs().filter(content_hash=content_hash).exists():
         raise ValidationError('Эта база уже загружена — откройте её в списке баз.')
-    parsed = read_legacy_workbook(content, max_rows=int(dc.get_const('legacy_import_max_rows', default=10000)), year=int(year))
+    max_rows = int(dc.get_const('legacy_import_max_rows', default=10000))
+    fallback = _now().astimezone(MSK).year
+    parsed = read_legacy_workbook(content, max_rows=max_rows, year=int(year or fallback))
+    if not year:
+        year = detect_base_year(file_name, [column['header'] for column in parsed['columns']], fallback)
+        if year != fallback:
+            parsed = read_legacy_workbook(content, max_rows=max_rows, year=year)
     base = dc.create_legacy_base(year=int(year), file_name=file_name, content=content,
                                  content_hash=content_hash, parsed=parsed, operator=operator)
     for column in parsed['columns']:

@@ -40,6 +40,37 @@ def _report_fap_uploads(request, results):
             messages.error(request, f'ФиП «{name}» не загружен: {error}')
 
 
+def _form_errors(request, form, what):
+    """Ошибки формы загрузки — сообщением вверху страницы и в лог vc.web."""
+    text = ' '.join(str(e) for errors in form.errors.values() for e in errors)
+    logger.warning('Migration upload form invalid: %s errors=%s by=%s', what, text, actor(request.user))
+    messages.error(request, f'{what}: {text}')
+
+
+def _route_uploads(request, uploads, *, year=None, default_year=None):
+    """Каждый файл — туда, где он нужен, по его листам: «База» → база, «Смены» → ФиП.
+    Так ФиП, отправленный через форму базы (и наоборот), не теряется.
+    Возвращает загруженную базу (если была) — для перехода на её страницу."""
+    base, faps = None, []
+    for upload in uploads:
+        content = upload.read()
+        kind = lm.workbook_kind(content)
+        if kind == 'base':
+            try:
+                base = lm.upload_base(request.user, content, upload.name, year)
+            except (ValidationError, IntegrityError) as error:
+                messages.error(request, f'База «{upload.name}»: {_error_text(error)}')
+            else:
+                messages.success(request, f'База {base.year} «{upload.name}» сохранена. Следующий шаг — загрузить людей.')
+        elif kind == 'fap':
+            faps.append((upload.name, content))
+        else:
+            messages.error(request, f'«{upload.name}»: нет листа «База» или «Смены» — это не база и не ФиП.')
+    if faps:
+        _report_fap_uploads(request, lm.upload_fap_files(request.user, faps, default_year=default_year))
+    return base
+
+
 def _last_job(**filters):
     job = dc.migration_jobs_qs().filter(**filters).select_related('base', 'event_group').first()
     return {'job': job, 'status': migration_jobs.status(job)} if job else None
@@ -48,21 +79,21 @@ def _last_job(**filters):
 @manager_required
 @never_cache
 def legacy_migration(request):
-    form = LegacyBaseUploadForm(request.POST or None, request.FILES or None)
-    fap_form = FapLibraryForm(request.POST or None, request.FILES or None)
-    if request.method == 'POST' and request.POST.get('action') == 'upload_base' and form.is_valid():
-        upload = form.cleaned_data['workbook']
-        try:
-            base = lm.upload_base(request.user, upload.read(), upload.name, form.cleaned_data['year'])
-        except (ValidationError, IntegrityError) as error:
-            form.add_error(None, _error_text(error))
-        else:
-            messages.success(request, f'База {base.year} сохранена. Следующий шаг — загрузить людей.')
-            return redirect('legacy_migration_base', base.pk)
-    if request.method == 'POST' and request.POST.get('action') == 'upload_fap' and fap_form.is_valid():
-        files = [(upload.name, upload.read()) for upload in fap_form.cleaned_data['workbooks']]
-        _report_fap_uploads(request, lm.upload_fap_files(request.user, files))
-        return redirect(reverse('legacy_migration') + '#fap-library')
+    action = request.POST.get('action') if request.method == 'POST' else None
+    form = LegacyBaseUploadForm(request.POST if action == 'upload_base' else None, request.FILES if action == 'upload_base' else None)
+    fap_form = FapLibraryForm(request.POST if action == 'upload_fap' else None, request.FILES if action == 'upload_fap' else None)
+    if action == 'upload_base':
+        if form.is_valid():
+            base = _route_uploads(request, [form.cleaned_data['workbook']], year=form.cleaned_data['year'])
+            if base:
+                return redirect('legacy_migration_base', base.pk)
+            return redirect('legacy_migration')
+        _form_errors(request, form, 'Загрузка базы')
+    elif action == 'upload_fap':
+        if fap_form.is_valid():
+            _route_uploads(request, fap_form.cleaned_data['workbooks'])
+            return redirect(reverse('legacy_migration') + '#fap-library')
+        _form_errors(request, fap_form, 'Загрузка ФиП')
     return render(request, 'blog/legacy_migration_hub.html', {'form': form, 'fap_form': fap_form, **lm.hub_overview()})
 
 
@@ -79,10 +110,9 @@ def legacy_migration_base(request, base_id):
                 messages.info(request, 'Загрузка людей запущена в фоне — можно переходить на другие страницы.')
             elif action == 'upload_fap':
                 if fap_form.is_valid():
-                    files = [(upload.name, upload.read()) for upload in fap_form.cleaned_data['workbooks']]
-                    _report_fap_uploads(request, lm.upload_fap_files(request.user, files, default_year=base.year))
+                    _route_uploads(request, fap_form.cleaned_data['workbooks'], default_year=base.year)
                 else:
-                    messages.error(request, ' '.join(e for errors in fap_form.errors.values() for e in errors))
+                    _form_errors(request, fap_form, 'Загрузка ФиП')
             elif action == 'map_fap':
                 choices = {key.removeprefix('fap_'): value for key, value in request.POST.items() if key.startswith('fap_')}
                 lm.map_columns_to_fap(request.user, base, choices)
@@ -126,7 +156,7 @@ def legacy_migration_group(request, group_id):
                     document = lm.attach_fap(request.user, group, upload.read(), upload.name)
                     messages.success(request, f'ФиП версии {document.version} применён.')
                 else:
-                    messages.error(request, ' '.join(e for errors in fap_form.errors.values() for e in errors))
+                    _form_errors(request, fap_form, 'Загрузка ФиП')
             elif action == 'save_mappings':
                 items, index = [], 0
                 while f'key_{index}' in request.POST:

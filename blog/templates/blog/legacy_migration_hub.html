@@ -7,26 +7,19 @@
     <h2>Как идёт миграция</h2>
     <ol class="migration-steps">
         <li><strong>База → люди.</strong> Загрузите файл базы (одна база — один год) и запустите загрузку людей — она идёт в фоне, с процентом и отменой.</li>
-        <li><strong>ФиП.</strong> Загрузите сразу все файлы «Функции и позиции» — они лягут в библиотеку.</li>
+        <li><strong>ФиП.</strong> Загрузите сразу все файлы «Функции и позиции» в «Библиотеку ФиП» ниже.</li>
         <li><strong>Колонки базы ↔ ФиП.</strong> На странице базы для каждой колонки выберите ФиП и его день: мероприятие, позиции и смены создадутся сами. Колонки без ФиП можно собрать в мероприятие вручную.</li>
         <li><strong>Сопоставление.</strong> На странице мероприятия для каждого уникального значения выберите позицию и роль.</li>
         <li><strong>Загрузка колонок</strong> — в фоне; повтор не создаёт дублей, изменённое сопоставление переносит участия.</li>
     </ol>
 </div>
 
-<div class="migration-grid">
-    <div class="card">
-        <h2>Загрузить базу</h2>
-        {% include 'blog/partials/_modal_form.html' with form=form form_enctype='multipart/form-data' submit_label='Сохранить базу' %}
-    </div>
-    <div class="card" id="fap-library-upload">
-        <h2>Загрузить ФиП</h2>
-        {% include 'blog/partials/_modal_form.html' with form=fap_form form_enctype='multipart/form-data' submit_label='Загрузить файлы' %}
-    </div>
-</div>
-
-<div class="card">
+<div class="card" id="bases">
     <h2>Базы</h2>
+    <div class="migration-upload">
+        <p class="muted">Одна база — один год. Год можно не указывать: он возьмётся из имени файла или из дат в заголовках колонок. Если отправить сюда файл ФиП, он попадёт в библиотеку ФиП.</p>
+        {% include 'blog/partials/_modal_form.html' with form=form form_enctype='multipart/form-data' submit_label='Загрузить базу' %}
+    </div>
     <div class="table-scroll"><table class="responsive-table migration-table">
         <thead><tr><th>База</th><th>Люди</th><th>Колонки</th><th class="wrap">Не загружено</th></tr></thead>
         <tbody>
@@ -46,6 +39,10 @@
 
 <div class="card" id="fap-library">
     <h2>Библиотека ФиП · {{ library|length }}</h2>
+    <div class="migration-upload">
+        <p class="muted">Можно выбрать сразу несколько файлов. Читается только лист «Смены»; к мероприятиям файлы привязываются на странице базы (таблица «Колонки базы ↔ ФиП»).</p>
+        {% include 'blog/partials/_modal_form.html' with form=fap_form form_enctype='multipart/form-data' submit_label='Загрузить файлы ФиП' %}
+    </div>
     <div class="table-scroll"><table class="responsive-table migration-table">
         <thead><tr><th>ФиП</th><th>Дни</th><th>Позиций</th><th>Мероприятие</th><th class="wrap">Предупреждения</th></tr></thead>
         <tbody>

@@ -505,3 +505,52 @@ class PositionPoolTests(TestCase):
         }
         for text, function in cases.items():
             self.assertEqual(classify(text), function, text)
+
+
+class HubUploadTests(MigrationTestCase):
+    """Хаб (запрос 2026-11-11): формы загрузки в карточках списков, файл попадает
+    туда, где нужен, по своим листам; год базы определяется сам; ошибки видны."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.manager)
+        self.url = reverse('legacy_migration')
+
+    def post(self, action, field, name, content, **extra):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return self.client.post(self.url, {'action': action, field: SimpleUploadedFile(name, content), **extra}, follow=True)
+
+    def test_fap_sent_through_base_form_lands_in_library(self):
+        response = self.post('upload_base', 'workbook', 'Ночной 2026 - Функции и позиции.xlsx', (FAP_DIR / 'night-2026-split-day.xlsx').read_bytes())
+        self.assertEqual(FapDocument.objects.get().title, 'Ночной 2026')
+        self.assertFalse(LegacyBase.objects.exists())
+        self.assertContains(response, 'Ночной 2026')
+
+    def test_base_sent_through_fap_form_becomes_base_with_detected_year(self):
+        headers = PROFILE + ['Ночной\n18.06.2025\nДень выдачи', 'ММ\n24 сентября\nВыдача']
+        content = base_xlsx(ANNA[:9] + ['1 - Ассистент', '2 - Волонтёр'], headers=headers)
+        self.post('upload_fap', 'workbooks', 'база.xlsx', content)
+        base = LegacyBase.objects.get()
+        self.assertEqual(base.year, 2025)
+        self.assertEqual(base.columns.get(header__startswith='ММ').day, date(2025, 9, 24))
+        self.assertFalse(FapDocument.objects.exists())
+
+    def test_year_from_file_name_wins_and_manual_year_is_kept(self):
+        self.post('upload_base', 'workbook', 'база 2024.xlsx', base_xlsx(ANNA))
+        self.assertEqual(LegacyBase.objects.get().year, 2024)
+        LegacyBase.objects.all().delete()
+        self.post('upload_base', 'workbook', 'база 2024.xlsx', base_xlsx(BORIS), year=2023)
+        self.assertEqual(LegacyBase.objects.get().year, 2023)
+
+    def test_invalid_upload_is_reported_at_top(self):
+        response = self.post('upload_fap', 'workbooks', 'notes.txt', b'hello')
+        self.assertContains(response, 'Загрузка ФиП: Нужен файл .xlsx')
+        response = self.post('upload_fap', 'workbooks', 'pusto.xlsx', base_xlsx(headers=['что-то']).replace(b'xl/workbook.xml', b'xl/workbook.xml'))
+        self.assertFalse(FapDocument.objects.exists())
+
+    def test_upload_forms_live_inside_list_cards(self):
+        page = self.client.get(self.url).content.decode()
+        bases, library = page.index('id="bases"'), page.index('id="fap-library"')
+        self.assertLess(bases, page.index('name="workbook"'))
+        self.assertLess(page.index('name="workbook"'), library)
+        self.assertLess(library, page.index('name="workbooks"'))

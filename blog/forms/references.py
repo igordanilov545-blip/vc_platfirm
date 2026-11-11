@@ -52,11 +52,39 @@ class QuickCategoryForm(forms.ModelForm):
         labels = {'name': 'Название категории'}
 
 class CategoryForm(forms.ModelForm):
-    """Создание/редактирование функции пула (EventCategory) на странице настроек."""
+    """Функция пула (kind=function) на странице настроек: название и категории,
+    которые она сама проставляет позиции при выборе."""
+    default_categories = forms.ModelMultipleChoiceField(
+        queryset=dc.event_categories_qs().order_by('name'), required=False,
+        label='Категории по умолчанию', widget=forms.SelectMultiple)
+
+    class Meta:
+        model = EventCategory
+        fields = ['name', 'default_categories']
+        labels = {'name': 'Название функции'}
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        obj.kind = 'function'
+        if commit:
+            obj.save()
+            dc.set_function_default_categories(obj, list(self.cleaned_data.get('default_categories') or []))
+        return obj
+
+
+class ThemeCategoryForm(forms.ModelForm):
+    """Категория забегов (kind=category): по ним — достижения и отчёты."""
     class Meta:
         model = EventCategory
         fields = ['name']
-        labels = {'name': 'Название функции'}
+        labels = {'name': 'Название категории'}
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        obj.kind = 'category'
+        if commit:
+            obj.save()
+        return obj
 
 
 class PositionTemplateForm(forms.ModelForm):
@@ -65,6 +93,10 @@ class PositionTemplateForm(forms.ModelForm):
         model = PositionTemplate
         fields = ['category', 'name']
         labels = {'category': 'Функция', 'name': 'Название позиции'}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['category'].queryset = dc.event_functions_qs().order_by('name')
 
 class QuickPerkForm(forms.ModelForm):
     """Мини-форма быстрого создания плюшки мероприятия прямо из формы мероприятия."""

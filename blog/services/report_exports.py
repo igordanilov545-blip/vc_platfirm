@@ -97,7 +97,7 @@ def events_rows(date_from=None, date_to=None, event_ids=None):
         total_hours = attended.aggregate(s=Sum('hours'))['s'] or 0
         apps = dc.applications_qs().filter(event=event)
         rating = event.feedbacks.aggregate(a=Avg('rating'), c=Count('id'))
-        categories = ', '.join(m.category.name for m in event.category_map.all()) or '—'
+        categories = ', '.join(m.category.name for m in event.category_map.all() if m.category.kind == 'category') or '—'
         locations = ', '.join(sorted({s.location.name for s in shifts if s.location_id})) or '—'
         rows.append({
             'id': event.id,
@@ -133,7 +133,7 @@ def event_report(event_id):
         'shifts__location', 'category_map__category', 'staff__user'
     ).get(pk=event_id)
 
-    categories = ', '.join(m.category.name for m in event.category_map.all()) or '—'
+    categories = ', '.join(m.category.name for m in event.category_map.all() if m.category.kind == 'category') or '—'
     managers = [st.user for st in event.staff.filter(staff_role='manager')]
     team_leads = [st.user for st in event.staff.filter(staff_role='team_lead')]
 

@@ -70,7 +70,8 @@ def person_report(user_id: int, date_from=None, date_to=None) -> dict:
 
     # Любимые категории (топ-3) по частоте участия.
     category_counts = (
-        attended.values('event_day__event__category_map__category__name')
+        attended.filter(event_day__event__category_map__category__kind='category')
+        .values('event_day__event__category_map__category__name')
         .annotate(count=Count('id'))
         .order_by('-count')[:3]
     )

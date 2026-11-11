@@ -49,7 +49,7 @@ class SeedTests(TestCase):
 class SeriesGrantTests(TestCase):
     def test_hours_series_grants_passed_steps_only(self):
         user = f.make_user()
-        # 60 часов: ступени 10/50 взяты, 100 — нет (шаги из seed: 10,50,100,250…).
+        # 60 часов: ступени 10/21/42 взяты, 100 — нет (беговые ступени 10,21,42,100,250,500).
         event = f.make_event()
         _attend(user, event, hours=60)
         dc.recompute_achievement_stat  # noqa: ensure attr exists
@@ -60,7 +60,7 @@ class SeriesGrantTests(TestCase):
             UserAchievement.objects.filter(user=user, achievement__code='hours_total')
             .values_list('series_value', flat=True)
         )
-        self.assertEqual(hours_steps, {10, 50})
+        self.assertEqual(hours_steps, {10, 21, 42})
 
     def test_series_row_per_step(self):
         """Решение этапа: у series — строка на КАЖДУЮ взятую ступень."""
@@ -70,7 +70,7 @@ class SeriesGrantTests(TestCase):
         from blog.services.stats import recalc_user_aggregates
         recalc_user_aggregates(user)
         rows = UserAchievement.objects.filter(user=user, achievement__code='hours_total').count()
-        self.assertEqual(rows, 4)  # 10,50,100,250
+        self.assertEqual(rows, 5)  # 10,21,42,100,250
 
     def test_idempotent(self):
         user = f.make_user()
@@ -216,12 +216,12 @@ class ProfileDisplayTests(TestCase):
         return [c for g in groups for c in g['items']]
 
     def test_series_expands_into_one_card_per_step(self):
-        """series отдаётся карточкой на КАЖДУЮ ступень (10/50/100/250/500/1000 = 6 карточек)."""
+        """series отдаётся карточкой на КАЖДУЮ ступень (10/21/42/100/250/500 = 6 карточек)."""
         user = f.make_user()
         cards = self._cards(user)
         hours = [c for c in cards if c['title'] == 'Волонтёрские часы']
         self.assertEqual(len(hours), 6)
-        self.assertEqual({c['step_value'] for c in hours}, {10, 50, 100, 250, 500, 1000})
+        self.assertEqual({c['step_value'] for c in hours}, {10, 21, 42, 100, 250, 500})
 
     def test_series_step_tier_by_order(self):
         """tier ступени = её порядковый номер: 1-я=1(бронза) … 6-я=6(фиолетовый)."""
@@ -235,14 +235,14 @@ class ProfileDisplayTests(TestCase):
         self.assertEqual(hours[5]['tier_class'], 'ach-tier--violet')
 
     def test_series_steps_earned_reflect_progress(self):
-        """При 60 часах взяты ступени 10 и 50 (earned), 100+ — нет (locked)."""
+        """При 60 часах взяты ступени 10, 21 и 42 (earned), 100+ — нет (locked)."""
         from blog.services.stats import recalc_user_aggregates
         user = f.make_user()
         _attend(user, f.make_event(), hours=60)
         recalc_user_aggregates(user)
         hours = {c['step_value']: c for c in self._cards(user) if c['title'] == 'Волонтёрские часы'}
         self.assertTrue(hours[10]['earned'])
-        self.assertTrue(hours[50]['earned'])
+        self.assertTrue(hours[42]['earned'])
         self.assertFalse(hours[100]['earned'])
         self.assertIsNotNone(hours[10]['earned_at'])
 
@@ -730,11 +730,12 @@ class AllAchievementsAccountTests(TestCase):
         # Волонтёр (без ролей ТЛ/менеджера).
         self.assertFalse(user.is_active_team_leader())
         self.assertFalse(user.is_active_manager())
-        # Есть строка на КАЖДУЮ ступень каждого series + каждое single.
-        total_targets = 0
-        for d in dc.get_active_definitions():
-            total_targets += len(d.steps()) if d.kind == 'series' else 1
-        self.assertEqual(UserAchievement.objects.filter(user=user).count(), total_targets)
+        # Есть строка на КАЖДУЮ ступень каждого активного series + каждое single
+        # (старые выдачи по снятым ступеням/выключенным достижениям могут остаться).
+        want = {(d.code, sv) for d in dc.get_active_definitions()
+                for sv in ([v for v, _ in d.steps()] if d.kind == 'series' else [None])}
+        have = set(UserAchievement.objects.filter(user=user).values_list('achievement__code', 'series_value'))
+        self.assertLessEqual(want, have)
 
     def test_command_idempotent_and_syncs_new(self):
         from django.core.management import call_command
@@ -780,12 +781,15 @@ class DynamicAchievementTests(TestCase):
         org.delete()
         self.assertFalse(AchievementDefinition.objects.filter(code=code).exists())
 
-    def test_event_creation_creates_hidden_event_definition(self):
-        event = f.make_event()
-        d = AchievementDefinition.objects.filter(code=f'event_{event.id}').first()
+    def test_race_creation_creates_hidden_race_definition(self):
+        """Достижение «был на забеге» — одно на мероприятие (EventGroup), не на позицию."""
+        from blog.models import EventGroup
+        group = EventGroup.objects.create(title='Осенний забег')
+        f.make_event(event_group=group)
+        d = AchievementDefinition.objects.filter(code=f'race_{group.id}').first()
         self.assertIsNotNone(d)
-        self.assertEqual(d.visibility, 'hidden')
-        self.assertEqual(d.tier, 'event')
+        self.assertEqual((d.visibility, d.tier), ('hidden', 'event'))
+        self.assertFalse(AchievementDefinition.objects.filter(code__startswith='event_').exists())
 
     def test_category_rename_updates_title(self):
         cat = f.make_category(name='Старое имя')
@@ -811,26 +815,28 @@ class DynamicAchievementTests(TestCase):
         self.assertIn(3, steps)
         self.assertNotIn(5, steps)
 
-    def test_organization_series_progress(self):
+    def test_organization_series_is_switched_off(self):
+        """Организация убрана из формы позиции (2026-11-11): ряд заводится выключенным,
+        прогресс по-прежнему считается (если включить обратно в админке)."""
         org = f.make_organization()
         user = f.make_user()
         for _ in range(3):
             _attend(user, f.make_event(organization=org), hours=1)
-        recalc_user_achievements(user)
-        steps = set(
-            UserAchievement.objects.filter(user=user, achievement__code=f'organization_{org.id}')
-            .values_list('series_value', flat=True)
-        )
-        self.assertIn(3, steps)
+        d = AchievementDefinition.objects.get(code=f'organization_{org.id}')
+        self.assertFalse(d.is_active)
+        self.assertEqual(progress_for(user, d), 3)
+        self.assertFalse(AchievementDefinition.objects.get(code='organizations_diversity').is_active)
 
 
 class EventCompletionAchievementTests(TestCase):
     def test_event_badge_granted_on_completion(self):
-        """При завершении меро точечное достижение event_<id> выдаётся всем с явкой."""
+        """При завершении позиции «был на забеге» race_<id> выдаётся всем с явкой."""
         from django.urls import reverse
+        from blog.models import EventGroup
         manager = f.make_manager()
         volunteer = f.make_user()
-        event = f.make_event()
+        group = EventGroup.objects.create(title='Осенний забег')
+        event = f.make_event(event_group=group)
         shift = f.make_shift(event, days_from_now=-2)
         f.make_participation(volunteer, shift, status='attended', hours=4)
         self.client.force_login(manager)
@@ -838,7 +844,7 @@ class EventCompletionAchievementTests(TestCase):
         self.client.post(reverse('event_close', args=[event.id]), {'people_helped': '10'})
         self.assertTrue(
             UserAchievement.objects.filter(
-                user=volunteer, achievement__code=f'event_{event.id}'
+                user=volunteer, achievement__code=f'race_{group.id}'
             ).exists()
         )
 

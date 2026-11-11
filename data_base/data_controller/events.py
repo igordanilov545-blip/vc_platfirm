@@ -17,8 +17,16 @@ from blog.models import (
 from ._base import logger
 
 
-def create_event_category(name: str) -> EventCategory:
-    return EventCategory.objects.create(name=name)
+def create_event_category(name: str, kind: str = 'category') -> EventCategory:
+    obj = EventCategory.objects.create(name=name, kind=kind)
+    logger.info('INSERT event_categories: id=%s kind=%s name=%r', obj.pk, kind, name)
+    return obj
+
+
+def set_function_default_categories(function: EventCategory, categories) -> None:
+    """Категории, которые функция проставляет позиции при выборе (настройки пула)."""
+    function.default_categories.set([c for c in categories if c is not None])
+    logger.info('UPDATE event_categories defaults: function=%s categories=%s', function.pk, [c.pk for c in categories if c])
 
 
 def create_event_perk(name: str) -> EventPerk:
@@ -247,8 +255,8 @@ def events_with_open_shifts():
 
 
 def event_categories_for_event(event) -> List[EventCategory]:
-    """Категории, привязанные к меро (для initial чипов формы редактирования)."""
-    return list(EventCategory.objects.filter(event_map__event=event))
+    """Категории (kind=category), привязанные к меро — initial чипов формы."""
+    return list(EventCategory.objects.filter(event_map__event=event, kind='category'))
 
 
 def event_perks_for_event(event) -> List[EventPerk]:
@@ -275,10 +283,17 @@ def organizer_organization_link_pairs() -> List[tuple]:
 
 # --- Запись M2M-связей мероприятия из формы (event save) ---
 def sync_event_categories(event, selected) -> None:
-    """Приводит категории меро к выбранному набору (снять лишние, добавить новые)."""
-    EventCategoryMap.objects.filter(event=event).exclude(category__in=selected).delete()
+    """Приводит категории (kind=category) меро к выбранному набору; функцию не трогает."""
+    EventCategoryMap.objects.filter(event=event, category__kind='category').exclude(category__in=selected).delete()
     for category in selected:
         EventCategoryMap.objects.get_or_create(event=event, category=category)
+
+
+def set_event_function(event, function) -> None:
+    """Функция позиции — ровно одна связь вида function."""
+    EventCategoryMap.objects.filter(event=event, category__kind='function').exclude(category=function).delete()
+    if function is not None:
+        EventCategoryMap.objects.get_or_create(event=event, category=function)
 
 
 def sync_event_perks(event, selected) -> None:

@@ -11,11 +11,11 @@
 
     <div class="field">
         {{ form.function.label_tag }}
-        <select name="{{ form.function.html_name }}" id="{{ form.function.id_for_label }}" data-function-pool-select data-title-input="{{ form.title.id_for_label }}" data-new-function="{{ form.function_name.id_for_label }}">
+        <select name="{{ form.function.html_name }}" id="{{ form.function.id_for_label }}" data-function-pool-select data-title-input="{{ form.title.id_for_label }}" data-new-function="{{ form.function_name.id_for_label }}" data-categories-select="{{ form.categories.id_for_label }}">
             {% with chosen=form.function.value|default:''|stringformat:'s' %}
             <option value="">— выберите функцию —</option>
-            {% if form.function_own %}<optgroup label="Функции мероприятия">{% for v, l in form.function_own %}<option value="{{ v }}"{% if chosen == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</optgroup>{% endif %}
-            <optgroup label="Пул функций">{% for v, l in form.function_rest %}<option value="{{ v }}"{% if chosen == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</optgroup>
+            {% if form.function_own %}<optgroup label="Функции мероприятия">{% for v, l, d in form.function_own %}<option value="{{ v }}" data-default-categories="{{ d }}"{% if chosen == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</optgroup>{% endif %}
+            <optgroup label="Пул функций">{% for v, l, d in form.function_rest %}<option value="{{ v }}" data-default-categories="{{ d }}"{% if chosen == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</optgroup>
             <option value="new"{% if chosen == 'new' %} selected{% endif %}>＋ Новая функция</option>
             {% endwith %}
         </select>
@@ -27,7 +27,20 @@
         </div>
         <datalist id="role-pool-default">{% for name in form.default_role_pool %}<option value="{{ name }}"></option>{% endfor %}</datalist>
         {% for category_id, names in form.function_pools.items %}<datalist id="position-pool-{{ category_id }}">{% for name in names %}<option value="{{ name }}"></option>{% endfor %}</datalist>{% endfor %}
-        <div hidden>{{ form.categories }}</div>
+    </div>
+
+    <div class="field">
+        <label>Категории</label>
+        <div class="category-chips" data-chip-select="{{ form.categories.id_for_label }}" data-chip-empty="Категории не выбраны">
+            <div class="cat-chips-row" data-chips-selected></div>
+            <div class="cat-chips-available-wrap">
+                <div class="cat-chips-available-label">Доступные категории — нажмите, чтобы добавить:</div>
+                <div class="cat-chips-row" data-chips-available></div>
+                <button type="button" class="btn secondary btn-sm add-ref-btn" data-add-ref="category" data-target="{{ form.categories.id_for_label }}" style="margin-top:8px;">＋ Новая категория</button>
+            </div>
+        </div>
+        {{ form.categories }}
+        <div class="field-hint">Проставляются сами по выбранной функции — можно поменять.</div>
     </div>
 
     {% if form.require_shift %}{{ form.title.as_hidden }}{% else %}

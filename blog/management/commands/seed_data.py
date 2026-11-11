@@ -39,6 +39,9 @@ class Command(BaseCommand):
         # Пул функций и типовых позиций забегов (blog/services/position_pool.py).
         created = ensure_default_pool(EventCategory, PositionTemplate, EventCategoryMap)
         self.stdout.write(self.style.SUCCESS(f'✓ Пул функций и позиций обновлён (новых функций: {created})'))
+        from blog.services.position_pool import ensure_default_categories
+        ensure_default_categories(EventCategory, EventCategoryMap)
+        self.stdout.write(self.style.SUCCESS('✓ Категории забегов и категории функций по умолчанию'))
 
         if not Season.objects.exists():
             Season.objects.create(start_season=timezone.localdate(), end_season=None)

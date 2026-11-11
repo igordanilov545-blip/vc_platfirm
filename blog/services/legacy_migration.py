@@ -388,7 +388,7 @@ def _position_hints(group):
             baseline[position['id']] = position
     sheets = {s.event_id: str(s.source_key) for s in dc.sheet_positions_qs().filter(event__event_group=group)}
     functions = {link.event_id: link.category for link in dc.event_category_maps_qs()
-                 .filter(event__event_group=group).select_related('category').order_by('pk')}
+                 .filter(event__event_group=group, category__kind='function').select_related('category').order_by('pk')}
     hints = []
     for event in dc.events_qs().filter(event_group=group).order_by('pk'):
         source = baseline.get(sheets.get(event.pk), {})
@@ -425,7 +425,7 @@ def suggest(raw, hints):
     function = next((h['function'] for h in hints if position is not None and h['event'] == position), None)
     if function is None:
         name = classify(rest or raw)
-        function = next((c for c in dc.event_categories_qs() if c.name == name), None) if name else None
+        function = next((c for c in dc.event_functions_qs() if c.name == name), None) if name else None
     return {'position': position, 'score': round(best_score, 2), 'role': role, 'function': function}
 
 
@@ -491,7 +491,7 @@ def save_mappings(operator, group, items):
                 if chosen == 'new':
                     category = function_category(item.get('function_name') or '', operator)
                 else:
-                    category = dc.event_categories_qs().filter(pk=chosen).first() if chosen.isdigit() else None
+                    category = dc.event_functions_qs().filter(pk=chosen).first() if chosen.isdigit() else None
                 position = dc.create_legacy_position(group, title, operator)
                 function = assign_function(position, item['raw'], category=category)
                 if function is not None:
@@ -629,15 +629,15 @@ def base_overview(base):
 
 def function_options(group):
     """Функции для выбора: сначала функции этого мероприятия, затем остальной пул."""
-    used = list(dc.event_categories_qs().filter(event_map__event__event_group=group).distinct().order_by('name'))
-    rest = list(dc.event_categories_qs().exclude(pk__in=[c.pk for c in used]).order_by('name'))
+    used = list(dc.event_functions_qs().filter(event_map__event__event_group=group).distinct().order_by('name'))
+    rest = list(dc.event_functions_qs().exclude(pk__in=[c.pk for c in used]).order_by('name'))
     return used, rest
 
 
 def group_page(group):
     overview = group_overview(group)
     rows = mapping_table(group)
-    functions = {link.event_id: link.category_id for link in dc.event_category_maps_qs().filter(event__event_group=group).order_by('-pk')}
+    functions = {link.event_id: link.category_id for link in dc.event_category_maps_qs().filter(event__event_group=group, category__kind='function').order_by('-pk')}
     positions = list(dc.events_qs().filter(event_group=group).order_by('title'))
     for position in positions:
         position.function_id = functions.get(position.pk)

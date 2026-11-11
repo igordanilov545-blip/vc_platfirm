@@ -152,7 +152,7 @@ class FapAndMappingTests(MigrationTestCase):
         again = lm.attach_fap(self.manager, self.group, FAP.read_bytes(), 'другое имя.xlsx')
         self.assertEqual((again.pk, FapDocument.objects.filter(event_group=self.group).count()), (self.document.pk, 1))
         distance = self.group.positions.get(title='Волонтер пункта освежения (ПО1)')
-        self.assertEqual(list(distance.category_map.values_list('category__name', flat=True)), ['Волонтёры дистанции'])
+        self.assertEqual(list(distance.category_map.filter(category__kind='function').values_list('category__name', flat=True)), ['Волонтёры дистанции'])
 
     def test_suggestions_use_code_and_text_and_detect_team_leads(self):
         rows = {row['raw']: row for row in lm.mapping_table(self.group)}
@@ -285,7 +285,7 @@ class WithoutFapTests(MigrationTestCase):
         self.assertIsNone(rows['Ассистент выдачи номеров']['suggestion']['position'])
         self.map_all(group, {'Ассистент выдачи номеров': 'new', 'Волонтёр выдачи медалей': 'new'})
         position = group.positions.get(title='Ассистент выдачи номеров')
-        self.assertEqual(list(position.category_map.values_list('category__name', flat=True)), ['Организация выдачи пакетов участников'])
+        self.assertEqual(list(position.category_map.filter(category__kind='function').values_list('category__name', flat=True)), ['Организация выдачи пакетов участников'])
         lm.load_columns(self.manager, columns)
         shifts = EventShift.objects.filter(event__event_group=group, day=date(2026, 8, 23))
         self.assertEqual(shifts.count(), 2)
@@ -592,7 +592,7 @@ class FunctionMappingTests(MigrationTestCase):
     → позиции внутри функции. В сопоставлении выбирается функция, затем позиция."""
 
     def test_pool_holds_fap_function_names(self):
-        names = set(lm.dc.event_categories_qs().values_list('name', flat=True))
+        names = set(lm.dc.event_functions_qs().values_list('name', flat=True))
         for name in ('Организация сервисов для отдельных клиентских групп', 'Волонтёры-атташе и волонтёры отеля-партнёра',
                      'Волонтёры режиссёрской группы', 'Волонтёры дистанции'):
             self.assertIn(name, names)
@@ -604,9 +604,9 @@ class FunctionMappingTests(MigrationTestCase):
         columns = list(base.columns.filter(header__startswith='БФБ').order_by('index'))
         group = lm.create_event_from_columns(self.manager, base, [c.pk for c in columns], 'БФБ 2026')
         rows = {row['raw']: row for row in lm.mapping_table(group)}
-        self.assertEqual(lm.dc.event_categories_qs().get(pk=rows['Волонтёр выдачи медалей']['function_selected']).name,
+        self.assertEqual(lm.dc.event_functions_qs().get(pk=rows['Волонтёр выдачи медалей']['function_selected']).name,
                          'Волонтёры финиша')
-        finish = lm.dc.event_categories_qs().get(name='Волонтёры финиша')
+        finish = lm.dc.event_functions_qs().get(name='Волонтёры финиша')
         lm.save_mappings(self.manager, group, [
             {'key': rows['Волонтёр выдачи медалей']['key'], 'raw': 'Волонтёр выдачи медалей', 'target': 'new',
              'role': 'volunteer', 'title': 'Волонтёр выдачи медалей', 'function': str(finish.pk)},
@@ -614,9 +614,9 @@ class FunctionMappingTests(MigrationTestCase):
              'role': 'volunteer', 'title': 'Ассистент выдачи номеров', 'function': 'new', 'function_name': 'Стартовый городок'},
         ])
         medals = group.positions.get(title='Волонтёр выдачи медалей')
-        self.assertEqual(list(medals.category_map.values_list('category__name', flat=True)), ['Волонтёры финиша'])
+        self.assertEqual(list(medals.category_map.filter(category__kind='function').values_list('category__name', flat=True)), ['Волонтёры финиша'])
         numbers = group.positions.get(title='Ассистент выдачи номеров')
-        self.assertEqual(list(numbers.category_map.values_list('category__name', flat=True)), ['Стартовый городок'])
+        self.assertEqual(list(numbers.category_map.filter(category__kind='function').values_list('category__name', flat=True)), ['Стартовый городок'])
         page = lm.group_page(group)
         self.assertEqual({f.name for f in page['used_functions']}, {'Волонтёры финиша', 'Стартовый городок'})
 
@@ -628,7 +628,7 @@ class FunctionMappingTests(MigrationTestCase):
         self.map_all(group)
         lm.load_columns(self.manager, [columns[0]])
         boris = User.objects.get(first_name='Борис')
-        function = lm.dc.event_categories_qs().get(name='Организация выдачи пакетов участников')
+        function = lm.dc.event_functions_qs().get(name='Организация выдачи пакетов участников')
         positions = group.positions.filter(category_map__category=function)
         self.assertGreater(positions.count(), 5)
         self.assertEqual(EventStaff.objects.filter(user=boris, staff_role='team_lead', event__in=positions).count(), positions.count())

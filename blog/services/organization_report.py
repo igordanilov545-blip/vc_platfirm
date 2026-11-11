@@ -44,6 +44,8 @@ def organization_report(organization_id: int, date_from=None, date_to=None) -> d
             ratings.append(rating)
 
         for m in event.category_map.all():
+            if m.category.kind != 'category':
+                continue
             categories_seen[m.category.name] = categories_seen.get(m.category.name, 0) + 1
 
         events_table.append({

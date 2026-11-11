@@ -36,9 +36,9 @@ def functions_overview(group, events=None):
     """Функции мероприятия по порядку и их позиции; позиции без функции — отдельно."""
     events = list(events if events is not None else dc.events_qs().filter(event_group=group))
     links = {}
-    for link in dc.event_category_maps_qs().filter(event__event_group=group).select_related('category').order_by('pk'):
+    for link in dc.event_category_maps_qs().filter(event__event_group=group, category__kind='function').select_related('category').order_by('pk'):
         links.setdefault(link.event_id, link.category)
-    pool = {_key(c.name): c for c in dc.event_categories_qs()}
+    pool = {_key(c.name): c for c in dc.event_functions_qs()}
     sections = OrderedDict()
     for direction in dc.event_directions_qs().filter(event_group=group).order_by('sort_order', 'pk'):
         key = _key(direction.name)

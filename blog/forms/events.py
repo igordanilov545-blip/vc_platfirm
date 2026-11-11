@@ -212,6 +212,7 @@ class EventForm(forms.ModelForm):
                 self.fields.pop(name, None)
 
         self._setup_function_field()
+        self.instance_had_categories = bool(self.instance.pk and dc.event_categories_for_event(self.instance))
         if not self.instance.pk:
             # «+ Функция» = позиция с этим названием: название берётся из функции.
             self.fields['title'].required = False
@@ -234,7 +235,7 @@ class EventForm(forms.ModelForm):
         group_id = group_id or self.initial.get('event_group') or (self.instance.event_group_id if self.instance.pk else None)
         group_id = getattr(group_id, 'pk', group_id)
         own_names = {_key(d.name) for d in dc.event_directions_qs().filter(event_group_id=group_id)} if group_id else set()
-        pool = list(dc.event_categories_qs().order_by('name'))
+        pool = list(dc.event_functions_qs().prefetch_related('default_categories').order_by('name'))
         own = [(str(c.pk), c.name) for c in pool if _key(c.name) in own_names]
         rest = [(str(c.pk), c.name) for c in pool if _key(c.name) not in own_names]
         choices = [('', '— выберите функцию —')]
@@ -242,16 +243,20 @@ class EventForm(forms.ModelForm):
             choices.append(('Функции мероприятия', own))
         choices += [('Пул функций', rest), ('new', '＋ Новая функция')]
         self.fields['function'].choices = choices
-        self.function_own, self.function_rest = own, rest
+        # Категории по умолчанию каждой функции — для автоподстановки чипов на клиенте.
+        defaults = {str(c.pk): ','.join(str(d.pk) for d in c.default_categories.all()) for c in pool}
+        self.function_own = [(v, l, defaults[v]) for v, l in own]
+        self.function_rest = [(v, l, defaults[v]) for v, l in rest]
         from blog.services.shift_roles import TEAM_LEAD_ROLE, VOLUNTEER_ROLE
         self.function_pools = {int(pk): [TEAM_LEAD_ROLE, VOLUNTEER_ROLE] for pk, _ in own + rest}
         for template in dc.position_templates_qs().order_by('name'):
             self.function_pools.setdefault(template.category_id, [TEAM_LEAD_ROLE, VOLUNTEER_ROLE]).append(template.name)
         self.default_role_pool = [TEAM_LEAD_ROLE, VOLUNTEER_ROLE]
         if self.instance.pk:
-            current = dc.event_categories_for_event(self.instance)
+            from blog.services.position_pool import position_function
+            current = position_function(self.instance)
             if current:
-                self.fields['function'].initial = str(current[0].pk)
+                self.fields['function'].initial = str(current.pk)
         elif self.initial.get('function') and not self.initial.get('title'):
             # Название позиции по умолчанию — название функции (2026-11-11); роли людей
             # внутри смены задаются в таблице набора, а не отдельными позициями.
@@ -268,7 +273,7 @@ class EventForm(forms.ModelForm):
                 cleaned['title'] = ' '.join(cleaned['function_name'].split())
             return cleaned
         if chosen:
-            cleaned['function_category'] = dc.event_categories_qs().filter(pk=chosen).first()
+            cleaned['function_category'] = dc.event_functions_qs().filter(pk=chosen).first()
             if not cleaned.get('title') and cleaned['function_category']:
                 cleaned['title'] = cleaned['function_category'].name
         elif self.data and 'function' in self.data and not self.instance.pk:
@@ -289,8 +294,11 @@ class EventForm(forms.ModelForm):
                     else self.cleaned_data.get('function_category'))
         if category is None:
             return
-        others = [c for c in (self.cleaned_data.get('categories') or []) if c.pk != category.pk]
-        dc.sync_event_categories(event, [category] + others)
+        dc.set_event_function(event, category)
+        if not self.cleaned_data.get('categories') and not self.instance_had_categories:
+            # Категории не выбраны (форма без JS, старый клиент) — по умолчанию функции.
+            from blog.services.position_pool import apply_default_categories
+            apply_default_categories(event, category)
         if event.event_group_id:
             event_functions.add_function(self.assigned_by, event.event_group, category=category) if self.assigned_by else None
         event_functions.remember_position(event, category, self.assigned_by)
@@ -598,7 +606,7 @@ class EventFeedbackForm(forms.ModelForm):
 
 class EventFunctionForm(forms.Form):
     """Добавить функцию в мероприятие: из пула (названия из ФиП) или новую."""
-    category = forms.ModelChoiceField(queryset=dc.event_categories_qs().order_by('name'), required=False,
+    category = forms.ModelChoiceField(queryset=dc.event_functions_qs().order_by('name'), required=False,
                                       label='Функция из пула', empty_label='— новая функция —')
     name = forms.CharField(label='Или название новой функции', required=False, max_length=100)
 

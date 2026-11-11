@@ -134,13 +134,18 @@ def function_name(raw):
     return text
 
 
+def _has_kind(model):
+    return any(field.name == 'kind' for field in model._meta.get_fields())
+
+
 def ensure_default_pool(category_model, template_model, map_model=None, *, drop_legacy=True):
     """Базовый пул; принимает модели, чтобы работать и в миграции, и в seed_data.
     Прежние названия переносятся на функции ФиП вместе с позициями и связями."""
     created = 0
     targets = {}
+    extra = {'defaults': {'kind': 'function'}} if _has_kind(category_model) else {}
     for name, _, positions in DEFAULT_FUNCTIONS:
-        category, made = category_model.objects.get_or_create(name=name)
+        category, made = category_model.objects.get_or_create(name=name, **extra)
         targets[name] = category
         created += int(made)
         for title in positions:
@@ -176,18 +181,103 @@ def pool_choices():
 
 
 def function_category(name, operator=None):
-    """Функция пула по названию (из ФиП или введённая человеком); новая — создаётся."""
+    """Функция пула по названию (из ФиП или введённая человеком); новая — создаётся
+    и сразу получает категории по умолчанию по словам названия."""
     name = function_name(name)[:100]
     if not name:
         return None
-    found = next((c for c in dc.event_categories_qs() if _key(c.name) == _key(name)), None)
-    return found or dc.create_event_category(name)
+    found = next((c for c in dc.event_functions_qs() if _key(c.name) == _key(name)), None)
+    if found is not None:
+        return found
+    function = dc.create_event_category(name, kind='function')
+    dc.set_function_default_categories(function, [category_by_name(n) for n in default_category_names(name)])
+    return function
 
 
 def position_function(event):
-    """Функция позиции — её (первая) функция из пула."""
-    link = event.category_map.select_related('category').order_by('pk').first() if event.pk else None
+    """Функция позиции — её функция из пула (связь вида function)."""
+    if not event.pk:
+        return None
+    link = event.category_map.filter(category__kind='function').select_related('category').order_by('pk').first()
     return link.category if link else None
+
+
+# --- Категории забегов (2026-11-11) --------------------------------------------
+# Тематические категории беговых мероприятий: по ним считаются достижения и отчёты.
+# Функция при выборе сама проставляет свои категории по умолчанию
+# (EventCategory.default_categories), их можно поменять вручную.
+DEFAULT_CATEGORIES = [
+    'Старт', 'Финиш', 'Дистанция', 'Выдача стартовых пакетов', 'Информация и навигация',
+    'Медицина', 'VIP и гости', 'Церемонии и шоу', 'Эстафеты и спецстарты',
+    'Сервисы для бегунов и зрителей', 'Штаб и волонтёрская программа',
+]
+
+# Функции ФиП → категории по умолчанию.
+FUNCTION_CATEGORIES = {
+    'Волонтёры-медики': ['Медицина'],
+    'Волонтёры-атташе и волонтёры отеля-партнёра': ['VIP и гости'],
+    'Организация сервисов для отдельных клиентских групп': ['VIP и гости'],
+    'Волонтёры режиссёрской группы': ['Церемонии и шоу'],
+    'Волонтёры специальных стартов': ['Эстафеты и спецстарты'],
+    'Реализация волонтёрской программы и организация работы волонтёров': ['Штаб и волонтёрская программа'],
+    'Волонтёры дистанции': ['Дистанция'],
+    'Организация сервисов для спортсменов и зрителей': ['Сервисы для бегунов и зрителей'],
+    'Волонтёры финиша': ['Финиш'],
+    'Волонтёры старта': ['Старт'],
+    'Волонтёры старта и финиша': ['Старт', 'Финиш'],
+    'Организация выдачи пакетов участников': ['Выдача стартовых пакетов'],
+    'Волонтёры информации и навигации': ['Информация и навигация'],
+}
+
+# Для новых функций (вписанных человеком): регулярные выражения по названию (ё → е).
+CATEGORY_PATTERNS = [
+    ('Старт', r'\bстарт(а|е|у|ом)?\b'),
+    ('Финиш', r'\bфиниш'),
+    ('Дистанция', r'\bдистанц|\bпункт(а|ы)? (питания|освежения)'),
+    ('Выдача стартовых пакетов', r'\bпакет|\bвыдач[аи] номер|\bрегистрац|\bсправ'),
+    ('Информация и навигация', r'\bинформац|\bнавигац'),
+    ('Медицина', r'\bмедик|\bмедиц'),
+    ('VIP и гости', r'\bvip\b|\bвип\b|\bатташе|\bгост|\bклиентск'),
+    ('Церемонии и шоу', r'\bрежисс|\bнаграж|\bцеремон|\bшоу\b'),
+    ('Эстафеты и спецстарты', r'\bэстафет|\bспециальн'),
+    ('Сервисы для бегунов и зрителей', r'\bзрител|\bстюард|\bспортсмен'),
+    ('Штаб и волонтёрская программа', r'\bштаб|\bпрограмм|\bрекрут'),
+]
+
+
+def default_category_names(function_title):
+    """Категории по умолчанию для функции: из таблицы ФиП, иначе по словам названия."""
+    known = {_key(name): cats for name, cats in FUNCTION_CATEGORIES.items()}
+    if _key(function_title) in known:
+        return list(known[_key(function_title)])
+    text = _key(function_title)
+    return [name for name, pattern in CATEGORY_PATTERNS if re.search(pattern, text)]
+
+
+def category_by_name(name):
+    """Категория пула по названию; новая — создаётся."""
+    found = next((c for c in dc.event_categories_qs() if _key(c.name) == _key(name)), None)
+    return found or dc.create_event_category(name, kind='category')
+
+
+def ensure_default_categories(category_model, map_model=None):
+    """Категории забегов и связь «функция → категории по умолчанию»; принимает модели,
+    чтобы работать и в миграции, и в seed_data. С map_model — проставляет категории
+    позициям, у которых уже есть функция (данные до этого изменения)."""
+    by_key = {}
+    for name in DEFAULT_CATEGORIES:
+        category, _ = category_model.objects.get_or_create(name=name, defaults={'kind': 'category'})
+        by_key[_key(name)] = category
+    for function in category_model.objects.filter(kind='function'):
+        if not function.default_categories.exists():
+            wanted = [by_key.get(_key(n)) or category_model.objects.get_or_create(name=n, defaults={'kind': 'category'})[0]
+                      for n in default_category_names(function.name)]
+            function.default_categories.set(wanted)
+        if map_model is not None:
+            for link in map_model.objects.filter(category=function):
+                for category in function.default_categories.all():
+                    map_model.objects.get_or_create(event_id=link.event_id, category=category)
+    return by_key
 
 
 def assign_function(event, *texts, operator=None, category=None):
@@ -199,8 +289,17 @@ def assign_function(event, *texts, operator=None, category=None):
         name = classify(event.title, *texts)
         category = function_category(name) if name else None
     if category is not None:
-        dc.add_category_to_event(event, category)
+        dc.set_event_function(event, category)
+        apply_default_categories(event, category)
     return category
+
+
+def apply_default_categories(event, function):
+    """Добавить позиции категории по умолчанию её функции (свои — не снимаем)."""
+    defaults = list(function.default_categories.all()) if function is not None else []
+    if defaults:
+        current = dc.event_categories_for_event(event)
+        dc.sync_event_categories(event, current + [c for c in defaults if c not in current])
 
 
 def remember_positions(plan, operator=None):

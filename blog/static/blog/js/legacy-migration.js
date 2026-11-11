@@ -196,6 +196,22 @@
             var title = form.querySelector('#' + select.getAttribute('data-title-input'));
             var newField = form.querySelector('[data-new-function-field]');
             var lastName = select.value && select.value !== 'new' ? select.options[select.selectedIndex].text : '';
+            var categories = form.querySelector('#' + select.getAttribute('data-categories-select'));
+            // Категории по умолчанию функции: при СМЕНЕ функции снимаем прежние
+            // автоматические и ставим новые; выбранные руками остаются.
+            var autoIds = [];
+            function applyDefaults() {
+                if (!categories) return;
+                var opt = select.options[select.selectedIndex];
+                var ids = ((opt && opt.getAttribute('data-default-categories')) || '').split(',').filter(Boolean);
+                Array.prototype.forEach.call(categories.options, function (o) {
+                    if (autoIds.indexOf(o.value) !== -1 && ids.indexOf(o.value) === -1) o.selected = false;
+                    if (ids.indexOf(o.value) !== -1) o.selected = true;
+                });
+                autoIds = ids;
+                categories.dispatchEvent(new Event('chips:refresh'));
+            }
+            select.addEventListener('change', applyDefaults);
             function sync() {
                 var name = select.value && select.value !== 'new' ? select.options[select.selectedIndex].text : '';
                 // Название позиции по умолчанию — название функции (пока его не меняли руками).

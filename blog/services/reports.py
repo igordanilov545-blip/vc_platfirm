@@ -108,8 +108,9 @@ def period_report(date_from=None, date_to=None, prev_from=None, prev_to=None, ev
         full = f"{v['user__first_name'] or ''} {v['user__last_name'] or ''}".strip()
         v['name'] = full or v['user__telegram_username'] or '—'
 
+    # Только тематические категории (kind=category), функции ФиП — не категории.
     category_breakdown = list(
-        attended.values(
+        attended.filter(event_day__event__category_map__category__kind='category').values(
             name=models_f('event_day__event__category_map__category__name'),
         ).annotate(
             volunteers=Count('user', distinct=True),

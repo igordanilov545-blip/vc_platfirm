@@ -79,10 +79,64 @@ def ev_total_hours(user):
     return user.total_hours or 0
 
 
+# Кэш забегов человека — только на время recalc_user_achievements (там race_<id>
+# спрашивают десятки раз); вне пересчёта всегда считаем заново.
+_RACE_CACHE = {}
+
+
+def _race_ids(user):
+    if user.pk in _RACE_CACHE:
+        if _RACE_CACHE[user.pk] is None:
+            _RACE_CACHE[user.pk] = _compute_race_ids(user)
+        return _RACE_CACHE[user.pk]
+    return _compute_race_ids(user)
+
+
+def _compute_race_ids(user):
+    """Забеги (мероприятия, EventGroup), где человек был: хватает одной смены с явкой,
+    роль не важна; тим-лидер засчитывается и по назначению на уже прошедший забег."""
+    from django.utils import timezone
+    from django.db.models import Max
+    # Позиция без мероприятия (старые данные) — сама себе забег: ключ −id позиции.
+    ids = {group_id if group_id else -event_id for group_id, event_id in
+           _attended(user).values_list('event_day__event__event_group', 'event_day__event')}
+    led = (dc.event_staff_qs().filter(user=user, staff_role='team_lead', event__event_group__isnull=False)
+           .values('event__event_group').annotate(last=Max('event__event_group__positions__shifts__day')))
+    today = timezone.localdate()
+    ids |= {row['event__event_group'] for row in led if row['last'] and row['last'] < today}
+    return ids
+
+
 def ev_total_events(user):
-    # Разные мероприятия с явкой (а не смены): total_event_count считает участия-смены,
-    # для достижения «N мероприятий» логичнее уникальные меро.
-    return _attended(user).values('event_day__event').distinct().count()
+    """Копилка забегов: разные мероприятия (забеги), а не позиции и не смены."""
+    return len(_race_ids(user))
+
+
+def ev_shifts_total(user):
+    return _attended(user).count()
+
+
+def _race_order():
+    """Прошедшие и идущие забеги по дате первой смены — основа серии «подряд»."""
+    from django.utils import timezone
+    from django.db.models import Min
+    rows = (dc.event_groups_qs().annotate(first=Min('positions__shifts__day'))
+            .filter(first__isnull=False, first__lte=timezone.localdate()).order_by('first', 'pk'))
+    return [row.pk for row in rows]
+
+
+def ev_race_streak(user):
+    """Самая длинная серия забегов подряд (по календарю забегов) без пропуска."""
+    mine = _race_ids(user)
+    best = run = 0
+    for group_id in _race_order():
+        run = run + 1 if group_id in mine else 0
+        best = max(best, run)
+    return best
+
+
+def ev_years_active(user):
+    return len({day.year for day in _attended(user).values_list('event_day__day', flat=True)})
 
 
 def ev_season_hours(user):
@@ -96,8 +150,8 @@ def ev_season_events(user):
 def ev_categories_diversity(user):
     return (
         _attended(user)
+        .filter(event_day__event__category_map__category__kind='category')
         .values('event_day__event__category_map__category')
-        .exclude(event_day__event__category_map__category__isnull=True)
         .distinct().count()
     )
 
@@ -133,8 +187,18 @@ def ev_org_loyalty(user):
 
 
 def ev_team_lead_events(user):
-    """Число мероприятий, где пользователь был тим-лидером (по назначениям EventStaff)."""
-    return dc.event_staff_qs().filter(user=user, staff_role='team_lead').values('event').distinct().count()
+    """Сколько забегов человек вёл тим-лидером (назначение на любую позицию забега)."""
+    rows = dc.event_staff_qs().filter(user=user, staff_role='team_lead')
+    groups = set(rows.exclude(event__event_group__isnull=True).values_list('event__event_group', flat=True))
+    return len(groups) + rows.filter(event__event_group__isnull=True).values('event').distinct().count()
+
+
+def ev_team_lead_shifts(user):
+    """Смены с явкой, где человек был тим-лидером (назначение или роль «Тим-лидер»)."""
+    from django.db.models import Q
+    led_events = dc.event_staff_qs().filter(user=user, staff_role='team_lead').values('event')
+    lead_roles = dc.application_shift_decisions_qs().filter(application__user=user, role='Тим-лидер').values('shift')
+    return _attended(user).filter(Q(event_day__event__in=led_events) | Q(event_day__in=lead_roles)).count()
 
 
 def ev_feedbacks(user):
@@ -182,6 +246,50 @@ def ev_profile_complete(user):
 
 def ev_verified(user):
     return user.verified_by_manager_at is not None
+
+
+FULL_COURSE = ('Старт', 'Дистанция', 'Финиш')
+
+
+def ev_full_course(user):
+    """«Вся трасса»: был на старте, на дистанции и на финише (категории забегов)."""
+    names = set(_attended(user).filter(event_day__event__category_map__category__kind='category')
+                .values_list('event_day__event__category_map__category__name', flat=True))
+    return all(name in names for name in FULL_COURSE)
+
+
+def ev_early_bird(user):
+    """Смена, начавшаяся до 7 утра (подготовка старта)."""
+    from django.utils import timezone
+    return any(timezone.localtime(start).hour < 7
+               for start in _attended(user).values_list('event_day__start_time', flat=True))
+
+
+def ev_double_shift(user):
+    """Две смены с явкой в один день одного забега."""
+    rows = (_attended(user).values('event_day__day', 'event_day__event__event_group')
+            .annotate(n=Count('id')).filter(n__gte=2))
+    return rows.exists()
+
+
+def ev_all_days(user):
+    """Многодневный забег (2+ дня) — был на каждом его дне."""
+    from collections import defaultdict
+    mine = defaultdict(set)
+    for group_id, day in _attended(user).exclude(event_day__event__event_group__isnull=True).values_list(
+            'event_day__event__event_group', 'event_day__day'):
+        mine[group_id].add(day)
+    for group_id, days in mine.items():
+        all_days = set(dc.event_shifts_qs().filter(event__event_group_id=group_id).values_list('day', flat=True))
+        if len(all_days) >= 2 and all_days <= days:
+            return True
+    return False
+
+
+def ev_reliable(user):
+    """10+ смен с явкой и ни одной неявки без причины."""
+    parts = dc.participations_qs().filter(user=user)
+    return parts.filter(status='attended').count() >= 10 and not parts.filter(status='absent_unexcused').exists()
 
 
 def _fastest_response_minutes(user):
@@ -240,6 +348,10 @@ EVALUATORS = {
     'feedbacks_total': ev_feedbacks,
     'applications_total': ev_applications,
     'people_helped': ev_people_helped,
+    'shifts_total': ev_shifts_total,
+    'race_streak': ev_race_streak,
+    'years_active': ev_years_active,
+    'team_lead_shifts': ev_team_lead_shifts,
     # single
     'registered': ev_registered,
     'first_event': ev_first_event,
@@ -251,6 +363,11 @@ EVALUATORS = {
     'response_30min': ev_response_30min,
     'response_5min': ev_response_5min,
     'response_1min': ev_response_1min,
+    'full_course': ev_full_course,
+    'early_bird': ev_early_bird,
+    'double_shift': ev_double_shift,
+    'all_days': ev_all_days,
+    'reliable': ev_reliable,
 }
 
 
@@ -276,10 +393,16 @@ def ev_organization_count(user, organization_id):
     )
 
 
+def ev_race(user, group_id):
+    """Точечное «был на этом забеге» (одной смены достаточно, роль не важна)."""
+    return group_id in _race_ids(user)
+
+
 # Префикс → функция (user, obj_id) для параметризованных динамических достижений.
 DYNAMIC_EVALUATORS = {
     'category_': ev_category_count,
     'organization_': ev_organization_count,
+    'race_': ev_race,
 }
 
 
@@ -308,26 +431,30 @@ def recalc_user_achievements(user, *, notify=False):
     (реализуется отдельно), сейчас параметр только прокидывает намерение в лог."""
     newly = []
     touched = set()
-    for definition in dc.get_active_definitions():
-        if definition.source_type != 'auto':
-            continue
-        value = progress_for(user, definition)
-        if value is None:
-            continue
+    _RACE_CACHE[user.pk] = None  # кэш забегов живёт один пересчёт
+    try:
+        for definition in dc.get_active_definitions():
+            if definition.source_type != 'auto':
+                continue
+            value = progress_for(user, definition)
+            if value is None:
+                continue
 
-        if definition.kind == 'series':
-            progress = int(value or 0)
-            for step_value, _label in definition.steps():
-                if progress >= step_value and not dc.has_user_achievement(user, definition, step_value):
-                    newly.append(dc.grant_achievement(user, definition, series_value=step_value))
+            if definition.kind == 'series':
+                progress = int(value or 0)
+                for step_value, _label in definition.steps():
+                    if progress >= step_value and not dc.has_user_achievement(user, definition, step_value):
+                        newly.append(dc.grant_achievement(user, definition, series_value=step_value))
+                        touched.add(definition)
+            else:  # single
+                if value and not dc.has_user_achievement(user, definition, None):
+                    newly.append(dc.grant_achievement(user, definition, series_value=None))
                     touched.add(definition)
-        else:  # single
-            if value and not dc.has_user_achievement(user, definition, None):
-                newly.append(dc.grant_achievement(user, definition, series_value=None))
-                touched.add(definition)
 
-    for definition in touched:
-        dc.recompute_achievement_stat(definition)
+        for definition in touched:
+            dc.recompute_achievement_stat(definition)
+    finally:
+        _RACE_CACHE.pop(user.pk, None)
 
     if newly:
         logger.info(
@@ -353,19 +480,40 @@ def _steps_json(values):
     return [{'value': v, 'label': labels.get(v, f'{v} мероприятий')} for v in values]
 
 
-def ensure_category_achievement(category):
-    """Создать/обновить series-достижение под категорию (идемпотентно). Название
-    отражает текущее имя категории (при переименовании — обновляем title)."""
-    d, _ = dc.upsert_definition(
-        code=f'category_{category.id}',
-        defaults=dict(
-            kind='series', visibility='common', group='Категории',
-            title=f'Волонтёр категории «{category.name}»',
-            description=f'Участвуй в мероприятиях категории «{category.name}».',
-            icon='🎯', series_steps=_steps_json(_CATEGORY_STEPS),
-            source_type='auto', is_active=True,
-        ),
+def category_achievement_defaults(name):
+    return dict(
+        kind='series', visibility='common', group='Категории',
+        title=f'Категория «{name}»',
+        description=f'Помогай на забегах в категории «{name}».',
+        icon='🎯', series_steps=_steps_json(_CATEGORY_STEPS),
+        source_type='auto', is_active=True,
     )
+
+
+def ensure_category_achievement(category):
+    """Series-достижение под категорию забегов (идемпотентно). Функциям ФиП
+    (kind=function) достижение не положено — их ряд удаляется."""
+    if getattr(category, 'kind', 'category') != 'category':
+        remove_dynamic_achievement(f'category_{category.id}')
+        return None
+    d, _ = dc.upsert_definition(code=f'category_{category.id}', defaults=category_achievement_defaults(category.name))
+    return d
+
+
+def race_achievement_defaults(title):
+    return dict(
+        kind='single', visibility='hidden', group='Забеги',
+        title=f'Забег: {title}',
+        description=f'Ты помогал на забеге «{title}».',
+        icon='🏅', series_steps=None,
+        source_type='auto', is_active=True, tier='event',
+    )
+
+
+def ensure_race_achievement(group):
+    """Точечное достижение «был на этом забеге» — по одному на мероприятие (EventGroup).
+    Выдаёт движок (ev_race): хватает одной смены с явкой, роль не важна."""
+    d, _ = dc.upsert_definition(code=f'race_{group.id}', defaults=race_achievement_defaults(group.title))
     return d
 
 
@@ -377,23 +525,8 @@ def ensure_organization_achievement(organization):
             title=f'Партнёр «{organization.name}»',
             description=f'Участвуй в мероприятиях организации «{organization.name}».',
             icon='🤝', series_steps=_steps_json(_ORGANIZATION_STEPS),
-            source_type='auto', is_active=True,
-        ),
-    )
-    return d
-
-
-def ensure_event_achievement(event):
-    """Точечное достижение «был на конкретном мероприятии» (hidden, tier 'event').
-    Выдаётся не движком, а при завершении меро (grant_event_participants)."""
-    d, _ = dc.upsert_definition(
-        code=f'event_{event.id}',
-        defaults=dict(
-            kind='single', visibility='hidden', group='Мероприятия',
-            title=f'Участник: {event.title}',
-            description=f'Ты участвовал в мероприятии «{event.title}».',
-            icon='🎪', series_steps=None,
-            source_type='auto', is_active=True, tier='event',
+            # Организация убрана из формы позиции (2026-11-11) — ряд не показываем.
+            source_type='auto', is_active=False,
         ),
     )
     return d
@@ -406,22 +539,18 @@ def remove_dynamic_achievement(code):
 
 
 def grant_event_participants(event, *, granted_by=None):
-    """Выдать точечное достижение event_<id> всем волонтёрам с явкой (attended) на этом
-    меро. Зовётся при завершении меро (event_close). Идемпотентно."""
-    d = ensure_event_achievement(event)
-    user_ids = (
-        dc.participations_qs().filter(event_day__event=event, status='attended')
-        .values_list('user_id', flat=True).distinct()
-    )
-    from blog.models import User
+    """Завершение позиции: участникам и тим-лидерам — пересчёт достижений (в т.ч.
+    «был на забеге» race_<id> по мероприятию позиции). Возвращает число новых."""
+    if event.event_group_id:
+        ensure_race_achievement(event.event_group)
+    user_ids = set(dc.participations_qs().filter(event_day__event=event, status='attended')
+                   .values_list('user_id', flat=True))
+    user_ids |= set(dc.event_staff_qs().filter(event=event, staff_role='team_lead').values_list('user_id', flat=True))
     granted = 0
-    for user in User.objects.filter(id__in=list(user_ids)):
-        if not dc.has_user_achievement(user, d, None):
-            dc.grant_achievement(user, d, series_value=None, granted_by=granted_by)
-            granted += 1
-    dc.recompute_achievement_stat(d)
-    if granted:
-        logger.info('Достижение за меро выдано участникам: event=%s code=%s count=%s', event.id, d.code, granted)
+    for user_id in user_ids:
+        user = dc.get_user_by_id(user_id)
+        if user:
+            granted += len(recalc_user_achievements(user))
     return granted
 
 
@@ -513,6 +642,8 @@ def build_profile_achievements(user, *, viewer_is_owner=False):
     series дополнительно step_value/step_label."""
     definitions = dc.get_active_definitions()
     grants = dc.get_user_achievements(user)
+    # Достижения тим-лидеров (visibility=team_lead) как цели видны только тим-лидерам.
+    is_lead = user.team_leader_roles.exists() or dc.event_staff_qs().filter(user=user, staff_role='team_lead').exists()
     stats_map = dc.get_achievement_stats_map()
     denom = dc.count_stats_denominator() or 0
 
@@ -531,7 +662,7 @@ def build_profile_achievements(user, *, viewer_is_owner=False):
         # holders учитывает всех держателей (в т.ч. служебный техаккаунт-витрину, который
         # не входит в denominator живых волонтёров), поэтому процент клампим сверху 100 —
         # «у 100% волонтёров» вместо возможных 100+% на малых числах.
-        percent = min(100, round(holders * 100 / denom)) if (d.visibility == 'common' and denom) else None
+        percent = min(100, round(holders * 100 / denom)) if (d.visibility in ('common', 'team_lead') and denom) else None
         return holders, percent
 
     groups = {}
@@ -560,7 +691,7 @@ def build_profile_achievements(user, *, viewer_is_owner=False):
             for idx, (step_value, step_label) in enumerate(d.steps(), start=1):
                 granted_at = step_at.get((d.id, step_value))
                 earned = granted_at is not None
-                if d.visibility == 'hidden' and not earned:
+                if not earned and (d.visibility == 'hidden' or (d.visibility == 'team_lead' and not is_lead)):
                     continue
                 card = {
                     'code': f'{d.code}:{step_value}',
@@ -581,7 +712,7 @@ def build_profile_achievements(user, *, viewer_is_owner=False):
         else:  # single / hidden-факт / manual
             granted_at = single_at.get(d.id)
             earned = granted_at is not None
-            if d.visibility == 'hidden' and not earned:
+            if not earned and (d.visibility == 'hidden' or (d.visibility == 'team_lead' and not is_lead)):
                 continue
             # tier у single хранится строкой ('1'..'6'/'event'/'course'); числа приводим к int.
             raw = (d.tier or '').strip()

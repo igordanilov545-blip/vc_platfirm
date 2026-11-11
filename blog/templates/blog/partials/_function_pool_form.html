@@ -1,0 +1,27 @@
+{% comment %}Функция или категория пула (настройки → «Функции и позиции»). У функции —
+категории по умолчанию (chip-select): их сама получает позиция при выборе функции.{% endcomment %}
+<form method="post" data-modal-form>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="field">
+        {{ form.name.label_tag }}{{ form.name }}
+        {% if form.name.errors %}<div class="field-error">{{ form.name.errors|striptags }}</div>{% endif %}
+    </div>
+    {% if form.default_categories %}
+    <div class="field">
+        <label>{{ form.default_categories.label }}</label>
+        <div class="category-chips" data-chip-select="{{ form.default_categories.id_for_label }}" data-chip-empty="Категории не выбраны">
+            <div class="cat-chips-row" data-chips-selected></div>
+            <div class="cat-chips-available-wrap">
+                <div class="cat-chips-available-label">Доступные категории — нажмите, чтобы добавить:</div>
+                <div class="cat-chips-row" data-chips-available></div>
+            </div>
+        </div>
+        {{ form.default_categories }}
+        <div class="field-hint">Проставляются позиции сами при выборе этой функции; на позиции их можно поменять.</div>
+    </div>
+    {% endif %}
+    <div class="modal-footer-actions" style="display:flex; justify-content:flex-end; gap:10px; margin-top:1rem;">
+        <button type="submit" class="btn">{{ submit_label|default:'Сохранить' }}</button>
+    </div>
+</form>

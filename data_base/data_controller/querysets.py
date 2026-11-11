@@ -91,7 +91,13 @@ def organizers_qs():
 
 
 def event_categories_qs():
-    return EventCategory.objects.all()
+    """Тематические категории забегов (kind=category): достижения, отчёты, чипы формы."""
+    return EventCategory.objects.filter(kind='category')
+
+
+def event_functions_qs():
+    """Функции из ФиП (kind=function): у позиции одна, к ней привязан пул ролей."""
+    return EventCategory.objects.filter(kind='function')
 
 
 def event_category_maps_qs():

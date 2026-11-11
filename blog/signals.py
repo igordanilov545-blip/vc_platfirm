@@ -5,13 +5,13 @@
 Organization, Event. Логика выдачи/подсчёта — в blog/services/achievements.py; здесь
 только тонкая привязка к сигналам (подключается в BlogConfig.ready).
 
-Мероприятие: определение заводится при создании меро, но САМО достижение участникам
-выдаётся при завершении меро (grant_event_participants из event_close), а не тут.
+Забег (мероприятие, EventGroup): определение race_<id> заводится при создании,
+выдаёт его движок достижений — хватает одной смены с явкой (2026-11-11).
 """
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 
-from blog.models import EventCategory, Organization, Event
+from blog.models import EventCategory, EventGroup, Organization
 from blog.services import achievements as ach
 
 
@@ -35,12 +35,12 @@ def _organization_deleted(sender, instance, **kwargs):
     ach.remove_dynamic_achievement(f'organization_{instance.id}')
 
 
-@receiver(post_save, sender=Event)
-def _event_saved(sender, instance, created, **kwargs):
-    # Определение под меро заводим при создании (и обновляем title при переименовании).
-    ach.ensure_event_achievement(instance)
+@receiver(post_save, sender=EventGroup)
+def _race_saved(sender, instance, created, **kwargs):
+    # Определение под забег — при создании (и новый title при переименовании).
+    ach.ensure_race_achievement(instance)
 
 
-@receiver(post_delete, sender=Event)
-def _event_deleted(sender, instance, **kwargs):
-    ach.remove_dynamic_achievement(f'event_{instance.id}')
+@receiver(post_delete, sender=EventGroup)
+def _race_deleted(sender, instance, **kwargs):
+    ach.remove_dynamic_achievement(f'race_{instance.id}')

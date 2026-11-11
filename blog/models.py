@@ -336,18 +336,25 @@ class Location(models.Model):
 
 
 class EventCategory(models.Model):
-    """Функция из общего пула («Дистанция», «Выдача стартовых пакетов»…).
+    """Общий пул функций и категорий забегов (одна таблица, поле kind).
 
-    Таблица и связь с позициями прежние (event_categories / event_category_map);
-    после решения 2026-11-11 «категории» — это переиспользуемые функции забегов,
-    к которым в пуле привязаны типовые позиции (PositionTemplate)."""
+    - function — функция из ФиП («Волонтёры дистанции»): у позиции ровно одна, к ней в
+      пуле привязаны типовые позиции/роли (PositionTemplate);
+    - category — тематическая категория («Дистанция», «Старт»…): у позиции несколько,
+      по ним считаются достижения и отчёты. Проставляются из категорий по умолчанию
+      функции (default_categories), их можно править вручную.
+    Связь с позициями общая — event_category_map."""
+    KIND_CHOICES = [('function', 'Функция'), ('category', 'Категория')]
     id = models.AutoField(primary_key=True)
     name = models.CharField(max_length=100, unique=True)
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES, default='category', db_index=True)
+    # Только у функций: категории, которые проставляются позиции при выборе функции.
+    default_categories = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='default_for_functions')
 
     class Meta:
         db_table = 'event_categories'
-        verbose_name = 'Функция'
-        verbose_name_plural = 'Функции'
+        verbose_name = 'Функция или категория'
+        verbose_name_plural = 'Функции и категории'
 
     def __str__(self):
         return self.name
@@ -1818,6 +1825,7 @@ class AchievementDefinition(models.Model):
     VISIBILITY_CHOICES = [
         ('common', 'Общее (всегда видно как цель)'),
         ('hidden', 'Скрытое (появляется по факту)'),
+        ('team_lead', 'Только тим-лидерам (видно как цель только тим-лидерам)'),
     ]
     SOURCE_CHOICES = [
         ('auto', 'Авто (по агрегатам)'),

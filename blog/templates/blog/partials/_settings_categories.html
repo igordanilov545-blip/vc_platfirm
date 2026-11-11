@@ -4,20 +4,49 @@
 (PositionTemplate). Позиции пула подсказываются в названии при создании позиции.
 {% endcomment %}
 <div class="settings-panel-head">
+    <h2>Категории забегов</h2>
+    <a href="{% url 'category_create' %}?kind=category" class="btn" data-modal data-modal-title="Новая категория">+ Новая категория</a>
+</div>
+<p class="muted">Тематические категории («Старт», «Дистанция», «Выдача стартовых пакетов»…): по ним считаются достижения и отчёты. Позиция получает их от своей функции, их можно поменять вручную.</p>
+<div class="card" style="padding:0; overflow:hidden;">
+    <table class="responsive-table" data-sortable id="themes-table">
+        <thead><tr><th data-sort-key="name">Категория</th><th>Функций по умолчанию</th><th></th></tr></thead>
+        <tbody>
+        {% for theme in themes %}
+            <tr>
+                <td data-label="Категория" data-sort-value="{{ theme.name }}">{{ theme.name }}</td>
+                <td data-label="Функций по умолчанию">{{ theme.functions_count }}</td>
+                <td data-label="">
+                    <a href="{% url 'category_edit' theme.id %}" class="btn secondary btn-sm" data-modal data-modal-title="Редактировать: {{ theme.name }}">Изменить</a>
+                    <form method="post" action="{% url 'category_delete' theme.id %}" class="inline" data-confirm="Удалить категорию «{{ theme.name }}»? Она снимется со всех позиций, достижение за неё удалится.">
+                        {% csrf_token %}
+                        <button type="submit" class="btn danger btn-sm">Удалить</button>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}
+            <tr><td colspan="3">Категорий пока нет.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="settings-panel-head" style="margin-top:1.5rem;">
     <h2>Функции</h2>
     <a href="{% url 'category_create' %}" class="btn" data-modal data-modal-title="Новая функция">+ Новая функция</a>
 </div>
-<p class="muted">Функции переиспользуются на разных забегах: «Дистанция», «Выдача стартовых пакетов», «Проверка медицинских справок»… Позиции мероприятия привязываются к функциям.</p>
+<p class="muted">Функции — блоки ФиП («Волонтёры дистанции», «Организация выдачи пакетов участников»…), общие для всех забегов. У каждой — роли из пула и категории, которые она сама проставляет позиции.</p>
 
 {% include 'blog/partials/_table_search.html' with search_target="#categories-table" search_placeholder="Поиск функции…" %}
 
 <div class="card" style="padding:0; overflow:hidden;">
     <table class="responsive-table" data-sortable data-hideable-columns id="categories-table">
-        <thead><tr><th data-sort-key="name">Функция</th><th>Позиций в пуле</th><th></th></tr></thead>
+        <thead><tr><th data-sort-key="name">Функция</th><th>Категории по умолчанию</th><th>Позиций в пуле</th><th></th></tr></thead>
         <tbody>
         {% for category in categories %}
             <tr data-search="{{ category.name }}">
                 <td data-label="Функция" data-sort-value="{{ category.name }}">{{ category.name }}</td>
+                <td data-label="Категории по умолчанию">{% for c in category.default_categories.all %}{{ c.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
                 <td data-label="Позиций в пуле">{{ category.pool_count }}</td>
                 <td data-label="">
                     <a href="{% url 'position_template_create' %}?category={{ category.id }}" class="btn secondary btn-sm" data-modal data-modal-title="Новая позиция: {{ category.name }}">+ Позиция</a>
@@ -29,7 +58,7 @@
                 </td>
             </tr>
         {% empty %}
-            <tr><td colspan="3">Функций пока нет.</td></tr>
+            <tr><td colspan="4">Функций пока нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>

@@ -366,41 +366,52 @@ def requirement_delete(request, requirement_id):
 def category_list(request):
     # Панель хаба настроек (см. location_list): AJAX → partial, прямой заход → редирект.
     from data_base import data_controller as dc
-    categories = dc.event_categories_qs().annotate(pool_count=Count('position_templates')).order_by('name')
+    functions = (dc.event_functions_qs().annotate(pool_count=Count('position_templates'))
+                 .prefetch_related('default_categories').order_by('name'))
+    themes = dc.event_categories_qs().annotate(functions_count=Count('default_for_functions')).order_by('name')
     templates = dc.position_templates_qs().select_related('category').order_by('category__name', 'name')
     if is_ajax(request):
-        return render(request, 'blog/partials/_settings_categories.html', {'categories': categories, 'templates': templates})
+        return render(request, 'blog/partials/_settings_categories.html',
+                      {'categories': functions, 'themes': themes, 'templates': templates})
     return redirect(reverse('settings') + '?tab=categories')
 
 @manager_required
 def category_create(request):
-    form = CategoryForm(request.POST or None)
+    # ?kind=category — категория забегов, иначе функция пула.
+    from blog.forms.references import ThemeCategoryForm
+    is_theme = (request.GET.get('kind') or request.POST.get('kind')) == 'category'
+    form = (ThemeCategoryForm if is_theme else CategoryForm)(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         form.save()
-        messages.success(request, 'Функция создана.')
+        messages.success(request, 'Категория создана.' if is_theme else 'Функция создана.')
         return modal_form_response(
             request, None, None,
             success_redirect=reverse('settings') + '?tab=categories',
         )
     return modal_form_response(
-        request, 'blog/category_form.html',
-        {'form': form, 'title': 'Новая функция'},
+        request, 'blog/function_pool_form.html',
+        {'form': form, 'title': 'Новая категория' if is_theme else 'Новая функция'},
+        partial_template='blog/partials/_function_pool_form.html',
     )
 
 @manager_required
 def category_edit(request, category_id):
+    from blog.forms.references import ThemeCategoryForm
     category = get_object_or_404(EventCategory, pk=category_id)
-    form = CategoryForm(request.POST or None, instance=category)
+    form_class = ThemeCategoryForm if category.kind == 'category' else CategoryForm
+    initial = {'default_categories': list(category.default_categories.all())} if category.kind == 'function' else None
+    form = form_class(request.POST or None, instance=category, initial=initial)
     if request.method == 'POST' and form.is_valid():
         form.save()
-        messages.success(request, 'Функция обновлена.')
+        messages.success(request, 'Сохранено.')
         return modal_form_response(
             request, None, None,
             success_redirect=reverse('settings') + '?tab=categories',
         )
     return modal_form_response(
-        request, 'blog/category_form.html',
+        request, 'blog/function_pool_form.html',
         {'form': form, 'title': f'Редактировать: {category.name}', 'submit_label': 'Сохранить'},
+        partial_template='blog/partials/_function_pool_form.html',
     )
 
 @manager_required
@@ -408,7 +419,7 @@ def category_delete(request, category_id):
     category = get_object_or_404(EventCategory, pk=category_id)
     if request.method == 'POST':
         category.delete()
-        messages.success(request, f'Функция «{category.name}» удалена.')
+        messages.success(request, f'«{category.name}» удалено.')
     return redirect(reverse('settings') + '?tab=categories')
 
 @manager_required

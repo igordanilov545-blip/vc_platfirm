@@ -102,8 +102,35 @@ class RefreshChatCommandsTests(TestCase):
         self.assertNotIn('register', names_)
 
     def test_guest_menu_and_errors_are_swallowed(self):
-        guest = f.make_user(registration_status='guest')
+        guest = f.make_user(registration_status='guest', phone=None)
         bot = self.FakeBot()
         async_to_sync(commands.refresh_chat_commands)(bot, 7, guest)
         self.assertIn('register', bot.calls[0][0])
         async_to_sync(commands.refresh_chat_commands)(self.FakeBot(fail=True), 7, guest)
+
+
+class HelpTextTests(TestCase):
+    """/help показывает весь функционал роли — в т.ч. ТЛ, у которого флаг регистрации
+    в боте остался «guest» (аккаунт заведён на сайте/из базы): раньше он видел справку
+    гостя без /myevents и /wish."""
+
+    def test_team_leader_without_bot_registration_sees_own_functions(self):
+        leader = f.make_team_leader(registration_status='guest')
+        text = commands.help_text_for(leader)
+        for command in ('/myevents', '/wish', '/appnotify', '/myapps', '/stats'):
+            self.assertIn(command, text)
+        self.assertNotIn('/register', text)
+        self.assertIn('Статус: Тим-лидер', text)
+        self.assertIn('\n\n<b>Как тим-лидер', text)
+
+    def test_manager_help_has_no_duplicate_lines(self):
+        text = commands.help_text_for(f.make_manager())
+        for command in ('/publish', '/broadcast', '/allapplications', '/myevents'):
+            self.assertIn(command, text)
+        self.assertEqual(text.count('/wish —'), 1)
+        self.assertEqual(text.count('/appnotify —'), 1)
+
+    def test_guest_gets_guest_help(self):
+        text = commands.help_text_for(f.make_user(registration_status='guest', phone=None))
+        self.assertIn('/register', text)
+        self.assertNotIn('/wish', text)

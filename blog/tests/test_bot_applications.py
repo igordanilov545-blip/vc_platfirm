@@ -43,7 +43,7 @@ class ApplyToEventTests(TestCase):
         self.assertEqual(err, 'blacklisted')
 
     def test_apply_guest_needs_registration(self):
-        guest = f.make_user(registration_status='guest')
+        guest = f.make_user(registration_status='guest', phone=None)  # гость = анкета не заполнена
         app, err = services.apply_to_event(guest.id, self.event.id)
         self.assertEqual(err, 'need_registration')
 

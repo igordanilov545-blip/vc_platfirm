@@ -18,10 +18,18 @@ class BotUsersServiceTests(TestCase):
         self.assertEqual(services.get_user(u.id), u)
 
     def test_is_guest(self):
-        guest = f.make_user(registration_status='guest')
+        guest = f.make_user(registration_status='guest', phone=None)
         member = f.make_user(registration_status='registered')
         self.assertTrue(services.is_guest(guest))
         self.assertFalse(services.is_guest(member))
+
+    def test_staff_and_complete_accounts_are_never_guests(self):
+        """Гость — только тот, кто ещё не заполнил аккаунт и без роли. ТЛ/менеджер или
+        человек с ФИО + Telegram + телефоном (заполнил на сайте, пришёл из базы) видит
+        полное меню и справку своей роли, даже если в боте /register не проходил."""
+        self.assertFalse(services.is_guest(f.make_team_leader(registration_status='guest', phone=None)))
+        self.assertFalse(services.is_guest(f.make_manager(registration_status='guest', phone=None)))
+        self.assertFalse(services.is_guest(f.make_user(registration_status='guest')))
 
     def test_validate_login_free_and_taken(self):
         u1 = f.make_user()

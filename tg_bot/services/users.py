@@ -28,7 +28,16 @@ def get_user(user_id: int):
     return dc.get_user_by_id(user_id)
 
 def is_guest(user) -> bool:
-    return user.registration_status != 'registered'
+    """Гость бота — не прошёл /register И без роли И аккаунт не заполнен.
+
+    Тим-лидер/менеджер или человек с ФИО + Telegram + телефоном (заполнил анкету на
+    сайте, пришёл из старой базы) — не гость, даже если флаг registration_status так и
+    остался 'guest': иначе ТЛ видел справку и меню гостя без своих функций."""
+    if user.registration_status == 'registered':
+        return False
+    if roles_service.is_team_leader(user) or roles_service.has_manager_access(user):
+        return False
+    return not roles_service.account_is_complete(user)
 
 def complete_registration(user_id: int, first_name: str, last_name: str = None,
                           phone: str = None, middle_name: str = None):

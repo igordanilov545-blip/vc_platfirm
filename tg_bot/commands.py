@@ -72,3 +72,31 @@ async def refresh_chat_commands(bot, chat_id, user):
         )
     except Exception:
         logger.warning('Не удалось обновить меню команд чата %s', chat_id, exc_info=True)
+
+
+def build_help_text(is_guest=False, is_team_leader=False, is_manager=False, role=''):
+    """Текст /help по роли из шаблонов help_*.txt. Блоки разделены пустой строкой;
+    менеджеру, который ещё и тим-лидер, общие команды (/wish, /appnotify) не дублируются."""
+    from tg_bot.templates_loader import render
+
+    if is_guest:
+        return render('help_guest')
+    text = render('help_volunteer')
+    if is_team_leader:
+        text += render('help_team_leader')
+    if is_manager:
+        lines = render('help_manager').split('\n')
+        text += '\n'.join(line for line in lines if not (line.startswith('/') and line in text))
+    return text + render('help_role_footer', role=role)
+
+
+def help_text_for(user):
+    """Синхронно (через sync_to_async из хендлера): роль пользователя → текст /help."""
+    from tg_bot import services
+
+    return build_help_text(
+        is_guest=services.is_guest(user),
+        is_team_leader=services.user_is_team_leader(user),
+        is_manager=services.user_is_manager(user),
+        role=services.user_role_label(user),
+    )

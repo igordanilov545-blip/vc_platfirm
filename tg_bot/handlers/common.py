@@ -9,7 +9,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKe
 from tg_bot import services, keyboards as kb
 from tg_bot.states import Registration, PendingApplication, TelegramLogin
 from tg_bot.templates_loader import render
-from tg_bot.commands import refresh_chat_commands
+from tg_bot.commands import refresh_chat_commands, help_text_for
 from tg_bot.ui import answer_with_expiring_keyboard
 
 router = Router(name='common')
@@ -120,20 +120,7 @@ async def cmd_help(message: Message):
     )
 
     await refresh_chat_commands(message.bot, message.chat.id, user)
-    if await sync_to_async(services.is_guest)(user):
-        await message.answer(render('help_guest'))
-        return
-
-    role = await sync_to_async(services.user_role_label)(user)
-    text = render('help_volunteer')
-
-    is_tl, is_mgr = await _menu_for(user)
-    if is_tl:
-        text += render('help_team_leader')
-    if is_mgr:
-        text += render('help_manager')
-    text += render('help_role_footer', role=role)
-    await message.answer(text)
+    await message.answer(await sync_to_async(help_text_for)(user))
 
 
 async def start_registration(message_or_cb, state: FSMContext):

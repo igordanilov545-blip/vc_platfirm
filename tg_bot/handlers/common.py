@@ -40,7 +40,7 @@ async def _send_web_login_link(message: Message, user):
     if not link or link.startswith('/'):
         # WEBAPP_URL не сконфигурирован — ссылку построить нельзя.
         await message.answer(
-            'Не удалось сформировать ссылку для входа — обратитесь к менеджеру центра.'
+            'Не удалось сформировать ссылку для входа — напишите менеджеру сообщества.'
         )
         return
     markup = InlineKeyboardMarkup(inline_keyboard=[[
@@ -89,8 +89,9 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject 
     await refresh_chat_commands(message.bot, message.chat.id, user)
     if not created and not await sync_to_async(services.is_guest)(user):
         is_tl, is_mgr = await _menu_for(user)
+        role = await sync_to_async(services.user_role_label)(user)
         await message.answer(
-            render('start_returning', name=user.first_name),
+            render('start_returning', name=user.first_name, role=role),
             reply_markup=kb.main_menu(is_tl, is_mgr),
         )
         return
@@ -233,7 +234,7 @@ async def cb_tglogin_yes(callback: CallbackQuery, state: FSMContext):
     )
     if error == 'collision':
         await callback.message.edit_text(
-            '⚠️ Не получилось войти автоматически — обратись к менеджеру центра, поможем разобраться.'
+            '⚠️ Не получилось войти автоматически — напиши менеджеру сообщества, поможем разобраться.'
         )
         return
     if not account:
@@ -242,7 +243,11 @@ async def cb_tglogin_yes(callback: CallbackQuery, state: FSMContext):
 
     is_tl, is_mgr = await _menu_for(account)
     await refresh_chat_commands(callback.bot, callback.message.chat.id, account)
-    await callback.message.edit_text(f'✅ С возвращением, {account.first_name}! Ты вошёл(ла) — весь твой прежний опыт (часы, меро) на месте.')
+    role = await sync_to_async(services.user_role_label)(account)
+    await callback.message.edit_text(
+        f'✅ С возвращением, {account.first_name}! Ты вошёл(ла) — весь твой прежний опыт '
+        f'(часы, меро) на месте.\nСтатус: {role}'
+    )
     await callback.message.answer('Что дальше?', reply_markup=kb.main_menu(is_tl, is_mgr))
 
     pending = await state.get_data()
@@ -299,8 +304,9 @@ async def _finish_registration(message: Message, state: FSMContext, phone: str =
 
     is_tl, is_mgr = await _menu_for(user)
     await refresh_chat_commands(message.bot, message.chat.id, user)
+    role = await sync_to_async(services.user_role_label)(user)
     await message.answer(
-        render('register_done'),
+        render('register_done', role=role),
         reply_markup=kb.main_menu(is_tl, is_mgr),
     )
 
@@ -376,7 +382,7 @@ async def cb_tgverify_yes(callback: CallbackQuery):
     text = '✅ Готово! Ваш Telegram подтверждён.'
     if err == 'conflict':
         text += ('\n\n⚠️ Этот Telegram уже привязан к другому аккаунту, поэтому мы только '
-                 'отметили подтверждение. Если это ошибка — напишите менеджеру центра.')
+                 'отметили подтверждение. Если это ошибка — напишите менеджеру сообщества.')
     markup = kb.back_to_site_button()
     await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer('Аккаунт верифицирован')

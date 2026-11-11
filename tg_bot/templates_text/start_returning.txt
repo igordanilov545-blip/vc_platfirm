@@ -1,3 +1,4 @@
 👋 <b>С возвращением, {name}!</b>
+Статус: {role}
 
 Быстрые команды: /events · /myapps · /stats · /get_qr · /help

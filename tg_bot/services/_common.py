@@ -17,7 +17,6 @@ from data_base import data_controller as dc
 from blog.services import roles as roles_service
 from blog.services.applications import process_application
 from blog.services.notifications import notify_application_submitted
-from blog.services.stats import is_pgas_star
 from blog.logging_utils import get_bot_logger, actor
 
 logger = get_bot_logger('tg_bot.services')
@@ -25,5 +24,5 @@ logger = get_bot_logger('tg_bot.services')
 __all__ = [
     're', 'timedelta', 'close_old_connections', 'timezone',
     'dc', 'roles_service', 'process_application',
-    'notify_application_submitted', 'is_pgas_star', 'actor', 'logger',
+    'notify_application_submitted', 'actor', 'logger',
 ]

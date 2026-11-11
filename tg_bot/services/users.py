@@ -176,14 +176,11 @@ def set_web_credentials(user_id: int, login: str, password: str):
     return user
 
 def user_stats(user_id: int) -> dict:
-    """Статистика волонтёра (tg-bot.md/bot-update.md §2.2.B — порядок вывода: сезон,
-    «до Звёздочки ПГАС», потенциал по активным заявкам, итог за всё время внизу)."""
+    """Моя статистика для /stats (tg-bot.md §4): статус (волонтёр / тим-лидер /
+    менеджер), часы и мероприятия сезона, потенциал по активным заявкам, итог за всё
+    время. Справки и «звёздочки» за часы бот не упоминает (решение 2026-11-11)."""
     close_old_connections()
-    from data_base.data_controller import get_const
-
     user = get_user(user_id)
-    threshold = get_const('pgas_hours_threshold', default=100)
-    hours_to_pgas = max(0, threshold - (user.season_hours or 0))
 
     potential_hours = 0
     for app in dc.get_user_active_applications(user_id):
@@ -192,12 +189,11 @@ def user_stats(user_id: int) -> dict:
             potential_hours += max(0, round((shift.end_time - shift.start_time).total_seconds() / 3600))
 
     return {
+        'role': roles_service.role_label(user),
         'total_hours': user.total_hours,
         'season_hours': user.season_hours,
         'total_events': user.total_event_count,
         'season_events': user.season_event_count,
-        'is_star': is_pgas_star(user),
         'blacklisted': user.status == 'blacklisted',
-        'hours_to_pgas': hours_to_pgas,
         'potential_hours': potential_hours,
     }

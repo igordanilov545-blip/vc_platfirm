@@ -70,7 +70,7 @@ async def cb_events(callback: CallbackQuery):
 
 ERROR_TEXTS = {
     'closed': '⚠️ Набор на это мероприятие уже закрыт.',
-    'blacklisted': '⛔ Не можем принять заявку — обратись к менеджеру центра.',
+    'blacklisted': '⛔ Не можем принять заявку — напиши менеджеру сообщества.',
     'not_found': '⚠️ Мероприятие не найдено или снято с публикации.',
 }
 
@@ -375,13 +375,9 @@ async def cmd_stats(message: Message):
     )
     stats = await sync_to_async(services.user_stats)(user.id)
 
-    lines = ['📊 За этот сезон:']
+    lines = [f"👤 Статус: {stats['role']}", '', '📊 За этот сезон:']
     lines.append(f"• Часов: {stats['season_hours']}")
     lines.append(f"• Мероприятий: {stats['season_events']}")
-    if stats['is_star']:
-        lines.append('⭐ Звёздочка ПГАС!')
-    else:
-        lines.append(f"⭐ До «Звёздочки ПГАС» осталось {stats['hours_to_pgas']:g} ч")
     if stats['potential_hours']:
         lines.append(f"⏳ По активным заявкам может добавиться ещё ~{stats['potential_hours']} ч")
 
@@ -390,7 +386,7 @@ async def cmd_stats(message: Message):
     lines.append(f"• Мероприятий всего: {stats['total_events']}")
 
     if stats['blacklisted']:
-        lines.append('\n⛔ Твой аккаунт заблокирован. Обратись к менеджеру центра.')
+        lines.append('\n⛔ Твой аккаунт заблокирован. Напиши менеджеру сообщества.')
 
     await message.answer('\n'.join(lines))
 

@@ -17,7 +17,7 @@ router = Router(name='web_access')
 async def cmd_webaccess(message: Message, state: FSMContext):
     await state.set_state(WebCredentials.waiting_login)
     await message.answer(
-        '🔐 Хочешь входить на сайт волонтёрского центра без Telegram?\n\n'
+        '🔐 Хочешь входить на сайт сообщества без Telegram?\n\n'
         'Задай логин и пароль — они понадобятся, если Telegram будет недоступен.\n'
         'Придумай логин (3–50 символов: латиница, цифры, точки, дефисы, подчёркивания):',
         reply_markup=kb.remove_keyboard(),

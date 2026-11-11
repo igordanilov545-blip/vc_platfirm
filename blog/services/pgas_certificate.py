@@ -101,8 +101,9 @@ def revoke_verification_if_changed(user: User, actor: User = None) -> bool:
     for manager in manager_users:
         notify_user(
             manager,
+            # Текст уходит в Telegram — в боте ПГАС не упоминаем (решение 2026-11-11).
             f'⚠️ Волонтёр «{user.full_name}» изменил(а) верифицированные данные. '
-            f'Верификация для справки ПГАС снята — подтвердите профиль заново.',
+            f'Верификация профиля снята — подтвердите профиль заново на сайте.',
         )
     return True
 
